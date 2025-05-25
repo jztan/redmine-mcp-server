@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  redmine-mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: redmine-mcp-server
+    ports:
+      - "8000:8000"
+    environment:
+      - REDMINE_URL=${REDMINE_URL}
+      - REDMINE_USERNAME=${REDMINE_USERNAME}
+      - REDMINE_PASSWORD=${REDMINE_PASSWORD}
+      - REDMINE_API_KEY=${REDMINE_API_KEY}
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8000
+    env_file:
+      - .env.docker
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+    restart: unless-stopped
+    networks:
+      - redmine-mcp-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/messages/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  redmine-mcp-network:
+    driver: bridge
+
+volumes:
+  redmine-mcp-logs:
+  redmine-mcp-data:
