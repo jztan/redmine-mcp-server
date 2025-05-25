@@ -22,7 +22,7 @@ The server is built using:
 ## Project Structure
 
 ```
-mcp-redmine/
+redmine-mcp-server/
 ├── src/
 │   └── redmine_mcp_server/
 │       ├── __init__.py
@@ -59,8 +59,8 @@ mcp-redmine/
 
 1. **Clone the repository** (when available):
    ```bash
-   git clone <repository-url>
-   cd mcp-redmine
+   git clone https://github.com/jztan/redmine-mcp-server
+   cd redmine-mcp-server
    ```
 
 2. **Install dependencies using uv**:
