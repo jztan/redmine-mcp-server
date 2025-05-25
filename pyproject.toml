@@ -3,6 +3,7 @@ name = "mcp-redmine"
 version = "0.1.0"
 description = "A Model Context Protocol (MCP) server for Redmine integration"
 readme = "README.md"
+license = {text = "MIT"}
 requires-python = ">=3.13"
 dependencies = [
     "python-dotenv>=1.0.0",

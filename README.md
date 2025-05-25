@@ -364,7 +364,7 @@ This project is planned to be open-sourced. Contributions will be welcome once t
 
 ## License
 
-*License information will be added upon open-source release.*
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Version History
 
