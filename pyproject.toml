@@ -1,0 +1,28 @@
+[project]
+name = "mcp-redmine"
+version = "0.1.0"
+description = "A Model Context Protocol (MCP) server for Redmine integration"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "python-dotenv>=1.0.0",
+    "fastapi[standard]>=0.115.12",
+    "httpx>=0.28.1",
+    "mcp[cli]>=1.9.1",
+    "python-redmine>=2.5.0",
+    "uvicorn>=0.24.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "pytest-mock>=3.10.0",
+]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "pytest-mock>=3.10.0",
+]
