@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2025-06-02
+
+### Added
+- **New MCP Tool**: `list_my_redmine_issues()` with advanced filtering and sorting capabilities
+  - Smart group discovery mechanism with dual-method approach for robust group membership detection
+  - Advanced filtering by project, status, assignee with flexible parameter support
+  - Pagination support with configurable limit and offset
+  - Sorting capabilities (priority, updated_on, created_on, id) with ascending/descending order
+  - Issue deduplication across user and group assignments
+  - Comprehensive error handling for edge cases
+- **Enhanced Documentation**:
+  - Added comprehensive API documentation for new tool with examples
+  - Created detailed ROADMAP.md with 4-phase development plan
+  - Updated README.md with new features and enhanced documentation structure
+- **Comprehensive Testing**:
+  - Added 4 new integration test methods for the new tool
+  - Added extensive unit tests with mock fixtures for group assignments
+  - Enhanced test coverage for edge cases and error handling
+  - Updated tests to use behavior-driven approach focusing on functionality over implementation
+
+### Changed
+- Updated project version from 0.1.0 to 0.1.1 in dependencies
+- Enhanced redmine_handler.py with improved group discovery logic
+- Restructured README.md documentation for better organization
+- Moved detailed version history and roadmap to separate ROADMAP.md file
+- Updated test philosophy to focus on behavior rather than implementation details
+
+### Technical Improvements
+- **Group Discovery**: Implemented dual-method approach (direct fetch + access testing fallback)
+- **Error Handling**: Enhanced error handling and logging throughout the new tool
+- **Code Quality**: Maintained high test coverage with flexible test assertions
+- **Architecture**: Followed established MCP patterns for consistency
+
 ## [0.1.1] - 2025-05-25
 
 ### Changed

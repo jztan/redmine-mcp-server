@@ -113,6 +113,157 @@ class TestRedmineIntegration:
         except Exception as e:
             pytest.fail(f"Integration test failed: {e}")
 
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_list_my_issues_integration(self):
+        """Integration test for listing my issues."""
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+        
+        from redmine_mcp_server.redmine_handler import list_my_redmine_issues
+        
+        try:
+            # Test basic functionality
+            result = await list_my_redmine_issues()
+            
+            assert result is not None
+            assert isinstance(result, list)
+            
+            # If there are issues, check their structure
+            if len(result) > 0 and "error" not in result[0]:
+                issue = result[0]
+                assert "id" in issue
+                assert "subject" in issue
+                assert "project" in issue
+                assert "status" in issue
+                assert "priority" in issue
+                assert "author" in issue
+                
+                assert isinstance(issue["id"], int)
+                assert isinstance(issue["subject"], str)
+                assert isinstance(issue["project"], dict)
+                assert isinstance(issue["status"], dict)
+                assert isinstance(issue["priority"], dict)
+                assert isinstance(issue["author"], dict)
+                
+                # Test assigned_to field (can be None for unassigned issues)
+                if issue["assigned_to"] is not None:
+                    assert isinstance(issue["assigned_to"], dict)
+                    assert "id" in issue["assigned_to"]
+                    assert "name" in issue["assigned_to"]
+                
+                print(f"Successfully retrieved {len(result)} issues assigned to current user.")
+            else:
+                print("No issues found for current user or client initialization error.")
+                
+        except Exception as e:
+            pytest.fail(f"Integration test for list_my_redmine_issues failed: {e}")
+
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_list_my_issues_with_filters_integration(self):
+        """Integration test for listing issues with filters."""
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+        
+        from redmine_mcp_server.redmine_handler import list_my_redmine_issues
+        
+        try:
+            # Test with various filters
+            result = await list_my_redmine_issues(
+                status_id='open',
+                limit=5,
+                sort='updated_on:desc'
+            )
+            
+            assert result is not None
+            assert isinstance(result, list)
+            assert len(result) <= 5  # Should respect limit
+            
+            # If there are multiple issues, check sorting
+            if len(result) > 1 and "error" not in result[0]:
+                # With sort='updated_on:desc', newer items should come first
+                for i in range(len(result) - 1):
+                    if result[i]["updated_on"] and result[i+1]["updated_on"]:
+                        assert result[i]["updated_on"] >= result[i+1]["updated_on"], \
+                            "Issues should be sorted by updated_on descending"
+                
+                print(f"Successfully retrieved {len(result)} filtered issues with sorting.")
+            
+        except Exception as e:
+            pytest.fail(f"Integration test for filtered list_my_redmine_issues failed: {e}")
+
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_list_my_issues_pagination_integration(self):
+        """Integration test for pagination functionality."""
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+        
+        from redmine_mcp_server.redmine_handler import list_my_redmine_issues
+        
+        try:
+            # Get first page with small limit
+            page1 = await list_my_redmine_issues(limit=2, offset=0)
+            assert isinstance(page1, list)
+            
+            # Get second page
+            page2 = await list_my_redmine_issues(limit=2, offset=2)
+            assert isinstance(page2, list)
+            
+            # If both pages have results and no errors, they should be different
+            if (len(page1) > 0 and "error" not in page1[0] and
+                len(page2) > 0 and "error" not in page2[0]):
+                
+                # Issue IDs should be different between pages
+                page1_ids = {issue["id"] for issue in page1}
+                page2_ids = {issue["id"] for issue in page2}
+                
+                # There should be no overlap (assuming enough issues exist)
+                overlap = page1_ids.intersection(page2_ids)
+                assert len(overlap) == 0, f"Pages should not overlap, but found common IDs: {overlap}"
+                
+                print(f"Successfully tested pagination: Page 1 ({len(page1)} issues), Page 2 ({len(page2)} issues)")
+            else:
+                print("Insufficient issues for pagination testing or client initialization error.")
+                
+        except Exception as e:
+            pytest.fail(f"Integration test for pagination failed: {e}")
+
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_list_my_issues_with_invalid_filter_integration(self):
+        """Integration test for listing issues with an invalid filter."""
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+        
+        from redmine_mcp_server.redmine_handler import list_my_redmine_issues
+        
+        try:
+            # Test with an invalid status_id
+            result = await list_my_redmine_issues(status_id='invalid_status')
+            
+            assert result is not None
+            assert isinstance(result, list)
+            
+            # The result should either be empty (no matches) or contain an error
+            if len(result) > 0:
+                # If there's a result, check if it's an error
+                if "error" in result[0]:
+                    print(f"Successfully handled invalid filter with error: {result[0]['error']}")
+                else:
+                    # If no error, it means the filter was silently ignored (valid behavior)
+                    print("Invalid filter was silently ignored - no issues returned.")
+            else:
+                print("Successfully handled request with an invalid filter: no issues returned.")
+            
+        except Exception as e:
+            pytest.fail(f"Integration test for list_my_redmine_issues with invalid filter failed: {e}")
+
 
 class TestFastAPIIntegration:
     """Integration tests for the FastAPI server."""

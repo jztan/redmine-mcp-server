@@ -14,7 +14,7 @@ import sys
 # Add the src directory to the path so we can import our modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from redmine_mcp_server.redmine_handler import get_redmine_issue, list_redmine_projects
+from redmine_mcp_server.redmine_handler import get_redmine_issue, list_redmine_projects, list_my_redmine_issues
 
 
 class TestRedmineHandler:
@@ -272,3 +272,304 @@ class TestRedmineHandler:
         assert project["identifier"] == "test-project"
         assert project["description"] == ""  # getattr default
         assert project["created_on"] is None  # hasattr check
+
+    @pytest.fixture
+    def mock_current_user(self):
+        """Create a mock current user object."""
+        mock_user = Mock()
+        mock_user.id = 42
+        mock_user.name = "Current User"
+        return mock_user
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_list_my_redmine_issues_success(self, mock_redmine, mock_redmine_issue, mock_current_user):
+        """Test successful retrieval of my issues."""
+        # Setup - add groups attribute to mock current user
+        mock_current_user.groups = []  # No groups for this test
+        mock_redmine.user.get.return_value = mock_current_user
+        mock_redmine.issue.filter.return_value = [mock_redmine_issue]
+        
+        # Execute
+        result = await list_my_redmine_issues()
+        
+        # Verify
+        assert result is not None
+        assert isinstance(result, list)
+        assert len(result) == 1
+        
+        issue = result[0]
+        assert issue["id"] == 123
+        assert issue["subject"] == "Test Issue Subject"
+        assert issue["description"] == "Test issue description"
+        assert issue["project"]["id"] == 1
+        assert issue["project"]["name"] == "Test Project"
+        assert issue["status"]["id"] == 1
+        assert issue["status"]["name"] == "New"
+        assert issue["priority"]["id"] == 2
+        assert issue["priority"]["name"] == "Normal"
+        assert issue["author"]["id"] == 1
+        assert issue["author"]["name"] == "Test Author"
+        assert issue["assigned_to"]["id"] == 2
+        assert issue["assigned_to"]["name"] == "Test Assignee"
+        assert issue["created_on"] == "2025-01-01T10:00:00"
+        assert issue["updated_on"] == "2025-01-02T15:30:00"
+        
+        # Verify the mocks were called correctly - now accommodating the enhanced group detection
+        # The implementation first calls get('current') and then get('current', include='groups')
+        assert mock_redmine.user.get.call_count >= 1
+        assert ('current',) in [args for args, kwargs in mock_redmine.user.get.call_args_list]
+        assert ('current', {'include': 'groups'}) in [(args[0], kwargs) for args, kwargs in mock_redmine.user.get.call_args_list if kwargs]
+        
+        # Verify at least one filter call was made for the user's issues
+        assert mock_redmine.issue.filter.call_count >= 1
+        assert any(call.kwargs.get('assigned_to_id') == 42 for call in mock_redmine.issue.filter.call_args_list)
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_list_my_redmine_issues_with_filters(self, mock_redmine, mock_current_user):
+        """Test issue retrieval with various filters."""
+        # Setup - add groups attribute to mock current user
+        mock_current_user.groups = []  # No groups for this test
+        mock_redmine.user.get.return_value = mock_current_user
+        mock_redmine.issue.filter.return_value = []
+        
+        # Execute
+        result = await list_my_redmine_issues(
+            project_id=1, 
+            status_id='open', 
+            sort='priority:desc',
+            limit=10,
+            offset=5
+        )
+        
+        # Verify
+        assert result is not None
+        assert isinstance(result, list)
+        assert len(result) == 0
+        
+        # Verify the filter was called with correct parameters at least once
+        # The enhanced implementation may make additional calls for group discovery
+        assert mock_redmine.issue.filter.call_count >= 1
+        assert any(
+            all(item in call.kwargs.items() for item in {
+                'project_id': 1,
+                'status_id': 'open',
+                'sort': 'priority:desc',
+                'assigned_to_id': 42,
+                'limit': 20,  # Doubled internally for deduplication
+                'offset': 5,
+            }.items())
+            for call in mock_redmine.issue.filter.call_args_list
+        )
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_list_my_redmine_issues_specific_user(self, mock_redmine):
+        """Test issue retrieval with specific user ID (not 'me')."""
+        # Setup
+        mock_redmine.issue.filter.return_value = []
+        
+        # Execute
+        result = await list_my_redmine_issues(assigned_to_id='123')
+        
+        # Verify
+        assert result is not None
+        assert isinstance(result, list)
+        assert len(result) == 0
+        
+        # Verify user.get was NOT called since we didn't use 'me'
+        mock_redmine.user.get.assert_not_called()
+        mock_redmine.issue.filter.assert_called_once_with(
+            limit=50, offset=0, assigned_to_id='123'  # Doubled internally for deduplication
+        )
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_list_my_redmine_issues_user_fetch_error(self, mock_redmine):
+        """Test error handling when fetching current user fails."""
+        # Setup
+        mock_redmine.user.get.side_effect = Exception("User fetch error")
+        
+        # Execute
+        result = await list_my_redmine_issues()
+        
+        # Verify
+        assert result is not None
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert "error" in result[0]
+        assert "Could not determine current user ID for 'me'" in result[0]["error"]
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_list_my_redmine_issues_filter_error(self, mock_redmine, mock_current_user):
+        """Test error handling when issue filtering fails."""
+        # Setup - add groups attribute to mock current user
+        mock_current_user.groups = []  # No groups for this test
+        mock_redmine.user.get.return_value = mock_current_user
+        mock_redmine.issue.filter.side_effect = Exception("Filter error")
+        
+        # Execute
+        result = await list_my_redmine_issues()
+        
+        # Verify - the enhanced function handles errors gracefully and returns empty list
+        # rather than an error, as it tries to continue with available data
+        assert result is not None
+        assert isinstance(result, list)
+        assert len(result) == 0  # No issues returned due to filter error
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine', None)
+    async def test_list_my_redmine_issues_no_client(self):
+        """Test issue retrieval when Redmine client is not initialized."""
+        # Execute
+        result = await list_my_redmine_issues()
+        
+        # Verify
+        assert result is not None
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert "error" in result[0]
+        assert result[0]["error"] == "Redmine client not initialized."
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_list_my_redmine_issues_with_groups(self, mock_redmine, mock_redmine_issue, mock_current_user):
+        """Test issue retrieval including group assignments."""
+        # Setup - create mock group
+        mock_group = Mock()
+        mock_group.id = 10
+        mock_group.name = "Dev Team"
+        
+        # Setup current user with groups
+        mock_current_user.groups = [mock_group]
+        mock_redmine.user.get.return_value = mock_current_user
+        
+        # Setup issue filter to return different issues for user vs group
+        def mock_filter(**kwargs):
+            if kwargs.get('assigned_to_id') == 42:  # User ID
+                return [mock_redmine_issue]
+            elif kwargs.get('assigned_to_id') == 10:  # Group ID
+                # Create a different mock issue for group assignment
+                group_issue = Mock()
+                group_issue.id = 456
+                group_issue.subject = "Group Issue"
+                group_issue.description = "Group issue description"
+                group_issue.project = Mock(id=2, name="Group Project")
+                group_issue.status = Mock(id=2, name="In Progress")
+                group_issue.priority = Mock(id=3, name="High")
+                group_issue.author = Mock(id=3, name="Group Author")
+                group_issue.assigned_to = Mock()
+                group_issue.assigned_to.id = 10
+                group_issue.assigned_to.name = "Dev Team"
+                group_issue.created_on = Mock()
+                group_issue.created_on.isoformat.return_value = "2025-01-03T12:00:00"
+                group_issue.updated_on = Mock()
+                group_issue.updated_on.isoformat.return_value = "2025-01-04T16:00:00"
+                return [group_issue]
+            return []
+        
+        mock_redmine.issue.filter.side_effect = mock_filter
+        
+        # Execute
+        result = await list_my_redmine_issues()
+        
+        # Verify
+        assert result is not None
+        assert isinstance(result, list)
+        assert len(result) == 2  # Should have both user and group issues
+        
+        # Verify user issue
+        user_issue = next((issue for issue in result if issue["id"] == 123), None)
+        assert user_issue is not None
+        assert user_issue["subject"] == "Test Issue Subject"
+        
+        # Verify group issue
+        group_issue = next((issue for issue in result if issue["id"] == 456), None)
+        assert group_issue is not None
+        assert group_issue["subject"] == "Group Issue"
+        assert group_issue["assigned_to"]["name"] == "Dev Team"
+        
+        # Verify the mocks were called correctly
+        # The implementation now calls get('current') first, then get('current', include='groups')
+        assert mock_redmine.user.get.call_count >= 1
+        assert ('current',) in [args for args, kwargs in mock_redmine.user.get.call_args_list]
+        assert ('current', {'include': 'groups'}) in [(args[0], kwargs) for args, kwargs in mock_redmine.user.get.call_args_list if kwargs]
+        
+        # Verify the issue filter calls include both user ID and group ID
+        assert mock_redmine.issue.filter.call_count >= 2  # At least once for user and once for group
+        assert any(call.kwargs.get('assigned_to_id') == 42 for call in mock_redmine.issue.filter.call_args_list)
+        assert any(call.kwargs.get('assigned_to_id') == 10 for call in mock_redmine.issue.filter.call_args_list)
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_list_my_redmine_issues_exclude_groups(self, mock_redmine, mock_redmine_issue, mock_current_user):
+        """Test issue retrieval excluding group assignments."""
+        # Setup - create mock group
+        mock_group = Mock()
+        mock_group.id = 10
+        mock_group.name = "Dev Team"
+        
+        # Setup current user with groups
+        mock_current_user.groups = [mock_group]
+        mock_redmine.user.get.return_value = mock_current_user
+        mock_redmine.issue.filter.return_value = [mock_redmine_issue]
+        
+        # Execute with include_group_assignments=False
+        result = await list_my_redmine_issues(include_group_assignments=False)
+        
+        # Verify
+        assert result is not None
+        assert isinstance(result, list)
+        assert len(result) == 1  # Should only have user issue, not group issues
+        
+        issue = result[0]
+        assert issue["id"] == 123
+        assert issue["subject"] == "Test Issue Subject"
+        
+        # Verify the filter was called only once (for user, not for groups)
+        mock_redmine.issue.filter.assert_called_once_with(
+            limit=50, offset=0, assigned_to_id=42
+        )
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_list_my_redmine_issues_deduplication(self, mock_redmine, mock_current_user):
+        """Test that duplicate issues are properly deduplicated."""
+        # Setup - create mock group
+        mock_group = Mock()
+        mock_group.id = 10
+        mock_group.name = "Dev Team"
+        
+        # Setup current user with groups
+        mock_current_user.groups = [mock_group]
+        mock_redmine.user.get.return_value = mock_current_user
+        
+        # Create a mock issue that appears in both user and group results
+        duplicate_issue = Mock()
+        duplicate_issue.id = 789  # Same ID for both queries
+        duplicate_issue.subject = "Duplicate Issue"
+        duplicate_issue.description = "Duplicate issue description"
+        duplicate_issue.project = Mock(id=1, name="Test Project")
+        duplicate_issue.status = Mock(id=1, name="New")
+        duplicate_issue.priority = Mock(id=2, name="Normal")
+        duplicate_issue.author = Mock(id=1, name="Test Author")
+        duplicate_issue.assigned_to = Mock(id=2, name="Test Assignee")
+        duplicate_issue.created_on = Mock()
+        duplicate_issue.created_on.isoformat.return_value = "2025-01-01T10:00:00"
+        duplicate_issue.updated_on = Mock()
+        duplicate_issue.updated_on.isoformat.return_value = "2025-01-02T15:30:00"
+        
+        # Both user and group queries return the same issue
+        mock_redmine.issue.filter.return_value = [duplicate_issue]
+        
+        # Execute
+        result = await list_my_redmine_issues()
+        
+        # Verify - should only appear once despite being returned by both queries
+        assert result is not None
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert result[0]["id"] == 789
+        assert result[0]["subject"] == "Duplicate Issue"
