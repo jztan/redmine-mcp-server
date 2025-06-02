@@ -6,6 +6,8 @@ A Model Context Protocol (MCP) server that integrates with Redmine project manag
 
 - **Project Management**: List all accessible Redmine projects
 - **Issue Tracking**: Retrieve detailed information about specific Redmine issues
+- **Advanced Issue Filtering**: Filter and sort issues by project, status, assignee with pagination
+- **Group Assignment Support**: Include issues assigned to user's groups with smart discovery
 - **Multiple Authentication**: Support for both username/password and API key authentication
 - **FastAPI Integration**: RESTful API with Server-Sent Events (SSE) for real-time communication
 - **MCP Compatibility**: Full compatibility with Model Context Protocol standards
@@ -179,6 +181,47 @@ Lists all accessible projects in the Redmine instance.
 ]
 ```
 
+### `list_my_redmine_issues(...)`
+Lists Redmine issues with filtering and sorting options, defaulting to issues assigned to the current user.
+
+**Parameters:**
+- `project_id` (optional): Filter by specific project ID
+- `status_id` (optional): Filter by status ID or name (e.g., 'open', 'closed')
+- `assigned_to_id` (optional): Filter by assignee ('me' or specific user ID). Defaults to 'me'
+- `sort` (optional): Sorting criteria (e.g., 'priority:desc', 'updated_on:asc')
+- `limit` (optional): Number of issues to return. Defaults to 25
+- `offset` (optional): Offset for pagination. Defaults to 0
+
+**Examples:**
+```python
+# Get my issues (default behavior)
+await list_my_redmine_issues()
+
+# Get open issues in project 1, sorted by priority
+await list_my_redmine_issues(project_id=1, status_id='open', sort='priority:desc')
+
+# Get issues assigned to specific user with pagination
+await list_my_redmine_issues(assigned_to_id='123', limit=10, offset=20)
+```
+
+**Returns:**
+```json
+[
+  {
+    "id": 123,
+    "subject": "Issue title",
+    "description": "Issue description",
+    "project": {"id": 1, "name": "Project Name"},
+    "status": {"id": 1, "name": "New"},
+    "priority": {"id": 2, "name": "Normal"},
+    "author": {"id": 1, "name": "Author Name"},
+    "assigned_to": {"id": 2, "name": "Assignee Name"},
+    "created_on": "2025-01-01T00:00:00",
+    "updated_on": "2025-01-02T00:00:00"
+  }
+]
+```
+
 ## Development
 
 ### Dependencies
@@ -206,12 +249,7 @@ Core dependencies are managed in `pyproject.toml`:
 
 ### Testing
 
-The project includes a comprehensive test suite with 20 tests covering unit tests, integration tests, and connection validation.
 
-#### Test Structure
-- **Unit Tests** (10 tests): Test individual functions with mocked dependencies
-- **Integration Tests** (7 tests): Test end-to-end functionality with real Redmine connections
-- **Connection Tests** (3 tests): Validate infrastructure and connectivity
 
 #### Running Tests
 
@@ -366,39 +404,6 @@ This project is planned to be open-sourced. Contributions will be welcome once t
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Version History
-
-- **v0.1.0** - Initial development version
-  - Basic MCP server functionality
-  - Redmine project and issue retrieval
-  - FastAPI with SSE transport
-  - Environment-based configuration
-  - Comprehensive test suite (20 tests)
-  - Docker containerization with deployment automation
-  - Advanced test runner with coverage reporting
-  - Complete documentation
-
 ## Roadmap
 
-### Completed ✅
-- [x] Docker containerization with multi-stage builds
-- [x] Comprehensive unit and integration tests (20 tests)
-- [x] Enhanced error handling and logging
-- [x] Documentation improvements
-- [x] Environment-based configuration
-- [x] Test coverage reporting
-- [x] Deployment automation
-
-### In Progress 🚧
-- [ ] Additional Redmine tools (create/update issues, time tracking, user management)
-- [ ] CI/CD pipeline setup
-- [ ] Performance optimizations and caching
-
-### Planned 📋
-- [ ] User management tools
-- [ ] Time tracking integration
-- [ ] Custom field support
-- [ ] Webhook support for real-time updates
-- [ ] Advanced search and filtering
-- [ ] Batch operations
-- [ ] Export/import functionality
+For detailed information about planned features, current development status, and future enhancements, see [ROADMAP.md](ROADMAP.md).
