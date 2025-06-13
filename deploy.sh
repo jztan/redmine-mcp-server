@@ -101,15 +101,15 @@ test_deployment() {
     echo "🧪 Testing deployment..."
     sleep 5  # Wait for container to start
     
-    if curl -s -f http://localhost:8000/health > /dev/null 2>&1; then
-        echo "✅ Health check passed"
+    if curl -s -f http://localhost:8000/messages/ > /dev/null 2>&1; then
+        echo "✅ Messages endpoint check passed"
     else
-        echo "⚠️  Health check failed - checking if server is starting..."
+        echo "⚠️  Messages endpoint check failed - checking if server is starting..."
         sleep 10
-        if curl -s -f http://localhost:8000/health > /dev/null 2>&1; then
-            echo "✅ Health check passed (after delay)"
+        if curl -s -f http://localhost:8000/messages/ > /dev/null 2>&1; then
+            echo "✅ Messages endpoint check passed (after delay)"
         else
-            echo "❌ Health check failed"
+            echo "❌ Messages endpoint check failed"
             echo "🔍 Container logs:"
             docker logs --tail 10 $CONTAINER_NAME
         fi
