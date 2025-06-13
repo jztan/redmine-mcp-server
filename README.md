@@ -91,8 +91,8 @@ redmine-mcp-server/
    # REDMINE_API_KEY=your_api_key
    
    # Server configuration
-   SERVER_HOST=0.0.0.0
-   SERVER_PORT=8000
+   SERVER_HOST=0.0.0.0  # Listening host (default: 0.0.0.0)
+   SERVER_PORT=8000     # Listening port (default: 8000)
    ```
 
 ## Usage
@@ -109,7 +109,7 @@ uv run fastapi dev src/redmine_mcp_server/main.py
 uv run python src/redmine_mcp_server/main.py
 ```
 
-The server will start on `http://localhost:8000` with the MCP endpoint available at `/sse`.
+The server will start on `http://<SERVER_HOST>:<SERVER_PORT>` (defaults to `0.0.0.0:8000`) with the MCP endpoint available at `/sse`.
 
 ### Testing Connection
 
