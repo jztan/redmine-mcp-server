@@ -109,7 +109,9 @@ uv run fastapi dev src/redmine_mcp_server/main.py
 uv run python src/redmine_mcp_server/main.py
 ```
 
-The server will start on `http://localhost:8000` with the MCP endpoint available at `/sse`.
+By default the server runs on `http://0.0.0.0:8000`. You can override the host or
+port using the `SERVER_HOST` and `SERVER_PORT` environment variables. The MCP
+endpoint is available at `/sse`.
 
 ### Testing Connection
 

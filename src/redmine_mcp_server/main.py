@@ -20,6 +20,8 @@ from fastapi import FastAPI, Request
 from mcp.server.sse import SseServerTransport
 from starlette.routing import Mount
 import uvicorn
+import os
+from dotenv import load_dotenv
 from .redmine_handler import mcp
 
 
@@ -43,4 +45,7 @@ async def handle_sse(request: Request):
         )
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
+    host = os.getenv("SERVER_HOST", "0.0.0.0")
+    port = int(os.getenv("SERVER_PORT", "8000"))
+    uvicorn.run(app, host=host, port=port)
