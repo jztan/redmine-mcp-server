@@ -6,6 +6,7 @@ A Model Context Protocol (MCP) server that integrates with Redmine project manag
 
 - **Project Management**: List all accessible Redmine projects
 - **Issue Tracking**: Retrieve detailed information about specific Redmine issues
+- **Issue Management**: Create and update issues directly from Redmine
 - **Multiple Authentication**: Support for both username/password and API key authentication
 - **FastAPI Integration**: RESTful API with Server-Sent Events (SSE) for real-time communication
 - **MCP Compatibility**: Full compatibility with Model Context Protocol standards
@@ -190,6 +191,26 @@ Lists all accessible projects in the Redmine instance.
   }
 ]
 ```
+
+### `create_redmine_issue(project_id: int, subject: str, description: str = "", **fields)`
+Creates a new issue in the specified project.
+
+**Parameters:**
+- `project_id`: ID of the project
+- `subject`: Issue subject
+- `description`: Optional description
+- `**fields`: Additional Redmine fields such as `priority_id`
+
+**Returns:** Details of the created issue.
+
+### `update_redmine_issue(issue_id: int, fields: Dict[str, Any])`
+Updates an existing issue with the provided fields.
+
+**Parameters:**
+- `issue_id`: ID of the issue to update
+- `fields`: Dictionary of fields to update
+
+**Returns:** Updated issue details.
 
 ## Development
 
@@ -381,6 +402,11 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Version History
 
+- **v0.1.2** - Added issue creation and update tools
+  - `create_redmine_issue` and `update_redmine_issue`
+
+- **v0.1.1** - Documentation improvements and licensing updates
+
 - **v0.1.0** - Initial development version
   - Basic MCP server functionality
   - Redmine project and issue retrieval
@@ -401,9 +427,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [x] Environment-based configuration
 - [x] Test coverage reporting
 - [x] Deployment automation
+- [x] Additional Redmine tools (create/update issues)
 
 ### In Progress 🚧
-- [ ] Additional Redmine tools (create/update issues, time tracking, user management)
+- [ ] Time tracking and user management tools
 - [ ] CI/CD pipeline setup
 - [ ] Performance optimizations and caching
 
