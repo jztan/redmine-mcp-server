@@ -11,6 +11,16 @@ A Model Context Protocol (MCP) server that integrates with Redmine project manag
 - **MCP Compatibility**: Full compatibility with Model Context Protocol standards
 - **Docker Support**: Ready for containerized deployment
 
+## Quick Start
+
+```bash
+uv venv
+source .venv/bin/activate
+uv pip install -e .
+uv run fastapi dev src/redmine_mcp_server/main.py
+```
+
+
 ## Architecture
 
 The server is built using:
@@ -362,7 +372,8 @@ Enable debug logging by modifying the FastAPI app initialization in `main.py`.
 
 ## Contributing
 
-This project is planned to be open-sourced. Contributions will be welcome once the repository is public.
+Contributions are welcome! Please open an issue or submit a pull request.
+Before sending a PR, run `python tests/run_tests.py --all` to ensure all tests pass.
 
 ## License
 
