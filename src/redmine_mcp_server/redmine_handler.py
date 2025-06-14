@@ -62,13 +62,16 @@ mcp = FastMCP("redmine_mcp_tools")
 
 
 @mcp.tool()
-async def get_redmine_issue(issue_id: int) -> Optional[Dict[str, Any]]:
+async def get_redmine_issue(issue_id: int) -> Dict[str, Any]:
     """
-    Retrieves details for a specific Redmine issue by its ID.
+    Retrieve a specific Redmine issue by ID.
+    
     Args:
-        issue_id: The ID of the Redmine issue.
+        issue_id: The ID of the issue to retrieve
+        
     Returns:
-        A dictionary containing issue details or None if not found or error.
+        Dict[str, Any]: A dictionary containing issue details, or a dictionary 
+                       with an "error" key if the issue cannot be retrieved
     """
     if not redmine:
         return {"error": "Redmine client not initialized."}
