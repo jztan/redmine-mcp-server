@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - New MCP tools `create_redmine_issue` and `update_redmine_issue` for managing issues
 - Documentation updates describing the new tools
+- Integration tests for issue creation and update
 
 ## [0.1.1] - 2025-05-25
 

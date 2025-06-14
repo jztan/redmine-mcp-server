@@ -239,11 +239,11 @@ Core dependencies are managed in `pyproject.toml`:
 
 ### Testing
 
-The project includes a comprehensive test suite with 20 tests covering unit tests, integration tests, and connection validation.
+The project includes a comprehensive test suite with 22 tests covering unit tests, integration tests, and connection validation.
 
 #### Test Structure
 - **Unit Tests** (10 tests): Test individual functions with mocked dependencies
-- **Integration Tests** (7 tests): Test end-to-end functionality with real Redmine connections
+- **Integration Tests** (9 tests): Test end-to-end functionality with real Redmine connections
 - **Connection Tests** (3 tests): Validate infrastructure and connectivity
 
 #### Running Tests
@@ -412,7 +412,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
   - Redmine project and issue retrieval
   - FastAPI with SSE transport
   - Environment-based configuration
-  - Comprehensive test suite (20 tests)
+  - Comprehensive test suite (22 tests)
   - Docker containerization with deployment automation
   - Advanced test runner with coverage reporting
   - Complete documentation
@@ -421,7 +421,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ### Completed ✅
 - [x] Docker containerization with multi-stage builds
-- [x] Comprehensive unit and integration tests (20 tests)
+- [x] Comprehensive unit and integration tests (22 tests)
 - [x] Enhanced error handling and logging
 - [x] Documentation improvements
 - [x] Environment-based configuration
