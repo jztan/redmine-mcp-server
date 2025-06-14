@@ -141,13 +141,14 @@ class TestRedmineIntegration:
             updated = await update_redmine_issue(issue_id, {"subject": updated_subject})
             assert updated["id"] == issue_id
             assert updated["subject"] == updated_subject
-
+        except Exception as e:
+            pytest.fail(f"Integration test failed: {e}")
         finally:
             # Clean up the created issue if possible
             try:
                 redmine.issue.delete(issue_id)
-            except Exception:
-                pass
+            except Exception as e:
+                pytest.fail(f"Integration test failed: {e}")
 
 
 class TestFastAPIIntegration:
