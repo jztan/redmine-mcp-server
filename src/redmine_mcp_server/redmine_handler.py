@@ -39,23 +39,21 @@ REDMINE_PASSWORD = os.getenv("REDMINE_PASSWORD")
 REDMINE_API_KEY = os.getenv("REDMINE_API_KEY")
 
 # Initialize Redmine client
-# It's better to initialize it once if possible, or handle initialization within tools
-# For simplicity, we'll initialize it globally here.
-# Ensure error handling if credentials are not set.
-if not REDMINE_URL:
-    raise ValueError("REDMINE_URL not set in .env file")
-
-try:
-    if REDMINE_API_KEY:
-        redmine = Redmine(REDMINE_URL, key=REDMINE_API_KEY)
-    elif REDMINE_USERNAME and REDMINE_PASSWORD:
-        redmine = Redmine(REDMINE_URL, username=REDMINE_USERNAME, password=REDMINE_PASSWORD)
-    else:
-        raise ValueError("Redmine credentials (API Key or Username/Password) not fully set in .env file")
-except Exception as e:
-    print(f"Error initializing Redmine client: {e}")
-    # Depending on FastMCP, you might want to prevent server start or handle this gracefully
-    redmine = None # Set to None so tools can check
+# It's better to initialize it once if possible, or handle initialization within tools.
+# For simplicity, we'll initialize it globally here. If the environment variables
+# are missing, the client remains ``None`` so tools can handle it gracefully.
+redmine = None
+if REDMINE_URL and (REDMINE_API_KEY or (REDMINE_USERNAME and REDMINE_PASSWORD)):
+    try:
+        if REDMINE_API_KEY:
+            redmine = Redmine(REDMINE_URL, key=REDMINE_API_KEY)
+        else:
+            redmine = Redmine(
+                REDMINE_URL, username=REDMINE_USERNAME, password=REDMINE_PASSWORD
+            )
+    except Exception as e:
+        print(f"Error initializing Redmine client: {e}")
+        redmine = None
 
 # Initialize FastMCP server
 mcp = FastMCP("redmine_mcp_tools")
