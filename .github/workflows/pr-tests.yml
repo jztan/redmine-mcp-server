@@ -22,4 +22,4 @@ jobs:
       - name: Run tests
         run: |
           source .venv/bin/activate
-          python tests/run_tests.py --all
+          python tests/run_tests.py --all --verbose
