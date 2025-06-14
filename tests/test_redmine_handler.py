@@ -6,7 +6,7 @@ including tests for project listing and issue retrieval functionality.
 """
 import pytest
 import asyncio
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from typing import Dict, Any, List
 import os
 import sys
