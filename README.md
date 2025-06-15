@@ -252,11 +252,11 @@ Core dependencies are managed in `pyproject.toml`:
 
 ### Testing
 
-The project includes a comprehensive test suite with 22 tests covering unit tests, integration tests, and connection validation.
+The project includes a comprehensive test suite with 27 tests covering unit tests, integration tests, and connection validation.
 
 #### Test Structure
-- **Unit Tests** (10 tests): Test individual functions with mocked dependencies
-- **Integration Tests** (9 tests): Test end-to-end functionality with real Redmine connections
+- **Unit Tests** (16 tests): Test individual functions with mocked dependencies
+- **Integration Tests** (8 tests): Test end-to-end functionality with real Redmine connections
 - **Connection Tests** (3 tests): Validate infrastructure and connectivity
 
 #### Running Tests
