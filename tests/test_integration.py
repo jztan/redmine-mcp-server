@@ -113,6 +113,43 @@ class TestRedmineIntegration:
         except Exception as e:
             pytest.fail(f"Integration test failed: {e}")
 
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_create_update_issue_integration(self):
+        """Integration test for creating and updating an issue."""
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        from redmine_mcp_server.redmine_handler import create_redmine_issue, update_redmine_issue
+
+        # Pick the first available project
+        projects = list(redmine.project.all())
+        if not projects:
+            pytest.skip("No projects available for testing")
+        project_id = projects[0].id
+
+        try:
+            # Create a new issue
+            new_subject = "Integration Test Issue"
+            issue = await create_redmine_issue(project_id, new_subject, "Created by integration test")
+            assert issue and "id" in issue
+            issue_id = issue["id"]
+
+            # Update the issue
+            updated_subject = new_subject + " Updated"
+            updated = await update_redmine_issue(issue_id, {"subject": updated_subject})
+            assert updated["id"] == issue_id
+            assert updated["subject"] == updated_subject
+        except Exception as e:
+            pytest.fail(f"Integration test failed: {e}")
+        finally:
+            # Clean up the created issue if possible
+            try:
+                redmine.issue.delete(issue_id)
+            except Exception as e:
+                pytest.fail(f"Integration test failed: {e}")
+
 
 class TestFastAPIIntegration:
     """Integration tests for the FastAPI server."""

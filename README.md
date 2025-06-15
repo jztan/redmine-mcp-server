@@ -12,6 +12,7 @@ A Model Context Protocol (MCP) server that integrates with Redmine project manag
 
 - **Project Management**: List all accessible Redmine projects
 - **Issue Tracking**: Retrieve detailed information about specific Redmine issues
+- **Issue Management**: Create and update issues directly from Redmine
 - **Multiple Authentication**: Support for both username/password and API key authentication
 - **FastAPI Integration**: RESTful API with Server-Sent Events (SSE) for real-time communication
 - **MCP Compatibility**: Full compatibility with Model Context Protocol standards
@@ -197,6 +198,26 @@ Lists all accessible projects in the Redmine instance.
 ]
 ```
 
+### `create_redmine_issue(project_id: int, subject: str, description: str = "", **fields)`
+Creates a new issue in the specified project.
+
+**Parameters:**
+- `project_id`: ID of the project
+- `subject`: Issue subject
+- `description`: Optional description
+- `**fields`: Additional Redmine fields such as `priority_id`
+
+**Returns:** Details of the created issue.
+
+### `update_redmine_issue(issue_id: int, fields: Dict[str, Any])`
+Updates an existing issue with the provided fields.
+
+**Parameters:**
+- `issue_id`: ID of the issue to update
+- `fields`: Dictionary of fields to update
+
+**Returns:** Updated issue details.
+
 ## Development
 
 ### Dependencies
@@ -224,11 +245,11 @@ Core dependencies are managed in `pyproject.toml`:
 
 ### Testing
 
-The project includes a comprehensive test suite with 20 tests covering unit tests, integration tests, and connection validation.
+The project includes a comprehensive test suite with 22 tests covering unit tests, integration tests, and connection validation.
 
 #### Test Structure
 - **Unit Tests** (10 tests): Test individual functions with mocked dependencies
-- **Integration Tests** (7 tests): Test end-to-end functionality with real Redmine connections
+- **Integration Tests** (9 tests): Test end-to-end functionality with real Redmine connections
 - **Connection Tests** (3 tests): Validate infrastructure and connectivity
 
 #### Running Tests
@@ -387,29 +408,22 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Version History
 
-- **v0.1.0** - Initial development version
-  - Basic MCP server functionality
-  - Redmine project and issue retrieval
-  - FastAPI with SSE transport
-  - Environment-based configuration
-  - Comprehensive test suite (20 tests)
-  - Docker containerization with deployment automation
-  - Advanced test runner with coverage reporting
-  - Complete documentation
+See the [CHANGELOG](CHANGELOG.md) for a detailed version history.
 
 ## Roadmap
 
 ### Completed ✅
 - [x] Docker containerization with multi-stage builds
-- [x] Comprehensive unit and integration tests (20 tests)
+- [x] Comprehensive unit and integration tests (22 tests)
 - [x] Enhanced error handling and logging
 - [x] Documentation improvements
 - [x] Environment-based configuration
 - [x] Test coverage reporting
 - [x] Deployment automation
+- [x] Additional Redmine tools (create/update issues)
 
 ### In Progress 🚧
-- [ ] Additional Redmine tools (create/update issues, time tracking, user management)
+- [ ] Time tracking and user management tools
 - [ ] CI/CD pipeline setup
 - [ ] Performance optimizations and caching
 
