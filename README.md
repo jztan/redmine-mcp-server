@@ -10,13 +10,20 @@ A Model Context Protocol (MCP) server that integrates with Redmine project manag
 
 ## Features
 
-- **Project Management**: List all accessible Redmine projects
-- **Issue Tracking**: Retrieve detailed information about specific Redmine issues
-- **Issue Management**: Create and update issues directly from Redmine
-- **Multiple Authentication**: Support for both username/password and API key authentication
-- **FastAPI Integration**: RESTful API with Server-Sent Events (SSE) for real-time communication
-- **MCP Compatibility**: Full compatibility with Model Context Protocol standards
-- **Docker Support**: Ready for containerized deployment
+### Redmine Tools
+- List your accessible projects
+- View full issue details
+- Create or update issues
+
+### API and Protocol
+- FastAPI server with Server-Sent Events
+- Compliant with the Model Context Protocol
+
+### Authentication
+- Use a username/password or API key
+
+### Deployment
+- Docker image for quick setup
 
 ## Quick Start
 
