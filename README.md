@@ -402,20 +402,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Version History
 
-- **v0.1.2** - Added issue creation and update tools
-  - `create_redmine_issue` and `update_redmine_issue`
-
-- **v0.1.1** - Documentation improvements and licensing updates
-
-- **v0.1.0** - Initial development version
-  - Basic MCP server functionality
-  - Redmine project and issue retrieval
-  - FastAPI with SSE transport
-  - Environment-based configuration
-  - Comprehensive test suite (22 tests)
-  - Docker containerization with deployment automation
-  - Advanced test runner with coverage reporting
-  - Complete documentation
+See the [CHANGELOG](CHANGELOG.md) for a detailed version history.
 
 ## Roadmap
 
