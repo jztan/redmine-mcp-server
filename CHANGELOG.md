@@ -2,15 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.1.2] - 2025-05-26
 
+### Changed
+- Roadmap moved to its own document with updated plans
+- Improved README badges and links
+
 ### Added
 - New MCP tools `create_redmine_issue` and `update_redmine_issue` for managing issues
 - Documentation updates describing the new tools
 - Integration tests for issue creation and update
+- Integration test for Redmine issue management
 
 ## [0.1.1] - 2025-05-25
 
