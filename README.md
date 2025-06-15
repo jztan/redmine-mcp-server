@@ -170,77 +170,17 @@ Add to your MCP client configuration (e.g., VS Code settings.json):
 ### `get_redmine_issue(issue_id: int)`
 Retrieves detailed information about a specific Redmine issue.
 
-**Parameters:**
-- `issue_id`: The ID of the Redmine issue
-
-**Returns:**
-```json
-{
-  "id": 123,
-  "subject": "Issue title",
-  "description": "Issue description",
-  "project": {"id": 1, "name": "Project Name"},
-  "status": {"id": 1, "name": "New"},
-  "priority": {"id": 2, "name": "Normal"},
-  "author": {"id": 1, "name": "Author Name"},
-  "assigned_to": {"id": 2, "name": "Assignee Name"},
-  "created_on": "2025-01-01T00:00:00",
-  "updated_on": "2025-01-02T00:00:00"
-}
-```
-
 ### `list_redmine_projects()`
 Lists all accessible projects in the Redmine instance.
 
-**Returns:**
-```json
-[
-  {
-    "id": 1,
-    "name": "Project Name",
-    "identifier": "project-identifier",
-    "description": "Project description",
-    "created_on": "2025-01-01T00:00:00"
-  }
-]
-```
-
-
 ### `list_my_redmine_issues(**filters)`
-Lists issues assigned to the authenticated user.
-
-This uses the Redmine filter `assigned_to_id="me"` to retrieve only the current user's issues. Additional query parameters can be supplied as keyword arguments.
-
-**Returns:**
-```json
-[
-  {
-    "id": 123,
-    "subject": "Issue title",
-    "project": {"id": 1, "name": "Project Name"}
-  }
-]
-```
+Lists issues assigned to the authenticated user. Uses the Redmine filter `assigned_to_id="me"`. Additional query parameters can be supplied as keyword arguments.
 
 ### `create_redmine_issue(project_id: int, subject: str, description: str = "", **fields)`
-Creates a new issue in the specified project.
-
-**Parameters:**
-- `project_id`: ID of the project
-- `subject`: Issue subject
-- `description`: Optional description
-- `**fields`: Additional Redmine fields such as `priority_id`
-
-**Returns:** Details of the created issue.
+Creates a new issue in the specified project. Additional Redmine fields such as `priority_id` can be passed as keyword arguments.
 
 ### `update_redmine_issue(issue_id: int, fields: Dict[str, Any])`
 Updates an existing issue with the provided fields.
-
-**Parameters:**
-- `issue_id`: ID of the issue to update
-- `fields`: Dictionary of fields to update
-
-**Returns:** Updated issue details.
 
 ## Development
 
