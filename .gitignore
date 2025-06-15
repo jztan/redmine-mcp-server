@@ -1,3 +1,6 @@
+# VsCode and IDE specific files
+.vscode/settings.json
+
 # Python-generated files
 __pycache__/
 *.py[oc]
