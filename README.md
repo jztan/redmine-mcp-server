@@ -419,4 +419,4 @@ See the [CHANGELOG](CHANGELOG.md) for a detailed version history.
 
 ## Roadmap
 
-See [roadmap.md](./ROADMAP.md) for the latest roadmap.
+See [roadmap.md](./roadmap.md) for the latest roadmap.
