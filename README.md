@@ -205,6 +205,22 @@ Lists all accessible projects in the Redmine instance.
 ]
 ```
 
+
+### `list_my_redmine_issues(**filters)`
+Lists issues assigned to the authenticated user.
+
+This uses the Redmine filter `assigned_to_id="me"` to retrieve only the current user's issues. Additional query parameters can be supplied as keyword arguments.
+
+**Returns:**
+```json
+[
+  {
+    "id": 123,
+    "subject": "Issue title",
+    "project": {"id": 1, "name": "Project Name"}
+  }
+]
+
 ### `create_redmine_issue(project_id: int, subject: str, description: str = "", **fields)`
 Creates a new issue in the specified project.
 

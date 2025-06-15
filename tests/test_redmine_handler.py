@@ -345,3 +345,54 @@ class TestRedmineHandler:
 
         result = await update_redmine_issue(1, {"subject": "X"})
         assert result["error"] == "Redmine client not initialized."
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_list_my_redmine_issues_success(self, mock_redmine, mock_redmine_issue):
+        """Test listing issues assigned to current user."""
+        mock_redmine.issue.filter.return_value = [mock_redmine_issue]
+
+        from redmine_mcp_server.redmine_handler import list_my_redmine_issues
+
+        result = await list_my_redmine_issues()
+
+        assert isinstance(result, list)
+        assert result[0]["id"] == 123
+        mock_redmine.issue.filter.assert_called_once_with(assigned_to_id="me")
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_list_my_redmine_issues_empty(self, mock_redmine):
+        """Test listing issues when none exist."""
+        mock_redmine.issue.filter.return_value = []
+
+        from redmine_mcp_server.redmine_handler import list_my_redmine_issues
+
+        result = await list_my_redmine_issues()
+
+        assert isinstance(result, list)
+        assert len(result) == 0
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_list_my_redmine_issues_error(self, mock_redmine):
+        """Test error handling when listing issues."""
+        mock_redmine.issue.filter.side_effect = Exception("Boom")
+
+        from redmine_mcp_server.redmine_handler import list_my_redmine_issues
+
+        result = await list_my_redmine_issues()
+
+        assert isinstance(result, list)
+        assert "error" in result[0]
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine', None)
+    async def test_list_my_redmine_issues_no_client(self):
+        """Test listing issues when client is not initialized."""
+        from redmine_mcp_server.redmine_handler import list_my_redmine_issues
+
+        result = await list_my_redmine_issues()
+
+        assert isinstance(result, list)
+        assert result[0]["error"] == "Redmine client not initialized."

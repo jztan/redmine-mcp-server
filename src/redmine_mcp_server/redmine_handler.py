@@ -148,6 +148,24 @@ async def list_redmine_projects() -> List[Dict[str, Any]]:
 
 
 @mcp.tool()
+async def list_my_redmine_issues(**filters: Any) -> List[Dict[str, Any]]:
+    """List issues assigned to the authenticated user.
+
+    This uses the Redmine REST API filter ``assigned_to_id='me'`` to
+    retrieve issues for the current user. Additional filters can be
+    supplied via keyword arguments.
+    """
+    if not redmine:
+        return [{"error": "Redmine client not initialized."}]
+    try:
+        issues = redmine.issue.filter(assigned_to_id="me", **filters)
+        return [_issue_to_dict(issue) for issue in issues]
+    except Exception as e:
+        print(f"Error listing issues assigned to current user: {e}")
+        return [{"error": "An error occurred while listing issues."}]
+
+
+@mcp.tool()
 async def create_redmine_issue(
     project_id: int,
     subject: str,
