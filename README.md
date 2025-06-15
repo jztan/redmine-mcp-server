@@ -10,66 +10,33 @@ A Model Context Protocol (MCP) server that integrates with Redmine project manag
 
 ## Features
 
-### Redmine Tools
-- List your accessible projects
-- View full issue details
-- Create or update issues
-
-### API and Protocol
-- FastAPI server with Server-Sent Events
-- Compliant with the Model Context Protocol
-
-### Authentication
-- Use a username/password or API key
-
-### Deployment
-- Docker image for quick setup
+- **Redmine Integration**: List projects, view/create/update issues
+- **MCP Compliant**: Full Model Context Protocol support with FastAPI and Server-Sent Events
+- **Flexible Authentication**: Username/password or API key
+- **Docker Ready**: Complete containerization support
+- **Comprehensive Testing**: Unit, integration, and connection tests
 
 ## Quick Start
 
 ```bash
+# Clone and setup
+git clone https://github.com/jztan/redmine-mcp-server
+cd redmine-mcp-server
+
+# Install dependencies
 uv venv
 source .venv/bin/activate
 uv pip install -e .
+
+# Configure environment
+cp .env.example .env
+# Edit .env with your Redmine settings
+
+# Run the server
 uv run fastapi dev src/redmine_mcp_server/main.py
 ```
 
-
-## Architecture
-
-The server is built using:
-- **FastAPI**: Modern, fast web framework for building APIs
-- **FastMCP**: Model Context Protocol implementation
-- **python-redmine**: Official Redmine Python library
-- **Server-Sent Events (SSE)**: Real-time communication transport
-
-## Project Structure
-
-```
-redmine-mcp-server/
-├── src/
-│   └── redmine_mcp_server/
-│       ├── __init__.py
-│       ├── main.py              # FastAPI application entry point
-│       └── redmine_handler.py   # MCP tools and Redmine integration
-├── tests/
-│   ├── conftest.py             # Test configuration and fixtures
-│   ├── run_tests.py            # Advanced test runner with coverage
-│   ├── test_connection.py      # Connection and infrastructure tests
-│   ├── test_integration.py     # End-to-end integration tests
-│   └── test_redmine_handler.py # Unit tests for MCP tools
-├── .env.example                # Environment configuration template
-├── .env                        # Environment configuration (not in git)
-├── .env.docker                 # Docker environment configuration
-├── .gitignore                  # Git ignore rules
-├── pytest.ini                 # Test configuration
-├── pyproject.toml              # Project configuration and dependencies
-├── uv.lock                     # Dependency lock file
-├── Dockerfile                  # Container configuration
-├── docker-compose.yml          # Multi-container setup
-├── deploy.sh                   # Deployment automation script
-└── README.md                   # This file
-```
+The server runs on `http://localhost:8000` with the MCP endpoint at `/sse`.
 
 ## Installation
 
@@ -79,79 +46,46 @@ redmine-mcp-server/
 - [uv](https://docs.astral.sh/uv/) package manager
 - Access to a Redmine instance
 
-### Setup
+### Configuration
 
-1. **Clone the repository** (when available):
-   ```bash
-   git clone https://github.com/jztan/redmine-mcp-server
-   cd redmine-mcp-server
-   ```
+Create and edit your environment configuration:
 
-2. **Install dependencies using uv**:
-   ```bash
-   uv venv
-   source .venv/bin/activate  # On macOS/Linux
-   uv pip install -e .
-   ```
+```bash
+cp .env.example .env
+```
 
-3. **Install development dependencies (for testing)**:
-   ```bash
-   uv pip install pytest pytest-asyncio pytest-cov
-   ```
+```env
+# Required: Redmine connection
+REDMINE_URL=https://your-redmine-server.com
 
-4. **Configure environment variables**:
-   ```bash
-   cp .env.example .env
-   ```
-   
-   Edit `.env` with your Redmine configuration:
-   ```env
-   # Option 1: Username and Password
-   REDMINE_URL=https://your-redmine-server.com
-   REDMINE_USERNAME=your_username
-   REDMINE_PASSWORD=your_password
-   
-   # Option 2: API Key (alternative)
-   # REDMINE_API_KEY=your_api_key
-   
-   # Server configuration
-   SERVER_HOST=0.0.0.0
-   SERVER_PORT=8000
-   ```
+# Authentication (choose one)
+REDMINE_USERNAME=your_username
+REDMINE_PASSWORD=your_password
+# OR
+# REDMINE_API_KEY=your_api_key
+
+# Optional: Server settings
+SERVER_HOST=0.0.0.0
+SERVER_PORT=8000
+```
+
+**Note:** API key authentication is preferred for security.
 
 ## Usage
 
 ### Running the Server
 
-#### Development Mode
 ```bash
+# Development mode (auto-reload)
 uv run fastapi dev src/redmine_mcp_server/main.py
-```
 
-#### Production Mode
-```bash
+# Production mode
 uv run python src/redmine_mcp_server/main.py
-```
-
-By default the server runs on `http://0.0.0.0:8000`. You can override the host or
-port using the `SERVER_HOST` and `SERVER_PORT` environment variables. The MCP
-endpoint is available at `/sse`.
-
-### Testing Connection
-
-Test your Redmine connection:
-```bash
-python tests/test_connection.py
-```
-
-Or test using our test runner:
-```bash
-python tests/run_tests.py --integration
 ```
 
 ### MCP Client Configuration
 
-Add to your MCP client configuration (e.g., VS Code settings.json):
+Configure your MCP client (e.g., VS Code settings.json):
 
 ```json
 {
@@ -165,240 +99,129 @@ Add to your MCP client configuration (e.g., VS Code settings.json):
 }
 ```
 
+### Testing Your Setup
+
+```bash
+# Test Redmine connection
+python tests/test_connection.py
+
+# Run full test suite
+python tests/run_tests.py --all
+```
+
 ## Available MCP Tools
 
 ### `get_redmine_issue(issue_id: int)`
 Retrieves detailed information about a specific Redmine issue.
 
-**Parameters:**
-- `issue_id`: The ID of the Redmine issue
-
-**Returns:**
-```json
-{
-  "id": 123,
-  "subject": "Issue title",
-  "description": "Issue description",
-  "project": {"id": 1, "name": "Project Name"},
-  "status": {"id": 1, "name": "New"},
-  "priority": {"id": 2, "name": "Normal"},
-  "author": {"id": 1, "name": "Author Name"},
-  "assigned_to": {"id": 2, "name": "Assignee Name"},
-  "created_on": "2025-01-01T00:00:00",
-  "updated_on": "2025-01-02T00:00:00"
-}
-```
-
 ### `list_redmine_projects()`
 Lists all accessible projects in the Redmine instance.
 
-**Returns:**
-```json
-[
-  {
-    "id": 1,
-    "name": "Project Name",
-    "identifier": "project-identifier",
-    "description": "Project description",
-    "created_on": "2025-01-01T00:00:00"
-  }
-]
-```
+### `list_my_redmine_issues(**filters)`
+Lists issues assigned to the authenticated user. Uses the Redmine filter `assigned_to_id="me"`. Additional query parameters can be supplied as keyword arguments.
 
 ### `create_redmine_issue(project_id: int, subject: str, description: str = "", **fields)`
-Creates a new issue in the specified project.
-
-**Parameters:**
-- `project_id`: ID of the project
-- `subject`: Issue subject
-- `description`: Optional description
-- `**fields`: Additional Redmine fields such as `priority_id`
-
-**Returns:** Details of the created issue.
+Creates a new issue in the specified project. Additional Redmine fields such as `priority_id` can be passed as keyword arguments.
 
 ### `update_redmine_issue(issue_id: int, fields: Dict[str, Any])`
 Updates an existing issue with the provided fields.
 
-**Parameters:**
-- `issue_id`: ID of the issue to update
-- `fields`: Dictionary of fields to update
-
-**Returns:** Updated issue details.
-
-## Development
-
-### Dependencies
-
-Core dependencies are managed in `pyproject.toml`:
-- `fastapi[standard]>=0.115.12` - Web framework
-- `mcp[cli]>=1.9.1` - Model Context Protocol
-- `python-redmine>=2.5.0` - Redmine API client
-- `python-dotenv>=1.0.0` - Environment configuration
-- `httpx>=0.28.1` - HTTP client
-- `uvicorn` - ASGI server
-
-### Adding New Tools
-
-1. Add your tool function to `src/redmine_mcp_server/redmine_handler.py`:
-   ```python
-   @mcp.tool()
-   async def your_new_tool(param: str) -> Dict[str, Any]:
-       """Tool description"""
-       # Implementation here
-       return {"result": "data"}
-   ```
-
-2. The tool will automatically be available through the MCP interface.
-
-### Testing
-
-The project includes a comprehensive test suite with 27 tests covering unit tests, integration tests, and connection validation.
-
-#### Test Structure
-- **Unit Tests** (16 tests): Test individual functions with mocked dependencies
-- **Integration Tests** (8 tests): Test end-to-end functionality with real Redmine connections
-- **Connection Tests** (3 tests): Validate infrastructure and connectivity
-
-#### Running Tests
-
-**Run all tests:**
-```bash
-python tests/run_tests.py --all
-```
-
-**Run unit tests only (default):**
-```bash
-python tests/run_tests.py
-```
-
-**Run integration tests only:**
-```bash
-python tests/run_tests.py --integration
-```
-
-**Run with coverage report:**
-```bash
-python tests/run_tests.py --coverage
-```
-
-**Run specific test file:**
-```bash
-python tests/run_tests.py --file test_redmine_handler.py
-```
-
-**Verbose output:**
-```bash
-python tests/run_tests.py --all --verbose
-```
-
-#### Test Requirements
-- Unit tests: No external dependencies (use mocks)
-- Integration tests: Require valid Redmine server connection
-- All tests: Automatically check dependencies (pytest, pytest-asyncio)
-
-#### Coverage Report
-After running tests with `--coverage`, view the HTML coverage report:
-```bash
-open htmlcov/index.html
-```
-
-## Authentication
-
-The server supports two authentication methods:
-
-### Username/Password
-```env
-REDMINE_URL=https://your-redmine-server.com
-REDMINE_USERNAME=your_username
-REDMINE_PASSWORD=your_password
-```
-
-### API Key
-```env
-REDMINE_URL=https://your-redmine-server.com
-REDMINE_API_KEY=your_api_key
-```
-
-**Note:** API key authentication is preferred for security reasons.
-
-## Docker Support
-
-The project includes complete Docker containerization support for easy deployment.
+## Docker Deployment
 
 ### Quick Start with Docker
 
-**Using docker-compose (recommended):**
 ```bash
-# Copy and configure environment
+# Configure environment
 cp .env.example .env.docker
 # Edit .env.docker with your Redmine settings
 
-# Build and run
+# Run with docker-compose
 docker-compose up --build
-```
 
-**Using Docker directly:**
-```bash
-# Build the image
+# Or run directly
 docker build -t redmine-mcp-server .
-
-# Run the container
 docker run -p 8000:8000 --env-file .env.docker redmine-mcp-server
 ```
 
-### Docker Testing
-
-**Test the running container:**
-```bash
-# Check if container is running
-docker ps
-
-# Test MCP endpoints
-curl http://localhost:8000/messages/
-curl http://localhost:8000/sse
-
-# View container logs
-docker logs redmine-mcp-server
-```
-
-### Docker Configuration
-
-The Docker setup includes:
-- **Multi-stage build** for optimized image size
-- **Security hardening** with non-root user
-- **Health checks** for container monitoring
-- **Environment-based configuration**
-- **Automated deployment script** (`deploy.sh`)
-
 ### Production Deployment
 
-Use the included deployment script:
+Use the automated deployment script:
+
 ```bash
 chmod +x deploy.sh
 ./deploy.sh
 ```
 
-This script handles:
-- Environment validation
-- Container building and deployment
-- Health check verification
-- Rollback on failure
+## Development
 
-## Security Considerations
+### Architecture
 
-- Never commit your `.env` file to version control
-- Use API keys instead of passwords when possible
-- Ensure your Redmine server uses HTTPS in production
-- Restrict MCP server access to trusted networks
+The server is built using:
+- **FastAPI**: Modern web framework with automatic OpenAPI documentation
+- **FastMCP**: Model Context Protocol implementation
+- **python-redmine**: Official Redmine Python library
+- **Server-Sent Events (SSE)**: Real-time communication transport
+
+### Project Structure
+
+```
+redmine-mcp-server/
+├── src/redmine_mcp_server/
+│   ├── main.py              # FastAPI application entry point
+│   └── redmine_handler.py   # MCP tools and Redmine integration
+├── tests/                   # Comprehensive test suite
+├── .env.example            # Environment configuration template
+├── Dockerfile              # Container configuration
+├── docker-compose.yml      # Multi-container setup
+├── deploy.sh              # Deployment automation
+└── pyproject.toml         # Project configuration
+```
+
+### Adding New Tools
+
+Add your tool function to `src/redmine_mcp_server/redmine_handler.py`:
+
+```python
+@mcp.tool()
+async def your_new_tool(param: str) -> Dict[str, Any]:
+    """Tool description"""
+    # Implementation here
+    return {"result": "data"}
+```
+
+The tool will automatically be available through the MCP interface.
+
+### Testing
+
+The project includes 27 tests covering unit tests, integration tests, and connection validation.
+
+**Run tests:**
+```bash
+# All tests
+python tests/run_tests.py --all
+
+# Unit tests only (default)
+python tests/run_tests.py
+
+# Integration tests (requires Redmine connection)
+python tests/run_tests.py --integration
+
+# With coverage report
+python tests/run_tests.py --coverage
+```
+
+**Test Requirements:**
+- Unit tests: No external dependencies (use mocks)
+- Integration tests: Require valid Redmine server connection
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Connection refused**: Ensure your Redmine URL is correct and accessible
-2. **Authentication failed**: Verify your credentials in the `.env` file
-3. **Import errors**: Make sure all dependencies are installed with `uv pip install -e .`
-4. **Port conflicts**: The default port 8000 might be in use, modify `SERVER_PORT` in `.env`
+1. **Connection refused**: Verify your `REDMINE_URL` and network connectivity
+2. **Authentication failed**: Check your credentials in `.env`
+3. **Import errors**: Ensure dependencies are installed: `uv pip install -e .`
+4. **Port conflicts**: Modify `SERVER_PORT` in `.env` if port 8000 is in use
 
 ### Debug Mode
 
@@ -406,17 +229,17 @@ Enable debug logging by modifying the FastAPI app initialization in `main.py`.
 
 ## Contributing
 
-Contributions are welcome! Please open an issue or submit a pull request.
-Before sending a PR, run `python tests/run_tests.py --all` to ensure all tests pass.
+Contributions are welcome! Please:
+
+1. Open an issue for discussion
+2. Run the full test suite: `python tests/run_tests.py --all`
+3. Submit a pull request
 
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Version History
+## Additional Resources
 
-See the [CHANGELOG](CHANGELOG.md) for a detailed version history.
-
-## Roadmap
-
-See [roadmap.md](./roadmap.md) for the latest roadmap.
+- [CHANGELOG](CHANGELOG.md) - Detailed version history
+- [Roadmap](./roadmap.md) - Future development plans
