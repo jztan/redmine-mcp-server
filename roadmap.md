@@ -9,17 +9,12 @@
 - [x] Test coverage reporting
 - [x] Deployment automation
 - [x] Additional Redmine tools (create/update issues)
+- [x] CI/CD pipeline setup
 
 ### In Progress 🚧
-- [ ] Time tracking and user management tools
-- [ ] CI/CD pipeline setup
 - [ ] Performance optimizations and caching
+- [ ] Advanced search and filtering
 
 ### Planned 📋
-- [ ] User management tools
-- [ ] Time tracking integration
 - [ ] Custom field support
-- [ ] Webhook support for real-time updates
-- [ ] Advanced search and filtering
 - [ ] Batch operations
-- [ ] Export/import functionality
