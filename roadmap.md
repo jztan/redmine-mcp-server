@@ -13,9 +13,10 @@
 - [x] Additional Redmine tools (list my issues)
 
 ### In Progress 🚧
-- [ ] Performance optimizations and caching
-- [ ] Advanced search and filtering
 
 ### Planned 📋
+- [ ] Additional Redmine tools (get comments by issue)
+- [ ] Advanced search and filtering
+- [ ] Performance optimizations and caching
 - [ ] Custom field support
 - [ ] Batch operations
