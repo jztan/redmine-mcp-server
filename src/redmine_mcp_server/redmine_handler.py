@@ -39,36 +39,62 @@ REDMINE_PASSWORD = os.getenv("REDMINE_PASSWORD")
 REDMINE_API_KEY = os.getenv("REDMINE_API_KEY")
 
 # Initialize Redmine client
-# It's better to initialize it once if possible, or handle initialization within tools
-# For simplicity, we'll initialize it globally here.
-# Ensure error handling if credentials are not set.
-if not REDMINE_URL:
-    raise ValueError("REDMINE_URL not set in .env file")
-
-try:
-    if REDMINE_API_KEY:
-        redmine = Redmine(REDMINE_URL, key=REDMINE_API_KEY)
-    elif REDMINE_USERNAME and REDMINE_PASSWORD:
-        redmine = Redmine(REDMINE_URL, username=REDMINE_USERNAME, password=REDMINE_PASSWORD)
-    else:
-        raise ValueError("Redmine credentials (API Key or Username/Password) not fully set in .env file")
-except Exception as e:
-    print(f"Error initializing Redmine client: {e}")
-    # Depending on FastMCP, you might want to prevent server start or handle this gracefully
-    redmine = None # Set to None so tools can check
+# It's better to initialize it once if possible, or handle initialization within tools.
+# For simplicity, we'll initialize it globally here. If the environment variables
+# are missing, the client remains ``None`` so tools can handle it gracefully.
+redmine = None
+if REDMINE_URL and (REDMINE_API_KEY or (REDMINE_USERNAME and REDMINE_PASSWORD)):
+    try:
+        if REDMINE_API_KEY:
+            redmine = Redmine(REDMINE_URL, key=REDMINE_API_KEY)
+        else:
+            redmine = Redmine(
+                REDMINE_URL, username=REDMINE_USERNAME, password=REDMINE_PASSWORD
+            )
+    except Exception as e:
+        print(f"Error initializing Redmine client: {e}")
+        redmine = None
 
 # Initialize FastMCP server
 mcp = FastMCP("redmine_mcp_tools")
 
 
+def _issue_to_dict(issue: Any) -> Dict[str, Any]:
+    """Convert a python-redmine Issue object to a serializable dict."""
+    return {
+        "id": issue.id,
+        "subject": issue.subject,
+        "description": getattr(issue, "description", ""),
+        "project": {"id": issue.project.id, "name": issue.project.name},
+        "status": {"id": issue.status.id, "name": issue.status.name},
+        "priority": {"id": issue.priority.id, "name": issue.priority.name},
+        "author": {"id": issue.author.id, "name": issue.author.name},
+        "assigned_to": {
+            "id": issue.assigned_to.id,
+            "name": issue.assigned_to.name,
+        }
+        if hasattr(issue, "assigned_to")
+        else None,
+        "created_on": issue.created_on.isoformat()
+        if hasattr(issue, "created_on")
+        else None,
+        "updated_on": issue.updated_on.isoformat()
+        if hasattr(issue, "updated_on")
+        else None,
+    }
+
+
 @mcp.tool()
-async def get_redmine_issue(issue_id: int) -> Optional[Dict[str, Any]]:
+async def get_redmine_issue(issue_id: int) -> Dict[str, Any]:
     """
-    Retrieves details for a specific Redmine issue by its ID.
+    Retrieve a specific Redmine issue by ID.
+    
     Args:
-        issue_id: The ID of the Redmine issue.
+        issue_id: The ID of the issue to retrieve
+        
     Returns:
-        A dictionary containing issue details or None if not found or error.
+        Dict[str, Any]: A dictionary containing issue details, or a dictionary 
+                       with an "error" key if the issue cannot be retrieved
     """
     if not redmine:
         return {"error": "Redmine client not initialized."}
@@ -119,6 +145,42 @@ async def list_redmine_projects() -> List[Dict[str, Any]]:
     except Exception as e:
         print(f"Error listing Redmine projects: {e}")
         return [{"error": "An error occurred while listing projects."}]
+
+
+@mcp.tool()
+async def create_redmine_issue(
+    project_id: int,
+    subject: str,
+    description: str = "",
+    **fields: Any,
+) -> Dict[str, Any]:
+    """Create a new issue in Redmine."""
+    if not redmine:
+        return {"error": "Redmine client not initialized."}
+    try:
+        issue = redmine.issue.create(
+            project_id=project_id, subject=subject, description=description, **fields
+        )
+        return _issue_to_dict(issue)
+    except Exception as e:
+        print(f"Error creating Redmine issue: {e}")
+        return {"error": "An error occurred while creating the issue."}
+
+
+@mcp.tool()
+async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[str, Any]:
+    """Update an existing Redmine issue."""
+    if not redmine:
+        return {"error": "Redmine client not initialized."}
+    try:
+        redmine.issue.update(issue_id, **fields)
+        updated_issue = redmine.issue.get(issue_id)
+        return _issue_to_dict(updated_issue)
+    except ResourceNotFoundError:
+        return {"error": f"Issue {issue_id} not found."}
+    except Exception as e:
+        print(f"Error updating Redmine issue {issue_id}: {e}")
+        return {"error": f"An error occurred while updating issue {issue_id}."}
 
 
 if __name__ == "__main__":

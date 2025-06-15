@@ -29,8 +29,9 @@ class TestRedmineConnection:
         username = os.environ.get("REDMINE_USERNAME", "")
         password = os.environ.get("REDMINE_PASSWORD", "")
         api_key = os.environ.get("REDMINE_API_KEY", "")
-        
-        assert redmine_url, "REDMINE_URL must be set"
+
+        if not redmine_url:
+            pytest.skip("REDMINE_URL not configured")
         
         # Either username/password or API key should be set
         has_username_password = all([username, password])

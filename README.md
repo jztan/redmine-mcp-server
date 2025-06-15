@@ -1,15 +1,39 @@
 # Redmine MCP Server
 
+[![PyPI Version](https://img.shields.io/pypi/v/mcp-redmine.svg)](https://pypi.org/project/mcp-redmine/)
+[![License](https://img.shields.io/github/license/jztan/redmine-mcp-server.svg)](LICENSE)
+[![Python Version](https://img.shields.io/pypi/pyversions/mcp-redmine.svg)](https://pypi.org/project/mcp-redmine/)
+[![GitHub Issues](https://img.shields.io/github/issues/jztan/redmine-mcp-server.svg)](https://github.com/jztan/redmine-mcp-server/issues)
+[![CI](https://github.com/jztan/redmine-mcp-server/actions/workflows/pr-tests.yml/badge.svg)](https://github.com/jztan/redmine-mcp-server/actions/workflows/pr-tests.yml)
+
 A Model Context Protocol (MCP) server that integrates with Redmine project management systems. This server provides seamless access to Redmine data through MCP tools, enabling AI assistants to interact with your Redmine instance.
 
 ## Features
 
-- **Project Management**: List all accessible Redmine projects
-- **Issue Tracking**: Retrieve detailed information about specific Redmine issues
-- **Multiple Authentication**: Support for both username/password and API key authentication
-- **FastAPI Integration**: RESTful API with Server-Sent Events (SSE) for real-time communication
-- **MCP Compatibility**: Full compatibility with Model Context Protocol standards
-- **Docker Support**: Ready for containerized deployment
+### Redmine Tools
+- List your accessible projects
+- View full issue details
+- Create or update issues
+
+### API and Protocol
+- FastAPI server with Server-Sent Events
+- Compliant with the Model Context Protocol
+
+### Authentication
+- Use a username/password or API key
+
+### Deployment
+- Docker image for quick setup
+
+## Quick Start
+
+```bash
+uv venv
+source .venv/bin/activate
+uv pip install -e .
+uv run fastapi dev src/redmine_mcp_server/main.py
+```
+
 
 ## Architecture
 
@@ -109,7 +133,9 @@ uv run fastapi dev src/redmine_mcp_server/main.py
 uv run python src/redmine_mcp_server/main.py
 ```
 
-The server will start on `http://localhost:8000` with the MCP endpoint available at `/sse`.
+By default the server runs on `http://0.0.0.0:8000`. You can override the host or
+port using the `SERVER_HOST` and `SERVER_PORT` environment variables. The MCP
+endpoint is available at `/sse`.
 
 ### Testing Connection
 
@@ -179,6 +205,26 @@ Lists all accessible projects in the Redmine instance.
 ]
 ```
 
+### `create_redmine_issue(project_id: int, subject: str, description: str = "", **fields)`
+Creates a new issue in the specified project.
+
+**Parameters:**
+- `project_id`: ID of the project
+- `subject`: Issue subject
+- `description`: Optional description
+- `**fields`: Additional Redmine fields such as `priority_id`
+
+**Returns:** Details of the created issue.
+
+### `update_redmine_issue(issue_id: int, fields: Dict[str, Any])`
+Updates an existing issue with the provided fields.
+
+**Parameters:**
+- `issue_id`: ID of the issue to update
+- `fields`: Dictionary of fields to update
+
+**Returns:** Updated issue details.
+
 ## Development
 
 ### Dependencies
@@ -206,11 +252,11 @@ Core dependencies are managed in `pyproject.toml`:
 
 ### Testing
 
-The project includes a comprehensive test suite with 20 tests covering unit tests, integration tests, and connection validation.
+The project includes a comprehensive test suite with 22 tests covering unit tests, integration tests, and connection validation.
 
 #### Test Structure
 - **Unit Tests** (10 tests): Test individual functions with mocked dependencies
-- **Integration Tests** (7 tests): Test end-to-end functionality with real Redmine connections
+- **Integration Tests** (9 tests): Test end-to-end functionality with real Redmine connections
 - **Connection Tests** (3 tests): Validate infrastructure and connectivity
 
 #### Running Tests
@@ -360,7 +406,8 @@ Enable debug logging by modifying the FastAPI app initialization in `main.py`.
 
 ## Contributing
 
-This project is planned to be open-sourced. Contributions will be welcome once the repository is public.
+Contributions are welcome! Please open an issue or submit a pull request.
+Before sending a PR, run `python tests/run_tests.py --all` to ensure all tests pass.
 
 ## License
 
@@ -368,37 +415,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Version History
 
-- **v0.1.0** - Initial development version
-  - Basic MCP server functionality
-  - Redmine project and issue retrieval
-  - FastAPI with SSE transport
-  - Environment-based configuration
-  - Comprehensive test suite (20 tests)
-  - Docker containerization with deployment automation
-  - Advanced test runner with coverage reporting
-  - Complete documentation
+See the [CHANGELOG](CHANGELOG.md) for a detailed version history.
 
 ## Roadmap
 
-### Completed ✅
-- [x] Docker containerization with multi-stage builds
-- [x] Comprehensive unit and integration tests (20 tests)
-- [x] Enhanced error handling and logging
-- [x] Documentation improvements
-- [x] Environment-based configuration
-- [x] Test coverage reporting
-- [x] Deployment automation
-
-### In Progress 🚧
-- [ ] Additional Redmine tools (create/update issues, time tracking, user management)
-- [ ] CI/CD pipeline setup
-- [ ] Performance optimizations and caching
-
-### Planned 📋
-- [ ] User management tools
-- [ ] Time tracking integration
-- [ ] Custom field support
-- [ ] Webhook support for real-time updates
-- [ ] Advanced search and filtering
-- [ ] Batch operations
-- [ ] Export/import functionality
+See [roadmap.md](./ROADMAP.md) for the latest roadmap.
