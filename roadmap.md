@@ -10,6 +10,7 @@
 - [x] Deployment automation
 - [x] Additional Redmine tools (create/update issues)
 - [x] CI/CD pipeline setup
+- [x] Additional Redmine tools (list my issues)
 
 ### In Progress 🚧
 - [ ] Performance optimizations and caching
