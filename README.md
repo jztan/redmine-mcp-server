@@ -220,6 +220,7 @@ This uses the Redmine filter `assigned_to_id="me"` to retrieve only the current 
     "project": {"id": 1, "name": "Project Name"}
   }
 ]
+```
 
 ### `create_redmine_issue(project_id: int, subject: str, description: str = "", **fields)`
 Creates a new issue in the specified project.
