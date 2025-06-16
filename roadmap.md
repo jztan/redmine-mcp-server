@@ -11,11 +11,11 @@
 - [x] Additional Redmine tools (create/update issues)
 - [x] CI/CD pipeline setup
 - [x] Additional Redmine tools (list my issues)
+- [x] Additional Redmine tools (get comments by issue)
 
 ### In Progress 🚧
 
 ### Planned 📋
-- [x] Additional Redmine tools (get comments by issue)
 - [ ] Advanced search and filtering
 - [ ] Performance optimizations and caching
 - [ ] Custom field support
