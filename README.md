@@ -37,6 +37,7 @@ uv run fastapi dev src/redmine_mcp_server/main.py
 ```
 
 The server runs on `http://localhost:8000` with the MCP endpoint at `/sse`.
+For container orchestration, a lightweight health check is available at `/health`.
 
 ## Installation
 

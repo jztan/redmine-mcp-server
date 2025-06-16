@@ -30,6 +30,11 @@ app = FastAPI(docs_url=None, redoc_url=None,)
 sse = SseServerTransport("/messages/")
 app.router.routes.append(Mount("/messages", app=sse.handle_post_message))
 
+@app.get("/health", tags=["Health"])
+async def health() -> dict:
+    """Simple health check endpoint."""
+    return {"status": "ok"}
+
 @app.get("/sse", tags=["MCP"])
 async def handle_sse(request: Request):
     async with sse.connect_sse(request.scope, request.receive, request._send) as (
