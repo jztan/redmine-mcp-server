@@ -126,6 +126,9 @@ Creates a new issue in the specified project. Additional Redmine fields such as 
 ### `update_redmine_issue(issue_id: int, fields: Dict[str, Any])`
 Updates an existing issue with the provided fields.
 
+### `get_redmine_issue_comments(issue_id: int)`
+Retrieves comments (journals) for the specified issue.
+
 ## Docker Deployment
 
 ### Quick Start with Docker
@@ -193,7 +196,7 @@ The tool will automatically be available through the MCP interface.
 
 ### Testing
 
-The project includes 27 tests covering unit tests, integration tests, and connection validation.
+The project includes 32 tests covering unit tests, integration tests, and connection validation.
 
 **Run tests:**
 ```bash

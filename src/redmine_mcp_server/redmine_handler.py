@@ -201,6 +201,46 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
         return {"error": f"An error occurred while updating issue {issue_id}."}
 
 
+@mcp.tool()
+async def get_redmine_issue_comments(issue_id: int) -> List[Dict[str, Any]]:
+    """Retrieve comments (journals) for a specific Redmine issue."""
+
+    if not redmine:
+        return [{"error": "Redmine client not initialized."}]
+    try:
+        issue = redmine.issue.get(issue_id, include="journals")
+        comments: List[Dict[str, Any]] = []
+        for journal in getattr(issue, "journals", []):
+            notes = getattr(journal, "notes", "")
+            if not notes:
+                continue
+            comments.append(
+                {
+                    "id": journal.id,
+                    "user": {
+                        "id": journal.user.id,
+                        "name": journal.user.name,
+                    }
+                    if hasattr(journal, "user")
+                    else None,
+                    "notes": notes,
+                    "created_on": journal.created_on.isoformat()
+                    if hasattr(journal, "created_on")
+                    else None,
+                }
+            )
+        return comments
+    except ResourceNotFoundError:
+        return [{"error": f"Issue {issue_id} not found."}]
+    except Exception as e:
+        print(f"Error fetching comments for Redmine issue {issue_id}: {e}")
+        return [
+            {
+                "error": f"An error occurred while fetching comments for issue {issue_id}."
+            }
+        ]
+
+
 if __name__ == "__main__":
     if not redmine:
         print("Redmine client could not be initialized. Some tools may not work.")
