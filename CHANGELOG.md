@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - New MCP tool `list_my_redmine_issues` for retrieving issues assigned to the current user
+- New MCP tool `get_redmine_issue_comments` for retrieving issue comments
 ## [0.1.2] - 2025-05-26
 
 ### Changed

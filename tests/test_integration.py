@@ -176,6 +176,15 @@ class TestFastAPIIntegration:
         # Should have the SSE endpoint
         assert any('/sse' in path or path == '/sse' for path in route_paths), f"SSE endpoint not found. Available routes: {route_paths}"
 
+    @pytest.mark.integration
+    def test_health_endpoint_exists(self):
+        """Test that the health check endpoint is configured."""
+        from redmine_mcp_server.main import app
+
+        route_paths = [route.path for route in app.router.routes if hasattr(route, 'path')]
+
+        assert '/health' in route_paths, f"Health endpoint not found. Available routes: {route_paths}"
+
 
 @pytest.mark.integration
 class TestEnvironmentConfiguration:
