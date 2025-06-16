@@ -345,3 +345,144 @@ class TestRedmineHandler:
 
         result = await update_redmine_issue(1, {"subject": "X"})
         assert result["error"] == "Redmine client not initialized."
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_list_my_redmine_issues_success(self, mock_redmine, mock_redmine_issue):
+        """Test listing issues assigned to current user."""
+        mock_redmine.issue.filter.return_value = [mock_redmine_issue]
+
+        from redmine_mcp_server.redmine_handler import list_my_redmine_issues
+
+        result = await list_my_redmine_issues()
+
+        assert isinstance(result, list)
+        assert result[0]["id"] == 123
+        mock_redmine.issue.filter.assert_called_once_with(assigned_to_id="me")
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_list_my_redmine_issues_empty(self, mock_redmine):
+        """Test listing issues when none exist."""
+        mock_redmine.issue.filter.return_value = []
+
+        from redmine_mcp_server.redmine_handler import list_my_redmine_issues
+
+        result = await list_my_redmine_issues()
+
+        assert isinstance(result, list)
+        assert len(result) == 0
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_list_my_redmine_issues_error(self, mock_redmine):
+        """Test error handling when listing issues."""
+        mock_redmine.issue.filter.side_effect = Exception("Boom")
+
+        from redmine_mcp_server.redmine_handler import list_my_redmine_issues
+
+        result = await list_my_redmine_issues()
+
+        assert isinstance(result, list)
+        assert "error" in result[0]
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine', None)
+    async def test_list_my_redmine_issues_no_client(self):
+        """Test listing issues when client is not initialized."""
+        from redmine_mcp_server.redmine_handler import list_my_redmine_issues
+
+        result = await list_my_redmine_issues()
+
+        assert isinstance(result, list)
+        assert result[0]["error"] == "Redmine client not initialized."
+
+    @pytest.fixture
+    def mock_issue_with_comments(self, mock_redmine_issue):
+        """Add journals with comments to the mock issue."""
+        from datetime import datetime
+
+        journal = Mock()
+        journal.id = 1
+        journal.notes = "First comment"
+        journal.created_on = datetime(2025, 1, 3, 12, 0, 0)
+        user = Mock()
+        user.id = 3
+        user.name = "Commenter"
+        journal.user = user
+
+        mock_redmine_issue.journals = [journal]
+        return mock_redmine_issue
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_get_redmine_issue_comments_success(self, mock_redmine, mock_issue_with_comments):
+        """Test retrieving comments for an issue."""
+        mock_redmine.issue.get.return_value = mock_issue_with_comments
+
+        from redmine_mcp_server.redmine_handler import get_redmine_issue_comments
+
+        result = await get_redmine_issue_comments(123)
+
+        assert isinstance(result, list)
+        assert len(result) == 1
+        comment = result[0]
+        assert comment["id"] == 1
+        assert comment["notes"] == "First comment"
+        assert comment["user"]["id"] == 3
+        assert comment["user"]["name"] == "Commenter"
+        assert comment["created_on"] == "2025-01-03T12:00:00"
+        mock_redmine.issue.get.assert_called_once_with(123, include="journals")
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_get_redmine_issue_comments_empty(self, mock_redmine, mock_redmine_issue):
+        """Test retrieving comments when none exist."""
+        mock_redmine_issue.journals = []
+        mock_redmine.issue.get.return_value = mock_redmine_issue
+
+        from redmine_mcp_server.redmine_handler import get_redmine_issue_comments
+
+        result = await get_redmine_issue_comments(123)
+
+        assert isinstance(result, list)
+        assert result == []
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_get_redmine_issue_comments_not_found(self, mock_redmine):
+        """Test comments retrieval when issue is missing."""
+        from redminelib.exceptions import ResourceNotFoundError
+
+        mock_redmine.issue.get.side_effect = ResourceNotFoundError()
+
+        from redmine_mcp_server.redmine_handler import get_redmine_issue_comments
+
+        result = await get_redmine_issue_comments(999)
+
+        assert isinstance(result, list)
+        assert result[0]["error"] == "Issue 999 not found."
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_get_redmine_issue_comments_error(self, mock_redmine):
+        """Test general error when retrieving comments."""
+        mock_redmine.issue.get.side_effect = Exception("Boom")
+
+        from redmine_mcp_server.redmine_handler import get_redmine_issue_comments
+
+        result = await get_redmine_issue_comments(123)
+
+        assert isinstance(result, list)
+        assert "error" in result[0]
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine', None)
+    async def test_get_redmine_issue_comments_no_client(self):
+        """Test retrieving comments when client is not initialized."""
+        from redmine_mcp_server.redmine_handler import get_redmine_issue_comments
+
+        result = await get_redmine_issue_comments(123)
+
+        assert isinstance(result, list)
+        assert result[0]["error"] == "Redmine client not initialized."
