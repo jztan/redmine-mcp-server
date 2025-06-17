@@ -84,36 +84,61 @@ def _issue_to_dict(issue: Any) -> Dict[str, Any]:
     }
 
 
+def _journals_to_list(issue: Any) -> List[Dict[str, Any]]:
+    """Convert journals on an issue object to a list of dicts."""
+    raw_journals = getattr(issue, "journals", None)
+    if not isinstance(raw_journals, list):
+        return []
+
+    journals: List[Dict[str, Any]] = []
+    for journal in raw_journals:
+        notes = getattr(journal, "notes", "")
+        if not notes:
+            continue
+        journals.append(
+            {
+                "id": journal.id,
+                "user": {
+                    "id": journal.user.id,
+                    "name": journal.user.name,
+                }
+                if hasattr(journal, "user")
+                else None,
+                "notes": notes,
+                "created_on": journal.created_on.isoformat() if hasattr(journal, "created_on") else None,
+            }
+        )
+    return journals
+
+
 @mcp.tool()
-async def get_redmine_issue(issue_id: int) -> Dict[str, Any]:
-    """
-    Retrieve a specific Redmine issue by ID.
-    
+async def get_redmine_issue(issue_id: int, include_journals: bool = True) -> Dict[str, Any]:
+    """Retrieve a specific Redmine issue by ID.
+
     Args:
         issue_id: The ID of the issue to retrieve
-        
+        include_journals: Whether to include journals (comments) in the result.
+            Defaults to ``True``.
+
     Returns:
-        Dict[str, Any]: A dictionary containing issue details, or a dictionary 
-                       with an "error" key if the issue cannot be retrieved
+        A dictionary containing issue details. If ``include_journals`` is ``True``
+        and the issue has journals, they will be returned under the ``"journals"``
+        key. On failure a dictionary with an ``"error"`` key is returned.
     """
     if not redmine:
         return {"error": "Redmine client not initialized."}
     try:
         # python-redmine is synchronous, so we don't use await here for the library call
-        issue = redmine.issue.get(issue_id)
-        # Convert issue object to a dictionary for easier serialization
-        return {
-            "id": issue.id,
-            "subject": issue.subject,
-            "description": getattr(issue, 'description', ''),
-            "project": {"id": issue.project.id, "name": issue.project.name},
-            "status": {"id": issue.status.id, "name": issue.status.name},
-            "priority": {"id": issue.priority.id, "name": issue.priority.name},
-            "author": {"id": issue.author.id, "name": issue.author.name},
-            "assigned_to": {"id": issue.assigned_to.id, "name": issue.assigned_to.name} if hasattr(issue, 'assigned_to') else None,
-            "created_on": issue.created_on.isoformat() if hasattr(issue, 'created_on') else None,
-            "updated_on": issue.updated_on.isoformat() if hasattr(issue, 'updated_on') else None,
-        }
+        if include_journals:
+            issue = redmine.issue.get(issue_id, include="journals")
+        else:
+            issue = redmine.issue.get(issue_id)
+
+        result = _issue_to_dict(issue)
+        if include_journals:
+            result["journals"] = _journals_to_list(issue)
+
+        return result
     except ResourceNotFoundError:
         return {"error": f"Issue {issue_id} not found."}
     except Exception as e:
@@ -199,47 +224,6 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
     except Exception as e:
         print(f"Error updating Redmine issue {issue_id}: {e}")
         return {"error": f"An error occurred while updating issue {issue_id}."}
-
-
-@mcp.tool()
-async def get_redmine_issue_comments(issue_id: int) -> List[Dict[str, Any]]:
-    """Retrieve comments (journals) for a specific Redmine issue."""
-
-    if not redmine:
-        return [{"error": "Redmine client not initialized."}]
-    try:
-        issue = redmine.issue.get(issue_id, include="journals")
-        comments: List[Dict[str, Any]] = []
-        for journal in getattr(issue, "journals", []):
-            notes = getattr(journal, "notes", "")
-            if not notes:
-                continue
-            comments.append(
-                {
-                    "id": journal.id,
-                    "user": {
-                        "id": journal.user.id,
-                        "name": journal.user.name,
-                    }
-                    if hasattr(journal, "user")
-                    else None,
-                    "notes": notes,
-                    "created_on": journal.created_on.isoformat()
-                    if hasattr(journal, "created_on")
-                    else None,
-                }
-            )
-        return comments
-    except ResourceNotFoundError:
-        return [{"error": f"Issue {issue_id} not found."}]
-    except Exception as e:
-        print(f"Error fetching comments for Redmine issue {issue_id}: {e}")
-        return [
-            {
-                "error": f"An error occurred while fetching comments for issue {issue_id}."
-            }
-        ]
-
 
 if __name__ == "__main__":
     if not redmine:
