@@ -23,7 +23,7 @@ Dependencies:
     - mcp.server.fastmcp: FastMCP server implementation
 """
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from dotenv import load_dotenv
 from redminelib import Redmine
