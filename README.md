@@ -6,7 +6,20 @@
 [![GitHub Issues](https://img.shields.io/github/issues/jztan/redmine-mcp-server.svg)](https://github.com/jztan/redmine-mcp-server/issues)
 [![CI](https://github.com/jztan/redmine-mcp-server/actions/workflows/pr-tests.yml/badge.svg)](https://github.com/jztan/redmine-mcp-server/actions/workflows/pr-tests.yml)
 
-A Model Context Protocol (MCP) server that integrates with Redmine project management systems. This server provides seamless access to Redmine data through MCP tools, enabling AI assistants to interact with your Redmine instance.
+MCP-compliant server bridging your Redmine instance with AI assistants and tools.
+
+## Table of Contents
+
+- [Features](#features)
+- [Getting Started](#getting-started)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Available MCP Tools](#available-mcp-tools)
+- [Docker Deployment](#docker-deployment)
+- [Development](#development)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
+- [License](#license)
 
 ## Features
 
@@ -16,7 +29,7 @@ A Model Context Protocol (MCP) server that integrates with Redmine project manag
 - **Docker Ready**: Complete containerization support
 - **Comprehensive Testing**: Unit, integration, and connection tests
 
-## Quick Start
+## Getting Started
 
 ```bash
 # Clone and setup
@@ -46,6 +59,12 @@ For container orchestration, a lightweight health check is available at `/health
 - Python 3.13+
 - [uv](https://docs.astral.sh/uv/) package manager
 - Access to a Redmine instance
+
+The package is published to [PyPI](https://pypi.org/project/mcp-redmine/) and can be installed with:
+
+```bash
+pip install mcp-redmine
+```
 
 ### Configuration
 
@@ -100,7 +119,7 @@ Configure your MCP client (e.g., VS Code settings.json):
 }
 ```
 
-### Testing Your Setup
+### Verify Your Setup
 
 ```bash
 # Test Redmine connection
