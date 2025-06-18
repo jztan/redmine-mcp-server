@@ -6,6 +6,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - 2025-05-28
+
+### Removed
+- Deprecated `get_redmine_issue_comments` tool. Use `get_redmine_issue` with
+  `include_journals=True` to retrieve comments.
+
+### Changed
+- `get_redmine_issue` now includes issue journals by default. A new
+  `include_journals` parameter allows opting out of comment retrieval.
+
 ## [0.1.3] - 2025-05-27
 
 ### Added

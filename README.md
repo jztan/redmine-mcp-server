@@ -112,8 +112,11 @@ python tests/run_tests.py --all
 
 ## Available MCP Tools
 
-### `get_redmine_issue(issue_id: int)`
-Retrieves detailed information about a specific Redmine issue.
+### `get_redmine_issue(issue_id: int, include_journals: bool = True)`
+Retrieves detailed information about a specific Redmine issue. When
+`include_journals` is `True` (default) the returned dictionary also contains a
+`"journals"` key with the issue's comments. Set `include_journals=False` to skip
+fetching comments for a lighter request.
 
 ### `list_redmine_projects()`
 Lists all accessible projects in the Redmine instance.
@@ -127,8 +130,6 @@ Creates a new issue in the specified project. Additional Redmine fields such as 
 ### `update_redmine_issue(issue_id: int, fields: Dict[str, Any])`
 Updates an existing issue with the provided fields.
 
-### `get_redmine_issue_comments(issue_id: int)`
-Retrieves comments (journals) for the specified issue.
 
 ## Docker Deployment
 

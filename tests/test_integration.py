@@ -67,7 +67,7 @@ class TestRedmineIntegration:
     @pytest.mark.integration
     @pytest.mark.asyncio
     async def test_get_issue_integration(self):
-        """Integration test for getting an issue."""
+        """Integration test for getting an issue with journals included."""
         if redmine is None:
             pytest.skip("Redmine client not initialized")
         
@@ -94,7 +94,7 @@ class TestRedmineIntegration:
             if test_issue_id is None:
                 pytest.skip("No issues found for testing")
             
-            # Test getting the issue
+            # Test getting the issue including journals by default
             result = await get_redmine_issue(test_issue_id)
             
             assert result is not None
@@ -109,7 +109,45 @@ class TestRedmineIntegration:
             assert isinstance(result["subject"], str)
             assert isinstance(result["project"], dict)
             assert isinstance(result["status"], dict)
+            assert "journals" in result
+            assert isinstance(result["journals"], list)
             
+        except Exception as e:
+            pytest.fail(f"Integration test failed: {e}")
+
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_get_issue_without_journals_integration(self):
+        """Integration test for opting out of journal retrieval."""
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        from redmine_mcp_server.redmine_handler import get_redmine_issue
+
+        try:
+            projects = redmine.project.all()
+            if not projects:
+                pytest.skip("No projects found for testing")
+
+            test_issue_id = None
+            for project in projects:
+                try:
+                    issues = redmine.issue.filter(project_id=project.id, limit=1)
+                    if issues:
+                        test_issue_id = issues[0].id
+                        break
+                except Exception:
+                    continue
+
+            if test_issue_id is None:
+                pytest.skip("No issues found for testing")
+
+            result = await get_redmine_issue(test_issue_id, include_journals=False)
+
+            assert result is not None
+            assert "journals" not in result
+
         except Exception as e:
             pytest.fail(f"Integration test failed: {e}")
 
