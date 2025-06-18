@@ -62,7 +62,22 @@ class TestRedmineHandler:
         from datetime import datetime
         mock_issue.created_on = datetime(2025, 1, 1, 10, 0, 0)
         mock_issue.updated_on = datetime(2025, 1, 2, 15, 30, 0)
-        
+
+        # Mock attachments
+        attachment = Mock()
+        attachment.id = 10
+        attachment.filename = "test.txt"
+        attachment.filesize = 100
+        attachment.content_type = "text/plain"
+        attachment.description = "test attachment"
+        attachment.content_url = "http://example.com/test.txt"
+        att_author = Mock()
+        att_author.id = 4
+        att_author.name = "Attachment Author"
+        attachment.author = att_author
+        attachment.created_on = datetime(2025, 1, 2, 11, 0, 0)
+        mock_issue.attachments = [attachment]
+
         return mock_issue
 
     @pytest.fixture
@@ -112,8 +127,11 @@ class TestRedmineHandler:
         assert isinstance(result.get("journals"), list)
         assert result["journals"][0]["notes"] == "First comment"
 
+        assert isinstance(result.get("attachments"), list)
+        assert result["attachments"][0]["filename"] == "test.txt"
+
         # Verify the mock was called correctly
-        mock_redmine.issue.get.assert_called_once_with(123, include="journals")
+        mock_redmine.issue.get.assert_called_once_with(123, include="journals,attachments")
 
     @pytest.mark.asyncio
     @patch('redmine_mcp_server.redmine_handler.redmine')
@@ -183,7 +201,19 @@ class TestRedmineHandler:
         result = await get_redmine_issue(123, include_journals=False)
 
         assert "journals" not in result
-        mock_redmine.issue.get.assert_called_once_with(123)
+        assert isinstance(result.get("attachments"), list)
+        mock_redmine.issue.get.assert_called_once_with(123, include="attachments")
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_get_redmine_issue_without_attachments(self, mock_redmine, mock_redmine_issue):
+        """Test opting out of attachment retrieval."""
+        mock_redmine.issue.get.return_value = mock_redmine_issue
+
+        result = await get_redmine_issue(123, include_attachments=False)
+
+        assert "attachments" not in result
+        mock_redmine.issue.get.assert_called_once_with(123, include="journals")
 
     @pytest.mark.asyncio
     @patch('redmine_mcp_server.redmine_handler.redmine')

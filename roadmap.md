@@ -12,9 +12,10 @@
 - [x] CI/CD pipeline setup
 - [x] Additional Redmine tools (list my issues)
 - [x] Additional Redmine tools (get comments by issue)
+- [x] Update Redmine tools (get attachments by issue)
 
 ### Planned 📋
-- [ ] Update Redmine tools (get attachments by issue)
+- [ ] Additional Redmine tools (download attachments)
 - [ ] Advanced search and filtering
 - [ ] Performance optimizations and caching
 - [ ] Custom field support
