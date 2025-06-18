@@ -217,9 +217,27 @@ async def create_redmine_issue(
 
 @mcp.tool()
 async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[str, Any]:
-    """Update an existing Redmine issue."""
+    """Update an existing Redmine issue.
+
+    In addition to standard Redmine fields, a ``status_name`` key may be
+    provided in ``fields``. When present and ``status_id`` is not supplied, the
+    function will look up the corresponding status ID and use it for the update.
+    """
     if not redmine:
         return {"error": "Redmine client not initialized."}
+
+    # Convert status name to id if requested
+    if "status_name" in fields and "status_id" not in fields:
+        name = str(fields.pop("status_name")).lower()
+        try:
+            statuses = redmine.issue_status.all()
+            for status in statuses:
+                if getattr(status, "name", "").lower() == name:
+                    fields["status_id"] = status.id
+                    break
+        except Exception as e:
+            print(f"Error resolving status name '{name}': {e}")
+
     try:
         redmine.issue.update(issue_id, **fields)
         updated_issue = redmine.issue.get(issue_id)

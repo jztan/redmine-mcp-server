@@ -130,6 +130,10 @@ Creates a new issue in the specified project. Additional Redmine fields such as 
 ### `update_redmine_issue(issue_id: int, fields: Dict[str, Any])`
 Updates an existing issue with the provided fields.
 
+You may supply either ``status_id`` or ``status_name`` to change the issue
+status. When ``status_name`` is given the tool resolves the corresponding
+identifier automatically.
+
 
 ## Docker Deployment
 

@@ -338,6 +338,25 @@ class TestRedmineHandler:
 
     @pytest.mark.asyncio
     @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_update_redmine_issue_status_name(self, mock_redmine, mock_redmine_issue):
+        """Update issue using a status name instead of an ID."""
+        mock_redmine.issue.update.return_value = True
+        mock_redmine.issue.get.return_value = mock_redmine_issue
+
+        status = Mock()
+        status.id = 5
+        status.name = "Closed"
+        mock_redmine.issue_status.all.return_value = [status]
+
+        from redmine_mcp_server.redmine_handler import update_redmine_issue
+
+        result = await update_redmine_issue(123, {"status_name": "Closed"})
+
+        assert result["id"] == 123
+        mock_redmine.issue.update.assert_called_once_with(123, status_id=5)
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
     async def test_update_redmine_issue_not_found(self, mock_redmine):
         """Test update when issue not found."""
         from redminelib.exceptions import ResourceNotFoundError
