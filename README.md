@@ -202,7 +202,7 @@ The tool will automatically be available through the MCP interface.
 
 ### Testing
 
-The project includes 36 tests covering unit tests, integration tests, and connection validation.
+The project includes unit tests, integration tests, and connection validation.
 
 **Run tests:**
 ```bash
