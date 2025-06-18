@@ -228,6 +228,37 @@ class TestRedmineIntegration:
             except Exception as e:
                 pytest.fail(f"Integration test failed: {e}")
 
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_download_attachment_integration(self, tmp_path):
+        """Integration test for downloading an attachment."""
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        from redmine_mcp_server.redmine_handler import download_redmine_attachment
+
+        attachment_id = None
+        try:
+            for project in redmine.project.all():
+                try:
+                    issues = redmine.issue.filter(project_id=project.id, include="attachments", limit=1)
+                    if issues and getattr(issues[0], "attachments", []):
+                        attachment_id = issues[0].attachments[0].id
+                        break
+                except Exception:
+                    continue
+
+            if attachment_id is None:
+                pytest.skip("No attachments found for testing")
+
+            result = await download_redmine_attachment(attachment_id, str(tmp_path))
+
+            assert "file_path" in result
+            assert os.path.isfile(result["file_path"])
+        except Exception as e:
+            pytest.fail(f"Integration test failed: {e}")
+
 
 class TestFastAPIIntegration:
     """Integration tests for the FastAPI server."""

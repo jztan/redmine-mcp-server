@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `get_redmine_issue` can now return attachment metadata via a new
   `include_attachments` parameter.
+- New MCP tool `download_redmine_attachment` for downloading attachments.
 
 ## [0.1.4] - 2025-05-28
 
