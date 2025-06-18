@@ -320,6 +320,8 @@ async def download_redmine_attachment(
         return {"error": "Redmine client not initialized."}
     try:
         attachment = redmine.attachment.get(attachment_id)
+        # Ensure the save directory exists to avoid FileNotFoundError
+        os.makedirs(save_dir, exist_ok=True)
         file_path = attachment.download(savepath=save_dir)
         return {"file_path": file_path}
     except ResourceNotFoundError:
