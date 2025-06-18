@@ -13,9 +13,8 @@
 - [x] Additional Redmine tools (list my issues)
 - [x] Additional Redmine tools (get comments by issue)
 
-### In Progress 🚧
-
 ### Planned 📋
+- [ ] Update Redmine tools (get attachments by issue)
 - [ ] Advanced search and filtering
 - [ ] Performance optimizations and caching
 - [ ] Custom field support

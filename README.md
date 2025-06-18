@@ -130,6 +130,10 @@ Creates a new issue in the specified project. Additional Redmine fields such as 
 ### `update_redmine_issue(issue_id: int, fields: Dict[str, Any])`
 Updates an existing issue with the provided fields.
 
+You may supply either ``status_id`` or ``status_name`` to change the issue
+status. When ``status_name`` is given the tool resolves the corresponding
+identifier automatically.
+
 
 ## Docker Deployment
 
@@ -198,7 +202,7 @@ The tool will automatically be available through the MCP interface.
 
 ### Testing
 
-The project includes 36 tests covering unit tests, integration tests, and connection validation.
+The project includes unit tests, integration tests, and connection validation.
 
 **Run tests:**
 ```bash
