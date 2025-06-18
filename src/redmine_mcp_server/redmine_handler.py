@@ -141,7 +141,7 @@ def _attachments_to_list(issue: Any) -> List[Dict[str, Any]]:
                     "id": attachment.author.id,
                     "name": attachment.author.name,
                 }
-                if hasattr(attachment, "author")
+                if getattr(attachment, "author", None) is not None
                 else None,
                 "created_on": attachment.created_on.isoformat()
                 if hasattr(attachment, "created_on")
