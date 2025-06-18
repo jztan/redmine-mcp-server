@@ -501,6 +501,25 @@ class TestRedmineHandler:
         assert "error" in result
 
     @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_download_attachment_creates_directory(self, mock_redmine, tmp_path):
+        """Ensure download creates the target directory if it doesn't exist."""
+        mock_attachment = Mock()
+        mock_attachment.download.return_value = str(tmp_path / "file.txt")
+        mock_redmine.attachment.get.return_value = mock_attachment
+
+        from redmine_mcp_server.redmine_handler import download_redmine_attachment
+
+        nested_dir = tmp_path / "a" / "b"
+        assert not nested_dir.exists()
+
+        result = await download_redmine_attachment(42, str(nested_dir))
+
+        assert result["file_path"] == str(tmp_path / "file.txt")
+        assert nested_dir.exists()
+        mock_attachment.download.assert_called_once_with(savepath=str(nested_dir))
+
+    @pytest.mark.asyncio
     @patch('redmine_mcp_server.redmine_handler.redmine', None)
     async def test_download_redmine_attachment_no_client(self):
         """Download when client not initialized."""

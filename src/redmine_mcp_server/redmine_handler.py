@@ -23,7 +23,7 @@ Dependencies:
     - mcp.server.fastmcp: FastMCP server implementation
 """
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from dotenv import load_dotenv
 from redminelib import Redmine
@@ -61,6 +61,8 @@ mcp = FastMCP("redmine_mcp_tools")
 
 def _issue_to_dict(issue: Any) -> Dict[str, Any]:
     """Convert a python-redmine Issue object to a serializable dict."""
+    assigned = getattr(issue, "assigned_to", None)
+
     return {
         "id": issue.id,
         "subject": issue.subject,
@@ -70,16 +72,16 @@ def _issue_to_dict(issue: Any) -> Dict[str, Any]:
         "priority": {"id": issue.priority.id, "name": issue.priority.name},
         "author": {"id": issue.author.id, "name": issue.author.name},
         "assigned_to": {
-            "id": issue.assigned_to.id,
-            "name": issue.assigned_to.name,
+            "id": assigned.id,
+            "name": assigned.name,
         }
-        if hasattr(issue, "assigned_to")
+        if assigned is not None
         else None,
         "created_on": issue.created_on.isoformat()
-        if hasattr(issue, "created_on")
+        if getattr(issue, "created_on", None) is not None
         else None,
         "updated_on": issue.updated_on.isoformat()
-        if hasattr(issue, "updated_on")
+        if getattr(issue, "updated_on", None) is not None
         else None,
     }
 
@@ -100,17 +102,18 @@ def _journals_to_list(issue: Any) -> List[Dict[str, Any]]:
         notes = getattr(journal, "notes", "")
         if not notes:
             continue
+        user = getattr(journal, "user", None)
         journals.append(
             {
                 "id": journal.id,
                 "user": {
-                    "id": journal.user.id,
-                    "name": journal.user.name,
+                    "id": user.id,
+                    "name": user.name,
                 }
-                if hasattr(journal, "user")
+                if user is not None
                 else None,
                 "notes": notes,
-                "created_on": journal.created_on.isoformat() if hasattr(journal, "created_on") else None,
+                "created_on": journal.created_on.isoformat() if getattr(journal, "created_on", None) is not None else None,
             }
         )
     return journals
@@ -144,7 +147,7 @@ def _attachments_to_list(issue: Any) -> List[Dict[str, Any]]:
                 if getattr(attachment, "author", None) is not None
                 else None,
                 "created_on": attachment.created_on.isoformat()
-                if hasattr(attachment, "created_on")
+                if getattr(attachment, "created_on", None) is not None
                 else None,
             }
         )
@@ -217,7 +220,7 @@ async def list_redmine_projects() -> List[Dict[str, Any]]:
                 "name": project.name,
                 "identifier": project.identifier,
                 "description": getattr(project, 'description', ''),
-                "created_on": project.created_on.isoformat() if hasattr(project, 'created_on') else None,
+                "created_on": project.created_on.isoformat() if getattr(project, 'created_on', None) is not None else None,
             }
             for project in projects
         ]
@@ -317,6 +320,8 @@ async def download_redmine_attachment(
         return {"error": "Redmine client not initialized."}
     try:
         attachment = redmine.attachment.get(attachment_id)
+        # Ensure the save directory exists to avoid FileNotFoundError
+        os.makedirs(save_dir, exist_ok=True)
         file_path = attachment.download(savepath=save_dir)
         return {"file_path": file_path}
     except ResourceNotFoundError:
