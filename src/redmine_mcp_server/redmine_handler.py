@@ -116,32 +116,81 @@ def _journals_to_list(issue: Any) -> List[Dict[str, Any]]:
     return journals
 
 
+def _attachments_to_list(issue: Any) -> List[Dict[str, Any]]:
+    """Convert attachments on an issue object to a list of dicts."""
+    raw_attachments = getattr(issue, "attachments", None)
+    if raw_attachments is None:
+        return []
+
+    attachments: List[Dict[str, Any]] = []
+    try:
+        iterator = iter(raw_attachments)
+    except TypeError:
+        return []
+
+    for attachment in iterator:
+        attachments.append(
+            {
+                "id": attachment.id,
+                "filename": getattr(attachment, "filename", ""),
+                "filesize": getattr(attachment, "filesize", 0),
+                "content_type": getattr(attachment, "content_type", ""),
+                "description": getattr(attachment, "description", ""),
+                "content_url": getattr(attachment, "content_url", ""),
+                "author": {
+                    "id": attachment.author.id,
+                    "name": attachment.author.name,
+                }
+                if hasattr(attachment, "author")
+                else None,
+                "created_on": attachment.created_on.isoformat()
+                if hasattr(attachment, "created_on")
+                else None,
+            }
+        )
+    return attachments
+
+
 @mcp.tool()
-async def get_redmine_issue(issue_id: int, include_journals: bool = True) -> Dict[str, Any]:
+async def get_redmine_issue(
+    issue_id: int, include_journals: bool = True, include_attachments: bool = True
+) -> Dict[str, Any]:
     """Retrieve a specific Redmine issue by ID.
 
     Args:
         issue_id: The ID of the issue to retrieve
         include_journals: Whether to include journals (comments) in the result.
             Defaults to ``True``.
+        include_attachments: Whether to include attachments metadata in the
+            result. Defaults to ``True``.
 
     Returns:
         A dictionary containing issue details. If ``include_journals`` is ``True``
         and the issue has journals, they will be returned under the ``"journals"``
-        key. On failure a dictionary with an ``"error"`` key is returned.
+        key. If ``include_attachments`` is ``True`` and attachments exist they
+        will be returned under the ``"attachments"`` key. On failure a dictionary
+        with an ``"error"`` key is returned.
     """
     if not redmine:
         return {"error": "Redmine client not initialized."}
     try:
         # python-redmine is synchronous, so we don't use await here for the library call
+        includes = []
         if include_journals:
-            issue = redmine.issue.get(issue_id, include="journals")
+            includes.append("journals")
+        if include_attachments:
+            includes.append("attachments")
+
+        if includes:
+            issue = redmine.issue.get(issue_id, include=",".join(includes))
         else:
             issue = redmine.issue.get(issue_id)
 
         result = _issue_to_dict(issue)
         if include_journals:
             result["journals"] = _journals_to_list(issue)
+        if include_attachments:
+            result["attachments"] = _attachments_to_list(issue)
 
         return result
     except ResourceNotFoundError:

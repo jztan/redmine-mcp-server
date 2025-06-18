@@ -112,11 +112,13 @@ python tests/run_tests.py --all
 
 ## Available MCP Tools
 
-### `get_redmine_issue(issue_id: int, include_journals: bool = True)`
+### `get_redmine_issue(issue_id: int, include_journals: bool = True, include_attachments: bool = True)`
 Retrieves detailed information about a specific Redmine issue. When
 `include_journals` is `True` (default) the returned dictionary also contains a
 `"journals"` key with the issue's comments. Set `include_journals=False` to skip
-fetching comments for a lighter request.
+fetching comments for a lighter request. With `include_attachments=True` (the
+default) the result includes an `"attachments"` list describing attached files.
+Set `include_attachments=False` to omit this metadata.
 
 ### `list_redmine_projects()`
 Lists all accessible projects in the Redmine instance.
