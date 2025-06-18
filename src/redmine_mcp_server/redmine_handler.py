@@ -87,11 +87,16 @@ def _issue_to_dict(issue: Any) -> Dict[str, Any]:
 def _journals_to_list(issue: Any) -> List[Dict[str, Any]]:
     """Convert journals on an issue object to a list of dicts."""
     raw_journals = getattr(issue, "journals", None)
-    if not isinstance(raw_journals, list):
+    if raw_journals is None:
         return []
 
     journals: List[Dict[str, Any]] = []
-    for journal in raw_journals:
+    try:
+        iterator = iter(raw_journals)
+    except TypeError:
+        return []
+
+    for journal in iterator:
         notes = getattr(journal, "notes", "")
         if not notes:
             continue
