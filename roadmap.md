@@ -15,6 +15,7 @@
 - [x] Update Redmine tools (get attachments by issue)
 
 ### Planned 📋
+- [ ] Additional Redmine tools (download attachments)
 - [ ] Advanced search and filtering
 - [ ] Performance optimizations and caching
 - [ ] Custom field support
