@@ -346,7 +346,7 @@ class TestRedmineHandler:
         status = Mock()
         status.id = 5
         status.name = "Closed"
-        mock_redmine.issue_status.all.return_value = [status]
+        mock_redmine.issue_status.filter.return_value = [status]
 
         from redmine_mcp_server.redmine_handler import update_redmine_issue
 

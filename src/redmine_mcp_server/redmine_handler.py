@@ -230,7 +230,9 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
     if "status_name" in fields and "status_id" not in fields:
         name = str(fields.pop("status_name")).lower()
         try:
-            statuses = redmine.issue_status.all()
+            statuses = list(redmine.issue_status.filter(name=name))
+            if not statuses:
+                statuses = redmine.issue_status.all()
             for status in statuses:
                 if getattr(status, "name", "").lower() == name:
                     fields["status_id"] = status.id
