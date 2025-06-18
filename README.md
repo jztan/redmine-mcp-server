@@ -136,6 +136,10 @@ You may supply either ``status_id`` or ``status_name`` to change the issue
 status. When ``status_name`` is given the tool resolves the corresponding
 identifier automatically.
 
+### `download_redmine_attachment(attachment_id: int, save_dir: str = '.')`
+Downloads a file attached to a Redmine issue. Returns the local path of the
+saved file.
+
 
 ## Docker Deployment
 

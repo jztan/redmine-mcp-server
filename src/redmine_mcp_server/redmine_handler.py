@@ -297,6 +297,36 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
         print(f"Error updating Redmine issue {issue_id}: {e}")
         return {"error": f"An error occurred while updating issue {issue_id}."}
 
+
+@mcp.tool()
+async def download_redmine_attachment(
+    attachment_id: int, save_dir: str = "."
+) -> Dict[str, Any]:
+    """Download a Redmine attachment and return the saved file path.
+
+    Args:
+        attachment_id: The ID of the attachment to download.
+        save_dir: Directory where the file will be saved. Defaults to the
+            current directory.
+
+    Returns:
+        A dictionary with ``"file_path"`` pointing to the saved file. On
+        error, a dictionary with ``"error"`` is returned.
+    """
+    if not redmine:
+        return {"error": "Redmine client not initialized."}
+    try:
+        attachment = redmine.attachment.get(attachment_id)
+        file_path = attachment.download(savepath=save_dir)
+        return {"file_path": file_path}
+    except ResourceNotFoundError:
+        return {"error": f"Attachment {attachment_id} not found."}
+    except Exception as e:
+        print(f"Error downloading Redmine attachment {attachment_id}: {e}")
+        return {
+            "error": f"An error occurred while downloading attachment {attachment_id}."
+        }
+
 if __name__ == "__main__":
     if not redmine:
         print("Redmine client could not be initialized. Some tools may not work.")

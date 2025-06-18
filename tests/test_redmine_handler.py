@@ -459,6 +459,57 @@ class TestRedmineHandler:
         assert isinstance(result, list)
         assert result[0]["error"] == "Redmine client not initialized."
 
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_download_redmine_attachment_success(self, mock_redmine, tmp_path):
+        """Test successful attachment download."""
+        mock_attachment = Mock()
+        mock_attachment.download.return_value = str(tmp_path / "file.txt")
+        mock_redmine.attachment.get.return_value = mock_attachment
+
+        from redmine_mcp_server.redmine_handler import download_redmine_attachment
+
+        result = await download_redmine_attachment(5, str(tmp_path))
+
+        assert result["file_path"] == str(tmp_path / "file.txt")
+        mock_redmine.attachment.get.assert_called_once_with(5)
+        mock_attachment.download.assert_called_once_with(savepath=str(tmp_path))
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_download_redmine_attachment_not_found(self, mock_redmine):
+        """Attachment not found scenario."""
+        from redminelib.exceptions import ResourceNotFoundError
+        mock_redmine.attachment.get.side_effect = ResourceNotFoundError()
+
+        from redmine_mcp_server.redmine_handler import download_redmine_attachment
+
+        result = await download_redmine_attachment(999)
+
+        assert result["error"] == "Attachment 999 not found."
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_download_redmine_attachment_error(self, mock_redmine):
+        """General error during download."""
+        mock_redmine.attachment.get.side_effect = Exception("boom")
+
+        from redmine_mcp_server.redmine_handler import download_redmine_attachment
+
+        result = await download_redmine_attachment(1)
+
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine', None)
+    async def test_download_redmine_attachment_no_client(self):
+        """Download when client not initialized."""
+        from redmine_mcp_server.redmine_handler import download_redmine_attachment
+
+        result = await download_redmine_attachment(1)
+
+        assert result["error"] == "Redmine client not initialized."
+
     @pytest.fixture
     def mock_issue_with_comments(self, mock_redmine_issue):
         """Add journals with comments to the mock issue."""
