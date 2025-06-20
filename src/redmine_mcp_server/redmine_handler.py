@@ -248,6 +248,33 @@ async def list_my_redmine_issues(**filters: Any) -> List[Dict[str, Any]]:
 
 
 @mcp.tool()
+async def search_redmine_issues(query: str, **options: Any) -> List[Dict[str, Any]]:
+    """Search Redmine issues matching a query string.
+
+    Args:
+        query: Text to search for in issues.
+        **options: Additional search options passed directly to the
+            underlying python-redmine ``search`` API.
+
+    Returns:
+        A list of issue dictionaries. If no issues are found an empty list
+        is returned. On error a list containing a single dictionary with an
+        ``"error"`` key is returned.
+    """
+    if not redmine:
+        return [{"error": "Redmine client not initialized."}]
+
+    try:
+        results = redmine.issue.search(query, **options)
+        if results is None:
+            return []
+        return [_issue_to_dict(issue) for issue in results]
+    except Exception as e:
+        print(f"Error searching Redmine issues: {e}")
+        return [{"error": "An error occurred while searching issues."}]
+
+
+@mcp.tool()
 async def create_redmine_issue(
     project_id: int,
     subject: str,
