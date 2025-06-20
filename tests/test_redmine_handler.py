@@ -510,6 +510,56 @@ class TestRedmineHandler:
 
         assert result["error"] == "Redmine client not initialized."
 
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_search_redmine_issues_success(self, mock_redmine, mock_redmine_issue):
+        """Search issues successfully."""
+        mock_redmine.issue.search.return_value = [mock_redmine_issue]
+
+        from redmine_mcp_server.redmine_handler import search_redmine_issues
+
+        result = await search_redmine_issues("test")
+
+        assert isinstance(result, list)
+        assert result[0]["id"] == 123
+        mock_redmine.issue.search.assert_called_once_with("test")
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_search_redmine_issues_empty(self, mock_redmine):
+        """Search issues with no matches."""
+        mock_redmine.issue.search.return_value = []
+
+        from redmine_mcp_server.redmine_handler import search_redmine_issues
+
+        result = await search_redmine_issues("none")
+
+        assert isinstance(result, list)
+        assert len(result) == 0
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_search_redmine_issues_error(self, mock_redmine):
+        """General search error handling."""
+        mock_redmine.issue.search.side_effect = Exception("boom")
+
+        from redmine_mcp_server.redmine_handler import search_redmine_issues
+
+        result = await search_redmine_issues("a")
+
+        assert isinstance(result, list)
+        assert "error" in result[0]
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine', None)
+    async def test_search_redmine_issues_no_client(self):
+        """Search when client not initialized."""
+        from redmine_mcp_server.redmine_handler import search_redmine_issues
+
+        result = await search_redmine_issues("a")
+
+        assert result[0]["error"] == "Redmine client not initialized."
+
     @pytest.fixture
     def mock_issue_with_comments(self, mock_redmine_issue):
         """Add journals with comments to the mock issue."""
