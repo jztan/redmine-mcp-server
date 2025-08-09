@@ -15,10 +15,11 @@
 
 #### Redmine Integration
 - [x] Create and update issues
-- [x] List my issues
-- [x] Get comments by issue
-- [x] Get attachments by issue
+- [x] List my issues  
+- [x] Get issue details with comments and attachments
 - [x] Download attachments
+- [x] Search issues by text query
+- [x] List accessible projects
 
 #### Documentation & Quality
 - [x] Documentation improvements
@@ -26,13 +27,9 @@
 ### 📋 Planned Features
 
 #### Enhanced Functionality
-- [ ] Advanced search and filtering
-- [ ] Custom field support
-- [ ] Batch operations
-
-#### Performance & Optimization
-- [ ] Performance optimizations and caching
+- [ ] Smart issue summarization - summarize_project_status(project_id, days=30)
+- [ ] User lookup for assignments - find_project_users(project_id, role_filter=None)
 
 ---
 
-**Last Updated:** *Check git history for latest changes*
+**Last Updated:** 2025-08-09 (v0.1.6)
