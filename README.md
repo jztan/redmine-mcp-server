@@ -126,6 +126,9 @@ Lists all accessible projects in the Redmine instance.
 ### `list_my_redmine_issues(**filters)`
 Lists issues assigned to the authenticated user. Uses the Redmine filter `assigned_to_id="me"`. Additional query parameters can be supplied as keyword arguments.
 
+### `search_redmine_issues(query: str, **options)`
+Searches issues for text contained in the ``query`` string. Extra options are forwarded directly to ``python-redmine``'s search API.
+
 ### `create_redmine_issue(project_id: int, subject: str, description: str = "", **fields)`
 Creates a new issue in the specified project. Additional Redmine fields such as `priority_id` can be passed as keyword arguments.
 
