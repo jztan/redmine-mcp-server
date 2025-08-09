@@ -27,13 +27,8 @@
 ### 📋 Planned Features
 
 #### Enhanced Functionality
-- [ ] Custom field support
-- [ ] Batch operations
-- [ ] Advanced filtering options
-- [ ] Issue relationships and dependencies
-
-#### Performance & Optimization
-- [ ] Performance optimizations and caching
+- [ ] Smart issue summarization - summarize_project_status(project_id, days=30)
+- [ ] User lookup for assignments - find_project_users(project_id, role_filter=None)
 
 ---
 
