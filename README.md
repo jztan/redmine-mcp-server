@@ -16,7 +16,15 @@ A Model Context Protocol (MCP) server that integrates with Redmine project manag
 - **Docker Ready**: Complete containerization support
 - **Comprehensive Testing**: Unit, integration, and connection tests
 
-## Quick Start
+## Installation
+
+### Prerequisites
+
+- Python 3.13+
+- [uv](https://docs.astral.sh/uv/) package manager
+- Access to a Redmine instance
+
+### Quick Start
 
 ```bash
 # Clone and setup
@@ -27,6 +35,9 @@ cd redmine-mcp-server
 uv venv
 source .venv/bin/activate
 uv pip install -e .
+
+# Install test dependencies (optional)
+uv pip install -e .[test]
 
 # Configure environment
 cp .env.example .env
@@ -39,21 +50,9 @@ uv run fastapi dev src/redmine_mcp_server/main.py
 The server runs on `http://localhost:8000` with the MCP endpoint at `/sse`.
 For container orchestration, a lightweight health check is available at `/health`.
 
-## Installation
-
-### Prerequisites
-
-- Python 3.13+
-- [uv](https://docs.astral.sh/uv/) package manager
-- Access to a Redmine instance
-
 ### Configuration
 
-Create and edit your environment configuration:
-
-```bash
-cp .env.example .env
-```
+Edit your `.env` file with the following settings:
 
 ```env
 # Required: Redmine connection
@@ -110,38 +109,84 @@ python tests/test_connection.py
 python tests/run_tests.py --all
 ```
 
-## Available MCP Tools
+## Available Tools
 
-### `get_redmine_issue(issue_id: int, include_journals: bool = True, include_attachments: bool = True)`
-Retrieves detailed information about a specific Redmine issue. When
-`include_journals` is `True` (default) the returned dictionary also contains a
-`"journals"` key with the issue's comments. Set `include_journals=False` to skip
-fetching comments for a lighter request. With `include_attachments=True` (the
-default) the result includes an `"attachments"` list describing attached files.
-Set `include_attachments=False` to omit this metadata.
+This MCP server provides the following tools for interacting with your Redmine instance:
 
-### `list_redmine_projects()`
+### Project Management
+
+#### `list_redmine_projects`
 Lists all accessible projects in the Redmine instance.
 
-### `list_my_redmine_issues(**filters)`
-Lists issues assigned to the authenticated user. Uses the Redmine filter `assigned_to_id="me"`. Additional query parameters can be supplied as keyword arguments.
+**Parameters:** None
 
-### `search_redmine_issues(query: str, **options)`
-Searches issues for text contained in the ``query`` string. Extra options are forwarded directly to ``python-redmine``'s search API.
+**Returns:** List of project dictionaries with id, name, identifier, and description
 
-### `create_redmine_issue(project_id: int, subject: str, description: str = "", **fields)`
-Creates a new issue in the specified project. Additional Redmine fields such as `priority_id` can be passed as keyword arguments.
+---
 
-### `update_redmine_issue(issue_id: int, fields: Dict[str, Any])`
+### Issue Operations
+
+#### `get_redmine_issue`
+Retrieve detailed information about a specific Redmine issue.
+
+**Parameters:**
+- `issue_id` (integer, required): The ID of the issue to retrieve
+- `include_journals` (boolean, optional): Include journals (comments) in result. Default: `true`
+- `include_attachments` (boolean, optional): Include attachments metadata. Default: `true`
+
+**Returns:** Issue dictionary with details, journals, and attachments
+
+#### `list_my_redmine_issues`
+Lists issues assigned to the authenticated user.
+
+**Parameters:**
+- `**filters` (optional): Additional query parameters (e.g., `status_id`, `project_id`)
+
+**Returns:** List of issue dictionaries assigned to current user
+
+#### `search_redmine_issues`
+Search issues using text queries.
+
+**Parameters:**
+- `query` (string, required): Text to search for in issues
+- `**options` (optional): Additional search options passed to Redmine API
+
+**Returns:** List of matching issue dictionaries
+
+#### `create_redmine_issue`
+Creates a new issue in the specified project.
+
+**Parameters:**
+- `project_id` (integer, required): Target project ID
+- `subject` (string, required): Issue subject/title
+- `description` (string, optional): Issue description. Default: `""`
+- `**fields` (optional): Additional Redmine fields (e.g., `priority_id`, `assigned_to_id`)
+
+**Returns:** Created issue dictionary
+
+#### `update_redmine_issue`
 Updates an existing issue with the provided fields.
 
-You may supply either ``status_id`` or ``status_name`` to change the issue
-status. When ``status_name`` is given the tool resolves the corresponding
-identifier automatically.
+**Parameters:**
+- `issue_id` (integer, required): ID of the issue to update
+- `fields` (object, required): Dictionary of fields to update
 
-### `download_redmine_attachment(attachment_id: int, save_dir: str = '.')`
-Downloads a file attached to a Redmine issue. Returns the local path of the
-saved file.
+**Returns:** Updated issue dictionary
+
+**Note:** You can use either `status_id` or `status_name` in fields. When `status_name` is provided, the tool automatically resolves the corresponding status ID.
+
+---
+
+### File Operations
+
+#### `download_redmine_attachment`
+Downloads a file attached to a Redmine issue.
+
+**Parameters:**
+- `attachment_id` (integer, required): The ID of the attachment to download
+- `save_dir` (string, optional): Directory to save the file. Default: `"."`
+
+**Returns:** Dictionary with `file_path` of the downloaded file
 
 
 ## Docker Deployment
