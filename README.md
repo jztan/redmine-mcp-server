@@ -122,6 +122,19 @@ Lists all accessible projects in the Redmine instance.
 
 **Returns:** List of project dictionaries with id, name, identifier, and description
 
+#### `summarize_project_status`
+Provide a comprehensive summary of project status based on issue activity over a specified time period.
+
+**Parameters:**
+- `project_id` (integer, required): The ID of the project to summarize
+- `days` (integer, optional): Number of days to analyze. Default: `30`
+
+**Returns:** Comprehensive project status summary including:
+- Recent activity metrics (issues created/updated)
+- Status, priority, and assignee breakdowns
+- Project totals and overall statistics
+- Activity insights and trends
+
 ---
 
 ### Issue Operations
