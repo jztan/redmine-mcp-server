@@ -16,7 +16,15 @@ A Model Context Protocol (MCP) server that integrates with Redmine project manag
 - **Docker Ready**: Complete containerization support
 - **Comprehensive Testing**: Unit, integration, and connection tests
 
-## Quick Start
+## Installation
+
+### Prerequisites
+
+- Python 3.13+
+- [uv](https://docs.astral.sh/uv/) package manager
+- Access to a Redmine instance
+
+### Quick Start
 
 ```bash
 # Clone and setup
@@ -27,6 +35,9 @@ cd redmine-mcp-server
 uv venv
 source .venv/bin/activate
 uv pip install -e .
+
+# Install test dependencies (optional)
+uv pip install -e .[test]
 
 # Configure environment
 cp .env.example .env
@@ -39,21 +50,9 @@ uv run fastapi dev src/redmine_mcp_server/main.py
 The server runs on `http://localhost:8000` with the MCP endpoint at `/sse`.
 For container orchestration, a lightweight health check is available at `/health`.
 
-## Installation
-
-### Prerequisites
-
-- Python 3.13+
-- [uv](https://docs.astral.sh/uv/) package manager
-- Access to a Redmine instance
-
 ### Configuration
 
-Create and edit your environment configuration:
-
-```bash
-cp .env.example .env
-```
+Edit your `.env` file with the following settings:
 
 ```env
 # Required: Redmine connection
