@@ -18,3 +18,4 @@ htmlcov/
 .env
 .env.docker
 CLAUDE.md
+.claude
