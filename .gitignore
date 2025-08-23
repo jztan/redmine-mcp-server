@@ -19,3 +19,6 @@ htmlcov/
 .env.docker
 CLAUDE.md
 .claude
+
+# Documentation
+docs/
