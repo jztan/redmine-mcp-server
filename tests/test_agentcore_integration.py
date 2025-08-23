@@ -4,7 +4,7 @@ Integration tests for AgentCore server - direct HTTP testing.
 
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch, Mock
+from unittest.mock import patch, Mock, AsyncMock
 
 from src.redmine_mcp_server.agentcore_server import app
 
@@ -92,10 +92,10 @@ def test_mcp_unknown_tool():
 @patch('src.redmine_mcp_server.agentcore_server.tools')
 def test_mcp_tool_call_success(mock_tools):
     """Test successful tool invocation."""
-    # Mock the tool method
-    mock_tools.list_redmine_projects.return_value = [
+    # Mock the tool method with AsyncMock
+    mock_tools.list_redmine_projects = AsyncMock(return_value=[
         {"id": 1, "name": "Test Project", "identifier": "test"}
-    ]
+    ])
     
     client = TestClient(app)
     response = client.post("/mcp", json={
@@ -120,12 +120,12 @@ def test_mcp_tool_call_success(mock_tools):
 @patch('src.redmine_mcp_server.agentcore_server.tools')
 def test_mcp_tool_call_with_arguments(mock_tools):
     """Test tool invocation with arguments."""
-    # Mock the tool method
-    mock_tools.get_redmine_issue.return_value = {
+    # Mock the tool method with AsyncMock
+    mock_tools.get_redmine_issue = AsyncMock(return_value={
         "id": 123,
         "subject": "Test Issue",
         "description": "Test description"
-    }
+    })
     
     client = TestClient(app)
     response = client.post("/mcp", json={
@@ -159,8 +159,8 @@ def test_mcp_tool_call_with_arguments(mock_tools):
 @patch('src.redmine_mcp_server.agentcore_server.tools')
 def test_mcp_tool_call_error_handling(mock_tools):
     """Test tool error handling."""
-    # Mock the tool method to raise an exception
-    mock_tools.get_redmine_issue.side_effect = Exception("Test error")
+    # Mock the tool method to raise an exception with AsyncMock
+    mock_tools.get_redmine_issue = AsyncMock(side_effect=Exception("Test error"))
     
     client = TestClient(app)
     response = client.post("/mcp", json={
@@ -193,8 +193,11 @@ def test_mcp_invalid_json():
         "id": 5
     })
     
-    # FastAPI should handle this as a validation error
-    assert response.status_code in [400, 422]
+    # The server returns 200 with an error response instead of HTTP error code
+    assert response.status_code == 200
+    data = response.json()
+    assert "error" in data
+    assert data["id"] == 5
 
 
 @pytest.mark.integration

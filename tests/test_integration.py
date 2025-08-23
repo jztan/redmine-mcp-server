@@ -308,7 +308,15 @@ class TestEnvironmentConfiguration:
 
     def test_environment_variables_loaded(self):
         """Test that environment variables are properly loaded."""
-        from redmine_mcp_server.redmine_handler import REDMINE_URL, REDMINE_USERNAME, REDMINE_API_KEY
+        import os
+        from dotenv import load_dotenv
+        
+        # Load environment variables from .env file
+        load_dotenv()
+        
+        REDMINE_URL = os.getenv("REDMINE_URL")
+        REDMINE_USERNAME = os.getenv("REDMINE_USERNAME") 
+        REDMINE_API_KEY = os.getenv("REDMINE_API_KEY")
 
         if REDMINE_URL is None:
             pytest.skip("REDMINE_URL not configured")
@@ -324,14 +332,14 @@ class TestEnvironmentConfiguration:
 
     def test_redmine_client_initialization(self):
         """Test that Redmine client is properly initialized."""
-        from redmine_mcp_server.redmine_handler import redmine
+        from redmine_mcp_server.redmine_handler import redmine_tools
         
-        if redmine is None:
+        if redmine_tools.client is None:
             pytest.skip("Redmine client not initialized - check your .env configuration")
         
         # Test that the client has expected attributes
-        assert hasattr(redmine, 'project')
-        assert hasattr(redmine, 'issue')
+        assert hasattr(redmine_tools.client, 'project')
+        assert hasattr(redmine_tools.client, 'issue')
 
 
 if __name__ == "__main__":
