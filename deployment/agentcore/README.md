@@ -113,7 +113,7 @@ Content-Type: application/json
 
 ### Docker Configuration
 
-The AgentCore server runs on port 8000 inside the container. The Dockerfile:
+The AWS AgentCore server runs on port 8000 inside the container. The Dockerfile:
 
 - Uses Python 3.13 slim base image
 - Installs required dependencies including FastAPI and uvicorn
@@ -155,7 +155,7 @@ The server logs to stdout/stderr with structured logging. Key log events:
 
 ### Cleanup and Cancellation
 
-When you need to clean up or cancel your AgentCore deployment:
+When you need to clean up or cancel your AWS AgentCore deployment:
 
 ```bash
 # Interactive cleanup with confirmations
@@ -180,7 +180,7 @@ The cleanup script handles:
 
 ## Architecture Benefits
 
-Compared to the SSE mode, AgentCore provides:
+Compared to the SSE mode, AWS AgentCore provides:
 
 - **Standard HTTP patterns** - Works with any HTTP client/load balancer
 - **Better testability** - Standard FastAPI testing approaches work
