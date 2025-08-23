@@ -1,7 +1,10 @@
 """
-Native FastAPI server for AgentCore integration.
+Native FastAPI server for AWS AgentCore integration.
 
-This module provides direct MCP protocol handling without FastMCP complexity.
+AWS AgentCore is Amazon's service for deploying AI agents and MCP servers in 
+cloud environments. This module provides direct MCP protocol handling without 
+FastMCP complexity, optimized for AWS cloud deployment scenarios.
+
 It uses the shared RedmineTools class for consistent business logic across
 transport modes.
 """

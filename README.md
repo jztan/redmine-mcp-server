@@ -8,14 +8,14 @@
 
 A Model Context Protocol (MCP) server that integrates with Redmine project management systems. This server provides seamless access to Redmine data through MCP tools, enabling AI assistants to interact with your Redmine instance.
 
-**Now with dual transport support:** Choose between Server-Sent Events (SSE) for traditional MCP clients or HTTP for AgentCore and cloud deployments.
+**Now with dual transport support:** Choose between Server-Sent Events (SSE) for traditional MCP clients or HTTP for AWS AgentCore and cloud deployments.
 
 ## Features
 
 - **Redmine Integration**: List projects, view/create/update issues, project status summaries
 - **Dual Transport Modes**: 
   - **SSE Mode**: Traditional MCP with Server-Sent Events for desktop clients
-  - **AgentCore Mode**: HTTP-based for cloud platforms and AgentCore integration
+  - **AWS AgentCore Mode**: HTTP-based for cloud platforms and AWS AgentCore integration
 - **MCP Compliant**: Full Model Context Protocol support
 - **Flexible Authentication**: Username/password or API key
 - **Production Ready**: Health checks, monitoring, and cloud deployment support
@@ -52,12 +52,12 @@ cp .env.example .env
 # Run the server (SSE mode - traditional MCP)
 uv run fastapi dev src/redmine_mcp_server/main.py
 
-# Or run AgentCore mode (HTTP-based)
+# Or run AWS AgentCore mode (HTTP-based)
 uv run python src/redmine_mcp_server/agentcore_server.py
 ```
 
 **SSE Mode:** Server runs on `http://localhost:8000` with MCP endpoint at `/sse`
-**AgentCore Mode:** Server runs on `http://localhost:8000` with MCP endpoint at `/mcp`
+**AWS AgentCore Mode:** Server runs on `http://localhost:8000` with MCP endpoint at `/mcp`
 
 Both modes include health checks at `/health` for monitoring and container orchestration.
 
@@ -96,16 +96,16 @@ uv run fastapi dev src/redmine_mcp_server/main.py
 uv run python src/redmine_mcp_server/main.py
 ```
 
-#### AgentCore Mode (HTTP-based)
+#### AWS AgentCore Mode (HTTP-based)
 
 ```bash
-# Run AgentCore server
+# Run AWS AgentCore server
 uv run python src/redmine_mcp_server/agentcore_server.py
 ```
 
 **Choose the right mode:**
 - **SSE Mode**: For desktop MCP clients, VS Code extensions
-- **AgentCore Mode**: For cloud deployment, HTTP clients, AgentCore integration
+- **AWS AgentCore Mode**: For cloud deployment, HTTP clients, AWS AgentCore integration
 
 ### Client Configuration
 
@@ -125,7 +125,7 @@ Configure your MCP client (e.g., VS Code settings.json):
 }
 ```
 
-#### For AgentCore/HTTP Clients
+#### For AWS AgentCore/HTTP Clients
 
 Use direct HTTP POST requests to `/mcp` endpoint:
 
@@ -272,10 +272,10 @@ docker build -t redmine-mcp-server .
 docker run -p 8000:8000 --env-file .env.docker redmine-mcp-server
 ```
 
-### AgentCore Mode (Cloud/HTTP)
+### AWS AgentCore Mode (Cloud/HTTP)
 
 ```bash
-# Configure for AgentCore deployment
+# Configure for AWS AgentCore deployment
 cp deployment/agentcore/.env.agentcore.example deployment/agentcore/.env.agentcore
 # Edit with your settings
 
@@ -302,7 +302,7 @@ chmod +x deploy.sh
 ./deploy.sh
 ```
 
-For AgentCore mode, see [deployment/agentcore/README.md](deployment/agentcore/README.md) for detailed deployment instructions.
+For AWS AgentCore mode, see [deployment/agentcore/README.md](deployment/agentcore/README.md) for detailed deployment instructions.
 
 ## Development
 
@@ -317,7 +317,7 @@ The server uses a **dual transport architecture** with shared business logic:
 
 #### Transport Modes
 - **SSE Mode**: FastMCP + Server-Sent Events for desktop MCP clients
-- **AgentCore Mode**: Native FastAPI HTTP endpoints for cloud integration
+- **AWS AgentCore Mode**: Native FastAPI HTTP endpoints for AWS cloud integration
 
 #### Benefits
 - **Consistent behavior** across both transport modes
@@ -330,14 +330,14 @@ The server uses a **dual transport architecture** with shared business logic:
 redmine-mcp-server/
 ├── src/redmine_mcp_server/
 │   ├── main.py              # SSE mode FastAPI server
-│   ├── agentcore_server.py  # AgentCore mode HTTP server
+│   ├── agentcore_server.py  # AWS AgentCore mode HTTP server
 │   ├── redmine_handler.py   # SSE mode MCP tools (FastMCP)
 │   └── redmine_tools.py     # Shared business logic (pure Python)
 ├── tests/                   # Comprehensive test suite
 │   ├── test_redmine_tools.py        # Unit tests for shared logic
 │   └── test_agentcore_integration.py # AgentCore HTTP tests
 ├── deployment/
-│   └── agentcore/           # AgentCore-specific deployment
+│   └── agentcore/           # AWS AgentCore-specific deployment
 │       ├── Dockerfile.agentcore
 │       ├── deploy.sh
 │       └── README.md
@@ -379,7 +379,7 @@ async def your_new_tool(param: str) -> Dict[str, Any]:
 
 3. **Add HTTP definition** in `src/redmine_mcp_server/agentcore_server.py` to `TOOL_DEFINITIONS` array.
 
-The tool will automatically be available in both SSE and AgentCore modes.
+The tool will automatically be available in both SSE and AWS AgentCore modes.
 
 ### Testing
 
@@ -433,5 +433,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - [CHANGELOG](CHANGELOG.md) - Detailed version history
 - [Roadmap](./roadmap.md) - Future development plans  
-- [AgentCore Deployment Guide](deployment/agentcore/README.md) - Detailed HTTP mode deployment
+- [AWS AgentCore Deployment Guide](deployment/agentcore/README.md) - Detailed AWS HTTP mode deployment
 - [Architecture Clean Slate Plan](docs/AGENTCORE_CLEAN_SLATE_PLAN.md) - Implementation details

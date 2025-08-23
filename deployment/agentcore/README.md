@@ -1,6 +1,6 @@
-# AgentCore Deployment
+# AWS AgentCore Deployment
 
-This directory contains deployment configuration for the AgentCore HTTP mode of the Redmine MCP server.
+This directory contains deployment configuration for the AWS AgentCore HTTP mode of the Redmine MCP server. AWS AgentCore is Amazon's service for deploying AI agents and MCP servers in cloud environments.
 
 ## Quick Start
 
