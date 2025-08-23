@@ -14,7 +14,14 @@ import httpx
 # Add the src directory to the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from redmine_mcp_server.redmine_handler import redmine, REDMINE_URL
+from redmine_mcp_server.redmine_tools import get_redmine_client
+import os
+from dotenv import load_dotenv
+
+# Load environment variables for testing
+load_dotenv()
+REDMINE_URL = os.getenv("REDMINE_URL")
+redmine = get_redmine_client()
 
 
 class TestRedmineIntegration:

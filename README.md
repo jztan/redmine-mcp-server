@@ -8,12 +8,18 @@
 
 A Model Context Protocol (MCP) server that integrates with Redmine project management systems. This server provides seamless access to Redmine data through MCP tools, enabling AI assistants to interact with your Redmine instance.
 
+**Now with dual transport support:** Choose between Server-Sent Events (SSE) for traditional MCP clients or HTTP for AgentCore and cloud deployments.
+
 ## Features
 
-- **Redmine Integration**: List projects, view/create/update issues
-- **MCP Compliant**: Full Model Context Protocol support with FastAPI and Server-Sent Events
+- **Redmine Integration**: List projects, view/create/update issues, project status summaries
+- **Dual Transport Modes**: 
+  - **SSE Mode**: Traditional MCP with Server-Sent Events for desktop clients
+  - **AgentCore Mode**: HTTP-based for cloud platforms and AgentCore integration
+- **MCP Compliant**: Full Model Context Protocol support
 - **Flexible Authentication**: Username/password or API key
-- **Docker Ready**: Complete containerization support
+- **Production Ready**: Health checks, monitoring, and cloud deployment support
+- **Docker Ready**: Complete containerization for both transport modes
 - **Comprehensive Testing**: Unit, integration, and connection tests
 
 ## Installation
@@ -43,12 +49,17 @@ uv pip install -e .[test]
 cp .env.example .env
 # Edit .env with your Redmine settings
 
-# Run the server
+# Run the server (SSE mode - traditional MCP)
 uv run fastapi dev src/redmine_mcp_server/main.py
+
+# Or run AgentCore mode (HTTP-based)
+uv run python src/redmine_mcp_server/agentcore_server.py
 ```
 
-The server runs on `http://localhost:8000` with the MCP endpoint at `/sse`.
-For container orchestration, a lightweight health check is available at `/health`.
+**SSE Mode:** Server runs on `http://localhost:8000` with MCP endpoint at `/sse`
+**AgentCore Mode:** Server runs on `http://localhost:8000` with MCP endpoint at `/mcp`
+
+Both modes include health checks at `/health` for monitoring and container orchestration.
 
 ### Configuration
 
@@ -75,6 +86,8 @@ SERVER_PORT=8000
 
 ### Running the Server
 
+#### SSE Mode (Traditional MCP)
+
 ```bash
 # Development mode (auto-reload)
 uv run fastapi dev src/redmine_mcp_server/main.py
@@ -83,7 +96,20 @@ uv run fastapi dev src/redmine_mcp_server/main.py
 uv run python src/redmine_mcp_server/main.py
 ```
 
-### MCP Client Configuration
+#### AgentCore Mode (HTTP-based)
+
+```bash
+# Run AgentCore server
+uv run python src/redmine_mcp_server/agentcore_server.py
+```
+
+**Choose the right mode:**
+- **SSE Mode**: For desktop MCP clients, VS Code extensions
+- **AgentCore Mode**: For cloud deployment, HTTP clients, AgentCore integration
+
+### Client Configuration
+
+#### For Traditional MCP Clients (SSE Mode)
 
 Configure your MCP client (e.g., VS Code settings.json):
 
@@ -97,6 +123,33 @@ Configure your MCP client (e.g., VS Code settings.json):
     }
   }
 }
+```
+
+#### For AgentCore/HTTP Clients
+
+Use direct HTTP POST requests to `/mcp` endpoint:
+
+```bash
+# List available tools
+curl -X POST http://localhost:8000/mcp \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "tools/list", 
+    "id": 1
+  }'
+
+# Call a tool
+curl -X POST http://localhost:8000/mcp \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "method": "tools/call",
+    "params": {
+      "name": "list_redmine_projects"
+    },
+    "id": 2
+  }'
 ```
 
 ### Testing Your Setup
@@ -204,7 +257,7 @@ Downloads a file attached to a Redmine issue.
 
 ## Docker Deployment
 
-### Quick Start with Docker
+### SSE Mode (Traditional)
 
 ```bash
 # Configure environment
@@ -219,53 +272,114 @@ docker build -t redmine-mcp-server .
 docker run -p 8000:8000 --env-file .env.docker redmine-mcp-server
 ```
 
+### AgentCore Mode (Cloud/HTTP)
+
+```bash
+# Configure for AgentCore deployment
+cp deployment/agentcore/.env.agentcore.example deployment/agentcore/.env.agentcore
+# Edit with your settings
+
+# Local development
+docker-compose -f deployment/agentcore/docker-compose.agentcore.yml up --build
+
+# Production deployment (AWS ECR)
+cd deployment/agentcore
+chmod +x deploy.sh
+./deploy.sh
+
+# Cleanup when needed
+chmod +x cleanup.sh
+./cleanup.sh --dry-run  # Preview cleanup
+./cleanup.sh            # Interactive cleanup
+```
+
 ### Production Deployment
 
-Use the automated deployment script:
+For SSE mode, use the main deployment script:
 
 ```bash
 chmod +x deploy.sh
 ./deploy.sh
 ```
 
+For AgentCore mode, see [deployment/agentcore/README.md](deployment/agentcore/README.md) for detailed deployment instructions.
+
 ## Development
 
 ### Architecture
 
-The server is built using:
-- **FastAPI**: Modern web framework with automatic OpenAPI documentation
-- **FastMCP**: Model Context Protocol implementation
+The server uses a **dual transport architecture** with shared business logic:
+
+#### Core Components
+- **RedmineTools**: Pure Python business logic (shared across modes)
 - **python-redmine**: Official Redmine Python library
-- **Server-Sent Events (SSE)**: Real-time communication transport
+- **FastAPI**: Modern web framework with health monitoring
+
+#### Transport Modes
+- **SSE Mode**: FastMCP + Server-Sent Events for desktop MCP clients
+- **AgentCore Mode**: Native FastAPI HTTP endpoints for cloud integration
+
+#### Benefits
+- **Consistent behavior** across both transport modes
+- **Easy testing** with mockable pure Python tools
+- **Production ready** with health checks and monitoring
 
 ### Project Structure
 
 ```
 redmine-mcp-server/
 ├── src/redmine_mcp_server/
-│   ├── main.py              # FastAPI application entry point
-│   └── redmine_handler.py   # MCP tools and Redmine integration
+│   ├── main.py              # SSE mode FastAPI server
+│   ├── agentcore_server.py  # AgentCore mode HTTP server
+│   ├── redmine_handler.py   # SSE mode MCP tools (FastMCP)
+│   └── redmine_tools.py     # Shared business logic (pure Python)
 ├── tests/                   # Comprehensive test suite
+│   ├── test_redmine_tools.py        # Unit tests for shared logic
+│   └── test_agentcore_integration.py # AgentCore HTTP tests
+├── deployment/
+│   └── agentcore/           # AgentCore-specific deployment
+│       ├── Dockerfile.agentcore
+│       ├── deploy.sh
+│       └── README.md
 ├── .env.example            # Environment configuration template
-├── Dockerfile              # Container configuration
-├── docker-compose.yml      # Multi-container setup
-├── deploy.sh              # Deployment automation
+├── Dockerfile              # SSE mode container configuration
+├── docker-compose.yml      # SSE mode multi-container setup
+├── deploy.sh              # SSE mode deployment automation
 └── pyproject.toml         # Project configuration
 ```
 
 ### Adding New Tools
 
-Add your tool function to `src/redmine_mcp_server/redmine_handler.py`:
+The architecture makes it easy to add new tools that work in both transport modes:
+
+1. **Add business logic** to `src/redmine_mcp_server/redmine_tools.py`:
+
+```python
+async def your_new_tool(self, param: str) -> Dict[str, Any]:
+    """Tool implementation with business logic"""
+    if not self.client:
+        return {"error": "Redmine client not initialized."}
+    
+    try:
+        # Your Redmine API calls here
+        result = self.client.some_api_call(param)
+        return {"result": result}
+    except Exception as e:
+        return {"error": str(e)}
+```
+
+2. **Add SSE wrapper** in `src/redmine_mcp_server/redmine_handler.py`:
 
 ```python
 @mcp.tool()
 async def your_new_tool(param: str) -> Dict[str, Any]:
     """Tool description"""
-    # Implementation here
-    return {"result": "data"}
+    return await redmine_tools.your_new_tool(param)
 ```
 
-The tool will automatically be available through the MCP interface.
+3. **Add HTTP definition** in `src/redmine_mcp_server/agentcore_server.py` to `TOOL_DEFINITIONS` array.
+
+The tool will automatically be available in both SSE and AgentCore modes.
 
 ### Testing
 
@@ -318,4 +432,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Additional Resources
 
 - [CHANGELOG](CHANGELOG.md) - Detailed version history
-- [Roadmap](./roadmap.md) - Future development plans
+- [Roadmap](./roadmap.md) - Future development plans  
+- [AgentCore Deployment Guide](deployment/agentcore/README.md) - Detailed HTTP mode deployment
+- [Architecture Clean Slate Plan](docs/AGENTCORE_CLEAN_SLATE_PLAN.md) - Implementation details

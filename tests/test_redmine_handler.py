@@ -14,7 +14,8 @@ import sys
 # Add the src directory to the path so we can import our modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from redmine_mcp_server.redmine_handler import get_redmine_issue, list_redmine_projects, summarize_project_status, _analyze_issues
+from redmine_mcp_server.redmine_handler import get_redmine_issue, list_redmine_projects, summarize_project_status
+from redmine_mcp_server.redmine_tools import RedmineTools
 
 
 class TestRedmineHandler:
@@ -626,7 +627,8 @@ class TestRedmineHandler:
 
     def test_analyze_issues_helper(self, mock_issues_list):
         """Test the _analyze_issues helper function."""
-        result = _analyze_issues(mock_issues_list)
+        tools = RedmineTools(None)  # Don't need client for this helper method
+        result = tools._analyze_issues(mock_issues_list)
         
         assert result["total"] == 3
         assert result["by_status"]["New"] == 1
@@ -640,7 +642,8 @@ class TestRedmineHandler:
 
     def test_analyze_issues_empty_list(self):
         """Test _analyze_issues with empty list."""
-        result = _analyze_issues([])
+        tools = RedmineTools(None)  # Don't need client for this helper method
+        result = tools._analyze_issues([])
         
         assert result["total"] == 0
         assert result["by_status"] == {}
