@@ -38,9 +38,6 @@ uv venv
 source .venv/bin/activate
 uv pip install -e .
 
-# Install test dependencies (optional)
-uv pip install -e .[test]
-
 # Configure environment
 cp .env.example .env
 # Edit .env with your Redmine settings
@@ -328,6 +325,10 @@ The project includes unit tests, integration tests, and connection validation.
 
 **Run tests:**
 ```bash
+# Install test dependencies
+uv pip install -e .[test]
+```
+```bash
 # All tests
 python tests/run_tests.py --all
 
@@ -362,9 +363,25 @@ Enable debug logging by setting `mcp.settings.debug = True` in `main.py`.
 
 Contributions are welcome! Please:
 
+```bash
+# Install development dependencies (for code quality and testing)
+uv pip install -e .[dev]
+```
+
 1. Open an issue for discussion
 2. Run the full test suite: `python tests/run_tests.py --all`
-3. Submit a pull request
+3. Run code quality checks:
+   ```bash
+   # PEP 8 compliance check
+   uv run flake8 src/ --max-line-length=88
+
+   # Auto-format code
+   uv run black src/ --line-length=88
+
+   # Check formatting without making changes
+   uv run black --check src/
+   ```
+4. Submit a pull request
 
 ## License
 
