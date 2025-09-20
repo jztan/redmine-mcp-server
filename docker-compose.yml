@@ -8,13 +8,6 @@ services:
     container_name: redmine-mcp-server
     ports:
       - "8000:8000"
-    environment:
-      - REDMINE_URL=${REDMINE_URL}
-      - REDMINE_USERNAME=${REDMINE_USERNAME}
-      - REDMINE_PASSWORD=${REDMINE_PASSWORD}
-      - REDMINE_API_KEY=${REDMINE_API_KEY}
-      - SERVER_HOST=0.0.0.0
-      - SERVER_PORT=8000
     env_file:
       - .env.docker
     volumes:

@@ -20,6 +20,7 @@
 - [x] Download attachments
 - [x] Search issues by text query
 - [x] List accessible projects
+- [x] Smart issue summarization with activity analysis
 
 #### Documentation & Quality
 - [x] Documentation improvements
@@ -27,9 +28,8 @@
 ### 📋 Planned Features
 
 #### Enhanced Functionality
-- [ ] Smart issue summarization - summarize_project_status(project_id, days=30)
 - [ ] User lookup for assignments - find_project_users(project_id, role_filter=None)
 
 ---
 
-**Last Updated:** 2025-08-09 (v0.1.6)
+**Last Updated:** 2025-08-10 (v0.1.7-dev)

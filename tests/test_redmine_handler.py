@@ -14,7 +14,7 @@ import sys
 # Add the src directory to the path so we can import our modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from redmine_mcp_server.redmine_handler import get_redmine_issue, list_redmine_projects
+from redmine_mcp_server.redmine_handler import get_redmine_issue, list_redmine_projects, summarize_project_status, _analyze_issues
 
 
 class TestRedmineHandler:
@@ -576,4 +576,142 @@ class TestRedmineHandler:
 
         mock_redmine_issue.journals = [journal]
         return mock_redmine_issue
+
+    @pytest.fixture
+    def mock_project(self):
+        """Create a mock Redmine project object."""
+        mock_project = Mock()
+        mock_project.id = 1
+        mock_project.name = "Test Project"
+        mock_project.identifier = "test-project"
+        return mock_project
+
+    @pytest.fixture
+    def mock_issues_list(self):
+        """Create a list of mock issues for testing."""
+        issues = []
+        
+        # Create 3 mock issues with different statuses and priorities
+        for i in range(3):
+            issue = Mock()
+            issue.id = i + 1
+            issue.subject = f"Test Issue {i + 1}"
+            
+            # Mock status
+            status = Mock()
+            if i == 0:
+                status.name = "New"
+            elif i == 1:
+                status.name = "In Progress"
+            else:
+                status.name = "Resolved"
+            issue.status = status
+            
+            # Mock priority
+            priority = Mock()
+            priority.name = "Normal" if i != 2 else "High"
+            issue.priority = priority
+            
+            # Mock assignee
+            if i == 0:
+                issue.assigned_to = None  # Unassigned
+            else:
+                assigned = Mock()
+                assigned.name = f"User {i}"
+                issue.assigned_to = assigned
+            
+            issues.append(issue)
+        
+        return issues
+
+    def test_analyze_issues_helper(self, mock_issues_list):
+        """Test the _analyze_issues helper function."""
+        result = _analyze_issues(mock_issues_list)
+        
+        assert result["total"] == 3
+        assert result["by_status"]["New"] == 1
+        assert result["by_status"]["In Progress"] == 1
+        assert result["by_status"]["Resolved"] == 1
+        assert result["by_priority"]["Normal"] == 2
+        assert result["by_priority"]["High"] == 1
+        assert result["by_assignee"]["Unassigned"] == 1
+        assert result["by_assignee"]["User 1"] == 1
+        assert result["by_assignee"]["User 2"] == 1
+
+    def test_analyze_issues_empty_list(self):
+        """Test _analyze_issues with empty list."""
+        result = _analyze_issues([])
+        
+        assert result["total"] == 0
+        assert result["by_status"] == {}
+        assert result["by_priority"] == {}
+        assert result["by_assignee"] == {}
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_summarize_project_status_success(self, mock_redmine, mock_project, mock_issues_list):
+        """Test successful project status summarization."""
+        mock_redmine.project.get.return_value = mock_project
+        mock_redmine.issue.filter.return_value = mock_issues_list
+        
+        result = await summarize_project_status(1, 30)
+        
+        assert "error" not in result
+        assert result["project"]["id"] == 1
+        assert result["project"]["name"] == "Test Project"
+        assert result["analysis_period"]["days"] == 30
+        assert "recent_activity" in result
+        assert "project_totals" in result
+        assert "insights" in result
+        
+        # Verify the analysis period dates are set
+        assert "start_date" in result["analysis_period"]
+        assert "end_date" in result["analysis_period"]
+        
+        # Verify insights calculations
+        insights = result["insights"]
+        assert "daily_creation_rate" in insights
+        assert "daily_update_rate" in insights
+        assert "recent_activity_percentage" in insights
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_summarize_project_status_project_not_found(self, mock_redmine):
+        """Test project status summarization with non-existent project."""
+        from redminelib.exceptions import ResourceNotFoundError
+        mock_redmine.project.get.side_effect = ResourceNotFoundError()
+        
+        result = await summarize_project_status(999, 30)
+        
+        assert result["error"] == "Project 999 not found."
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine', None)
+    async def test_summarize_project_status_no_client(self):
+        """Test project status summarization with no Redmine client."""
+        result = await summarize_project_status(1, 30)
+        
+        assert result["error"] == "Redmine client not initialized."
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_summarize_project_status_custom_days(self, mock_redmine, mock_project):
+        """Test project status summarization with custom days parameter."""
+        mock_redmine.project.get.return_value = mock_project
+        mock_redmine.issue.filter.return_value = []
+        
+        result = await summarize_project_status(1, 7)
+        
+        assert result["analysis_period"]["days"] == 7
+        
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_summarize_project_status_exception_handling(self, mock_redmine, mock_project):
+        """Test project status summarization exception handling."""
+        mock_redmine.project.get.return_value = mock_project
+        mock_redmine.issue.filter.side_effect = Exception("API Error")
+        
+        result = await summarize_project_status(1, 30)
+        
+        assert result["error"] == "An error occurred while summarizing project 1."
 
