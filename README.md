@@ -38,9 +38,6 @@ uv venv
 source .venv/bin/activate
 uv pip install -e .
 
-# Install test dependencies (optional)
-uv pip install -e .[test]
-
 # Configure environment
 cp .env.example .env
 # Edit .env with your Redmine settings
@@ -72,7 +69,26 @@ SERVER_PORT=8000
 # Optional: File management
 ATTACHMENTS_DIR=./attachments
 AUTO_CLEANUP_ENABLED=true
-CLEANUP_INTERVAL_HOURS=1
+CLEANUP_INTERVAL_MINUTES=10
+ATTACHMENT_EXPIRES_MINUTES=60
+```
+
+### File Management Configuration
+
+- **`ATTACHMENTS_DIR`**: Directory where downloaded attachments are stored (default: `./attachments`)
+- **`AUTO_CLEANUP_ENABLED`**: Enable automatic cleanup of expired files (default: `true`)
+- **`CLEANUP_INTERVAL_MINUTES`**: How often cleanup runs to check for expired files (default: `10` minutes)
+- **`ATTACHMENT_EXPIRES_MINUTES`**: Default expiry time for downloaded attachments (default: `60` minutes)
+
+**Example configurations:**
+```bash
+# Quick cleanup for development/testing
+CLEANUP_INTERVAL_MINUTES=1
+ATTACHMENT_EXPIRES_MINUTES=5
+
+# Production settings
+CLEANUP_INTERVAL_MINUTES=30
+ATTACHMENT_EXPIRES_MINUTES=120
 ```
 
 **Note:** API key authentication is preferred for security.
@@ -328,6 +344,10 @@ The project includes unit tests, integration tests, and connection validation.
 
 **Run tests:**
 ```bash
+# Install test dependencies
+uv pip install -e .[test]
+```
+```bash
 # All tests
 python tests/run_tests.py --all
 
@@ -362,9 +382,25 @@ Enable debug logging by setting `mcp.settings.debug = True` in `main.py`.
 
 Contributions are welcome! Please:
 
+```bash
+# Install development dependencies (for code quality and testing)
+uv pip install -e .[dev]
+```
+
 1. Open an issue for discussion
 2. Run the full test suite: `python tests/run_tests.py --all`
-3. Submit a pull request
+3. Run code quality checks:
+   ```bash
+   # PEP 8 compliance check
+   uv run flake8 src/ --max-line-length=88
+
+   # Auto-format code
+   uv run black src/ --line-length=88
+
+   # Check formatting without making changes
+   uv run black --check src/
+   ```
+4. Submit a pull request
 
 ## License
 
