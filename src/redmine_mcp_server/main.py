@@ -1,7 +1,8 @@
 """
 Main entry point for the MCP Redmine server.
 
-This module uses FastMCP's native streamable HTTP transport for MCP protocol communication.
+This module uses FastMCP's native streamable HTTP transport for MCP protocol
+communication.
 The server runs with built-in HTTP endpoints and handles MCP requests natively.
 
 Endpoints:
@@ -10,6 +11,7 @@ Endpoints:
 Modules:
     - .redmine_handler: Contains the MCP server logic with FastMCP integration.
 """
+
 from .redmine_handler import mcp
 import os
 from dotenv import load_dotenv
