@@ -6,6 +6,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2025-09-20
+
+### Changed
+- **BREAKING**: Migrated from FastAPI/SSE to FastMCP streamable HTTP transport
+- **BREAKING**: MCP endpoint changed from `/sse` to `/mcp`
+- Updated server architecture to use FastMCP's native HTTP capabilities
+- Simplified initialization and removed FastAPI dependency layer
+
+### Added
+- Native FastMCP streamable HTTP transport support
+- Claude Code CLI setup command documentation
+- Stateless HTTP mode for better scalability
+- Smart issue summarization tool with comprehensive project analytics
+
+### Improved
+- Better MCP protocol compliance with native FastMCP implementation
+- Reduced complexity by removing custom FastAPI/SSE layer
+- Updated all documentation to reflect new transport method
+- Enhanced health check endpoint with service identification
+
+### Migration Notes
+- Existing MCP clients need to update endpoint from `/sse` to `/mcp`
+- Claude Code users can now use: `claude mcp add --transport http redmine http://127.0.0.1:8000/mcp`
+- Server initialization simplified with `mcp.run(transport="streamable-http")`
+
 ## [0.1.6] - 2025-06-19
 ### Added
 - New MCP tool `search_redmine_issues` for querying issues by text.
