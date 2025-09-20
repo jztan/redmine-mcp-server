@@ -11,7 +11,7 @@ A Model Context Protocol (MCP) server that integrates with Redmine project manag
 ## Features
 
 - **Redmine Integration**: List projects, view/create/update issues
-- **MCP Compliant**: Full Model Context Protocol support with FastAPI and Server-Sent Events
+- **MCP Compliant**: Full Model Context Protocol support with FastMCP and streamable HTTP transport
 - **Flexible Authentication**: Username/password or API key
 - **Docker Ready**: Complete containerization support
 - **Comprehensive Testing**: Unit, integration, and connection tests
@@ -44,11 +44,10 @@ cp .env.example .env
 # Edit .env with your Redmine settings
 
 # Run the server
-uv run fastapi dev src/redmine_mcp_server/main.py
+uv run python -m redmine_mcp_server.main
 ```
 
-The server runs on `http://localhost:8000` with the MCP endpoint at `/sse`.
-For container orchestration, a lightweight health check is available at `/health`.
+The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp` and health check at `/health`.
 
 ### Configuration
 
@@ -76,14 +75,35 @@ SERVER_PORT=8000
 ### Running the Server
 
 ```bash
-# Development mode (auto-reload)
-uv run fastapi dev src/redmine_mcp_server/main.py
-
-# Production mode
-uv run python src/redmine_mcp_server/main.py
+uv run python -m redmine_mcp_server.main
 ```
 
+The same command is used for both development and production. Configure environment-specific settings in your `.env` file.
+
 ### MCP Client Configuration
+
+#### Claude Code
+
+Add to Claude Code using the CLI command:
+
+```bash
+claude mcp add --transport http redmine http://127.0.0.1:8000/mcp
+```
+
+Or configure manually in your Claude Code (~/.claude.json):
+
+```json
+{
+  "mcpServers": {
+    "my-local-server": {
+      "type": "http",
+      "url": "http://127.0.0.1:8000/mcp"
+    }
+  }
+}
+```
+
+#### Other MCP Clients
 
 Configure your MCP client (e.g., VS Code settings.json):
 
@@ -92,7 +112,7 @@ Configure your MCP client (e.g., VS Code settings.json):
   "mcp": {
     "servers": {
       "redmine": {
-        "url": "http://127.0.0.1:8000/sse"
+        "url": "http://127.0.0.1:8000/mcp"
       }
     }
   }
@@ -233,17 +253,15 @@ chmod +x deploy.sh
 ### Architecture
 
 The server is built using:
-- **FastAPI**: Modern web framework with automatic OpenAPI documentation
-- **FastMCP**: Model Context Protocol implementation
+- **FastMCP**: Model Context Protocol implementation with streamable HTTP transport
 - **python-redmine**: Official Redmine Python library
-- **Server-Sent Events (SSE)**: Real-time communication transport
 
 ### Project Structure
 
 ```
 redmine-mcp-server/
 ├── src/redmine_mcp_server/
-│   ├── main.py              # FastAPI application entry point
+│   ├── main.py              # FastMCP application entry point
 │   └── redmine_handler.py   # MCP tools and Redmine integration
 ├── tests/                   # Comprehensive test suite
 ├── .env.example            # Environment configuration template
@@ -301,7 +319,7 @@ python tests/run_tests.py --coverage
 
 ### Debug Mode
 
-Enable debug logging by modifying the FastAPI app initialization in `main.py`.
+Enable debug logging by setting `mcp.settings.debug = True` in `main.py`.
 
 ## Contributing
 

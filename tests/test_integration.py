@@ -275,15 +275,15 @@ class TestFastAPIIntegration:
         assert hasattr(app, 'router')
 
     @pytest.mark.integration
-    def test_sse_endpoint_exists(self):
-        """Test that the SSE endpoint is properly configured."""
+    def test_mcp_endpoint_exists(self):
+        """Test that the MCP endpoint is properly configured."""
         from redmine_mcp_server.main import app
-        
+
         # Check that routes are configured
         route_paths = [route.path for route in app.router.routes if hasattr(route, 'path')]
-        
-        # Should have the SSE endpoint
-        assert any('/sse' in path or path == '/sse' for path in route_paths), f"SSE endpoint not found. Available routes: {route_paths}"
+
+        # Should have the MCP endpoint (replaced SSE)
+        assert '/mcp' in route_paths, f"MCP endpoint not found. Available routes: {route_paths}"
 
     @pytest.mark.integration
     def test_health_endpoint_exists(self):

@@ -60,6 +60,12 @@ if REDMINE_URL and (REDMINE_API_KEY or (REDMINE_USERNAME and REDMINE_PASSWORD)):
 mcp = FastMCP("redmine_mcp_tools")
 
 
+@mcp.custom_route("/health", methods=["GET"])
+async def health_check(request) -> dict:
+    """Health check endpoint for container orchestration and monitoring."""
+    return {"status": "ok", "service": "redmine_mcp_tools"}
+
+
 def _issue_to_dict(issue: Any) -> Dict[str, Any]:
     """Convert a python-redmine Issue object to a serializable dict."""
     assigned = getattr(issue, "assigned_to", None)
