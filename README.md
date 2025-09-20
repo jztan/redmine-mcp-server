@@ -69,7 +69,26 @@ SERVER_PORT=8000
 # Optional: File management
 ATTACHMENTS_DIR=./attachments
 AUTO_CLEANUP_ENABLED=true
-CLEANUP_INTERVAL_HOURS=1
+CLEANUP_INTERVAL_MINUTES=10
+ATTACHMENT_EXPIRES_MINUTES=60
+```
+
+### File Management Configuration
+
+- **`ATTACHMENTS_DIR`**: Directory where downloaded attachments are stored (default: `./attachments`)
+- **`AUTO_CLEANUP_ENABLED`**: Enable automatic cleanup of expired files (default: `true`)
+- **`CLEANUP_INTERVAL_MINUTES`**: How often cleanup runs to check for expired files (default: `10` minutes)
+- **`ATTACHMENT_EXPIRES_MINUTES`**: Default expiry time for downloaded attachments (default: `60` minutes)
+
+**Example configurations:**
+```bash
+# Quick cleanup for development/testing
+CLEANUP_INTERVAL_MINUTES=1
+ATTACHMENT_EXPIRES_MINUTES=5
+
+# Production settings
+CLEANUP_INTERVAL_MINUTES=30
+ATTACHMENT_EXPIRES_MINUTES=120
 ```
 
 **Note:** API key authentication is preferred for security.
