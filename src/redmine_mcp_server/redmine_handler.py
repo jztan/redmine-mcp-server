@@ -61,9 +61,10 @@ mcp = FastMCP("redmine_mcp_tools")
 
 
 @mcp.custom_route("/health", methods=["GET"])
-async def health_check(request) -> dict:
+async def health_check(request):
     """Health check endpoint for container orchestration and monitoring."""
-    return {"status": "ok", "service": "redmine_mcp_tools"}
+    from starlette.responses import JSONResponse
+    return JSONResponse({"status": "ok", "service": "redmine_mcp_tools"})
 
 
 def _issue_to_dict(issue: Any) -> Dict[str, Any]:
