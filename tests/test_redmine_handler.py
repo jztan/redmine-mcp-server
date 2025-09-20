@@ -461,17 +461,36 @@ class TestRedmineHandler:
 
     @pytest.mark.asyncio
     @patch('redmine_mcp_server.redmine_handler.redmine')
+    @patch.dict('os.environ', {'SERVER_HOST': 'localhost', 'SERVER_PORT': '8000'})
     async def test_download_redmine_attachment_success(self, mock_redmine, tmp_path):
-        """Test successful attachment download."""
+        """Test successful attachment download with HTTP URL return."""
+        # Create a real temporary file for the mock to return
+        test_file = tmp_path / "test_attachment.pdf"
+        test_file.write_text("test content")
+
         mock_attachment = Mock()
-        mock_attachment.download.return_value = str(tmp_path / "file.txt")
+        mock_attachment.download.return_value = str(test_file)
+        mock_attachment.filename = "test_attachment.pdf"
+        mock_attachment.content_type = "application/pdf"
         mock_redmine.attachment.get.return_value = mock_attachment
 
         from redmine_mcp_server.redmine_handler import download_redmine_attachment
 
         result = await download_redmine_attachment(5, str(tmp_path))
 
-        assert result["file_path"] == str(tmp_path / "file.txt")
+        # Test new HTTP URL format
+        assert "download_url" in result
+        assert "filename" in result
+        assert "content_type" in result
+        assert "size" in result
+        assert "expires_at" in result
+        assert "attachment_id" in result
+
+        assert result["filename"] == "test_attachment.pdf"
+        assert result["content_type"] == "application/pdf"
+        assert result["attachment_id"] == 5
+        assert "http://localhost:8000/files/" in result["download_url"]
+
         mock_redmine.attachment.get.assert_called_once_with(5)
         mock_attachment.download.assert_called_once_with(savepath=str(tmp_path))
 
@@ -712,6 +731,29 @@ class TestRedmineHandler:
         mock_redmine.issue.filter.side_effect = Exception("API Error")
         
         result = await summarize_project_status(1, 30)
-        
+
         assert result["error"] == "An error occurred while summarizing project 1."
+
+    @pytest.mark.asyncio
+    @patch.dict('os.environ', {'ATTACHMENTS_DIR': './test_attachments'})
+    async def test_cleanup_attachment_files_success(self, tmp_path):
+        """Test successful attachment cleanup."""
+        from redmine_mcp_server.redmine_handler import cleanup_attachment_files
+
+        result = await cleanup_attachment_files()
+
+        assert "cleanup" in result
+        assert "current_storage" in result
+        assert isinstance(result["cleanup"], dict)
+        assert isinstance(result["current_storage"], dict)
+
+        # Check expected keys in cleanup stats
+        assert "cleaned_files" in result["cleanup"]
+        assert "cleaned_bytes" in result["cleanup"]
+        assert "cleaned_mb" in result["cleanup"]
+
+        # Check expected keys in storage stats
+        assert "total_files" in result["current_storage"]
+        assert "total_bytes" in result["current_storage"]
+        assert "total_mb" in result["current_storage"]
 
