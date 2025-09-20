@@ -6,6 +6,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2025-09-21
+
+### Added
+- **Automatic file cleanup system** with configurable intervals and expiry times
+- `AUTO_CLEANUP_ENABLED` environment variable for enabling/disabling automatic cleanup (default: true)
+- `CLEANUP_INTERVAL_MINUTES` environment variable for cleanup frequency (default: 10 minutes)
+- `ATTACHMENT_EXPIRES_MINUTES` environment variable for default attachment expiry (default: 60 minutes)
+- Background cleanup task with lazy initialization via MCP tool calls
+- Cleanup status endpoint (`/cleanup/status`) for monitoring background task
+- `CleanupTaskManager` class for managing cleanup task lifecycle
+- Enhanced health check endpoint with cleanup task initialization
+- Comprehensive file management configuration documentation in README
+
+### Changed
+- **BREAKING**: `CLEANUP_INTERVAL_HOURS` replaced with `CLEANUP_INTERVAL_MINUTES` for finer control
+- Default attachment expiry configurable via environment variable instead of hardcoded 24 hours
+- Cleanup task now starts automatically when first MCP tool is called (lazy initialization)
+- Updated `.env.example` with new minute-based configuration options
+
+### Improved
+- More granular control over cleanup timing with minute-based intervals
+- Better resource management with automatic cleanup task lifecycle
+- Enhanced monitoring capabilities with cleanup status endpoint
+- Clearer documentation with practical configuration examples for development and production
+
 ## [0.2.1] - 2025-09-20
 
 ### Added
