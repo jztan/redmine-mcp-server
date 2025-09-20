@@ -10,9 +10,11 @@ A Model Context Protocol (MCP) server that integrates with Redmine project manag
 
 ## Features
 
-- **Redmine Integration**: List projects, view/create/update issues
+- **Redmine Integration**: List projects, view/create/update issues, download attachments
+- **HTTP File Serving**: Secure file access via UUID-based URLs with automatic expiry
 - **MCP Compliant**: Full Model Context Protocol support with FastMCP and streamable HTTP transport
 - **Flexible Authentication**: Username/password or API key
+- **File Management**: Automatic cleanup of expired files with storage statistics
 - **Docker Ready**: Complete containerization support
 - **Comprehensive Testing**: Unit, integration, and connection tests
 
@@ -47,7 +49,7 @@ cp .env.example .env
 uv run python -m redmine_mcp_server.main
 ```
 
-The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp` and health check at `/health`.
+The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, health check at `/health`, and file serving at `/files/{file_id}`.
 
 ### Configuration
 
@@ -66,6 +68,11 @@ REDMINE_PASSWORD=your_password
 # Optional: Server settings
 SERVER_HOST=0.0.0.0
 SERVER_PORT=8000
+
+# Optional: File management
+ATTACHMENTS_DIR=./attachments
+AUTO_CLEANUP_ENABLED=true
+CLEANUP_INTERVAL_HOURS=1
 ```
 
 **Note:** API key authentication is preferred for security.
@@ -213,13 +220,42 @@ Updates an existing issue with the provided fields.
 ### File Operations
 
 #### `download_redmine_attachment`
-Downloads a file attached to a Redmine issue.
+Downloads a file attached to a Redmine issue and provides HTTP access via secure URLs.
 
 **Parameters:**
 - `attachment_id` (integer, required): The ID of the attachment to download
-- `save_dir` (string, optional): Directory to save the file. Default: `"."`
+- `save_dir` (string, optional): Directory to save the file. Default: `"attachments"`
+- `expires_hours` (integer, optional): File expiry time in hours. Default: `24`
 
-**Returns:** Dictionary with `file_path` of the downloaded file
+**Returns:** Dictionary with download details:
+- `download_url`: HTTP URL for accessing the file (`/files/{uuid}`)
+- `filename`: Original filename
+- `content_type`: MIME type of the file
+- `size`: File size in bytes
+- `expires_at`: ISO timestamp when file expires
+- `attachment_id`: Original attachment ID
+
+**Example Response:**
+```json
+{
+  "download_url": "http://localhost:8000/files/550e8400-e29b-41d4-a716-446655440000",
+  "filename": "document.pdf",
+  "content_type": "application/pdf",
+  "size": 1024,
+  "expires_at": "2025-09-21T08:00:00Z",
+  "attachment_id": 123
+}
+```
+
+#### `cleanup_attachment_files`
+Removes expired attachment files and provides cleanup statistics.
+
+**Parameters:** None
+
+**Returns:** Cleanup statistics:
+- `cleaned_files`: Number of files removed
+- `cleaned_bytes`: Total bytes cleaned up
+- `cleaned_mb`: Total megabytes cleaned up (rounded)
 
 
 ## Docker Deployment
@@ -262,7 +298,8 @@ The server is built using:
 redmine-mcp-server/
 ├── src/redmine_mcp_server/
 │   ├── main.py              # FastMCP application entry point
-│   └── redmine_handler.py   # MCP tools and Redmine integration
+│   ├── redmine_handler.py   # MCP tools and Redmine integration
+│   └── file_manager.py      # Attachment file management and cleanup
 ├── tests/                   # Comprehensive test suite
 ├── .env.example            # Environment configuration template
 ├── Dockerfile              # Container configuration

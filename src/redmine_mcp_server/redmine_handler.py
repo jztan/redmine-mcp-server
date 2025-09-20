@@ -22,17 +22,24 @@ Dependencies:
     - python-dotenv: Environment variable management
     - mcp.server.fastmcp: FastMCP server implementation
 """
+
 import os
-from datetime import datetime, timedelta
+import uuid
+import json
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Dict, List
 
 from dotenv import load_dotenv
 from redminelib import Redmine
 from redminelib.exceptions import ResourceNotFoundError
 from mcp.server.fastmcp import FastMCP
+from .file_manager import AttachmentFileManager
 
 # Load environment variables from .env file
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '..', '.env')) # Adjust path to .env
+load_dotenv(
+    dotenv_path=os.path.join(os.path.dirname(__file__), "..", "..", ".env")
+)  # Adjust path to .env
 
 REDMINE_URL = os.getenv("REDMINE_URL")
 REDMINE_USERNAME = os.getenv("REDMINE_USERNAME")
@@ -64,7 +71,78 @@ mcp = FastMCP("redmine_mcp_tools")
 async def health_check(request):
     """Health check endpoint for container orchestration and monitoring."""
     from starlette.responses import JSONResponse
+
     return JSONResponse({"status": "ok", "service": "redmine_mcp_tools"})
+
+
+@mcp.custom_route("/files/{file_id}", methods=["GET"])
+async def serve_attachment(request):
+    """Serve downloaded attachment files via HTTP."""
+    from starlette.responses import FileResponse
+    from starlette.exceptions import HTTPException
+
+    file_id = request.path_params["file_id"]
+
+    # Security: Validate file_id format (proper UUID validation)
+    try:
+        uuid.UUID(file_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid file ID")
+
+    # Load file metadata from UUID directory
+    attachments_dir = Path(os.getenv("ATTACHMENTS_DIR", "./attachments"))
+    uuid_dir = attachments_dir / file_id
+    metadata_file = uuid_dir / "metadata.json"
+
+    if not metadata_file.exists():
+        raise HTTPException(status_code=404, detail="File not found or expired")
+
+    try:
+        # Read metadata
+        with open(metadata_file, "r") as f:
+            metadata = json.load(f)
+
+        # Check expiry with proper timezone-aware datetime comparison
+        expires_at_str = metadata.get("expires_at", "")
+        if expires_at_str:
+            expires_at = datetime.fromisoformat(expires_at_str.replace("Z", "+00:00"))
+            if datetime.now(timezone.utc) > expires_at:
+                # Clean up expired files
+                try:
+                    file_path = Path(metadata["file_path"])
+                    if file_path.exists():
+                        file_path.unlink()
+                    metadata_file.unlink()
+                    # Remove UUID directory if empty
+                    if uuid_dir.exists() and not any(uuid_dir.iterdir()):
+                        uuid_dir.rmdir()
+                except OSError:
+                    pass  # Log but don't fail if cleanup fails
+                raise HTTPException(status_code=404, detail="File expired")
+
+        # Validate file path security (must be within UUID directory)
+        file_path = Path(metadata["file_path"]).resolve()
+        uuid_dir_resolved = uuid_dir.resolve()
+        try:
+            file_path.relative_to(uuid_dir_resolved)
+        except ValueError:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        # Serve file
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="File not found")
+
+        return FileResponse(
+            path=str(file_path),
+            filename=metadata["original_filename"],
+            media_type=metadata.get("content_type", "application/octet-stream"),
+        )
+
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail="Corrupted metadata")
+    except ValueError:
+        # Invalid datetime format
+        raise HTTPException(status_code=500, detail="Invalid metadata format")
 
 
 def _issue_to_dict(issue: Any) -> Dict[str, Any]:
@@ -79,18 +157,24 @@ def _issue_to_dict(issue: Any) -> Dict[str, Any]:
         "status": {"id": issue.status.id, "name": issue.status.name},
         "priority": {"id": issue.priority.id, "name": issue.priority.name},
         "author": {"id": issue.author.id, "name": issue.author.name},
-        "assigned_to": {
-            "id": assigned.id,
-            "name": assigned.name,
-        }
-        if assigned is not None
-        else None,
-        "created_on": issue.created_on.isoformat()
-        if getattr(issue, "created_on", None) is not None
-        else None,
-        "updated_on": issue.updated_on.isoformat()
-        if getattr(issue, "updated_on", None) is not None
-        else None,
+        "assigned_to": (
+            {
+                "id": assigned.id,
+                "name": assigned.name,
+            }
+            if assigned is not None
+            else None
+        ),
+        "created_on": (
+            issue.created_on.isoformat()
+            if getattr(issue, "created_on", None) is not None
+            else None
+        ),
+        "updated_on": (
+            issue.updated_on.isoformat()
+            if getattr(issue, "updated_on", None) is not None
+            else None
+        ),
     }
 
 
@@ -114,14 +198,20 @@ def _journals_to_list(issue: Any) -> List[Dict[str, Any]]:
         journals.append(
             {
                 "id": journal.id,
-                "user": {
-                    "id": user.id,
-                    "name": user.name,
-                }
-                if user is not None
-                else None,
+                "user": (
+                    {
+                        "id": user.id,
+                        "name": user.name,
+                    }
+                    if user is not None
+                    else None
+                ),
                 "notes": notes,
-                "created_on": journal.created_on.isoformat() if getattr(journal, "created_on", None) is not None else None,
+                "created_on": (
+                    journal.created_on.isoformat()
+                    if getattr(journal, "created_on", None) is not None
+                    else None
+                ),
             }
         )
     return journals
@@ -148,15 +238,19 @@ def _attachments_to_list(issue: Any) -> List[Dict[str, Any]]:
                 "content_type": getattr(attachment, "content_type", ""),
                 "description": getattr(attachment, "description", ""),
                 "content_url": getattr(attachment, "content_url", ""),
-                "author": {
-                    "id": attachment.author.id,
-                    "name": attachment.author.name,
-                }
-                if getattr(attachment, "author", None) is not None
-                else None,
-                "created_on": attachment.created_on.isoformat()
-                if getattr(attachment, "created_on", None) is not None
-                else None,
+                "author": (
+                    {
+                        "id": attachment.author.id,
+                        "name": attachment.author.name,
+                    }
+                    if getattr(attachment, "author", None) is not None
+                    else None
+                ),
+                "created_on": (
+                    attachment.created_on.isoformat()
+                    if getattr(attachment, "created_on", None) is not None
+                    else None
+                ),
             }
         )
     return attachments
@@ -211,6 +305,7 @@ async def get_redmine_issue(
         print(f"Error fetching Redmine issue {issue_id}: {e}")
         return {"error": f"An error occurred while fetching issue {issue_id}."}
 
+
 @mcp.tool()
 async def list_redmine_projects() -> List[Dict[str, Any]]:
     """
@@ -227,8 +322,12 @@ async def list_redmine_projects() -> List[Dict[str, Any]]:
                 "id": project.id,
                 "name": project.name,
                 "identifier": project.identifier,
-                "description": getattr(project, 'description', ''),
-                "created_on": project.created_on.isoformat() if getattr(project, 'created_on', None) is not None else None,
+                "description": getattr(project, "description", ""),
+                "created_on": (
+                    project.created_on.isoformat()
+                    if getattr(project, "created_on", None) is not None
+                    else None
+                ),
             }
             for project in projects
         ]
@@ -338,27 +437,130 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
 
 @mcp.tool()
 async def download_redmine_attachment(
-    attachment_id: int, save_dir: str = "."
+    attachment_id: int,
+    save_dir: str = "attachments",  # Keep compatibility with current signature
+    expires_hours: int = 24,
 ) -> Dict[str, Any]:
-    """Download a Redmine attachment and return the saved file path.
+    """Download a Redmine attachment and return HTTP download URL.
 
     Args:
         attachment_id: The ID of the attachment to download.
-        save_dir: Directory where the file will be saved. Defaults to the
-            current directory.
+        save_dir: Directory where the file will be saved. Defaults to "attachments".
+        expires_hours: Hours until download link expires (default: 24)
 
     Returns:
-        A dictionary with ``"file_path"`` pointing to the saved file. On
-        error, a dictionary with ``"error"`` is returned.
+        A dictionary containing:
+        - "download_url": HTTP URL to download the file
+        - "filename": Original filename of the attachment
+        - "content_type": MIME type of the file
+        - "size": Size of the file in bytes
+        - "expires_at": ISO timestamp when link expires
+
+        On error, a dictionary with "error" is returned.
     """
     if not redmine:
         return {"error": "Redmine client not initialized."}
+
     try:
         attachment = redmine.attachment.get(attachment_id)
-        # Ensure the save directory exists to avoid FileNotFoundError
-        os.makedirs(save_dir, exist_ok=True)
-        file_path = attachment.download(savepath=save_dir)
-        return {"file_path": file_path}
+
+        # Create attachments directory (use configured path if save_dir is default)
+        if save_dir == "attachments":
+            attachments_dir = Path(os.getenv("ATTACHMENTS_DIR", "./attachments"))
+        else:
+            attachments_dir = Path(save_dir)
+        attachments_dir.mkdir(exist_ok=True)
+
+        # Generate unique file ID
+        file_id = str(uuid.uuid4())
+
+        # Download using existing approach - keeps original filename
+        downloaded_path = attachment.download(savepath=str(attachments_dir))
+
+        # Get file info
+        original_filename = getattr(
+            attachment, "filename", f"attachment_{attachment_id}"
+        )
+
+        # Create organized storage with UUID directory
+        uuid_dir = attachments_dir / file_id
+        uuid_dir.mkdir(exist_ok=True)
+
+        # Move file to UUID-based location using atomic operations
+        final_path = uuid_dir / original_filename
+        temp_path = uuid_dir / f"{original_filename}.tmp"
+
+        # Atomic file move with error handling
+        try:
+            os.rename(downloaded_path, temp_path)
+            os.rename(temp_path, final_path)
+        except (OSError, IOError) as e:
+            # Cleanup on failure
+            try:
+                if temp_path.exists():
+                    temp_path.unlink()
+                if Path(downloaded_path).exists():
+                    Path(downloaded_path).unlink()
+            except OSError:
+                pass  # Best effort cleanup
+            return {"error": f"Failed to store attachment: {str(e)}"}
+
+        # Calculate expiry time (timezone-aware)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=expires_hours)
+
+        # Store metadata atomically
+        metadata = {
+            "file_id": file_id,
+            "attachment_id": attachment_id,
+            "original_filename": original_filename,
+            "file_path": str(final_path),
+            "content_type": getattr(
+                attachment, "content_type", "application/octet-stream"
+            ),
+            "size": final_path.stat().st_size,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "expires_at": expires_at.isoformat(),
+        }
+
+        metadata_file = uuid_dir / "metadata.json"
+        temp_metadata = uuid_dir / "metadata.json.tmp"
+
+        # Atomic metadata write with error handling
+        try:
+            with open(temp_metadata, "w") as f:
+                json.dump(metadata, f, indent=2)
+            os.rename(temp_metadata, metadata_file)
+        except (OSError, IOError, json.JSONEncodeError) as e:
+            # Cleanup on failure
+            try:
+                if temp_metadata.exists():
+                    temp_metadata.unlink()
+                if final_path.exists():
+                    final_path.unlink()
+            except OSError:
+                pass  # Best effort cleanup
+            return {"error": f"Failed to save metadata: {str(e)}"}
+
+        # Generate server base URL from environment configuration
+        # Use public configuration for external URLs
+        public_host = os.getenv("PUBLIC_HOST", os.getenv("SERVER_HOST", "localhost"))
+        public_port = os.getenv("PUBLIC_PORT", os.getenv("SERVER_PORT", "8000"))
+
+        # Handle special case of 0.0.0.0 bind address
+        if public_host == "0.0.0.0":
+            public_host = "localhost"
+
+        download_url = f"http://{public_host}:{public_port}/files/{file_id}"
+
+        return {
+            "download_url": download_url,
+            "filename": original_filename,
+            "content_type": metadata["content_type"],
+            "size": metadata["size"],
+            "expires_at": metadata["expires_at"],
+            "attachment_id": attachment_id,
+        }
+
     except ResourceNotFoundError:
         return {"error": f"Attachment {attachment_id} not found."}
     except Exception as e:
@@ -369,71 +571,68 @@ async def download_redmine_attachment(
 
 
 @mcp.tool()
-async def summarize_project_status(
-    project_id: int, days: int = 30
-) -> Dict[str, Any]:
-    """Provide a summary of project status based on issue activity over the specified time period.
-    
+async def summarize_project_status(project_id: int, days: int = 30) -> Dict[str, Any]:
+    """Provide a summary of project status based on issue activity over the
+    specified time period.
+
     Args:
         project_id: The ID of the project to summarize
         days: Number of days to look back for analysis. Defaults to 30.
-    
+
     Returns:
-        A dictionary containing project status summary with issue counts, 
-        activity metrics, and trends. On error, returns a dictionary with 
+        A dictionary containing project status summary with issue counts,
+        activity metrics, and trends. On error, returns a dictionary with
         an "error" key.
     """
     if not redmine:
         return {"error": "Redmine client not initialized."}
-    
+
     try:
         # Validate project exists
         try:
             project = redmine.project.get(project_id)
         except ResourceNotFoundError:
             return {"error": f"Project {project_id} not found."}
-        
+
         # Calculate date range
         end_date = datetime.now()
         start_date = end_date - timedelta(days=days)
         date_filter = f">={start_date.strftime('%Y-%m-%d')}"
-        
+
         # Get issues created in the date range
-        created_issues = list(redmine.issue.filter(
-            project_id=project_id, 
-            created_on=date_filter
-        ))
-        
+        created_issues = list(
+            redmine.issue.filter(project_id=project_id, created_on=date_filter)
+        )
+
         # Get issues updated in the date range
-        updated_issues = list(redmine.issue.filter(
-            project_id=project_id, 
-            updated_on=date_filter
-        ))
-        
+        updated_issues = list(
+            redmine.issue.filter(project_id=project_id, updated_on=date_filter)
+        )
+
         # Analyze created issues
         created_stats = _analyze_issues(created_issues)
-        
-        # Analyze updated issues  
+
+        # Analyze updated issues
         updated_stats = _analyze_issues(updated_issues)
-        
+
         # Calculate trends
         total_created = len(created_issues)
         total_updated = len(updated_issues)
-        
+
         # Get all project issues for context
         all_issues = list(redmine.issue.filter(project_id=project_id))
         all_stats = _analyze_issues(all_issues)
-        
+
         return {
             "project": {
                 "id": project.id,
                 "name": project.name,
-                "identifier": getattr(project, 'identifier', ''),
+                "identifier": getattr(project, "identifier", ""),
             },
             "analysis_period": {
                 "days": days,
-                "start_date": start_date.strftime('%Y-%m-%d'),
-                "end_date": end_date.strftime('%Y-%m-%d'),
+                "start_date": start_date.strftime("%Y-%m-%d"),
+                "end_date": end_date.strftime("%Y-%m-%d"),
             },
             "recent_activity": {
                 "issues_created": total_created,
@@ -453,7 +652,7 @@ async def summarize_project_status(
                 ),
             },
         }
-        
+
     except Exception as e:
         print(f"Error summarizing project {project_id}: {e}")
         return {"error": f"An error occurred while summarizing project {project_id}."}
@@ -468,34 +667,54 @@ def _analyze_issues(issues: List[Any]) -> Dict[str, Any]:
             "by_assignee": {},
             "total": 0,
         }
-    
+
     status_counts = {}
     priority_counts = {}
     assignee_counts = {}
-    
+
     for issue in issues:
         # Count by status
-        status_name = getattr(issue.status, 'name', 'Unknown')
+        status_name = getattr(issue.status, "name", "Unknown")
         status_counts[status_name] = status_counts.get(status_name, 0) + 1
-        
+
         # Count by priority
-        priority_name = getattr(issue.priority, 'name', 'Unknown')
+        priority_name = getattr(issue.priority, "name", "Unknown")
         priority_counts[priority_name] = priority_counts.get(priority_name, 0) + 1
-        
+
         # Count by assignee
-        assigned_to = getattr(issue, 'assigned_to', None)
+        assigned_to = getattr(issue, "assigned_to", None)
         if assigned_to:
-            assignee_name = getattr(assigned_to, 'name', 'Unknown')
+            assignee_name = getattr(assigned_to, "name", "Unknown")
             assignee_counts[assignee_name] = assignee_counts.get(assignee_name, 0) + 1
         else:
-            assignee_counts['Unassigned'] = assignee_counts.get('Unassigned', 0) + 1
-    
+            assignee_counts["Unassigned"] = assignee_counts.get("Unassigned", 0) + 1
+
     return {
         "by_status": status_counts,
-        "by_priority": priority_counts, 
+        "by_priority": priority_counts,
         "by_assignee": assignee_counts,
         "total": len(issues),
     }
+
+
+@mcp.tool()
+async def cleanup_attachment_files() -> Dict[str, Any]:
+    """Clean up expired attachment files and return storage statistics.
+
+    Returns:
+        A dictionary containing cleanup statistics and current storage usage.
+        On error, a dictionary with "error" is returned.
+    """
+    try:
+        attachments_dir = os.getenv("ATTACHMENTS_DIR", "./attachments")
+        manager = AttachmentFileManager(attachments_dir)
+        cleanup_stats = manager.cleanup_expired_files()
+        storage_stats = manager.get_storage_stats()
+
+        return {"cleanup": cleanup_stats, "current_storage": storage_stats}
+    except Exception as e:
+        print(f"Error during attachment cleanup: {e}")
+        return {"error": f"An error occurred during cleanup: {str(e)}"}
 
 
 if __name__ == "__main__":
@@ -503,4 +722,4 @@ if __name__ == "__main__":
         print("Redmine client could not be initialized. Some tools may not work.")
         print("Please check your .env file and Redmine server connectivity.")
     # Initialize and run the server
-    mcp.run(transport='stdio')
+    mcp.run(transport="stdio")

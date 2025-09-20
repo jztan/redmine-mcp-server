@@ -6,6 +6,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2025-09-20
+
+### Added
+- HTTP file serving endpoint (`/files/{file_id}`) for downloaded attachments
+- Secure UUID-based file URLs with automatic expiry (24 hours default)
+- New `file_manager.py` module for attachment storage and cleanup management
+- `cleanup_attachment_files` MCP tool for expired file management
+- PUBLIC_HOST/PUBLIC_PORT environment variables for external URL generation
+- PEP 8 compliance standards and development tools (flake8, black)
+- Storage statistics tracking for attachment management
+
+### Changed
+- **BREAKING**: `download_redmine_attachment` now returns `download_url` instead of `file_path`
+- Attachment downloads now provide HTTP URLs for external access
+- Docker URL generation fixed (uses localhost instead of 0.0.0.0)
+- Dependencies optimized (httpx moved to dev/test dependencies)
+
+### Fixed
+- Docker container URL accessibility issues for downloaded attachments
+- URL generation for external clients in containerized environments
+
+### Improved
+- Code quality with full PEP 8 compliance across all Python modules
+- Test coverage for new HTTP URL return format
+- Documentation updated with file serving details
+
 ## [0.2.0] - 2025-09-20
 
 ### Changed
