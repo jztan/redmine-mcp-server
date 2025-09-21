@@ -420,7 +420,7 @@ class TestRedmineHandler:
 
         assert isinstance(result, list)
         assert result[0]["id"] == 123
-        mock_redmine.issue.filter.assert_called_once_with(assigned_to_id="me")
+        mock_redmine.issue.filter.assert_called_once_with(assigned_to_id="me", offset=0, limit=25)
 
     @pytest.mark.asyncio
     @patch('redmine_mcp_server.redmine_handler.redmine')
@@ -458,6 +458,166 @@ class TestRedmineHandler:
 
         assert isinstance(result, list)
         assert result[0]["error"] == "Redmine client not initialized."
+
+    # Pagination Test Cases
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_list_my_issues_with_limit_basic(self, mock_redmine, mock_redmine_issue):
+        """Test basic limit functionality."""
+        mock_redmine.issue.filter.return_value = [mock_redmine_issue] * 5
+
+        from redmine_mcp_server.redmine_handler import list_my_redmine_issues
+
+        result = await list_my_redmine_issues(limit=5)
+
+        assert isinstance(result, list)
+        assert len(result) == 5
+        mock_redmine.issue.filter.assert_called_once_with(assigned_to_id="me", offset=0, limit=5)
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_list_my_issues_with_offset(self, mock_redmine, mock_redmine_issue):
+        """Test offset pagination."""
+        mock_redmine.issue.filter.return_value = [mock_redmine_issue] * 10
+
+        from redmine_mcp_server.redmine_handler import list_my_redmine_issues
+
+        result = await list_my_redmine_issues(limit=10, offset=25)
+
+        assert isinstance(result, list)
+        assert len(result) == 10
+        mock_redmine.issue.filter.assert_called_once_with(assigned_to_id="me", offset=25, limit=10)
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_list_my_issues_with_metadata(self, mock_redmine, mock_redmine_issue):
+        """Test pagination metadata response."""
+        # Create mock ResourceSet that behaves like a list when converted
+        mock_resource_set = Mock()
+        mock_resource_set.__iter__ = Mock(return_value=iter([mock_redmine_issue] * 10))
+        mock_resource_set.total_count = 150
+
+        # Make filter() return our mock ResourceSet
+        mock_redmine.issue.filter.return_value = mock_resource_set
+
+        from redmine_mcp_server.redmine_handler import list_my_redmine_issues
+
+        result = await list_my_redmine_issues(limit=10, offset=25, include_pagination_info=True)
+
+        assert isinstance(result, dict)
+        assert "issues" in result
+        assert "pagination" in result
+        assert len(result["issues"]) == 10
+        assert result["pagination"]["total"] == 150
+        assert result["pagination"]["limit"] == 10
+        assert result["pagination"]["offset"] == 25
+        assert result["pagination"]["has_next"] == True
+        assert result["pagination"]["has_previous"] == True
+        assert result["pagination"]["next_offset"] == 35
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_list_my_issues_edge_cases(self, mock_redmine):
+        """Test zero, negative, and excessive limits."""
+        mock_redmine.issue.filter.return_value = []
+
+        from redmine_mcp_server.redmine_handler import list_my_redmine_issues
+
+        # Test zero limit
+        result = await list_my_redmine_issues(limit=0)
+        assert isinstance(result, list)
+        assert len(result) == 0
+
+        # Test negative limit
+        result = await list_my_redmine_issues(limit=-5)
+        assert isinstance(result, list)
+        assert len(result) == 0
+
+        # Test excessive limit (should be capped to 1000)
+        mock_redmine.issue.filter.return_value = []
+        result = await list_my_redmine_issues(limit=5000)
+        # Should be called with limit capped to 100 (Redmine API max per request)
+        mock_redmine.issue.filter.assert_called_with(assigned_to_id="me", offset=0, limit=100)
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_list_my_issues_default_limit(self, mock_redmine, mock_redmine_issue):
+        """Test default limit behavior."""
+        mock_redmine.issue.filter.return_value = [mock_redmine_issue] * 25
+
+        from redmine_mcp_server.redmine_handler import list_my_redmine_issues
+
+        result = await list_my_redmine_issues()
+
+        assert isinstance(result, list)
+        assert len(result) == 25
+        mock_redmine.issue.filter.assert_called_once_with(assigned_to_id="me", offset=0, limit=25)
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_list_my_issues_limit_with_filters(self, mock_redmine, mock_redmine_issue):
+        """Test limit + other filters."""
+        mock_redmine.issue.filter.return_value = [mock_redmine_issue] * 15
+
+        from redmine_mcp_server.redmine_handler import list_my_redmine_issues
+
+        result = await list_my_redmine_issues(limit=15, project_id=123, status_id=1)
+
+        assert isinstance(result, list)
+        assert len(result) == 15
+        mock_redmine.issue.filter.assert_called_once_with(
+            assigned_to_id="me", offset=0, limit=15, project_id=123, status_id=1
+        )
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_list_my_issues_pagination_navigation(self, mock_redmine, mock_redmine_issue):
+        """Test next/previous logic."""
+        # Create mock ResourceSet that behaves like a list when converted
+        mock_resource_set = Mock()
+        mock_resource_set.__iter__ = Mock(return_value=iter([mock_redmine_issue] * 10))
+        mock_resource_set.total_count = 100
+
+        # Make filter() return our mock ResourceSet
+        mock_redmine.issue.filter.return_value = mock_resource_set
+
+        from redmine_mcp_server.redmine_handler import list_my_redmine_issues
+
+        # Test middle page
+        result = await list_my_redmine_issues(limit=10, offset=25, include_pagination_info=True)
+        pagination = result["pagination"]
+        assert pagination["has_next"] == True
+        assert pagination["has_previous"] == True
+        assert pagination["next_offset"] == 35
+        assert pagination["previous_offset"] == 15
+
+        # Test first page
+        result = await list_my_redmine_issues(limit=10, offset=0, include_pagination_info=True)
+        pagination = result["pagination"]
+        assert pagination["has_previous"] == False
+        assert pagination["previous_offset"] == None
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_list_my_issues_parameter_validation(self, mock_redmine, mock_redmine_issue):
+        """Test input validation and sanitization."""
+        mock_redmine.issue.filter.return_value = [mock_redmine_issue] * 10
+
+        from redmine_mcp_server.redmine_handler import list_my_redmine_issues
+
+        # Test string limit conversion
+        result = await list_my_redmine_issues(limit="10")
+        mock_redmine.issue.filter.assert_called_with(assigned_to_id="me", offset=0, limit=10)
+
+        # Test invalid limit type
+        mock_redmine.issue.filter.reset_mock()
+        result = await list_my_redmine_issues(limit="invalid")
+        mock_redmine.issue.filter.assert_called_with(assigned_to_id="me", offset=0, limit=25)  # default
+
+        # Test negative offset (should reset to 0)
+        mock_redmine.issue.filter.reset_mock()
+        result = await list_my_redmine_issues(offset=-10)
+        mock_redmine.issue.filter.assert_called_with(assigned_to_id="me", offset=0, limit=25)
 
     @pytest.mark.asyncio
     @patch('redmine_mcp_server.redmine_handler.redmine')
