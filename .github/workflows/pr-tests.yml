@@ -2,6 +2,14 @@ name: CI
 
 on:
   pull_request:
+    branches:
+      - develop
+
+  push:
+    branches:
+      - feature/*
+      
+  workflow_dispatch:  # 👈 allows manual run from GitHub UI
 
 jobs:
   test:
