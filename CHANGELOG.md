@@ -6,6 +6,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2025-09-21
+
+### Fixed
+- Integration test compatibility with new attachment download API format
+- Test validation now properly checks HTTP download URLs instead of file paths
+- Comprehensive validation of all attachment response fields (download_url, filename, content_type, size, expires_at, attachment_id)
+
 ## [0.3.0] - 2025-09-21
 
 ### Added

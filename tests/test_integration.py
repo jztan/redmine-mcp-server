@@ -254,8 +254,28 @@ class TestRedmineIntegration:
 
             result = await download_redmine_attachment(attachment_id, str(tmp_path))
 
-            assert "file_path" in result
-            assert os.path.isfile(result["file_path"])
+            # Test the current API format (HTTP download URLs, not file paths)
+            assert "download_url" in result
+            assert "filename" in result
+            assert "content_type" in result
+            assert "size" in result
+            assert "expires_at" in result
+            assert "attachment_id" in result
+            assert result["attachment_id"] == attachment_id
+
+            # Verify the download URL is properly formatted
+            assert result["download_url"].startswith("http")
+            assert "/files/" in result["download_url"]
+
+            # Verify file was actually downloaded to the attachments directory
+            # (The API creates files in UUID-based directories for security)
+            attachments_dir = tmp_path if str(tmp_path) != "attachments" else "attachments"
+            if os.path.exists(attachments_dir):
+                # Check that some file was created (UUID directory structure)
+                has_files = any(os.path.isdir(os.path.join(attachments_dir, item))
+                              for item in os.listdir(attachments_dir))
+                assert has_files, "No attachment files were created"
+
         except Exception as e:
             pytest.fail(f"Integration test failed: {e}")
 
