@@ -17,8 +17,12 @@ jobs:
         run: |
           uv venv
           source .venv/bin/activate
-          uv pip install -e .
-          uv pip install pytest pytest-asyncio pytest-cov pytest-mock
+          uv pip install -e .[test,dev]
+      - name: Run code quality checks
+        run: |
+          source .venv/bin/activate
+          flake8 src/ --max-line-length=88
+          black --check src/ --line-length=88
       - name: Run tests
         run: |
           source .venv/bin/activate
