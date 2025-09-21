@@ -14,7 +14,7 @@ import sys
 # Add the src directory to the path so we can import our modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from redmine_mcp_server.redmine_handler import get_redmine_issue, list_redmine_projects, summarize_project_status, _analyze_issues
+from redmine_mcp_server.redmine_handler import get_redmine_issue, list_redmine_projects, summarize_project_status, _analyze_issues, search_entire_redmine, _resource_to_dict
 
 
 class TestRedmineHandler:
@@ -756,4 +756,221 @@ class TestRedmineHandler:
         assert "total_files" in result["current_storage"]
         assert "total_bytes" in result["current_storage"]
         assert "total_mb" in result["current_storage"]
+
+
+class TestSearchEntireRedmine:
+    """Test cases for the new global search functionality."""
+
+    @pytest.fixture
+    def mock_search_results(self):
+        """Mock categorized search results from python-redmine."""
+        # Mock Issue
+        mock_issue = Mock()
+        mock_issue.id = 123
+        mock_issue.subject = "Test Issue"
+        mock_issue.description = "Test description"
+        mock_project = Mock()
+        mock_project.id = 1
+        mock_project.name = "Test Project"
+        mock_issue.project = mock_project
+        mock_status = Mock()
+        mock_status.name = "Open"
+        mock_issue.status = mock_status
+        from datetime import datetime
+        mock_issue.updated_on = datetime(2025, 1, 1, 10, 0, 0)
+
+        # Mock Project
+        mock_project_result = Mock()
+        mock_project_result.id = 2
+        mock_project_result.name = "Another Project"
+        mock_project_result.description = "Project description"
+        mock_project_result.updated_on = datetime(2025, 1, 2, 10, 0, 0)
+
+        return {
+            'issues': [mock_issue],
+            'projects': [mock_project_result]
+        }
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    @patch('redmine_mcp_server.redmine_handler._ensure_cleanup_started')
+    async def test_search_entire_redmine_success(self, mock_cleanup, mock_redmine, mock_search_results):
+        """Test successful global search with results."""
+        mock_redmine.search.return_value = mock_search_results
+
+        result = await search_entire_redmine("test query")
+
+        assert "error" not in result
+        assert result["query"] == "test query"
+        assert result["total_count"] == 2
+        assert "results" in result
+        assert "results_by_type" in result
+        assert result["results_by_type"]["issues"] == 1
+        assert result["results_by_type"]["projects"] == 1
+
+        # Verify cleanup was called
+        mock_cleanup.assert_called_once()
+
+        # Verify search was called with correct parameters
+        mock_redmine.search.assert_called_once_with(
+            "test query",
+            limit=100,
+            offset=0
+        )
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    @patch('redmine_mcp_server.redmine_handler._ensure_cleanup_started')
+    async def test_search_entire_redmine_with_filters(self, mock_cleanup, mock_redmine, mock_search_results):
+        """Test search with resource type filtering."""
+        mock_redmine.search.return_value = mock_search_results
+
+        result = await search_entire_redmine(
+            "test query",
+            resource_types=["issues", "projects"],
+            limit=50,
+            offset=10
+        )
+
+        assert "error" not in result
+
+        # Verify search was called with filters
+        mock_redmine.search.assert_called_once_with(
+            "test query",
+            limit=50,
+            offset=10,
+            issues=True,
+            projects=True
+        )
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    @patch('redmine_mcp_server.redmine_handler._ensure_cleanup_started')
+    async def test_search_entire_redmine_empty_results(self, mock_cleanup, mock_redmine):
+        """Test search with no results."""
+        mock_redmine.search.return_value = None
+
+        result = await search_entire_redmine("nonexistent")
+
+        assert "error" not in result
+        assert result["results"] == []
+        assert result["total_count"] == 0
+        assert result["results_by_type"] == {}
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine', None)
+    async def test_search_entire_redmine_no_client(self):
+        """Test search when Redmine client is not initialized."""
+        result = await search_entire_redmine("test")
+
+        assert result["error"] == "Redmine client not initialized."
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    @patch('redmine_mcp_server.redmine_handler._ensure_cleanup_started')
+    async def test_search_entire_redmine_version_error(self, mock_cleanup, mock_redmine):
+        """Test search with version compatibility error."""
+        mock_redmine.search.side_effect = Exception("Search not supported")
+
+        result = await search_entire_redmine("test")
+
+        assert result["error"] == "Search requires Redmine 3.0.0 or higher"
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    @patch('redmine_mcp_server.redmine_handler._ensure_cleanup_started')
+    async def test_search_entire_redmine_general_error(self, mock_cleanup, mock_redmine):
+        """Test search with general error."""
+        mock_redmine.search.side_effect = Exception("Network error")
+
+        result = await search_entire_redmine("test")
+
+        assert result["error"] == "An error occurred while searching Redmine."
+
+    def test_resource_to_dict_issue(self):
+        """Test _resource_to_dict with issue resource."""
+        # Create a more realistic mock that mimics actual Redmine objects
+        class MockIssue:
+            def __init__(self):
+                self.id = 123
+                self.subject = "Test Issue"
+                self.description = "Test description for issue"
+                self.project = MockProject()
+                self.status = MockStatus()
+                from datetime import datetime
+                self.updated_on = datetime(2025, 1, 1, 10, 0, 0)
+
+        class MockProject:
+            def __init__(self):
+                self.id = 1
+                self.name = "Test Project"
+
+        class MockStatus:
+            def __init__(self):
+                self.name = "Open"
+
+        mock_issue = MockIssue()
+        result = _resource_to_dict(mock_issue, "issues")
+
+        assert result["id"] == 123
+        assert result["type"] == "issues"
+        assert result["title"] == "Test Issue"
+        assert result["project"]["id"] == 1
+        assert result["project"]["name"] == "Test Project"
+        assert result["status"] == "Open"
+        assert "excerpt" in result
+        assert result["updated_on"] == "2025-01-01T10:00:00"
+
+    def test_resource_to_dict_project(self):
+        """Test _resource_to_dict with project resource."""
+        class MockProject:
+            def __init__(self):
+                self.id = 1
+                self.name = "Test Project"
+                self.description = "A test project description"
+                from datetime import datetime
+                self.updated_on = datetime(2025, 1, 1, 10, 0, 0)
+
+        mock_project = MockProject()
+        result = _resource_to_dict(mock_project, "projects")
+
+        assert result["id"] == 1
+        assert result["type"] == "projects"
+        assert result["title"] == "Test Project"
+        assert "excerpt" in result
+        assert result["updated_on"] == "2025-01-01T10:00:00"
+
+    def test_resource_to_dict_minimal(self):
+        """Test _resource_to_dict with minimal resource."""
+        class MockMinimalResource:
+            def __init__(self):
+                self.id = 42
+                # No other attributes to test default title generation
+
+        mock_resource = MockMinimalResource()
+        result = _resource_to_dict(mock_resource, "documents")
+
+        assert result["id"] == 42
+        assert result["type"] == "documents"
+        assert result["title"] == "Documents 42"
+
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    @patch('redmine_mcp_server.redmine_handler._ensure_cleanup_started')
+    async def test_search_entire_redmine_unknown_resources(self, mock_cleanup, mock_redmine):
+        """Test handling of unknown resource types."""
+        # Mock response with unknown resources - using simple list structure
+        mock_results = {
+            'unknown': {
+                'custom_resources': []  # Empty list to avoid iteration issues
+            }
+        }
+        mock_redmine.search.return_value = mock_results
+
+        result = await search_entire_redmine("test")
+
+        assert "error" not in result
+        assert result["total_count"] == 0
+        assert "custom_resources" in result["results_by_type"]
+        assert result["results_by_type"]["custom_resources"] == 0
 

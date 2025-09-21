@@ -172,7 +172,8 @@ async def _ensure_cleanup_started():
             logger.info("Cleanup task initialized via MCP tool call")
         else:
             logger.info("Cleanup disabled (AUTO_CLEANUP_ENABLED=false)")
-            _cleanup_initialized = True  # Mark as "initialized" to avoid repeated checks
+            # Mark as "initialized" to avoid repeated checks
+            _cleanup_initialized = True
 
 
 @mcp.custom_route("/health", methods=["GET"])
@@ -375,6 +376,95 @@ def _attachments_to_list(issue: Any) -> List[Dict[str, Any]]:
     return attachments
 
 
+def _resource_to_dict(resource: Any, resource_type: str) -> Dict[str, Any]:
+    """Convert any Redmine resource to a serializable dict for search results.
+
+    Extends the existing _issue_to_dict pattern to handle multiple resource types.
+
+    Args:
+        resource: The Redmine resource object to convert
+        resource_type: The type of resource (e.g., 'issues', 'projects', 'wiki_pages')
+
+    Returns:
+        A dictionary representation of the resource suitable for JSON serialization
+    """
+    base_dict = {
+        "id": getattr(resource, "id", None),
+        "type": resource_type,
+    }
+
+    # Common fields most resources have
+    # Check for title first (search results use this)
+    if hasattr(resource, "title") and getattr(resource, "title", None):
+        base_dict["title"] = resource.title
+    elif hasattr(resource, "name") and getattr(resource, "name", None):
+        base_dict["title"] = resource.name
+    elif hasattr(resource, "subject") and getattr(resource, "subject", None):
+        base_dict["title"] = resource.subject
+    else:
+        base_dict["title"] = f"{resource_type.title()} {base_dict['id']}"
+
+    # Project information (if available)
+    if hasattr(resource, "project"):
+        project = getattr(resource, "project")
+        if project:
+            base_dict["project"] = {
+                "id": getattr(project, "id", None),
+                "name": getattr(project, "name", "Unknown Project"),
+            }
+
+    # Status information (for issues)
+    if hasattr(resource, "status"):
+        status = getattr(resource, "status")
+        if status:
+            base_dict["status"] = getattr(status, "name", "Unknown Status")
+
+    # Description/excerpt
+    if hasattr(resource, "description"):
+        description = getattr(resource, "description", "")
+        if description:
+            # Create excerpt (first 200 characters)
+            if len(description) > 200:
+                base_dict["excerpt"] = description[:200] + "..."
+            else:
+                base_dict["excerpt"] = description
+
+    # Timestamps
+    if hasattr(resource, "updated_on") and getattr(resource, "updated_on"):
+        base_dict["updated_on"] = resource.updated_on.isoformat()
+    elif hasattr(resource, "created_on") and getattr(resource, "created_on"):
+        base_dict["updated_on"] = resource.created_on.isoformat()
+    elif hasattr(resource, "datetime") and getattr(resource, "datetime"):
+        # Search results use 'datetime' field
+        datetime_str = getattr(resource, "datetime")
+        if isinstance(datetime_str, str):
+            base_dict["updated_on"] = datetime_str
+        else:
+            base_dict["updated_on"] = datetime_str.isoformat()
+
+    # Generate URL (following existing patterns)
+    # Check if resource already has URL (search results often include this)
+    if hasattr(resource, "url") and getattr(resource, "url", None):
+        base_dict["url"] = resource.url
+    elif base_dict["id"]:
+        redmine_url = os.getenv("REDMINE_URL", "").rstrip("/")
+        if redmine_url:
+            if resource_type == "issues":
+                base_dict["url"] = f"{redmine_url}/issues/{base_dict['id']}"
+            elif resource_type == "projects":
+                base_dict["url"] = f"{redmine_url}/projects/{base_dict['id']}"
+            elif resource_type == "wiki_pages":
+                project_id = base_dict.get("project", {}).get("id", "")
+                if project_id:
+                    page_id = base_dict["id"]
+                    wiki_url = f"{redmine_url}/projects/{project_id}/wiki/{page_id}"
+                    base_dict["url"] = wiki_url
+            else:
+                base_dict["url"] = f"{redmine_url}/{resource_type}/{base_dict['id']}"
+
+    return base_dict
+
+
 @mcp.tool()
 async def get_redmine_issue(
     issue_id: int, include_journals: bool = True, include_attachments: bool = True
@@ -504,6 +594,116 @@ async def search_redmine_issues(query: str, **options: Any) -> List[Dict[str, An
     except Exception as e:
         print(f"Error searching Redmine issues: {e}")
         return [{"error": "An error occurred while searching issues."}]
+
+
+@mcp.tool()
+async def search_entire_redmine(
+    query: str,
+    resource_types: Optional[List[str]] = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> Dict[str, Any]:
+    """
+    Search across the entire Redmine instance.
+
+    Args:
+        query: Text to search for. Search is case-insensitive
+               as determined by the Redmine server configuration.
+        resource_types: Filter by resource types (issues, projects, wiki_pages, etc.)
+        limit: Maximum number of results to return (max 100)
+        offset: Pagination offset
+
+    Returns:
+        Dictionary containing search results and metadata
+
+    Note:
+        Uses python-redmine's global search method.
+        Requires Redmine 3.0.0+ for search API support.
+
+        This tool complements the existing search_redmine_issues() tool:
+        - search_redmine_issues(): Simple List[Dict] response, issue-only
+        - search_entire_redmine(): Structured Dict response, multi-resource
+    """
+    if not redmine:
+        return {"error": "Redmine client not initialized."}
+
+    # Ensure cleanup task is started (lazy initialization)
+    await _ensure_cleanup_started()
+
+    try:
+        # Prepare search options following existing pattern
+        search_options = {
+            "limit": min(limit, 100),  # Enforce reasonable limit
+            "offset": offset,
+        }
+
+        # Add resource type filtering
+        # python-redmine uses boolean flags for each resource type
+        if resource_types:
+            # Valid resource types with search_hints (confirmed from source)
+            valid_types = ["issues", "projects", "wiki_pages", "news", "documents"]
+            for resource_type in resource_types:
+                if resource_type in valid_types:
+                    search_options[resource_type] = True
+
+        # Perform global search using python-redmine
+        results = redmine.search(query, **search_options)
+
+        if not results:
+            return {
+                "results": [],
+                "results_by_type": {},
+                "total_count": 0,
+                "query": query,
+            }
+
+        # Process and categorize results
+        all_results = []
+        results_by_type = {}
+
+        # Process categorized response format from redmine.search()
+        # Returns dict with container keys mapped to ResourceSet objects
+        # Format: {'issues': ResourceSet, 'projects': ResourceSet, 'unknown': {...}}
+
+        for container_key, resource_set in results.items():
+            if container_key == "unknown":
+                # Handle unknown resource types (nested dict format)
+                for resource_type, resource_list in resource_set.items():
+                    type_results = []
+                    for resource_data in resource_list:
+                        # Convert raw resource data to dict format
+                        converted = _resource_to_dict(resource_data, resource_type)
+                        type_results.append(converted)
+
+                    all_results.extend(type_results)
+                    results_by_type[resource_type] = len(type_results)
+            else:
+                # Handle ResourceSet objects for known resource types
+                type_results = []
+                for resource in resource_set:
+                    # Use generic resource conversion for all types from search
+                    # Search results have limited attributes, so _resource_to_dict
+                    # is more appropriate than _issue_to_dict
+                    type_results.append(_resource_to_dict(resource, container_key))
+
+                all_results.extend(type_results)
+                results_by_type[container_key] = len(type_results)
+
+        return {
+            "results": all_results,
+            "results_by_type": results_by_type,
+            "total_count": len(all_results),
+            "query": query,
+        }
+
+    except Exception as e:
+        # Check for version compatibility errors
+        error_msg = str(e).lower()
+        if "search" in error_msg and ("not" in error_msg or "unsupported" in error_msg):
+            return {"error": "Search requires Redmine 3.0.0 or higher"}
+
+        print(f"Error searching Redmine: {e}")
+        return {"error": "An error occurred while searching Redmine."}
 
 
 @mcp.tool()

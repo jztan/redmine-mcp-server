@@ -14,7 +14,7 @@ import httpx
 # Add the src directory to the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from redmine_mcp_server.redmine_handler import redmine, REDMINE_URL
+from redmine_mcp_server.redmine_handler import redmine, REDMINE_URL, search_entire_redmine
 
 
 class TestRedmineIntegration:
@@ -313,6 +313,93 @@ class TestFastAPIIntegration:
         route_paths = [route.path for route in app.router.routes if hasattr(route, 'path')]
 
         assert '/health' in route_paths, f"Health endpoint not found. Available routes: {route_paths}"
+
+
+@pytest.mark.integration
+class TestSearchIntegration:
+    """Integration tests for the new global search functionality."""
+
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.asyncio
+    async def test_search_entire_redmine_basic(self):
+        """Test basic search against real Redmine server."""
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        result = await search_entire_redmine("project")
+
+        assert "error" not in result
+        assert "results" in result
+        assert "total_count" in result
+        assert "query" in result
+        assert result["query"] == "project"
+        print(f"Search returned {result['total_count']} results")
+
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.asyncio
+    async def test_search_entire_redmine_pagination(self):
+        """Test pagination with real server."""
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        # Get first page
+        result1 = await search_entire_redmine("test", limit=5, offset=0)
+
+        assert "error" not in result1
+
+        # Get second page if results exist
+        if result1["total_count"] > 5:
+            result2 = await search_entire_redmine("test", limit=5, offset=5)
+            assert "error" not in result2
+            # Results should be different (different offset)
+            # Note: We can't guarantee different content but structure should be same
+            assert "results" in result2
+
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.asyncio
+    async def test_search_entire_redmine_resource_filtering(self):
+        """Test resource type filtering."""
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        result = await search_entire_redmine("test", resource_types=["issues"])
+
+        assert "error" not in result
+        # All results should be issues if any results exist
+        if result["results"]:
+            for item in result["results"]:
+                assert item["type"] == "issues"
+
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.asyncio
+    async def test_search_entire_redmine_empty_query(self):
+        """Test search with empty or non-matching query."""
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        result = await search_entire_redmine("xyznonexistentquery123")
+
+        assert "error" not in result
+        # Should handle empty results gracefully
+        assert result["total_count"] >= 0
+        assert result["results"] == []
+
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.asyncio
+    async def test_search_entire_redmine_multiple_types(self):
+        """Test search across multiple resource types."""
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        result = await search_entire_redmine("project", resource_types=["issues", "projects"])
+
+        assert "error" not in result
+        # Verify results structure
+        assert "results_by_type" in result
+        # Should only have results from requested types if any results exist
+        if result["results"]:
+            for item in result["results"]:
+                assert item["type"] in ["issues", "projects"]
 
 
 @pytest.mark.integration
