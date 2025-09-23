@@ -6,6 +6,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.5] - 2025-09-24
+
+### Improved
+- Enhanced PyPI installation documentation with step-by-step instructions
+- Simplified installation process with clearer configuration examples
+- Updated development documentation with improved setup guidance
+- Streamlined package management and dependency handling
+
+### Documentation
+- Added comprehensive PyPI installation guide as primary installation method
+- Improved environment configuration examples with practical defaults
+- Enhanced README structure for better user onboarding experience
+- Updated development workflow documentation
+
 ## [0.4.4] - 2025-09-23
 
 ### Fixed
