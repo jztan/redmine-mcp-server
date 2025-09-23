@@ -25,17 +25,57 @@ A Model Context Protocol (MCP) server that integrates with Redmine project manag
 ### Prerequisites
 
 - Python 3.13+
-- [uv](https://docs.astral.sh/uv/) package manager
 - Access to a Redmine instance
 
-### Quick Start
+### Install from PyPI (Recommended)
+
+```bash
+# Install the package
+pip install redmine-mcp-server
+
+# Create configuration file .env
+cat > .env << 'EOF'
+# Redmine connection (required)
+REDMINE_URL=https://your-redmine-server.com
+
+# Authentication - Use either API key (recommended) or username/password
+REDMINE_API_KEY=your_api_key
+# OR use username/password:
+# REDMINE_USERNAME=your_username
+# REDMINE_PASSWORD=your_password
+
+# Server configuration (optional, defaults shown)
+SERVER_HOST=0.0.0.0
+SERVER_PORT=8000
+
+# Public URL for file serving (optional)
+PUBLIC_HOST=localhost
+PUBLIC_PORT=8000
+
+# File management (optional)
+ATTACHMENTS_DIR=./attachments
+AUTO_CLEANUP_ENABLED=true
+CLEANUP_INTERVAL_MINUTES=10
+ATTACHMENT_EXPIRES_MINUTES=60
+EOF
+
+# Edit .env with your actual Redmine settings
+nano .env  # or use your preferred editor
+
+# Run the server
+redmine-mcp-server
+# Or alternatively:
+python -m redmine_mcp_server.main
+```
+
+### Install from Source
 
 ```bash
 # Clone and setup
 git clone https://github.com/jztan/redmine-mcp-server
 cd redmine-mcp-server
 
-# Install dependencies
+# Install dependencies (using uv)
 uv venv
 source .venv/bin/activate
 uv pip install -e .
@@ -49,31 +89,6 @@ uv run python -m redmine_mcp_server.main
 ```
 
 The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, health check at `/health`, and file serving at `/files/{file_id}`.
-
-### Configuration
-
-Edit your `.env` file with the following settings:
-
-```env
-# Required: Redmine connection
-REDMINE_URL=https://your-redmine-server.com
-
-# Authentication (choose one)
-REDMINE_USERNAME=your_username
-REDMINE_PASSWORD=your_password
-# OR
-# REDMINE_API_KEY=your_api_key
-
-# Optional: Server settings
-SERVER_HOST=0.0.0.0
-SERVER_PORT=8000
-
-# Optional: File management
-ATTACHMENTS_DIR=./attachments
-AUTO_CLEANUP_ENABLED=true
-CLEANUP_INTERVAL_MINUTES=10
-ATTACHMENT_EXPIRES_MINUTES=60
-```
 
 ### File Management Configuration
 
@@ -100,6 +115,10 @@ ATTACHMENT_EXPIRES_MINUTES=120
 ### Running the Server
 
 ```bash
+# If installed from PyPI:
+redmine-mcp-server
+
+# If installed from source:
 uv run python -m redmine_mcp_server.main
 ```
 
@@ -147,10 +166,11 @@ Configure your MCP client (e.g., VS Code settings.json):
 ### Testing Your Setup
 
 ```bash
-# Test Redmine connection
-python tests/test_connection.py
+# Test connection by checking health endpoint
+curl http://localhost:8000/health
 
-# Run full test suite
+# For development (source installation only):
+python tests/test_connection.py
 python tests/run_tests.py --all
 ```
 
@@ -211,6 +231,29 @@ Search issues using text queries.
 
 **Returns:** List of matching issue dictionaries
 
+#### `search_entire_redmine`
+Comprehensive search across all Redmine resources (issues, projects, wiki pages, news, documents).
+
+**Parameters:**
+- `query` (string, required): Search query text
+- `resource_types` (list, optional): Filter by resource types. Default: all types
+  - Available: `["issues", "projects", "wiki_pages", "news", "documents"]`
+- `limit` (integer, optional): Maximum results per type. Default: `10`, Max: `100`
+- `offset` (integer, optional): Pagination offset. Default: `0`
+
+**Returns:** Structured response with categorized results:
+```json
+{
+  "issues": [...],
+  "projects": [...],
+  "wiki_pages": [...],
+  "total_count": 45,
+  "query": "search term"
+}
+```
+
+**Note:** Requires Redmine 3.0.0+ for search API support
+
 #### `create_redmine_issue`
 Creates a new issue in the specified project.
 
@@ -259,11 +302,6 @@ Get an HTTP download URL for a Redmine attachment. The attachment is downloaded 
 - Server-controlled storage location and expiry policy
 - UUID-based filenames prevent path traversal attacks
 - No client control over server configuration
-
-#### `download_redmine_attachment(attachment_id, save_dir, expires_hours)` ⚠️ DEPRECATED
-**DEPRECATED:** This function will be removed in v0.5.0. Use `get_redmine_attachment_download_url()` instead.
-
-**Security Warning:** The `save_dir` parameter is vulnerable to path traversal attacks. The `expires_hours` parameter inappropriately exposes server policies to clients.
 
 #### `cleanup_attachment_files`
 Removes expired attachment files and provides cleanup statistics.
@@ -385,8 +423,12 @@ Enable debug logging by setting `mcp.settings.debug = True` in `main.py`.
 Contributions are welcome! Please:
 
 ```bash
-# Install development dependencies (for code quality and testing)
+# Install development dependencies
+# For source installation:
 uv pip install -e .[dev]
+
+# For PyPI installation:
+pip install redmine-mcp-server[dev]
 ```
 
 1. Open an issue for discussion
@@ -411,4 +453,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Additional Resources
 
 - [CHANGELOG](CHANGELOG.md) - Detailed version history
-- [Roadmap](./roadmap.md) - Future development plans
+- [Roadmap](roadmap.md) - Future development plans
+- [Blog: How I linked a legacy system to a modern AI agent with MCP](https://www.thefirstcommit.com/how-i-linked-a-legacy-system-to-a-modern-ai-agent-with-mcp-1b14e634a4b3) - The story behind this project
