@@ -19,7 +19,8 @@ from dotenv import load_dotenv
 # Export the Starlette/FastAPI app for testing and external use
 app = mcp.streamable_http_app()
 
-if __name__ == "__main__":
+def main():
+    """Main entry point for the console script."""
     load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
 
     # Configure FastMCP settings for streamable HTTP transport
@@ -29,3 +30,7 @@ if __name__ == "__main__":
 
     # Run with streamable HTTP transport
     mcp.run(transport="streamable-http")
+
+
+if __name__ == "__main__":
+    main()
