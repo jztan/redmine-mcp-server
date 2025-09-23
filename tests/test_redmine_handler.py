@@ -6,7 +6,8 @@ including tests for project listing and issue retrieval functionality.
 """
 import pytest
 import asyncio
-from unittest.mock import Mock, patch
+import uuid
+from unittest.mock import Mock, patch, MagicMock, mock_open
 from typing import Dict, Any, List
 import os
 import sys
@@ -15,6 +16,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from redmine_mcp_server.redmine_handler import get_redmine_issue, list_redmine_projects, summarize_project_status, _analyze_issues
+from redminelib.exceptions import ResourceNotFoundError
 
 
 class TestRedmineHandler:
@@ -652,7 +654,8 @@ class TestRedmineHandler:
         assert "http://localhost:8000/files/" in result["download_url"]
 
         mock_redmine.attachment.get.assert_called_once_with(5)
-        mock_attachment.download.assert_called_once_with(savepath=str(tmp_path))
+        # Note: deprecated function now ignores save_dir and uses server default
+        mock_attachment.download.assert_called_once_with(savepath="attachments")
 
     @pytest.mark.asyncio
     @patch('redmine_mcp_server.redmine_handler.redmine')
@@ -688,6 +691,83 @@ class TestRedmineHandler:
         result = await download_redmine_attachment(1)
 
         assert result["error"] == "Redmine client not initialized."
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    @patch('redmine_mcp_server.redmine_handler._ensure_cleanup_started')
+    async def test_get_redmine_attachment_download_url_success(self, mock_cleanup, mock_redmine):
+        """Test successful URL generation with secure implementation."""
+        # Mock setup
+        mock_attachment = MagicMock()
+        mock_attachment.filename = "test.pdf"
+        mock_attachment.content_type = "application/pdf"
+        mock_attachment.download = MagicMock(return_value="/tmp/test_download")
+
+        mock_redmine.attachment.get.return_value = mock_attachment
+
+        with patch('uuid.uuid4', return_value=MagicMock(spec=uuid.UUID)) as mock_uuid:
+            mock_uuid.return_value.__str__ = MagicMock(return_value="test-uuid-123")
+            with patch('builtins.open', mock_open()) as mock_file:
+                with patch('pathlib.Path.mkdir'):
+                    with patch('pathlib.Path.stat') as mock_stat:
+                        mock_stat.return_value.st_size = 1024
+                        with patch('os.rename'):
+                            with patch('json.dump'):
+                                from redmine_mcp_server.redmine_handler import get_redmine_attachment_download_url
+
+                                result = await get_redmine_attachment_download_url(123)
+
+        # Assertions
+        assert "error" not in result
+        assert "download_url" in result
+        assert "filename" in result
+        assert "attachment_id" in result
+        assert result["attachment_id"] == 123
+        assert "test.pdf" in result["filename"]
+        assert "test-uuid-123" in result["download_url"]
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.redmine')
+    async def test_get_redmine_attachment_download_url_not_found(self, mock_redmine):
+        """Test handling of non-existent attachment ID."""
+        mock_redmine.attachment.get.side_effect = ResourceNotFoundError()
+
+        from redmine_mcp_server.redmine_handler import get_redmine_attachment_download_url
+
+        result = await get_redmine_attachment_download_url(999)
+
+        assert "error" in result
+        assert "not found" in result["error"].lower()
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    @patch('redmine_mcp_server.redmine_handler.get_redmine_attachment_download_url')
+    async def test_download_redmine_attachment_deprecation_warning(self, mock_new_func, caplog):
+        """Test that deprecated function logs warning and delegates properly."""
+        # Mock the new function
+        expected_result = {"download_url": "http://test.com", "attachment_id": 123}
+        mock_new_func.return_value = expected_result
+
+        import logging
+        from redmine_mcp_server.redmine_handler import download_redmine_attachment
+
+        # Call deprecated function
+        with caplog.at_level(logging.WARNING):
+            result = await download_redmine_attachment(123, save_dir="../dangerous")
+
+        # Verify deprecation warning
+        assert "DEPRECATED" in caplog.text
+        assert "get_redmine_attachment_download_url" in caplog.text
+
+        # Verify security warning for dangerous save_dir
+        assert "SECURITY: Rejected save_dir" in caplog.text
+        assert "path traversal attack" in caplog.text
+
+        # Verify delegation
+        assert result == expected_result
+        mock_new_func.assert_called_once_with(123)
 
     @pytest.mark.asyncio
     @patch('redmine_mcp_server.redmine_handler.redmine')
