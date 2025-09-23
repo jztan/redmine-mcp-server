@@ -8,6 +8,8 @@
 
 A Model Context Protocol (MCP) server that integrates with Redmine project management systems. This server provides seamless access to Redmine data through MCP tools, enabling AI assistants to interact with your Redmine instance.
 
+**mcp-name: io.github.jztan/redmine-mcp-server**
+
 ## Features
 
 - **Redmine Integration**: List projects, view/create/update issues, download attachments

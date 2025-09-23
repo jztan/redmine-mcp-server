@@ -1,0 +1,21 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-16/server.schema.json",
+  "name": "io.github.jztan/redmine-mcp-server",
+  "description": "Production-ready MCP server for Redmine with security, pagination, and enterprise features",
+  "status": "active",
+  "repository": {
+    "url": "https://github.com/jztan/redmine-mcp-server",
+    "source": "github"
+  },
+  "version": "0.4.3",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "redmine-mcp-server",
+      "version": "0.4.3",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}
