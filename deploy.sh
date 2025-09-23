@@ -139,7 +139,7 @@ Examples:
     $0 --status         # Show container status
 
 Container will be available at: http://localhost:8000
-MCP SSE endpoint: http://localhost:8000/sse
+MCP endpoint: http://localhost:8000/mcp
 
 EOF
 }
@@ -225,7 +225,7 @@ main() {
     echo ""
     echo "🎉 Deployment completed!"
     echo "🌐 Server URL: http://localhost:8000"
-    echo "🔗 MCP SSE Endpoint: http://localhost:8000/sse"
+    echo "🔗 MCP Endpoint: http://localhost:8000/mcp"
     echo "📋 View logs: docker logs -f $CONTAINER_NAME"
     echo "🛑 Stop container: docker stop $CONTAINER_NAME"
 }

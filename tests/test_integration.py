@@ -236,22 +236,96 @@ class TestRedmineIntegration:
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
-        from redmine_mcp_server.redmine_handler import download_redmine_attachment
+        from redmine_mcp_server.redmine_handler import download_redmine_attachment, create_redmine_issue
+        import tempfile
+        import os
 
+        # Pick the first available project
+        projects = list(redmine.project.all())
+        if not projects:
+            pytest.skip("No projects available for testing")
+        project_id = projects[0].id
+
+        issue_id = None
         attachment_id = None
+
         try:
-            for project in redmine.project.all():
-                try:
-                    issues = redmine.issue.filter(project_id=project.id, include="attachments", limit=1)
-                    if issues and getattr(issues[0], "attachments", []):
-                        attachment_id = issues[0].attachments[0].id
-                        break
-                except Exception:
-                    continue
+            # Create a test file to attach
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as test_file:
+                test_file.write("This is a test attachment for integration testing.\n")
+                test_file.write("Created by the MCP Redmine integration test suite.\n")
+                test_file_path = test_file.name
 
-            if attachment_id is None:
-                pytest.skip("No attachments found for testing")
+            try:
+                # Create a new issue
+                new_subject = "Integration Test Issue with Attachment"
+                issue = await create_redmine_issue(
+                    project_id,
+                    new_subject,
+                    "Testing attachment download functionality"
+                )
+                assert issue and "id" in issue
+                issue_id = issue["id"]
 
+                # Upload the attachment to the issue
+                # First, we need to upload the file to get a token
+                import requests
+                from requests.auth import HTTPBasicAuth
+
+                upload_url = f"{REDMINE_URL}/uploads.json"
+
+                # Use API key if available, otherwise use basic auth
+                api_key = os.getenv("REDMINE_API_KEY")
+                username = os.getenv("REDMINE_USERNAME")
+                password = os.getenv("REDMINE_PASSWORD")
+
+                if api_key:
+                    headers = {"X-Redmine-API-Key": api_key}
+                    auth = None
+                else:
+                    headers = {}
+                    auth = HTTPBasicAuth(username, password)
+
+                with open(test_file_path, 'rb') as f:
+                    # Read file content
+                    file_content = f.read()
+
+                # Set content-type header for file upload
+                headers['Content-Type'] = 'application/octet-stream'
+
+                # Upload file directly as binary data
+                response = requests.post(
+                    upload_url,
+                    headers=headers,
+                    data=file_content,
+                    auth=auth,
+                    params={'filename': os.path.basename(test_file_path)}
+                )
+
+                if response.status_code != 201:
+                    pytest.skip(f"Failed to upload attachment: {response.status_code} - {response.text}")
+
+                upload_token = response.json()['upload']['token']
+
+                # Now update the issue to include the attachment
+                redmine.issue.update(
+                    issue_id,
+                    uploads=[{'token': upload_token, 'filename': os.path.basename(test_file_path)}]
+                )
+
+                # Get the issue with attachments to find the attachment ID
+                issue_with_attachments = redmine.issue.get(issue_id, include=['attachments'])
+                if not issue_with_attachments.attachments:
+                    pytest.skip("Failed to create attachment for testing")
+
+                attachment_id = issue_with_attachments.attachments[0].id
+
+            finally:
+                # Clean up the temporary file
+                if os.path.exists(test_file_path):
+                    os.unlink(test_file_path)
+
+            # Now test downloading the attachment
             result = await download_redmine_attachment(attachment_id, str(tmp_path))
 
             # Test the current API format (HTTP download URLs, not file paths)
@@ -268,8 +342,9 @@ class TestRedmineIntegration:
             assert "/files/" in result["download_url"]
 
             # Verify file was actually downloaded to the attachments directory
-            # (The API creates files in UUID-based directories for security)
-            attachments_dir = tmp_path if str(tmp_path) != "attachments" else "attachments"
+            # Note: Due to security fix, files are always saved to default "attachments" directory
+            # regardless of the save_dir parameter (which is deprecated and ignored)
+            attachments_dir = "attachments"  # Always uses server default now
             if os.path.exists(attachments_dir):
                 # Check that some file was created (UUID directory structure)
                 has_files = any(os.path.isdir(os.path.join(attachments_dir, item))
@@ -278,6 +353,13 @@ class TestRedmineIntegration:
 
         except Exception as e:
             pytest.fail(f"Integration test failed: {e}")
+        finally:
+            # Clean up the created issue
+            if issue_id:
+                try:
+                    redmine.issue.delete(issue_id)
+                except Exception:
+                    pass  # Best effort cleanup
 
 
 class TestFastAPIIntegration:
