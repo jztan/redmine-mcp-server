@@ -737,21 +737,58 @@ async def download_redmine_attachment(
 ) -> Dict[str, Any]:
     """Download a Redmine attachment and return HTTP download URL.
 
+    ⚠️  DEPRECATED: This function will be removed in v0.5.0
+    📝 Use get_redmine_attachment_download_url(attachment_id) instead
+
+    SECURITY WARNING: save_dir parameter allows path traversal attacks.
+    expires_hours parameter exposes server policies to clients.
+
     Args:
-        attachment_id: The ID of the attachment to download.
-        save_dir: Directory where the file will be saved. Defaults to "attachments".
-        expires_hours: Hours until download link expires (default: from
-            ATTACHMENT_EXPIRES_MINUTES env var, fallback: 60 minutes)
+        attachment_id: The ID of the attachment to download
+        save_dir: DEPRECATED - Storage controlled by server configuration
+        expires_hours: DEPRECATED - Expiry controlled by server configuration
 
     Returns:
-        A dictionary containing:
-        - "download_url": HTTP URL to download the file
-        - "filename": Original filename of the attachment
-        - "content_type": MIME type of the file
-        - "size": Size of the file in bytes
-        - "expires_at": ISO timestamp when link expires
+        Same format as get_redmine_attachment_download_url()
+    """
+    # Log deprecation warning
+    logger.warning(
+        f"download_redmine_attachment is DEPRECATED and will be removed in v0.5.0. "
+        f"Use get_redmine_attachment_download_url({attachment_id}) instead. "
+        f"Called with save_dir='{save_dir}', expires_hours={expires_hours}"
+    )
 
-        On error, a dictionary with "error" is returned.
+    # Security validation for save_dir parameter
+    if save_dir != "attachments":
+        logger.error(
+            f"SECURITY: Rejected save_dir parameter '{save_dir}' - "
+            f"potential path traversal attack. Using server default."
+        )
+
+    # Delegate to secure implementation (ignoring deprecated parameters)
+    return await get_redmine_attachment_download_url(attachment_id)
+
+
+@mcp.tool()
+async def get_redmine_attachment_download_url(
+    attachment_id: int,
+) -> Dict[str, Any]:
+    """Get HTTP download URL for a Redmine attachment.
+
+    Downloads the attachment to server storage and returns a time-limited
+    HTTP URL that clients can use to download the file. Expiry time and
+    storage location are controlled by server configuration.
+
+    Args:
+        attachment_id: The ID of the attachment to retrieve
+
+    Returns:
+        Dict containing download_url, filename, content_type, size,
+        expires_at, and attachment_id
+
+    Raises:
+        ResourceNotFoundError: If attachment ID doesn't exist
+        Exception: For other download or processing errors
     """
     if not redmine:
         return {"error": "Redmine client not initialized."}
@@ -760,16 +797,17 @@ async def download_redmine_attachment(
     await _ensure_cleanup_started()
 
     try:
+        # Get attachment metadata from Redmine
         attachment = redmine.attachment.get(attachment_id)
 
-        # Create attachments directory (use configured path if save_dir is default)
-        if save_dir == "attachments":
-            attachments_dir = Path(os.getenv("ATTACHMENTS_DIR", "./attachments"))
-        else:
-            attachments_dir = Path(save_dir)
-        attachments_dir.mkdir(exist_ok=True)
+        # Server-controlled configuration (secure)
+        attachments_dir = Path(os.getenv("ATTACHMENTS_DIR", "./attachments"))
+        expires_minutes = float(os.getenv("ATTACHMENT_EXPIRES_MINUTES", "60"))
 
-        # Generate unique file ID
+        # Create secure storage directory
+        attachments_dir.mkdir(parents=True, exist_ok=True)
+
+        # Generate secure UUID-based filename
         file_id = str(uuid.uuid4())
 
         # Download using existing approach - keeps original filename
@@ -803,15 +841,11 @@ async def download_redmine_attachment(
                 pass  # Best effort cleanup
             return {"error": f"Failed to store attachment: {str(e)}"}
 
-        # Get expiry time from environment variable if not specified
-        if expires_hours is None:
-            expires_minutes = float(os.getenv("ATTACHMENT_EXPIRES_MINUTES", "60"))
-            expires_hours = expires_minutes / 60.0
-
         # Calculate expiry time (timezone-aware)
+        expires_hours = expires_minutes / 60.0
         expires_at = datetime.now(timezone.utc) + timedelta(hours=expires_hours)
 
-        # Store metadata atomically
+        # Store metadata atomically (following existing pattern)
         metadata = {
             "file_id": file_id,
             "attachment_id": attachment_id,
@@ -833,7 +867,7 @@ async def download_redmine_attachment(
             with open(temp_metadata, "w") as f:
                 json.dump(metadata, f, indent=2)
             os.rename(temp_metadata, metadata_file)
-        except (OSError, IOError, json.JSONEncodeError) as e:
+        except (OSError, IOError, ValueError) as e:
             # Cleanup on failure
             try:
                 if temp_metadata.exists():
@@ -867,10 +901,10 @@ async def download_redmine_attachment(
     except ResourceNotFoundError:
         return {"error": f"Attachment {attachment_id} not found."}
     except Exception as e:
-        print(f"Error downloading Redmine attachment {attachment_id}: {e}")
-        return {
-            "error": f"An error occurred while downloading attachment {attachment_id}."
-        }
+        logger.error(
+            f"Error in get_redmine_attachment_download_url {attachment_id}: {e}"
+        )
+        return {"error": f"Failed to prepare attachment download: {str(e)}"}
 
 
 @mcp.tool()
