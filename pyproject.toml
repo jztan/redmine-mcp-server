@@ -1,6 +1,6 @@
 [project]
 name = "redmine-mcp-server"
-version = "0.4.3"
+version = "0.4.4"
 description = "Production-ready MCP server for Redmine with security, pagination, and enterprise features"
 readme = "README.md"
 license = {text = "MIT"}
