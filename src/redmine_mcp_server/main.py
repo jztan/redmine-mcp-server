@@ -19,6 +19,7 @@ from dotenv import load_dotenv
 # Export the Starlette/FastAPI app for testing and external use
 app = mcp.streamable_http_app()
 
+
 def main():
     """Main entry point for the console script."""
     load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
