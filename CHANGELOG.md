@@ -6,6 +6,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2025-09-23
+
+### Added
+- PyPI package publishing support as `redmine-mcp-server`
+- Console script entry point: `redmine-mcp-server` command
+- Comprehensive package metadata for PyPI distribution
+- GitHub Actions workflow for automated PyPI publishing
+
+### Changed
+- Updated package name from `mcp-redmine` to `redmine-mcp-server` for PyPI
+- Enhanced pyproject.toml with full package metadata and classifiers
+- Added main() function for console script execution
+
+### Improved
+- Better package discoverability with keywords and classifications
+- Professional package structure following PyPI best practices
+- Automated release workflow for seamless publishing
+
 ## [0.4.1] - 2025-09-23
 
 ### Fixed
