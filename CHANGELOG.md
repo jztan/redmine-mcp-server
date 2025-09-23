@@ -6,6 +6,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2025-09-23
+
+### Fixed
+- GitHub Actions CI test failure in security validation tests
+- Updated test assertions to handle Redmine client initialization state properly
+- Security validation tests now pass consistently in CI environments
+
+### Improved
+- Enhanced GitHub Actions workflow with manual dispatch trigger
+- Added verbose test output for better CI debugging
+- Improved test reliability across different environments
+
 ## [0.4.0] - 2025-09-22
 
 ### Added
