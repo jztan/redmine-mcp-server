@@ -235,33 +235,33 @@ Updates an existing issue with the provided fields.
 
 ### File Operations
 
-#### `download_redmine_attachment`
-Downloads a file attached to a Redmine issue and provides HTTP access via secure URLs.
+#### `get_redmine_attachment_download_url(attachment_id)`
+Get an HTTP download URL for a Redmine attachment. The attachment is downloaded to server storage and a time-limited URL is returned for client access.
 
 **Parameters:**
-- `attachment_id` (integer, required): The ID of the attachment to download
-- `save_dir` (string, optional): Directory to save the file. Default: `"attachments"`
-- `expires_hours` (integer, optional): File expiry time in hours. Default: `24`
+- `attachment_id` (int): The ID of the attachment to download
 
-**Returns:** Dictionary with download details:
-- `download_url`: HTTP URL for accessing the file (`/files/{uuid}`)
-- `filename`: Original filename
-- `content_type`: MIME type of the file
-- `size`: File size in bytes
-- `expires_at`: ISO timestamp when file expires
-- `attachment_id`: Original attachment ID
-
-**Example Response:**
+**Returns:**
 ```json
 {
-  "download_url": "http://localhost:8000/files/550e8400-e29b-41d4-a716-446655440000",
-  "filename": "document.pdf",
-  "content_type": "application/pdf",
-  "size": 1024,
-  "expires_at": "2025-09-21T08:00:00Z",
-  "attachment_id": 123
+    "download_url": "http://localhost:8000/files/12345678-1234-5678-9abc-123456789012",
+    "filename": "document.pdf",
+    "content_type": "application/pdf",
+    "size": 1024,
+    "expires_at": "2025-09-22T10:30:00Z",
+    "attachment_id": 123
 }
 ```
+
+**Security Features:**
+- Server-controlled storage location and expiry policy
+- UUID-based filenames prevent path traversal attacks
+- No client control over server configuration
+
+#### `download_redmine_attachment(attachment_id, save_dir, expires_hours)` ⚠️ DEPRECATED
+**DEPRECATED:** This function will be removed in v0.5.0. Use `get_redmine_attachment_download_url()` instead.
+
+**Security Warning:** The `save_dir` parameter is vulnerable to path traversal attacks. The `expires_hours` parameter inappropriately exposes server policies to clients.
 
 #### `cleanup_attachment_files`
 Removes expired attachment files and provides cleanup statistics.

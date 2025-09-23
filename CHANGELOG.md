@@ -6,6 +6,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2025-09-22
+
+### Added
+- `get_redmine_attachment_download_url()` - Secure replacement for attachment downloads
+- Comprehensive security validation test suite
+- Server-controlled storage and expiry policies for enhanced security
+
+### Changed
+- Updated MCP library to v1.14.1
+- Integration tests now create their own test attachments for reliability
+- Attachment files always use UUID-based directory structure
+
+### Deprecated
+- `download_redmine_attachment()` - Use `get_redmine_attachment_download_url()` instead
+  - ⚠️ SECURITY: `save_dir` parameter vulnerable to path traversal (CWE-22, CVSS 7.5)
+  - `expires_hours` parameter exposes server policies to clients
+  - Will be removed in v0.5.0
+
+### Fixed
+- Path traversal vulnerability in attachment downloads eliminated
+- Integration test no longer skipped due to missing attachments
+
+### Security
+- **CRITICAL**: Fixed path traversal vulnerability in attachment downloads (CVSS 7.5)
+- Removed client control over server storage configuration
+- Enhanced logging for security events and deprecated function usage
+
 ## [0.3.1] - 2025-09-21
 
 ### Fixed
