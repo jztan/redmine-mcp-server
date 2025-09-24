@@ -22,21 +22,21 @@ check_docker() {
     echo "✅ Docker is running"
 }
 
-# Function to check if .env file exists
+# Function to check if .env.docker file exists
 check_env_file() {
-    if [ ! -f .env ]; then
-        echo "❌ .env file not found"
-        echo "📋 Creating .env from .env.example..."
+    if [ ! -f .env.docker ]; then
+        echo "❌ .env.docker file not found"
+        echo "📋 Creating .env.docker from .env.example..."
         if [ -f .env.example ]; then
-            cp .env.example .env
-            echo "⚠️  Please edit .env with your Redmine configuration before running again"
+            cp .env.example .env.docker
+            echo "⚠️  Please edit .env.docker with your Redmine configuration before running again"
             exit 1
         else
-            echo "❌ .env.example not found. Please create .env manually"
+            echo "❌ .env.example not found. Please create .env.docker manually"
             exit 1
         fi
     fi
-    echo "✅ .env file found"
+    echo "✅ .env.docker file found"
 }
 
 # Function to build Docker image
@@ -76,7 +76,7 @@ run_container() {
         --name $CONTAINER_NAME \
         --network $NETWORK_NAME \
         -p 8000:8000 \
-        --env-file .env \
+        --env-file .env.docker \
         -v "$(pwd)/logs:/app/logs" \
         -v "$(pwd)/data:/app/data" \
         --restart unless-stopped \
