@@ -27,6 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enhanced documentation with deployment-specific Python version guidance
 - Updated all metadata files (server.json, roadmap.md) for version consistency
 
+### Fixed
+- Docker deployment script now correctly uses `.env.docker` instead of `.env`
+- Maintains proper deployment compatibility (local uses `.env`, Docker uses `.env.docker`)
+
 ### Technical
 - Configuration-only implementation approach for maximum safety
 - Ultra-minimal development setup (Python 3.13.1 local, CI handles multi-version)
