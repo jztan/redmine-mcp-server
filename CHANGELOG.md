@@ -6,6 +6,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2025-09-25
+
+### Added
+- **Python 3.10+ support** - Expanded compatibility from Python 3.13+ to Python 3.10+
+- CI/CD matrix testing across Python 3.10, 3.11, 3.12, and 3.13 versions
+- Python version compatibility matrix in documentation
+- GitHub Actions workflows for multi-version testing before PyPI publication
+
+### Changed
+- **BREAKING**: Minimum Python requirement lowered from 3.13+ to 3.10+
+- Updated project classifiers to include Python 3.10, 3.11, and 3.12
+- Enhanced CI/CD pipeline with comprehensive multi-version testing
+- Version bumped to 0.5.0 for major compatibility expansion
+
+### Improved
+- **10x larger potential user base** with Python 3.10+ support
+- Full backward compatibility maintained across all Python versions
+- Zero source code changes required for compatibility expansion
+- Enhanced documentation with deployment-specific Python version guidance
+- Updated all metadata files (server.json, roadmap.md) for version consistency
+
+### Technical
+- Configuration-only implementation approach for maximum safety
+- Ultra-minimal development setup (Python 3.13.1 local, CI handles multi-version)
+- All 71 tests validated across Python 3.10-3.13 via GitHub Actions
+- Maintained Docker deployment with Python 3.13 for optimal performance
+
 ## [0.4.5] - 2025-09-24
 
 ### Improved
@@ -273,7 +300,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Works with Docker and docker-compose
 - Tested on macOS and Linux environments
 
+[0.5.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.5.0
+[0.4.5]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.4.5
+[0.4.4]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.4.4
+[0.4.3]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.4.3
+[0.4.2]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.4.2
+[0.4.1]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.4.1
+[0.4.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.4.0
+[0.3.1]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.3.1
+[0.3.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.3.0
+[0.2.1]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.2.1
+[0.2.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.2.0
+[0.1.6]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.1.6
+[0.1.5]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.1.5
+[0.1.4]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.1.4
+[0.1.3]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.1.3
+[0.1.2]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.1.2
 [0.1.1]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.1.1
 [0.1.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.1.0
-[0.1.2]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.1.2
 
