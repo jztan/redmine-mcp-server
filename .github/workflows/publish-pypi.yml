@@ -6,7 +6,30 @@ on:
       - 'v*.*.*'  # Trigger on version tags like v0.4.1
 
 jobs:
+  test-before-publish:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install uv
+        run: pip install uv
+      - name: Set up environment
+        run: |
+          uv venv
+          source .venv/bin/activate
+          uv pip install -e .[test]
+      - name: Run tests
+        run: |
+          source .venv/bin/activate
+          python tests/run_tests.py --all --verbose
+
   publish:
+    needs: test-before-publish
     runs-on: ubuntu-latest
 
     steps:

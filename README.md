@@ -24,7 +24,8 @@ A Model Context Protocol (MCP) server that integrates with Redmine project manag
 
 ### Prerequisites
 
-- Python 3.13+
+- Python 3.10+ (for local installation)
+- Docker (alternative deployment, uses Python 3.13)
 - Access to a Redmine instance
 
 ### Install from PyPI (Recommended)
@@ -67,6 +68,15 @@ redmine-mcp-server
 # Or alternatively:
 python -m redmine_mcp_server.main
 ```
+
+## Python Version Compatibility
+
+| Deployment Method | Python Version | Support Status |
+|------------------|----------------|----------------|
+| pip install | 3.10+ | ✅ Full Support |
+| Docker | 3.13 (built-in) | ✅ Full Support |
+
+The package is tested on Python 3.10, 3.11, 3.12, and 3.13.
 
 ### Install from Source
 
