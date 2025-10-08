@@ -120,19 +120,20 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `REDMINE_URL` | ✅ | – | Base URL of your Redmine instance |
-| `REDMINE_API_KEY` | ✅* | – | API key for authentication (*or provide username/password*) |
-| `REDMINE_USERNAME` | ✅* | – | Username for basic auth (*use with password when not using API key*) |
-| `REDMINE_PASSWORD` | ✅* | – | Password for basic auth |
-| `SERVER_HOST` | ❌ | `0.0.0.0` | Host/IP the MCP server binds to |
-| `SERVER_PORT` | ❌ | `8000` | Port the MCP server listens on |
-| `PUBLIC_HOST` | ❌ | `localhost` | Hostname used when generating download URLs |
-| `PUBLIC_PORT` | ❌ | `8000` | Public port used for download URLs |
-| `ATTACHMENTS_DIR` | ❌ | `./attachments` | Directory for downloaded attachments |
-| `AUTO_CLEANUP_ENABLED` | ❌ | `true` | Toggle automatic cleanup of expired attachments |
-| `CLEANUP_INTERVAL_MINUTES` | ❌ | `10` | Interval for cleanup task |
-| `ATTACHMENT_EXPIRES_MINUTES` | ❌ | `60` | Expiry window for generated download URLs |
+| `REDMINE_URL` | Yes | – | Base URL of your Redmine instance |
+| `REDMINE_API_KEY` | Yes* | – | API key for authentication (*or provide username/password*) |
+| `REDMINE_USERNAME` | Yes* | – | Username for basic auth (*use with password when not using API key*) |
+| `REDMINE_PASSWORD` | Yes* | – | Password for basic auth |
+| `SERVER_HOST` | No | `0.0.0.0` | Host/IP the MCP server binds to |
+| `SERVER_PORT` | No | `8000` | Port the MCP server listens on |
+| `PUBLIC_HOST` | No | `localhost` | Hostname used when generating download URLs |
+| `PUBLIC_PORT` | No | `8000` | Public port used for download URLs |
+| `ATTACHMENTS_DIR` | No | `./attachments` | Directory for downloaded attachments |
+| `AUTO_CLEANUP_ENABLED` | No | `true` | Toggle automatic cleanup of expired attachments |
+| `CLEANUP_INTERVAL_MINUTES` | No | `10` | Interval for cleanup task |
+| `ATTACHMENT_EXPIRES_MINUTES` | No | `60` | Expiry window for generated download URLs |
 
+*\* Either `REDMINE_API_KEY` or the combination of `REDMINE_USERNAME` and `REDMINE_PASSWORD` must be provided for authentication. Do not use both methods at the same time.*
 **Example configurations:**
 ```bash
 # Quick cleanup for development/testing
