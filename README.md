@@ -11,6 +11,8 @@ A Model Context Protocol (MCP) server that integrates with Redmine project manag
 
 **mcp-name: io.github.jztan/redmine-mcp-server**
 
+## [Tool reference](./docs/tool-reference.md) | [Changelog](./CHANGELOG.md) | [Contributing](./docs/contributing.md) | [Troubleshooting](./docs/troubleshooting.md)
+
 ## Features
 
 - **Redmine Integration**: List projects, view/create/update issues, download attachments
@@ -19,7 +21,7 @@ A Model Context Protocol (MCP) server that integrates with Redmine project manag
 - **Flexible Authentication**: Username/password or API key
 - **File Management**: Automatic cleanup of expired files with storage statistics
 - **Docker Ready**: Complete containerization support
-- **Comprehensive Testing**: Unit, integration, and connection tests
+- **Pagination Support**: Efficiently handle large issue lists with configurable limits
 
 ## Quick Start
 
@@ -27,7 +29,7 @@ A Model Context Protocol (MCP) server that integrates with Redmine project manag
    ```bash
    pip install redmine-mcp-server
    ```
-2. **Create a `.env` file** using the template below and fill in your Redmine credentials.
+2. **Create a `.env` file** with your Redmine credentials (see [Installation](#installation) for template)
 3. **Start the server**
    ```bash
    redmine-mcp-server
@@ -85,35 +87,6 @@ redmine-mcp-server
 python -m redmine_mcp_server.main
 ```
 
-## Python Version Compatibility
-
-| Deployment Method | Python Version | Support Status |
-|------------------|----------------|----------------|
-| pip install | 3.10+ | ✅ Full Support |
-| Docker | 3.13 (built-in) | ✅ Full Support |
-
-The package is tested on Python 3.10, 3.11, 3.12, and 3.13.
-
-### Install from Source
-
-```bash
-# Clone and setup
-git clone https://github.com/jztan/redmine-mcp-server
-cd redmine-mcp-server
-
-# Install dependencies (using uv)
-uv venv
-source .venv/bin/activate
-uv pip install -e .
-
-# Configure environment
-cp .env.example .env
-# Edit .env with your Redmine settings
-
-# Run the server
-uv run python -m redmine_mcp_server.main
-```
-
 The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, health check at `/health`, and file serving at `/files/{file_id}`.
 
 ### Environment Variables
@@ -133,35 +106,9 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `CLEANUP_INTERVAL_MINUTES` | No | `10` | Interval for cleanup task |
 | `ATTACHMENT_EXPIRES_MINUTES` | No | `60` | Expiry window for generated download URLs |
 
-*\* Either `REDMINE_API_KEY` or the combination of `REDMINE_USERNAME` and `REDMINE_PASSWORD` must be provided for authentication. Do not use both methods at the same time.*
-**Example configurations:**
-```bash
-# Quick cleanup for development/testing
-CLEANUP_INTERVAL_MINUTES=1
-ATTACHMENT_EXPIRES_MINUTES=5
+*\* Either `REDMINE_API_KEY` or the combination of `REDMINE_USERNAME` and `REDMINE_PASSWORD` must be provided for authentication. API key authentication is recommended for security.*
 
-# Production settings
-CLEANUP_INTERVAL_MINUTES=30
-ATTACHMENT_EXPIRES_MINUTES=120
-```
-
-**Note:** API key authentication is preferred for security.
-
-## Usage
-
-### Running the Server
-
-```bash
-# If installed from PyPI:
-redmine-mcp-server
-
-# If installed from source:
-uv run python -m redmine_mcp_server.main
-```
-
-The same command is used for both development and production. Configure environment-specific settings in your `.env` file.
-
-### MCP Client Configuration
+## MCP Client Configuration
 
 The server exposes an HTTP endpoint at `http://127.0.0.1:8000/mcp`. Register it with your preferred MCP-compatible agent using the instructions below.
 
@@ -314,10 +261,6 @@ For clients that require a command-based approach with HTTP bridge:
 ```bash
 # Test connection by checking health endpoint
 curl http://localhost:8000/health
-
-# For development (source installation only):
-python tests/test_connection.py
-python tests/run_tests.py --all
 ```
 
 ## Available Tools
@@ -366,102 +309,13 @@ chmod +x deploy.sh
 ./deploy.sh
 ```
 
-## Development
-
-### Architecture
-
-The server is built using:
-- **FastMCP**: Model Context Protocol implementation with streamable HTTP transport
-- **python-redmine**: Official Redmine Python library
-
-### Project Structure
-
-```
-redmine-mcp-server/
-├── src/redmine_mcp_server/
-│   ├── main.py              # FastMCP application entry point
-│   ├── redmine_handler.py   # MCP tools and Redmine integration
-│   └── file_manager.py      # Attachment file management and cleanup
-├── tests/                   # Comprehensive test suite
-├── .env.example            # Environment configuration template
-├── Dockerfile              # Container configuration
-├── docker-compose.yml      # Multi-container setup
-├── deploy.sh              # Deployment automation
-└── pyproject.toml         # Project configuration
-```
-
-### Adding New Tools
-
-Add your tool function to `src/redmine_mcp_server/redmine_handler.py`:
-
-```python
-@mcp.tool()
-async def your_new_tool(param: str) -> Dict[str, Any]:
-    """Tool description"""
-    # Implementation here
-    return {"result": "data"}
-```
-
-The tool will automatically be available through the MCP interface.
-
-### Testing
-
-The project includes unit tests, integration tests, and connection validation.
-
-**Run tests:**
-```bash
-# Install test dependencies
-uv pip install -e .[test]
-```
-```bash
-# All tests
-python tests/run_tests.py --all
-
-# Unit tests only (default)
-python tests/run_tests.py
-
-# Integration tests (requires Redmine connection)
-python tests/run_tests.py --integration
-
-# With coverage report
-python tests/run_tests.py --coverage
-```
-
-**Test Requirements:**
-- Unit tests: No external dependencies (use mocks)
-- Integration tests: Require valid Redmine server connection
-
 ## Troubleshooting
 
 If you run into any issues, checkout our [troubleshooting guide](./docs/troubleshooting.md).
 
 ## Contributing
 
-Contributions are welcome! Please:
-
-```bash
-# Install development dependencies
-# For source installation:
-uv pip install -e .[dev]
-
-# For PyPI installation:
-pip install redmine-mcp-server[dev]
-```
-
-1. Open an issue for discussion
-2. Run the full test suite: `python tests/run_tests.py --all`
-3. Run code quality checks:
-   ```bash
-   # PEP 8 compliance check
-   uv run flake8 src/ --max-line-length=88
-
-   # Auto-format code
-   uv run black src/ --line-length=88
-
-   # Check formatting without making changes
-   uv run black --check src/
-   ```
-4. Submit a pull request
+Contributions are welcome! Please see our [contributing guide](./docs/contributing.md) for details.
 
 ## License
 
@@ -469,6 +323,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Additional Resources
 
-- [CHANGELOG](CHANGELOG.md) - Detailed version history
+- [Tool Reference](./docs/tool-reference.md) - Complete tool documentation
+- [Troubleshooting Guide](./docs/troubleshooting.md) - Common issues and solutions
+- [Contributing Guide](./docs/contributing.md) - Development setup and guidelines
+- [Changelog](./CHANGELOG.md) - Detailed version history
 - [Roadmap](roadmap.md) - Future development plans
 - [Blog: How I linked a legacy system to a modern AI agent with MCP](https://www.thefirstcommit.com/how-i-linked-a-legacy-system-to-a-modern-ai-agent-with-mcp-1b14e634a4b3) - The story behind this project
