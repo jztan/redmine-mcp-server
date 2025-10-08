@@ -6,6 +6,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2025-10-08
+
+### Documentation
+- **Updated MCP client configurations** - Comprehensive update to all MCP client setup instructions
+  - VS Code: Added native MCP support with CLI, Command Palette, and manual configuration methods
+  - Codex CLI: New section with CLI command and TOML configuration format
+  - Kiro: Updated to use mcp-client-http bridge for HTTP transport compatibility
+  - Generic clients: Expanded with both HTTP and command-based configuration formats
+  - Removed Continue extension section (replaced by VS Code native support)
+- All configurations verified against official documentation and real-world examples
+
+### Improved
+- Enhanced README MCP client configuration section for better user experience
+- Clearer installation instructions for various MCP-compatible clients
+- More accurate configuration examples reflecting current client capabilities
+
 ## [0.5.0] - 2025-09-25
 
 ### Added

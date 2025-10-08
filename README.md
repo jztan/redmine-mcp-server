@@ -5,6 +5,7 @@
 [![Python Version](https://img.shields.io/pypi/pyversions/redmine-mcp-server.svg)](https://pypi.org/project/redmine-mcp-server/)
 [![GitHub Issues](https://img.shields.io/github/issues/jztan/redmine-mcp-server.svg)](https://github.com/jztan/redmine-mcp-server/issues)
 [![CI](https://github.com/jztan/redmine-mcp-server/actions/workflows/pr-tests.yml/badge.svg)](https://github.com/jztan/redmine-mcp-server/actions/workflows/pr-tests.yml)
+[![Downloads](https://pepy.tech/badge/redmine-mcp-server)](https://pepy.tech/project/redmine-mcp-server)
 
 A Model Context Protocol (MCP) server that integrates with Redmine project management systems. This server provides seamless access to Redmine data through MCP tools, enabling AI assistants to interact with your Redmine instance.
 
@@ -19,6 +20,21 @@ A Model Context Protocol (MCP) server that integrates with Redmine project manag
 - **File Management**: Automatic cleanup of expired files with storage statistics
 - **Docker Ready**: Complete containerization support
 - **Comprehensive Testing**: Unit, integration, and connection tests
+
+## Quick Start
+
+1. **Install the package**
+   ```bash
+   pip install redmine-mcp-server
+   ```
+2. **Create a `.env` file** using the template below and fill in your Redmine credentials.
+3. **Start the server**
+   ```bash
+   redmine-mcp-server
+   ```
+4. **Add the server to your MCP client** using one of the guides in [MCP Client Configuration](#mcp-client-configuration).
+
+Once running, the server listens on `http://localhost:8000` with the MCP endpoint at `/mcp`, health check at `/health`, and file serving at `/files/{file_id}`.
 
 ## Installation
 
@@ -100,13 +116,24 @@ uv run python -m redmine_mcp_server.main
 
 The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, health check at `/health`, and file serving at `/files/{file_id}`.
 
-### File Management Configuration
+### Environment Variables
 
-- **`ATTACHMENTS_DIR`**: Directory where downloaded attachments are stored (default: `./attachments`)
-- **`AUTO_CLEANUP_ENABLED`**: Enable automatic cleanup of expired files (default: `true`)
-- **`CLEANUP_INTERVAL_MINUTES`**: How often cleanup runs to check for expired files (default: `10` minutes)
-- **`ATTACHMENT_EXPIRES_MINUTES`**: Default expiry time for downloaded attachments (default: `60` minutes)
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `REDMINE_URL` | Yes | – | Base URL of your Redmine instance |
+| `REDMINE_API_KEY` | Yes* | – | API key for authentication (*or provide username/password*) |
+| `REDMINE_USERNAME` | Yes* | – | Username for basic auth (*use with password when not using API key*) |
+| `REDMINE_PASSWORD` | Yes* | – | Password for basic auth |
+| `SERVER_HOST` | No | `0.0.0.0` | Host/IP the MCP server binds to |
+| `SERVER_PORT` | No | `8000` | Port the MCP server listens on |
+| `PUBLIC_HOST` | No | `localhost` | Hostname used when generating download URLs |
+| `PUBLIC_PORT` | No | `8000` | Public port used for download URLs |
+| `ATTACHMENTS_DIR` | No | `./attachments` | Directory for downloaded attachments |
+| `AUTO_CLEANUP_ENABLED` | No | `true` | Toggle automatic cleanup of expired attachments |
+| `CLEANUP_INTERVAL_MINUTES` | No | `10` | Interval for cleanup task |
+| `ATTACHMENT_EXPIRES_MINUTES` | No | `60` | Expiry window for generated download URLs |
 
+*\* Either `REDMINE_API_KEY` or the combination of `REDMINE_USERNAME` and `REDMINE_PASSWORD` must be provided for authentication. Do not use both methods at the same time.*
 **Example configurations:**
 ```bash
 # Quick cleanup for development/testing
@@ -136,6 +163,46 @@ The same command is used for both development and production. Configure environm
 
 ### MCP Client Configuration
 
+The server exposes an HTTP endpoint at `http://127.0.0.1:8000/mcp`. Register it with your preferred MCP-compatible agent using the instructions below.
+
+#### Visual Studio Code (Native MCP Support)
+
+VS Code has built-in MCP support via GitHub Copilot (requires VS Code 1.102+).
+
+**Using CLI (Quickest):**
+```bash
+code --add-mcp '{"name":"redmine","type":"http","url":"http://127.0.0.1:8000/mcp"}'
+```
+
+**Using Command Palette:**
+1. Open Command Palette (`Cmd/Ctrl+Shift+P`)
+2. Run `MCP: Open User Configuration` (for global) or `MCP: Open Workspace Folder Configuration` (for project-specific)
+3. Add the configuration:
+   ```json
+   {
+     "servers": {
+       "redmine": {
+         "type": "http",
+         "url": "http://127.0.0.1:8000/mcp"
+       }
+     }
+   }
+   ```
+4. Save the file. VS Code will automatically load the MCP server.
+
+**Manual Configuration:**
+Create `.vscode/mcp.json` in your workspace (or `mcp.json` in your user profile directory):
+```json
+{
+  "servers": {
+    "redmine": {
+      "type": "http",
+      "url": "http://127.0.0.1:8000/mcp"
+    }
+  }
+}
+```
+
 #### Claude Code
 
 Add to Claude Code using the CLI command:
@@ -144,12 +211,12 @@ Add to Claude Code using the CLI command:
 claude mcp add --transport http redmine http://127.0.0.1:8000/mcp
 ```
 
-Or configure manually in your Claude Code (~/.claude.json):
+Or configure manually in your Claude Code settings file (`~/.claude.json`):
 
 ```json
 {
   "mcpServers": {
-    "my-local-server": {
+    "redmine": {
       "type": "http",
       "url": "http://127.0.0.1:8000/mcp"
     }
@@ -157,17 +224,71 @@ Or configure manually in your Claude Code (~/.claude.json):
 }
 ```
 
-#### Other MCP Clients
+#### Codex CLI
 
-Configure your MCP client (e.g., VS Code settings.json):
+Add to Codex CLI using the command:
+
+```bash
+codex mcp add redmine -- npx -y mcp-client-http http://127.0.0.1:8000/mcp
+```
+
+Or configure manually in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.redmine]
+command = "npx"
+args = ["-y", "mcp-client-http", "http://127.0.0.1:8000/mcp"]
+```
+
+**Note:** Codex CLI primarily supports stdio-based MCP servers. The above uses `mcp-client-http` as a bridge for HTTP transport.
+
+#### Kiro
+
+Kiro primarily supports stdio-based MCP servers. For HTTP servers, use an HTTP-to-stdio bridge:
+
+1. Create or edit `.kiro/settings/mcp.json` in your workspace:
+   ```json
+   {
+     "mcpServers": {
+       "redmine": {
+         "command": "npx",
+         "args": [
+           "-y",
+           "mcp-client-http",
+           "http://127.0.0.1:8000/mcp"
+         ],
+         "disabled": false
+       }
+     }
+   }
+   ```
+2. Save the file and restart Kiro. The Redmine tools will appear in the MCP panel.
+
+**Note:** Direct HTTP transport support in Kiro is limited. The above configuration uses `mcp-client-http` as a bridge to connect to HTTP MCP servers.
+
+#### Generic MCP Clients
+
+Most MCP clients use a standard configuration format. For HTTP servers:
 
 ```json
 {
-  "mcp": {
-    "servers": {
-      "redmine": {
-        "url": "http://127.0.0.1:8000/mcp"
-      }
+  "mcpServers": {
+    "redmine": {
+      "type": "http",
+      "url": "http://127.0.0.1:8000/mcp"
+    }
+  }
+}
+```
+
+For clients that require a command-based approach with HTTP bridge:
+
+```json
+{
+  "mcpServers": {
+    "redmine": {
+      "command": "npx",
+      "args": ["-y", "mcp-client-http", "http://127.0.0.1:8000/mcp"]
     }
   }
 }
