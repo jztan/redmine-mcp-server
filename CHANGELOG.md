@@ -6,6 +6,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.2] - 2025-10-09
+
+### Documentation
+- **Major README reorganization** - Comprehensive cleanup for professional, user-focused documentation
+  - Created separate documentation guides:
+    - `docs/tool-reference.md` - Complete tool documentation with examples
+    - `docs/troubleshooting.md` - Comprehensive troubleshooting guide
+    - `docs/contributing.md` - Complete developer guide with setup, testing, and contribution guidelines
+  - Refactored MCP client configurations with collapsible `<details>` sections
+  - Removed development-focused content from README (moved to contributing guide)
+  - Streamlined README structure:
+    - Cleaner Quick Start with proper navigation
+    - Focused Features section (replaced "Comprehensive Testing" with "Pagination Support")
+    - Removed redundant sections (Usage, Python Version Compatibility, development notes)
+    - Added proper Troubleshooting and Contributing sections
+    - Enhanced Additional Resources with all documentation links
+
+### Improved
+- **Professional documentation structure** - README now focuses purely on end-user usage
+- **Better information architecture** - Clear separation between user docs and developer docs
+- **Enhanced discoverability** - All documentation easily accessible with proper linking
+- **Cleaner presentation** - Collapsible sections and categorized lists reduce visual clutter
+- **Industry-standard pattern** - Documentation structure matches professional open-source projects
+
+### Fixed
+- Quick Start .env reference now properly links to Installation section
+- Contributing link in quick navigation now points to correct location
+- Removed duplicate and redundant information across README
+- All internal documentation links verified and corrected
+
 ## [0.5.1] - 2025-10-08
 
 ### Documentation
