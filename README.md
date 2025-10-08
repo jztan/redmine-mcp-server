@@ -11,6 +11,8 @@ A Model Context Protocol (MCP) server that integrates with Redmine project manag
 
 **mcp-name: io.github.jztan/redmine-mcp-server**
 
+## [Tool reference](./docs/tool-reference.md) | [Changelog](./CHANGELOG.md) | [Contributing](./docs/contributing.md) | [Troubleshooting](./docs/troubleshooting.md)
+
 ## Features
 
 - **Redmine Integration**: List projects, view/create/update issues, download attachments
@@ -19,7 +21,7 @@ A Model Context Protocol (MCP) server that integrates with Redmine project manag
 - **Flexible Authentication**: Username/password or API key
 - **File Management**: Automatic cleanup of expired files with storage statistics
 - **Docker Ready**: Complete containerization support
-- **Comprehensive Testing**: Unit, integration, and connection tests
+- **Pagination Support**: Efficiently handle large issue lists with configurable limits
 
 ## Quick Start
 
@@ -335,20 +337,11 @@ chmod +x deploy.sh
 ./deploy.sh
 ```
 
-## Troubleshooting
-
-If you run into any issues, checkout our [troubleshooting guide](./docs/troubleshooting.md).
-
-## Contributing
-
-Contributions are welcome! Please see our [contributing guide](./docs/contributing.md) for details.
-
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Additional Resources
 
-- [CHANGELOG](CHANGELOG.md) - Detailed version history
 - [Roadmap](roadmap.md) - Future development plans
 - [Blog: How I linked a legacy system to a modern AI agent with MCP](https://www.thefirstcommit.com/how-i-linked-a-legacy-system-to-a-modern-ai-agent-with-mcp-1b14e634a4b3) - The story behind this project
