@@ -87,8 +87,6 @@ redmine-mcp-server
 python -m redmine_mcp_server.main
 ```
 
-**Note:** For development setup (source installation), see the [contributing guide](./docs/contributing.md).
-
 The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, health check at `/health`, and file serving at `/files/{file_id}`.
 
 ### Environment Variables
@@ -108,35 +106,9 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `CLEANUP_INTERVAL_MINUTES` | No | `10` | Interval for cleanup task |
 | `ATTACHMENT_EXPIRES_MINUTES` | No | `60` | Expiry window for generated download URLs |
 
-*\* Either `REDMINE_API_KEY` or the combination of `REDMINE_USERNAME` and `REDMINE_PASSWORD` must be provided for authentication. Do not use both methods at the same time.*
-**Example configurations:**
-```bash
-# Quick cleanup for development/testing
-CLEANUP_INTERVAL_MINUTES=1
-ATTACHMENT_EXPIRES_MINUTES=5
+*\* Either `REDMINE_API_KEY` or the combination of `REDMINE_USERNAME` and `REDMINE_PASSWORD` must be provided for authentication. API key authentication is recommended for security.*
 
-# Production settings
-CLEANUP_INTERVAL_MINUTES=30
-ATTACHMENT_EXPIRES_MINUTES=120
-```
-
-**Note:** API key authentication is preferred for security.
-
-## Usage
-
-### Running the Server
-
-```bash
-# If installed from PyPI:
-redmine-mcp-server
-
-# If installed from source:
-uv run python -m redmine_mcp_server.main
-```
-
-The same command is used for both development and production. Configure environment-specific settings in your `.env` file.
-
-### MCP Client Configuration
+## MCP Client Configuration
 
 The server exposes an HTTP endpoint at `http://127.0.0.1:8000/mcp`. Register it with your preferred MCP-compatible agent using the instructions below.
 
@@ -337,11 +309,23 @@ chmod +x deploy.sh
 ./deploy.sh
 ```
 
+## Troubleshooting
+
+If you run into any issues, checkout our [troubleshooting guide](./docs/troubleshooting.md).
+
+## Contributing
+
+Contributions are welcome! Please see our [contributing guide](./docs/contributing.md) for details.
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Additional Resources
 
+- [Tool Reference](./docs/tool-reference.md) - Complete tool documentation
+- [Troubleshooting Guide](./docs/troubleshooting.md) - Common issues and solutions
+- [Contributing Guide](./docs/contributing.md) - Development setup and guidelines
+- [Changelog](./CHANGELOG.md) - Detailed version history
 - [Roadmap](roadmap.md) - Future development plans
 - [Blog: How I linked a legacy system to a modern AI agent with MCP](https://www.thefirstcommit.com/how-i-linked-a-legacy-system-to-a-modern-ai-agent-with-mcp-1b14e634a4b3) - The story behind this project
