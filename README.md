@@ -287,10 +287,6 @@ For clients that require a command-based approach with HTTP bridge:
 ```bash
 # Test connection by checking health endpoint
 curl http://localhost:8000/health
-
-# For development (source installation only):
-python tests/test_connection.py
-python tests/run_tests.py --all
 ```
 
 ## Available Tools
