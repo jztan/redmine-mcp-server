@@ -165,21 +165,43 @@ The same command is used for both development and production. Configure environm
 
 The server exposes an HTTP endpoint at `http://127.0.0.1:8000/mcp`. Register it with your preferred MCP-compatible agent using the instructions below.
 
-#### Visual Studio Code (Continue / MCP Extension)
+#### Visual Studio Code (Native MCP Support)
 
-1. Install the [Continue](https://continue.dev/) extension (or any MCP-compatible extension).
-2. Open **Settings** → search for `Continue: MCP Servers` and click **Edit in settings.json**.
-3. Add an entry similar to the example below:
+VS Code has built-in MCP support via GitHub Copilot (requires VS Code 1.102+).
+
+**Using CLI (Quickest):**
+```bash
+code --add-mcp '{"name":"redmine","type":"http","url":"http://127.0.0.1:8000/mcp"}'
+```
+
+**Using Command Palette:**
+1. Open Command Palette (`Cmd/Ctrl+Shift+P`)
+2. Run `MCP: Open User Configuration` (for global) or `MCP: Open Workspace Folder Configuration` (for project-specific)
+3. Add the configuration:
    ```json
    {
-     "continue.mcpServers": {
+     "servers": {
        "redmine": {
+         "type": "http",
          "url": "http://127.0.0.1:8000/mcp"
        }
      }
    }
    ```
-4. Reload VS Code. The Redmine tools will appear in the MCP/Continue panel.
+4. Save the file. VS Code will automatically load the MCP server.
+
+**Manual Configuration:**
+Create `.vscode/mcp.json` in your workspace (or `mcp.json` in your user profile directory):
+```json
+{
+  "servers": {
+    "redmine": {
+      "type": "http",
+      "url": "http://127.0.0.1:8000/mcp"
+    }
+  }
+}
+```
 
 #### Claude Code
 
@@ -204,35 +226,69 @@ Or configure manually in your Claude Code settings file (`~/.claude.json`):
 
 #### Codex CLI
 
-The [Codex MCP CLI](https://github.com/modelcontextprotocol/cli) can connect directly to the server:
+Add to Codex CLI using the command:
 
 ```bash
-npx @modelcontextprotocol/cli@latest add redmine http://127.0.0.1:8000/mcp
-npx @modelcontextprotocol/cli@latest chat --server redmine
+codex mcp add redmine -- npx -y mcp-client-http http://127.0.0.1:8000/mcp
 ```
 
-This stores configuration under `~/.config/modelcontextprotocol/servers.json` so it persists across sessions.
+Or configure manually in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.redmine]
+command = "npx"
+args = ["-y", "mcp-client-http", "http://127.0.0.1:8000/mcp"]
+```
+
+**Note:** Codex CLI primarily supports stdio-based MCP servers. The above uses `mcp-client-http` as a bridge for HTTP transport.
 
 #### Kiro
 
-1. Open Kiro → **Settings** → **Model Context Protocol Servers**.
-2. Click **Add Server** and choose **HTTP** as the transport.
-3. Use the following values:
-   - **Name:** `Redmine`
-   - **URL:** `http://127.0.0.1:8000/mcp`
-4. Save the configuration. Kiro will list the Redmine tools in the side panel for immediate use.
+Kiro primarily supports stdio-based MCP servers. For HTTP servers, use an HTTP-to-stdio bridge:
+
+1. Create or edit `.kiro/settings/mcp.json` in your workspace:
+   ```json
+   {
+     "mcpServers": {
+       "redmine": {
+         "command": "npx",
+         "args": [
+           "-y",
+           "mcp-client-http",
+           "http://127.0.0.1:8000/mcp"
+         ],
+         "disabled": false
+       }
+     }
+   }
+   ```
+2. Save the file and restart Kiro. The Redmine tools will appear in the MCP panel.
+
+**Note:** Direct HTTP transport support in Kiro is limited. The above configuration uses `mcp-client-http` as a bridge to connect to HTTP MCP servers.
 
 #### Generic MCP Clients
 
-Most MCP clients accept a simple JSON configuration. For example:
+Most MCP clients use a standard configuration format. For HTTP servers:
 
 ```json
 {
-  "mcp": {
-    "servers": {
-      "redmine": {
-        "url": "http://127.0.0.1:8000/mcp"
-      }
+  "mcpServers": {
+    "redmine": {
+      "type": "http",
+      "url": "http://127.0.0.1:8000/mcp"
+    }
+  }
+}
+```
+
+For clients that require a command-based approach with HTTP bridge:
+
+```json
+{
+  "mcpServers": {
+    "redmine": {
+      "command": "npx",
+      "args": ["-y", "mcp-client-http", "http://127.0.0.1:8000/mcp"]
     }
   }
 }
