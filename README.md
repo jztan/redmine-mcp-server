@@ -165,7 +165,8 @@ The same command is used for both development and production. Configure environm
 
 The server exposes an HTTP endpoint at `http://127.0.0.1:8000/mcp`. Register it with your preferred MCP-compatible agent using the instructions below.
 
-#### Visual Studio Code (Native MCP Support)
+<details>
+<summary><strong>Visual Studio Code (Native MCP Support)</strong></summary>
 
 VS Code has built-in MCP support via GitHub Copilot (requires VS Code 1.102+).
 
@@ -203,7 +204,10 @@ Create `.vscode/mcp.json` in your workspace (or `mcp.json` in your user profile 
 }
 ```
 
-#### Claude Code
+</details>
+
+<details>
+<summary><strong>Claude Code</strong></summary>
 
 Add to Claude Code using the CLI command:
 
@@ -224,7 +228,10 @@ Or configure manually in your Claude Code settings file (`~/.claude.json`):
 }
 ```
 
-#### Codex CLI
+</details>
+
+<details>
+<summary><strong>Codex CLI</strong></summary>
 
 Add to Codex CLI using the command:
 
@@ -242,7 +249,10 @@ args = ["-y", "mcp-client-http", "http://127.0.0.1:8000/mcp"]
 
 **Note:** Codex CLI primarily supports stdio-based MCP servers. The above uses `mcp-client-http` as a bridge for HTTP transport.
 
-#### Kiro
+</details>
+
+<details>
+<summary><strong>Kiro</strong></summary>
 
 Kiro primarily supports stdio-based MCP servers. For HTTP servers, use an HTTP-to-stdio bridge:
 
@@ -266,7 +276,10 @@ Kiro primarily supports stdio-based MCP servers. For HTTP servers, use an HTTP-t
 
 **Note:** Direct HTTP transport support in Kiro is limited. The above configuration uses `mcp-client-http` as a bridge to connect to HTTP MCP servers.
 
-#### Generic MCP Clients
+</details>
+
+<details>
+<summary><strong>Generic MCP Clients</strong></summary>
 
 Most MCP clients use a standard configuration format. For HTTP servers:
 
@@ -293,6 +306,8 @@ For clients that require a command-based approach with HTTP bridge:
   }
 }
 ```
+
+</details>
 
 ### Testing Your Setup
 
