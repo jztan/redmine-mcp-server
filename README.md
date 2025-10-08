@@ -85,15 +85,6 @@ redmine-mcp-server
 python -m redmine_mcp_server.main
 ```
 
-## Python Version Compatibility
-
-| Deployment Method | Python Version | Support Status |
-|------------------|----------------|----------------|
-| pip install | 3.10+ | ✅ Full Support |
-| Docker | 3.13 (built-in) | ✅ Full Support |
-
-The package is tested on Python 3.10, 3.11, 3.12, and 3.13.
-
 **Note:** For development setup (source installation), see the [contributing guide](./docs/contributing.md).
 
 The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, health check at `/health`, and file serving at `/files/{file_id}`.
