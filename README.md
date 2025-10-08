@@ -27,7 +27,7 @@ A Model Context Protocol (MCP) server that integrates with Redmine project manag
    ```bash
    pip install redmine-mcp-server
    ```
-2. **Create a `.env` file** using the template below and fill in your Redmine credentials.
+2. **Create a `.env` file** with your Redmine credentials (see [Installation](#installation) for template)
 3. **Start the server**
    ```bash
    redmine-mcp-server
