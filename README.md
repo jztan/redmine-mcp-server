@@ -94,25 +94,7 @@ python -m redmine_mcp_server.main
 
 The package is tested on Python 3.10, 3.11, 3.12, and 3.13.
 
-### Install from Source
-
-```bash
-# Clone and setup
-git clone https://github.com/jztan/redmine-mcp-server
-cd redmine-mcp-server
-
-# Install dependencies (using uv)
-uv venv
-source .venv/bin/activate
-uv pip install -e .
-
-# Configure environment
-cp .env.example .env
-# Edit .env with your Redmine settings
-
-# Run the server
-uv run python -m redmine_mcp_server.main
-```
+**Note:** For development setup (source installation), see the [contributing guide](./docs/contributing.md).
 
 The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, health check at `/health`, and file serving at `/files/{file_id}`.
 
@@ -366,102 +348,13 @@ chmod +x deploy.sh
 ./deploy.sh
 ```
 
-## Development
-
-### Architecture
-
-The server is built using:
-- **FastMCP**: Model Context Protocol implementation with streamable HTTP transport
-- **python-redmine**: Official Redmine Python library
-
-### Project Structure
-
-```
-redmine-mcp-server/
-├── src/redmine_mcp_server/
-│   ├── main.py              # FastMCP application entry point
-│   ├── redmine_handler.py   # MCP tools and Redmine integration
-│   └── file_manager.py      # Attachment file management and cleanup
-├── tests/                   # Comprehensive test suite
-├── .env.example            # Environment configuration template
-├── Dockerfile              # Container configuration
-├── docker-compose.yml      # Multi-container setup
-├── deploy.sh              # Deployment automation
-└── pyproject.toml         # Project configuration
-```
-
-### Adding New Tools
-
-Add your tool function to `src/redmine_mcp_server/redmine_handler.py`:
-
-```python
-@mcp.tool()
-async def your_new_tool(param: str) -> Dict[str, Any]:
-    """Tool description"""
-    # Implementation here
-    return {"result": "data"}
-```
-
-The tool will automatically be available through the MCP interface.
-
-### Testing
-
-The project includes unit tests, integration tests, and connection validation.
-
-**Run tests:**
-```bash
-# Install test dependencies
-uv pip install -e .[test]
-```
-```bash
-# All tests
-python tests/run_tests.py --all
-
-# Unit tests only (default)
-python tests/run_tests.py
-
-# Integration tests (requires Redmine connection)
-python tests/run_tests.py --integration
-
-# With coverage report
-python tests/run_tests.py --coverage
-```
-
-**Test Requirements:**
-- Unit tests: No external dependencies (use mocks)
-- Integration tests: Require valid Redmine server connection
-
 ## Troubleshooting
 
 If you run into any issues, checkout our [troubleshooting guide](./docs/troubleshooting.md).
 
 ## Contributing
 
-Contributions are welcome! Please:
-
-```bash
-# Install development dependencies
-# For source installation:
-uv pip install -e .[dev]
-
-# For PyPI installation:
-pip install redmine-mcp-server[dev]
-```
-
-1. Open an issue for discussion
-2. Run the full test suite: `python tests/run_tests.py --all`
-3. Run code quality checks:
-   ```bash
-   # PEP 8 compliance check
-   uv run flake8 src/ --max-line-length=88
-
-   # Auto-format code
-   uv run black src/ --line-length=88
-
-   # Check formatting without making changes
-   uv run black --check src/
-   ```
-4. Submit a pull request
+Contributions are welcome! Please see our [contributing guide](./docs/contributing.md) for details.
 
 ## License
 
