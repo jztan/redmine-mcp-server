@@ -433,16 +433,7 @@ python tests/run_tests.py --coverage
 
 ## Troubleshooting
 
-### Common Issues
-
-1. **Connection refused**: Verify your `REDMINE_URL` and network connectivity
-2. **Authentication failed**: Check your credentials in `.env`
-3. **Import errors**: Ensure dependencies are installed: `uv pip install -e .`
-4. **Port conflicts**: Modify `SERVER_PORT` in `.env` if port 8000 is in use
-
-### Debug Mode
-
-Enable debug logging by setting `mcp.settings.debug = True` in `main.py`.
+If you run into any issues, checkout our [troubleshooting guide](./docs/troubleshooting.md).
 
 ## Contributing
 
