@@ -165,7 +165,8 @@ The same command is used for both development and production. Configure environm
 
 The server exposes an HTTP endpoint at `http://127.0.0.1:8000/mcp`. Register it with your preferred MCP-compatible agent using the instructions below.
 
-#### Visual Studio Code (Native MCP Support)
+<details>
+<summary><strong>Visual Studio Code (Native MCP Support)</strong></summary>
 
 VS Code has built-in MCP support via GitHub Copilot (requires VS Code 1.102+).
 
@@ -203,7 +204,10 @@ Create `.vscode/mcp.json` in your workspace (or `mcp.json` in your user profile 
 }
 ```
 
-#### Claude Code
+</details>
+
+<details>
+<summary><strong>Claude Code</strong></summary>
 
 Add to Claude Code using the CLI command:
 
@@ -224,7 +228,10 @@ Or configure manually in your Claude Code settings file (`~/.claude.json`):
 }
 ```
 
-#### Codex CLI
+</details>
+
+<details>
+<summary><strong>Codex CLI</strong></summary>
 
 Add to Codex CLI using the command:
 
@@ -242,7 +249,10 @@ args = ["-y", "mcp-client-http", "http://127.0.0.1:8000/mcp"]
 
 **Note:** Codex CLI primarily supports stdio-based MCP servers. The above uses `mcp-client-http` as a bridge for HTTP transport.
 
-#### Kiro
+</details>
+
+<details>
+<summary><strong>Kiro</strong></summary>
 
 Kiro primarily supports stdio-based MCP servers. For HTTP servers, use an HTTP-to-stdio bridge:
 
@@ -266,7 +276,10 @@ Kiro primarily supports stdio-based MCP servers. For HTTP servers, use an HTTP-t
 
 **Note:** Direct HTTP transport support in Kiro is limited. The above configuration uses `mcp-client-http` as a bridge to connect to HTTP MCP servers.
 
-#### Generic MCP Clients
+</details>
+
+<details>
+<summary><strong>Generic MCP Clients</strong></summary>
 
 Most MCP clients use a standard configuration format. For HTTP servers:
 
@@ -294,6 +307,8 @@ For clients that require a command-based approach with HTTP bridge:
 }
 ```
 
+</details>
+
 ### Testing Your Setup
 
 ```bash
@@ -307,142 +322,22 @@ python tests/run_tests.py --all
 
 ## Available Tools
 
-This MCP server provides the following tools for interacting with your Redmine instance:
+This MCP server provides 10 tools for interacting with Redmine. For detailed documentation, see [Tool Reference](./docs/tool-reference.md).
 
-### Project Management
+- **Project Management** (2 tools)
+  - [`list_redmine_projects`](docs/tool-reference.md#list_redmine_projects) - List all accessible projects
+  - [`summarize_project_status`](docs/tool-reference.md#summarize_project_status) - Get comprehensive project status summary
 
-#### `list_redmine_projects`
-Lists all accessible projects in the Redmine instance.
+- **Issue Operations** (6 tools)
+  - [`get_redmine_issue`](docs/tool-reference.md#get_redmine_issue) - Retrieve detailed issue information
+  - [`list_my_redmine_issues`](docs/tool-reference.md#list_my_redmine_issues) - List issues assigned to you (with pagination)
+  - [`search_redmine_issues`](docs/tool-reference.md#search_redmine_issues) - Search issues by text query
+  - [`create_redmine_issue`](docs/tool-reference.md#create_redmine_issue) - Create new issues
+  - [`update_redmine_issue`](docs/tool-reference.md#update_redmine_issue) - Update existing issues
 
-**Parameters:** None
-
-**Returns:** List of project dictionaries with id, name, identifier, and description
-
-#### `summarize_project_status`
-Provide a comprehensive summary of project status based on issue activity over a specified time period.
-
-**Parameters:**
-- `project_id` (integer, required): The ID of the project to summarize
-- `days` (integer, optional): Number of days to analyze. Default: `30`
-
-**Returns:** Comprehensive project status summary including:
-- Recent activity metrics (issues created/updated)
-- Status, priority, and assignee breakdowns
-- Project totals and overall statistics
-- Activity insights and trends
-
----
-
-### Issue Operations
-
-#### `get_redmine_issue`
-Retrieve detailed information about a specific Redmine issue.
-
-**Parameters:**
-- `issue_id` (integer, required): The ID of the issue to retrieve
-- `include_journals` (boolean, optional): Include journals (comments) in result. Default: `true`
-- `include_attachments` (boolean, optional): Include attachments metadata. Default: `true`
-
-**Returns:** Issue dictionary with details, journals, and attachments
-
-#### `list_my_redmine_issues`
-Lists issues assigned to the authenticated user.
-
-**Parameters:**
-- `**filters` (optional): Additional query parameters (e.g., `status_id`, `project_id`)
-
-**Returns:** List of issue dictionaries assigned to current user
-
-#### `search_redmine_issues`
-Search issues using text queries.
-
-**Parameters:**
-- `query` (string, required): Text to search for in issues
-- `**options` (optional): Additional search options passed to Redmine API
-
-**Returns:** List of matching issue dictionaries
-
-#### `search_entire_redmine`
-Comprehensive search across all Redmine resources (issues, projects, wiki pages, news, documents).
-
-**Parameters:**
-- `query` (string, required): Search query text
-- `resource_types` (list, optional): Filter by resource types. Default: all types
-  - Available: `["issues", "projects", "wiki_pages", "news", "documents"]`
-- `limit` (integer, optional): Maximum results per type. Default: `10`, Max: `100`
-- `offset` (integer, optional): Pagination offset. Default: `0`
-
-**Returns:** Structured response with categorized results:
-```json
-{
-  "issues": [...],
-  "projects": [...],
-  "wiki_pages": [...],
-  "total_count": 45,
-  "query": "search term"
-}
-```
-
-**Note:** Requires Redmine 3.0.0+ for search API support
-
-#### `create_redmine_issue`
-Creates a new issue in the specified project.
-
-**Parameters:**
-- `project_id` (integer, required): Target project ID
-- `subject` (string, required): Issue subject/title
-- `description` (string, optional): Issue description. Default: `""`
-- `**fields` (optional): Additional Redmine fields (e.g., `priority_id`, `assigned_to_id`)
-
-**Returns:** Created issue dictionary
-
-#### `update_redmine_issue`
-Updates an existing issue with the provided fields.
-
-**Parameters:**
-- `issue_id` (integer, required): ID of the issue to update
-- `fields` (object, required): Dictionary of fields to update
-
-**Returns:** Updated issue dictionary
-
-**Note:** You can use either `status_id` or `status_name` in fields. When `status_name` is provided, the tool automatically resolves the corresponding status ID.
-
----
-
-### File Operations
-
-#### `get_redmine_attachment_download_url(attachment_id)`
-Get an HTTP download URL for a Redmine attachment. The attachment is downloaded to server storage and a time-limited URL is returned for client access.
-
-**Parameters:**
-- `attachment_id` (int): The ID of the attachment to download
-
-**Returns:**
-```json
-{
-    "download_url": "http://localhost:8000/files/12345678-1234-5678-9abc-123456789012",
-    "filename": "document.pdf",
-    "content_type": "application/pdf",
-    "size": 1024,
-    "expires_at": "2025-09-22T10:30:00Z",
-    "attachment_id": 123
-}
-```
-
-**Security Features:**
-- Server-controlled storage location and expiry policy
-- UUID-based filenames prevent path traversal attacks
-- No client control over server configuration
-
-#### `cleanup_attachment_files`
-Removes expired attachment files and provides cleanup statistics.
-
-**Parameters:** None
-
-**Returns:** Cleanup statistics:
-- `cleaned_files`: Number of files removed
-- `cleaned_bytes`: Total bytes cleaned up
-- `cleaned_mb`: Total megabytes cleaned up (rounded)
+- **File Operations** (2 tools)
+  - [`get_redmine_attachment_download_url`](docs/tool-reference.md#get_redmine_attachment_download_url) - Get secure download URLs for attachments
+  - [`cleanup_attachment_files`](docs/tool-reference.md#cleanup_attachment_files) - Clean up expired attachment files
 
 
 ## Docker Deployment
@@ -538,16 +433,7 @@ python tests/run_tests.py --coverage
 
 ## Troubleshooting
 
-### Common Issues
-
-1. **Connection refused**: Verify your `REDMINE_URL` and network connectivity
-2. **Authentication failed**: Check your credentials in `.env`
-3. **Import errors**: Ensure dependencies are installed: `uv pip install -e .`
-4. **Port conflicts**: Modify `SERVER_PORT` in `.env` if port 8000 is in use
-
-### Debug Mode
-
-Enable debug logging by setting `mcp.settings.debug = True` in `main.py`.
+If you run into any issues, checkout our [troubleshooting guide](./docs/troubleshooting.md).
 
 ## Contributing
 
