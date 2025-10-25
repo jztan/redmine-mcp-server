@@ -1,6 +1,6 @@
 [project]
 name = "redmine-mcp-server"
-version = "0.5.2"
+version = "0.6.0"
 description = "Production-ready MCP server for Redmine with security, pagination, and enterprise features"
 readme = "README.md"
 license = {text = "MIT"}
@@ -26,8 +26,8 @@ classifiers = [
 ]
 dependencies = [
     "python-dotenv>=1.0.0",
-    "fastapi[standard]>=0.115.12",
-    "mcp[cli]>=1.14.1",
+    "fastapi[standard]>=0.120.0",
+    "mcp[cli]>=1.19.0",
     "python-redmine>=2.5.0",
     "uvicorn>=0.24.0",
 ]
