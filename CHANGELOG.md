@@ -6,6 +6,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2025-10-25
+
+### Changed
+- **Dependency Updates** - Updated core dependencies to latest versions
+  - `fastapi[standard]` upgraded from >=0.115.12 to >=0.120.0
+  - `mcp[cli]` upgraded from >=1.14.1 to >=1.19.0
+
+### Security
+- **MCP Security Fix** - Includes security patch from MCP v1.19.0 (CVE-2025-62518)
+
+### Improved
+- **FastAPI Enhancements** - Benefits from latest bug fixes and improvements:
+  - Mixed Pydantic v2/v1 mode for gradual migration support
+  - Fixed `StreamingResponse` behavior with `yield` dependencies
+  - Enhanced OpenAPI schema support (array values, external_docs parameter)
+  - Improved Pydantic 2.12.0+ compatibility
+  - Better validation error handling for Form and File parameters
+- **MCP Protocol Improvements** - Enhanced capabilities from latest updates:
+  - Tool metadata support in FastMCP decorators
+  - OAuth scope selection and step-up authorization
+  - Paginated list decorators for prompts, resources, and tools
+  - Improved Unicode support for HTTP transport
+  - Enhanced documentation structure and testing guidance
+  - Better OAuth protected resource metadata handling per RFC 9728
+
+### Notes
+- Pydantic v1 support is deprecated in FastAPI v0.119.0 and will be removed in a future version
+- All existing functionality remains backward compatible
+- No breaking changes for current users
+- Python 3.10-3.13 support maintained (Python 3.14 support available in dependencies but not yet tested in this project)
+
 ## [0.5.2] - 2025-10-09
 
 ### Documentation
@@ -350,6 +381,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Works with Docker and docker-compose
 - Tested on macOS and Linux environments
 
+[0.6.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.6.0
+[0.5.2]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.5.2
+[0.5.1]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.5.1
 [0.5.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.5.0
 [0.4.5]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.4.5
 [0.4.4]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.4.4
