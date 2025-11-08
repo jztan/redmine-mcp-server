@@ -1,8 +1,8 @@
-# Redmine MCP Server - Example Recipes
+# Redmine MCP Server - Use Cases
 
-Welcome to the Redmine MCP Server recipe collection! These examples demonstrate real-world workflows using Claude Code with the Redmine MCP Server.
+Welcome to the Redmine MCP Server use case collection! These real-world scenarios demonstrate practical workflows using Claude Code with the Redmine MCP Server.
 
-## Available Recipes
+## Available Use Cases
 
 ### 🎯 [Sprint Planning Assistant](./sprint-planning.md)
 Plan and organize sprints with AI assistance. This recipe helps you:
@@ -83,26 +83,26 @@ Monitor project health and identify risks proactively. Provides:
    claude mcp add --transport http redmine http://127.0.0.1:8000/mcp
    ```
 
-### Using a Recipe
+### Using a Use Case
 
-1. **Choose a recipe** from the list above based on your workflow
-2. **Read the recipe** to understand what it does and how it works
+1. **Choose a use case** from the list above based on your workflow
+2. **Read the guide** to understand what it does and how it works
 3. **Copy a prompt** from the "Useful Prompts" section
 4. **Paste in Claude Code** and let the AI assist you
 5. **Customize** the prompts for your specific needs
 
-## Recipe Structure
+## Use Case Structure
 
-Each recipe includes:
+Each use case includes:
 
 - **Overview** - What the recipe does and when to use it
 - **Prerequisites** - What you need to get started
 - **Interactive Examples** - Real conversations with Claude showing the workflow
 - **Useful Prompts** - Copy-paste prompts you can use immediately
-- **Tools Used** - Which MCP tools the recipe leverages
+- **Tools Used** - Which MCP tools are leveraged
 - **Tips & Best Practices** - Expert advice for getting the most value
 - **Troubleshooting** - Common issues and solutions
-- **Related Recipes** - Complementary workflows
+- **Related Use Cases** - Complementary workflows
 
 ## Common Workflows
 
@@ -134,7 +134,7 @@ Delivery:      Release Notes Generator
 1. **Start Simple** - Begin with basic prompts, then customize
 2. **Be Specific** - Include project IDs, dates, and specific criteria
 3. **Iterate** - Refine prompts based on results
-4. **Combine Recipes** - Use multiple recipes together for comprehensive workflows
+4. **Combine Use Cases** - Use multiple scenarios together for comprehensive workflows
 5. **Automate** - Create shell aliases or scripts for frequent tasks
 
 ## Example Automation
@@ -155,7 +155,7 @@ alias triage='claude "Triage new issues in project 5"'
 
 ## Customization
 
-All recipes can be customized for your needs:
+All use cases can be customized for your needs:
 
 - **Project IDs** - Replace example IDs with your projects
 - **Time Ranges** - Adjust days/weeks for analysis
@@ -163,11 +163,11 @@ All recipes can be customized for your needs:
 - **Formatting** - Request different output formats (Slack, email, etc.)
 - **Filters** - Add project-specific filters and criteria
 
-## Contributing New Recipes
+## Contributing New Use Cases
 
 Have a great workflow to share? We welcome contributions!
 
-1. Follow the recipe template structure
+1. Follow the use case template structure
 2. Include real-world examples
 3. Test all prompts and examples
 4. Submit a pull request
@@ -208,11 +208,11 @@ See [Contributing Guide](../docs/contributing.md) for details.
 
 ## Feedback
 
-Found these recipes helpful? Have suggestions for improvements? We'd love to hear from you!
+Found these use cases helpful? Have suggestions for improvements? We'd love to hear from you!
 
 - Share your success stories
-- Suggest new recipes
+- Suggest new use cases
 - Report issues or improvements
-- Contribute your own recipes
+- Contribute your own use cases
 
 Happy automating! 🚀
