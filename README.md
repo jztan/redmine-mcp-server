@@ -11,7 +11,7 @@ A Model Context Protocol (MCP) server that integrates with Redmine project manag
 
 **mcp-name: io.github.jztan/redmine-mcp-server**
 
-## [Tool reference](./docs/tool-reference.md) | [Changelog](./CHANGELOG.md) | [Contributing](./docs/contributing.md) | [Troubleshooting](./docs/troubleshooting.md)
+## [Tool reference](./docs/tool-reference.md) | [Examples](./examples/) | [Changelog](./CHANGELOG.md) | [Contributing](./docs/contributing.md) | [Troubleshooting](./docs/troubleshooting.md)
 
 ## Features
 
@@ -282,6 +282,22 @@ This MCP server provides 10 tools for interacting with Redmine. For detailed doc
   - [`get_redmine_attachment_download_url`](docs/tool-reference.md#get_redmine_attachment_download_url) - Get secure download URLs for attachments
   - [`cleanup_attachment_files`](docs/tool-reference.md#cleanup_attachment_files) - Clean up expired attachment files
 
+## Example Recipes
+
+Get started quickly with real-world usage examples! The [examples directory](./examples/) contains practical recipes for common Redmine workflows using Claude Code:
+
+- **[Sprint Planning Assistant](./examples/sprint-planning.md)** - Plan sprints, analyze project status, create work items, and track capacity
+- **[Daily Standup Generator](./examples/daily-standup.md)** - Generate standup reports, track progress, and identify blockers
+- **[Issue Triage Helper](./examples/issue-triage.md)** - Efficiently triage, categorize, and prioritize incoming issues
+- **[Release Notes Generator](./examples/release-notes.md)** - Automatically create professional release notes and changelogs
+- **[Health Check Monitor](./examples/health-check.md)** - Monitor project health, identify risks, and track key metrics
+
+Each recipe includes:
+- Step-by-step workflows
+- Interactive examples with Claude
+- Useful prompts to copy and use
+- Tips and best practices
+- Troubleshooting guidance
 
 ## Docker Deployment
 
@@ -323,6 +339,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Additional Resources
 
+- [Example Recipes](./examples/) - Real-world usage examples and workflows
 - [Tool Reference](./docs/tool-reference.md) - Complete tool documentation
 - [Troubleshooting Guide](./docs/troubleshooting.md) - Common issues and solutions
 - [Contributing Guide](./docs/contributing.md) - Development setup and guidelines
