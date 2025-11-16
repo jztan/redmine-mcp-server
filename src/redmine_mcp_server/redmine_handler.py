@@ -742,6 +742,9 @@ async def search_redmine_issues(
             - fields: List of field names to include in results (default: None = all)
                      Available: id, subject, description, project, status,
                                priority, author, assigned_to, created_on, updated_on
+            - scope: Search scope (default: "all")
+                    Values: "all", "my_project", "subprojects"
+            - open_issues: Search only open issues (default: False)
             - [other Redmine Search API parameters]
 
     Returns:
@@ -763,10 +766,18 @@ async def search_redmine_issues(
         >>> await search_redmine_issues("urgent", fields=["id", "subject", "status"])
         [{"id": 1, "subject": "Critical bug", "status": {...}}, ...]
 
+        >>> await search_redmine_issues("bug", scope="my_project", open_issues=True)
+        [{"id": 1, "subject": "Open bug in my project", ...}, ...]
+
     Note:
         The Redmine Search API does not provide total_count. Pagination
         metadata uses conservative estimation: has_next=True if result
         count equals limit.
+
+        Search API Limitations: The Search API supports text search with
+        scope and open_issues filters only. For advanced filtering by
+        project_id, status_id, priority_id, etc., use list_my_redmine_issues()
+        instead, which uses the Issues API with full filter support.
 
     Performance:
         - Memory efficient: Uses server-side pagination
