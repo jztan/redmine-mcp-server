@@ -788,7 +788,9 @@ class TestRedmineHandler:
 
         assert isinstance(result, list)
         assert result[0]["id"] == 123
-        mock_redmine.issue.search.assert_called_once_with("test")
+        mock_redmine.issue.search.assert_called_once_with(
+            "test", offset=0, limit=25
+        )
 
     @pytest.mark.asyncio
     @patch('redmine_mcp_server.redmine_handler.redmine')
