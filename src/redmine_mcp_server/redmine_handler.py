@@ -299,6 +299,81 @@ def _issue_to_dict(issue: Any) -> Dict[str, Any]:
     }
 
 
+def _issue_to_dict_selective(
+    issue: Any, fields: Optional[List[str]] = None
+) -> Dict[str, Any]:
+    """Convert a python-redmine Issue object to a dict with selected fields.
+
+    Args:
+        issue: The python-redmine Issue object to convert.
+        fields: List of field names to include. If None, ["*"], or ["all"],
+                returns all fields (same as _issue_to_dict). Invalid or
+                missing fields are silently skipped.
+
+    Available fields:
+        - id: Issue ID
+        - subject: Issue subject/title
+        - description: Issue description
+        - project: Project info (dict with id and name)
+        - status: Status info (dict with id and name)
+        - priority: Priority info (dict with id and name)
+        - author: Author info (dict with id and name)
+        - assigned_to: Assigned user info (dict with id and name, or None)
+        - created_on: Creation timestamp (ISO format)
+        - updated_on: Last update timestamp (ISO format)
+
+    Returns:
+        Dictionary containing only the requested fields.
+
+    Examples:
+        >>> _issue_to_dict_selective(issue, ["id", "subject"])
+        {"id": 123, "subject": "Bug fix"}
+
+        >>> _issue_to_dict_selective(issue, ["*"])
+        # Returns all fields (same as _issue_to_dict)
+
+        >>> _issue_to_dict_selective(issue, None)
+        # Returns all fields (same as _issue_to_dict)
+    """
+    # Handle "all fields" cases
+    if fields is None or fields == ["*"] or fields == ["all"]:
+        return _issue_to_dict(issue)
+
+    # Build field mapping with all available fields
+    assigned = getattr(issue, "assigned_to", None)
+
+    all_fields = {
+        "id": issue.id,
+        "subject": issue.subject,
+        "description": getattr(issue, "description", ""),
+        "project": {"id": issue.project.id, "name": issue.project.name},
+        "status": {"id": issue.status.id, "name": issue.status.name},
+        "priority": {"id": issue.priority.id, "name": issue.priority.name},
+        "author": {"id": issue.author.id, "name": issue.author.name},
+        "assigned_to": (
+            {
+                "id": assigned.id,
+                "name": assigned.name,
+            }
+            if assigned is not None
+            else None
+        ),
+        "created_on": (
+            issue.created_on.isoformat()
+            if getattr(issue, "created_on", None) is not None
+            else None
+        ),
+        "updated_on": (
+            issue.updated_on.isoformat()
+            if getattr(issue, "updated_on", None) is not None
+            else None
+        ),
+    }
+
+    # Return only requested fields (silently skip invalid field names)
+    return {key: all_fields[key] for key in fields if key in all_fields}
+
+
 def _journals_to_list(issue: Any) -> List[Dict[str, Any]]:
     """Convert journals on an issue object to a list of dicts."""
     raw_journals = getattr(issue, "journals", None)
