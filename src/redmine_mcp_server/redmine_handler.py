@@ -280,17 +280,13 @@ def _issue_to_dict(issue: Any) -> Dict[str, Any]:
         "subject": getattr(issue, "subject", ""),
         "description": getattr(issue, "description", ""),
         "project": (
-            {"id": project.id, "name": project.name}
-            if project is not None
-            else None
+            {"id": project.id, "name": project.name} if project is not None else None
         ),
         "status": (
             {"id": status.id, "name": status.name} if status is not None else None
         ),
         "priority": (
-            {"id": priority.id, "name": priority.name}
-            if priority is not None
-            else None
+            {"id": priority.id, "name": priority.name} if priority is not None else None
         ),
         "author": (
             {"id": author.id, "name": author.name} if author is not None else None
@@ -369,17 +365,13 @@ def _issue_to_dict_selective(
         "subject": getattr(issue, "subject", ""),
         "description": getattr(issue, "description", ""),
         "project": (
-            {"id": project.id, "name": project.name}
-            if project is not None
-            else None
+            {"id": project.id, "name": project.name} if project is not None else None
         ),
         "status": (
             {"id": status.id, "name": status.name} if status is not None else None
         ),
         "priority": (
-            {"id": priority.id, "name": priority.name}
-            if priority is not None
-            else None
+            {"id": priority.id, "name": priority.name} if priority is not None else None
         ),
         "author": (
             {"id": author.id, "name": author.name} if author is not None else None
