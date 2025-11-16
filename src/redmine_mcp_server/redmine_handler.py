@@ -734,11 +734,14 @@ async def search_redmine_issues(
 
     Args:
         query: Text to search for in issues.
-        **options: Search and pagination options:
+        **options: Search, pagination, and field selection options:
             - limit: Maximum number of issues to return (default: 25, max: 1000)
             - offset: Number of issues to skip for pagination (default: 0)
             - include_pagination_info: Return structured response with metadata
                                    (default: False)
+            - fields: List of field names to include in results (default: None = all)
+                     Available: id, subject, description, project, status,
+                               priority, author, assigned_to, created_on, updated_on
             - [other Redmine Search API parameters]
 
     Returns:
@@ -757,6 +760,9 @@ async def search_redmine_issues(
             "pagination": {"limit": 10, "offset": 0, "has_next": True, ...}
         }
 
+        >>> await search_redmine_issues("urgent", fields=["id", "subject", "status"])
+        [{"id": 1, "subject": "Critical bug", "status": {...}}, ...]
+
     Note:
         The Redmine Search API does not provide total_count. Pagination
         metadata uses conservative estimation: has_next=True if result
@@ -765,6 +771,7 @@ async def search_redmine_issues(
     Performance:
         - Memory efficient: Uses server-side pagination
         - Token efficient: Default limit keeps response under 2000 tokens
+        - Further reduce tokens: Use fields parameter for minimal data transfer
     """
     if not redmine:
         logging.error("Redmine client not initialized")
@@ -777,10 +784,11 @@ async def search_redmine_issues(
         else:
             actual_options = options
 
-        # Extract pagination parameters
+        # Extract pagination and field selection parameters
         limit = actual_options.pop("limit", 25)
         offset = actual_options.pop("offset", 0)
         include_pagination_info = actual_options.pop("include_pagination_info", False)
+        fields = actual_options.pop("fields", None)
 
         # Use actual_options for remaining Redmine search options
         options = actual_options
@@ -852,8 +860,10 @@ async def search_redmine_issues(
             f"offset={offset}, limit={limit}"
         )
 
-        # Convert to dictionaries
-        result_issues = [_issue_to_dict(issue) for issue in issues_list]
+        # Convert to dictionaries with optional field selection
+        result_issues = [
+            _issue_to_dict_selective(issue, fields) for issue in issues_list
+        ]
 
         # Handle metadata response format
         if include_pagination_info:
