@@ -268,16 +268,33 @@ async def cleanup_status(request):
 
 def _issue_to_dict(issue: Any) -> Dict[str, Any]:
     """Convert a python-redmine Issue object to a serializable dict."""
+    # Use getattr for all potentially missing attributes (search API may not return all)
     assigned = getattr(issue, "assigned_to", None)
+    project = getattr(issue, "project", None)
+    status = getattr(issue, "status", None)
+    priority = getattr(issue, "priority", None)
+    author = getattr(issue, "author", None)
 
     return {
-        "id": issue.id,
-        "subject": issue.subject,
+        "id": getattr(issue, "id", None),
+        "subject": getattr(issue, "subject", ""),
         "description": getattr(issue, "description", ""),
-        "project": {"id": issue.project.id, "name": issue.project.name},
-        "status": {"id": issue.status.id, "name": issue.status.name},
-        "priority": {"id": issue.priority.id, "name": issue.priority.name},
-        "author": {"id": issue.author.id, "name": issue.author.name},
+        "project": (
+            {"id": project.id, "name": project.name}
+            if project is not None
+            else None
+        ),
+        "status": (
+            {"id": status.id, "name": status.name} if status is not None else None
+        ),
+        "priority": (
+            {"id": priority.id, "name": priority.name}
+            if priority is not None
+            else None
+        ),
+        "author": (
+            {"id": author.id, "name": author.name} if author is not None else None
+        ),
         "assigned_to": (
             {
                 "id": assigned.id,
@@ -340,16 +357,33 @@ def _issue_to_dict_selective(
         return _issue_to_dict(issue)
 
     # Build field mapping with all available fields
+    # Use getattr for all potentially missing attributes (search API may not return all)
     assigned = getattr(issue, "assigned_to", None)
+    project = getattr(issue, "project", None)
+    status = getattr(issue, "status", None)
+    priority = getattr(issue, "priority", None)
+    author = getattr(issue, "author", None)
 
     all_fields = {
-        "id": issue.id,
-        "subject": issue.subject,
+        "id": getattr(issue, "id", None),
+        "subject": getattr(issue, "subject", ""),
         "description": getattr(issue, "description", ""),
-        "project": {"id": issue.project.id, "name": issue.project.name},
-        "status": {"id": issue.status.id, "name": issue.status.name},
-        "priority": {"id": issue.priority.id, "name": issue.priority.name},
-        "author": {"id": issue.author.id, "name": issue.author.name},
+        "project": (
+            {"id": project.id, "name": project.name}
+            if project is not None
+            else None
+        ),
+        "status": (
+            {"id": status.id, "name": status.name} if status is not None else None
+        ),
+        "priority": (
+            {"id": priority.id, "name": priority.name}
+            if priority is not None
+            else None
+        ),
+        "author": (
+            {"id": author.id, "name": author.name} if author is not None else None
+        ),
         "assigned_to": (
             {
                 "id": assigned.id,
