@@ -126,24 +126,104 @@ Lists issues assigned to the authenticated user with pagination support.
 
 ### `search_redmine_issues`
 
-Search issues using text queries.
+Search issues using text queries with support for pagination, field selection, and native Search API filters.
 
 **Parameters:**
 - `query` (string, required): Text to search for in issues
-- `**options` (optional): Additional search options passed to Redmine API
+- `limit` (integer, optional): Maximum number of issues to return. Default: `25`, Max: `1000`
+- `offset` (integer, optional): Number of issues to skip for pagination. Default: `0`
+- `include_pagination_info` (boolean, optional): Return structured response with pagination metadata. Default: `false`
+- `fields` (array of strings, optional): List of field names to include in results. Default: `null` (all fields)
+  - Available fields: `id`, `subject`, `description`, `project`, `status`, `priority`, `author`, `assigned_to`, `created_on`, `updated_on`
+  - Special values: `["*"]` or `["all"]` for all fields
+- `scope` (string, optional): Search scope. Default: `"all"`
+  - Values: `"all"`, `"my_project"`, `"subprojects"`
+- `open_issues` (boolean, optional): Search only open issues. Default: `false`
 
-**Returns:** List of matching issue dictionaries
+**Returns:**
+- By default: List of issue dictionaries
+- With `include_pagination_info=true`: Dictionary with `issues` and `pagination` keys
 
-**Example:**
-```json
-[
-  {
-    "id": 456,
-    "subject": "Search keyword found here",
-    "description": "Issue containing the search term..."
-  }
-]
+**When to Use:**
+- **Use `search_redmine_issues()`** for text-based searches across issues
+- **Use `list_my_redmine_issues()`** for advanced filtering by project_id, status_id, priority_id, etc.
+
+**Search API Limitations:**
+The Search API supports text search with `scope` and `open_issues` filters only. For advanced filtering by specific field values (project_id, status_id, priority_id, etc.), use `list_my_redmine_issues()` instead.
+
+**Examples:**
+
+Basic search:
+```python
+search_redmine_issues("bug fix")
 ```
+
+With pagination:
+```python
+# First page
+search_redmine_issues("performance", limit=10, offset=0)
+
+# Second page
+search_redmine_issues("performance", limit=10, offset=10)
+```
+
+With pagination metadata:
+```python
+search_redmine_issues(
+    "security",
+    limit=25,
+    offset=0,
+    include_pagination_info=True
+)
+# Returns:
+# {
+#   "issues": [...],
+#   "pagination": {
+#     "limit": 25,
+#     "offset": 0,
+#     "count": 25,
+#     "has_next": true,
+#     "has_previous": false,
+#     "next_offset": 25,
+#     "previous_offset": null
+#   }
+# }
+```
+
+With field selection (token reduction):
+```python
+# Minimal fields for better performance
+search_redmine_issues("urgent", fields=["id", "subject", "status"])
+```
+
+With native filters:
+```python
+# Search only in my projects for open issues
+search_redmine_issues(
+    "bug",
+    scope="my_project",
+    open_issues=True
+)
+```
+
+All features combined:
+```python
+search_redmine_issues(
+    "critical",
+    scope="my_project",
+    open_issues=True,
+    limit=10,
+    offset=0,
+    fields=["id", "subject", "priority", "status"],
+    include_pagination_info=True
+)
+```
+
+**Performance Tips:**
+- Use pagination (default limit: 25) to prevent token overflow
+- Use field selection to minimize data transfer and token usage
+- Combine pagination + field selection for optimal performance
+- Token reduction: ~95% fewer tokens with minimal fields vs all fields
 
 ---
 
