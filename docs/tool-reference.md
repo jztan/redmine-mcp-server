@@ -2,6 +2,157 @@
 
 Complete documentation for all available Redmine MCP Server tools.
 
+## Security Best Practices
+
+### SSL/TLS Configuration
+
+The Redmine MCP Server supports comprehensive SSL/TLS configuration for secure connections to your Redmine instance.
+
+**Recommended Practices:**
+
+1. **Always Use HTTPS**
+   ```bash
+   # In .env file
+   REDMINE_URL=https://redmine.company.com  # Use https://, not http://
+   ```
+
+2. **Enable SSL Verification (Default)**
+   - SSL verification is enabled by default for security
+   - Never disable in production environments
+   - Only disable for development/testing when absolutely necessary
+
+3. **Self-Signed Certificates**
+
+   For Redmine servers with self-signed certificates or internal CA infrastructure:
+
+   ```bash
+   # In .env file
+   REDMINE_SSL_CERT=/path/to/ca-certificate.crt
+   ```
+
+   **Security Considerations:**
+   - Verify certificate authenticity before trusting
+   - Obtain certificates from trusted administrators
+   - Use absolute paths for certificate files
+   - Ensure certificate files have appropriate permissions (644)
+
+4. **Mutual TLS (Client Certificates)**
+
+   For high-security environments requiring client certificate authentication:
+
+   ```bash
+   # In .env file
+   REDMINE_SSL_CLIENT_CERT=/path/to/cert.pem,/path/to/key.pem
+   ```
+
+   **Security Considerations:**
+   - Private keys MUST be unencrypted (Python requests library requirement)
+   - Store private keys securely with restricted permissions (600)
+   - Never commit certificates or keys to version control
+   - Rotate client certificates regularly per security policy
+
+5. **Development vs Production**
+
+   ⚠️ **Development Only:**
+   ```bash
+   REDMINE_SSL_VERIFY=false  # WARNING: Only for development/testing!
+   ```
+
+   Disabling SSL verification makes your connection vulnerable to man-in-the-middle attacks. **Never use in production.**
+
+### Authentication Best Practices
+
+1. **API Key Authentication (Recommended)**
+
+   Prefer API key authentication over username/password:
+
+   ```bash
+   # In .env file
+   REDMINE_API_KEY=your_api_key_here
+   ```
+
+   **Benefits:**
+   - More secure than password storage
+   - Can be revoked without changing password
+   - Granular access control
+   - Better audit trail
+
+2. **Username/Password Authentication**
+
+   Only use when API key is not available:
+
+   ```bash
+   # In .env file
+   REDMINE_USERNAME=your_username
+   REDMINE_PASSWORD=your_password
+   ```
+
+   **Security Considerations:**
+   - Never commit credentials to version control
+   - Use strong, unique passwords
+   - Rotate passwords regularly
+   - Consider using API keys instead
+
+3. **Credential Storage**
+
+   - Store credentials in `.env` file (not in code)
+   - Add `.env` to `.gitignore`
+   - Use environment variables in production
+   - Consider using secret management systems (e.g., HashiCorp Vault, AWS Secrets Manager)
+
+### File Handling Security
+
+The server implements multiple security layers for file operations:
+
+1. **Server-Controlled Storage**
+   - Attachment storage location controlled by server (`ATTACHMENTS_DIR`)
+   - Clients cannot specify arbitrary file paths
+   - Prevents directory traversal attacks
+
+2. **UUID-Based File Storage**
+   - Files stored with UUID-based names, not original filenames
+   - Prevents path manipulation and collision attacks
+   - Predictable cleanup and management
+
+3. **Time-Limited Access**
+   - Download URLs expire based on server configuration
+   - Default expiry: 60 minutes (configurable via `ATTACHMENT_EXPIRES_MINUTES`)
+   - Automatic cleanup of expired files
+
+4. **Secure File Serving**
+   - Metadata validation before file access
+   - Expiry checks on every request
+   - No directory listing or browsing
+
+### Docker Deployment Security
+
+When deploying with Docker, follow these additional practices:
+
+1. **Certificate Management**
+   ```yaml
+   # In docker-compose.yml
+   volumes:
+     - ./certs:/certs:ro  # Read-only mount
+   ```
+
+2. **Environment Variable Security**
+   - Use separate `.env.docker` file
+   - Never include credentials in Dockerfile
+   - Use Docker secrets for sensitive data in production
+
+3. **Network Security**
+   - Separate internal binding from external URLs
+   - Use reverse proxy (nginx, traefik) for SSL termination
+   - Restrict container network access
+
+### Additional Resources
+
+- [SSL Certificate Configuration](../README.md#ssl-certificate-configuration) - Detailed configuration examples
+- [Troubleshooting Guide - SSL Errors](./troubleshooting.md#ssl-certificate-errors) - Common SSL issues and solutions
+- [Environment Variables](../README.md#environment-variables) - Complete configuration reference
+
+---
+
 ## Project Management
 
 ### `list_redmine_projects`

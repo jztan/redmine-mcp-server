@@ -105,8 +105,64 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `AUTO_CLEANUP_ENABLED` | No | `true` | Toggle automatic cleanup of expired attachments |
 | `CLEANUP_INTERVAL_MINUTES` | No | `10` | Interval for cleanup task |
 | `ATTACHMENT_EXPIRES_MINUTES` | No | `60` | Expiry window for generated download URLs |
+| `REDMINE_SSL_VERIFY` | No | `true` | Enable/disable SSL certificate verification |
+| `REDMINE_SSL_CERT` | No | – | Path to custom CA certificate file |
+| `REDMINE_SSL_CLIENT_CERT` | No | – | Path to client certificate for mutual TLS |
 
 *\* Either `REDMINE_API_KEY` or the combination of `REDMINE_USERNAME` and `REDMINE_PASSWORD` must be provided for authentication. API key authentication is recommended for security.*
+
+### SSL Certificate Configuration
+
+Configure SSL certificate handling for Redmine servers with self-signed certificates or internal CA infrastructure.
+
+<details>
+<summary><strong>Self-Signed Certificates</strong></summary>
+
+If your Redmine server uses a self-signed certificate or internal CA:
+
+```bash
+# In .env file
+REDMINE_URL=https://redmine.company.com
+REDMINE_API_KEY=your_api_key
+REDMINE_SSL_CERT=/path/to/ca-certificate.crt
+```
+
+Supported certificate formats: `.pem`, `.crt`, `.cer`
+
+</details>
+
+<details>
+<summary><strong>Mutual TLS (Client Certificates)</strong></summary>
+
+For environments requiring client certificate authentication:
+
+```bash
+# In .env file
+REDMINE_URL=https://secure.redmine.com
+REDMINE_API_KEY=your_api_key
+REDMINE_SSL_CERT=/path/to/ca-bundle.pem
+REDMINE_SSL_CLIENT_CERT=/path/to/cert.pem,/path/to/key.pem
+```
+
+**Note**: Private keys must be unencrypted (Python requests library requirement).
+
+</details>
+
+<details>
+<summary><strong>Disable SSL Verification (Development Only)</strong></summary>
+
+⚠️ **WARNING**: Only use in development/testing environments!
+
+```bash
+# In .env file
+REDMINE_SSL_VERIFY=false
+```
+
+Disabling SSL verification makes your connection vulnerable to man-in-the-middle attacks.
+
+</details>
+
+For SSL troubleshooting, see the [Troubleshooting Guide](./docs/troubleshooting.md#ssl-certificate-errors).
 
 ## MCP Client Configuration
 

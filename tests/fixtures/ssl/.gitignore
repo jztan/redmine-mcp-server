@@ -1,0 +1,6 @@
+# Ignore certificate signing requests and serial files
+*.srl
+*.csr
+
+# Test certificates are committed for CI/CD
+# These are NOT real certificates - safe to commit

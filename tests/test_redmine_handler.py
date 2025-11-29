@@ -4,6 +4,7 @@ Test cases for redmine_handler.py MCP tools.
 This module contains unit tests for the Redmine MCP server tools,
 including tests for project listing and issue retrieval functionality.
 """
+
 import pytest
 import asyncio
 import uuid
@@ -13,7 +14,7 @@ import os
 import sys
 
 # Add the src directory to the path so we can import our modules
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from redmine_mcp_server.redmine_handler import (
     get_redmine_issue,
@@ -36,39 +37,40 @@ class TestRedmineHandler:
         mock_issue.id = 123
         mock_issue.subject = "Test Issue Subject"
         mock_issue.description = "Test issue description"
-        
+
         # Mock project
         mock_project = Mock()
         mock_project.id = 1
         mock_project.name = "Test Project"
         mock_issue.project = mock_project
-        
+
         # Mock status
         mock_status = Mock()
         mock_status.id = 1
         mock_status.name = "New"
         mock_issue.status = mock_status
-        
+
         # Mock priority
         mock_priority = Mock()
         mock_priority.id = 2
         mock_priority.name = "Normal"
         mock_issue.priority = mock_priority
-        
+
         # Mock author
         mock_author = Mock()
         mock_author.id = 1
         mock_author.name = "Test Author"
         mock_issue.author = mock_author
-        
+
         # Mock assigned_to (optional field)
         mock_assigned = Mock()
         mock_assigned.id = 2
         mock_assigned.name = "Test Assignee"
         mock_issue.assigned_to = mock_assigned
-        
+
         # Mock dates
         from datetime import datetime
+
         mock_issue.created_on = datetime(2025, 1, 1, 10, 0, 0)
         mock_issue.updated_on = datetime(2025, 1, 2, 15, 30, 0)
 
@@ -99,16 +101,19 @@ class TestRedmineHandler:
             mock_project.name = f"Test Project {i + 1}"
             mock_project.identifier = f"test-project-{i + 1}"
             mock_project.description = f"Description for project {i + 1}"
-            
+
             from datetime import datetime
+
             mock_project.created_on = datetime(2025, 1, i + 1, 10, 0, 0)
             projects.append(mock_project)
-        
+
         return projects
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
-    async def test_get_redmine_issue_success(self, mock_redmine, mock_issue_with_comments):
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_get_redmine_issue_success(
+        self, mock_redmine, mock_issue_with_comments
+    ):
         """Test successful issue retrieval including journals by default."""
         # Setup
         mock_redmine.issue.get.return_value = mock_issue_with_comments
@@ -140,58 +145,62 @@ class TestRedmineHandler:
         assert result["attachments"][0]["filename"] == "test.txt"
 
         # Verify the mock was called correctly
-        mock_redmine.issue.get.assert_called_once_with(123, include="journals,attachments")
+        mock_redmine.issue.get.assert_called_once_with(
+            123, include="journals,attachments"
+        )
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
+    @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_get_redmine_issue_not_found(self, mock_redmine):
         """Test issue not found scenario."""
         from redminelib.exceptions import ResourceNotFoundError
-        
+
         # Setup - ResourceNotFoundError doesn't take a message parameter
         mock_redmine.issue.get.side_effect = ResourceNotFoundError()
-        
+
         # Execute
         result = await get_redmine_issue(999)
-        
+
         # Verify
         assert result is not None
         assert "error" in result
         assert result["error"] == "Issue 999 not found."
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
+    @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_get_redmine_issue_general_error(self, mock_redmine):
         """Test general error handling in issue retrieval."""
         # Setup
         mock_redmine.issue.get.side_effect = Exception("Connection error")
-        
+
         # Execute
         result = await get_redmine_issue(123)
-        
+
         # Verify
         assert result is not None
         assert "error" in result
         assert "An error occurred while fetching issue 123" in result["error"]
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine', None)
+    @patch("redmine_mcp_server.redmine_handler.redmine", None)
     async def test_get_redmine_issue_no_client(self):
         """Test issue retrieval when Redmine client is not initialized."""
         # Execute
         result = await get_redmine_issue(123)
-        
+
         # Verify
         assert result is not None
         assert "error" in result
         assert result["error"] == "Redmine client not initialized."
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
-    async def test_get_redmine_issue_no_assigned_to(self, mock_redmine, mock_redmine_issue):
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_get_redmine_issue_no_assigned_to(
+        self, mock_redmine, mock_redmine_issue
+    ):
         """Test issue retrieval when issue has no assigned_to field."""
         # Setup - remove assigned_to attribute
-        delattr(mock_redmine_issue, 'assigned_to')
+        delattr(mock_redmine_issue, "assigned_to")
         mock_redmine.issue.get.return_value = mock_redmine_issue
 
         # Execute
@@ -202,8 +211,10 @@ class TestRedmineHandler:
         assert result["assigned_to"] is None
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
-    async def test_get_redmine_issue_without_journals(self, mock_redmine, mock_redmine_issue):
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_get_redmine_issue_without_journals(
+        self, mock_redmine, mock_redmine_issue
+    ):
         """Test opting out of journal retrieval."""
         mock_redmine.issue.get.return_value = mock_redmine_issue
 
@@ -214,8 +225,10 @@ class TestRedmineHandler:
         mock_redmine.issue.get.assert_called_once_with(123, include="attachments")
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
-    async def test_get_redmine_issue_without_attachments(self, mock_redmine, mock_redmine_issue):
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_get_redmine_issue_without_attachments(
+        self, mock_redmine, mock_redmine_issue
+    ):
         """Test opting out of attachment retrieval."""
         mock_redmine.issue.get.return_value = mock_redmine_issue
 
@@ -225,55 +238,57 @@ class TestRedmineHandler:
         mock_redmine.issue.get.assert_called_once_with(123, include="journals")
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
-    async def test_list_redmine_projects_success(self, mock_redmine, mock_redmine_projects):
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_list_redmine_projects_success(
+        self, mock_redmine, mock_redmine_projects
+    ):
         """Test successful project listing."""
         # Setup
         mock_redmine.project.all.return_value = mock_redmine_projects
-        
+
         # Execute
         result = await list_redmine_projects()
-        
+
         # Verify
         assert result is not None
         assert isinstance(result, list)
         assert len(result) == 3
-        
+
         for i, project in enumerate(result):
             assert project["id"] == i + 1
             assert project["name"] == f"Test Project {i + 1}"
             assert project["identifier"] == f"test-project-{i + 1}"
             assert project["description"] == f"Description for project {i + 1}"
             assert project["created_on"] == f"2025-01-0{i + 1}T10:00:00"
-        
+
         # Verify the mock was called correctly
         mock_redmine.project.all.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
+    @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_list_redmine_projects_empty(self, mock_redmine):
         """Test project listing when no projects exist."""
         # Setup
         mock_redmine.project.all.return_value = []
-        
+
         # Execute
         result = await list_redmine_projects()
-        
+
         # Verify
         assert result is not None
         assert isinstance(result, list)
         assert len(result) == 0
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
+    @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_list_redmine_projects_error(self, mock_redmine):
         """Test error handling in project listing."""
         # Setup
         mock_redmine.project.all.side_effect = Exception("Connection error")
-        
+
         # Execute
         result = await list_redmine_projects()
-        
+
         # Verify
         assert result is not None
         assert isinstance(result, list)
@@ -282,12 +297,12 @@ class TestRedmineHandler:
         assert "An error occurred while listing projects" in result[0]["error"]
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine', None)
+    @patch("redmine_mcp_server.redmine_handler.redmine", None)
     async def test_list_redmine_projects_no_client(self):
         """Test project listing when Redmine client is not initialized."""
         # Execute
         result = await list_redmine_projects()
-        
+
         # Verify
         assert result is not None
         assert isinstance(result, list)
@@ -296,7 +311,7 @@ class TestRedmineHandler:
         assert result[0]["error"] == "Redmine client not initialized."
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
+    @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_list_redmine_projects_missing_attributes(self, mock_redmine):
         """Test project listing when projects have missing optional attributes."""
         # Setup - create project with missing description and created_on
@@ -307,17 +322,17 @@ class TestRedmineHandler:
         # Remove description and created_on attributes to simulate missing attributes
         del mock_project.description
         del mock_project.created_on
-        
+
         mock_redmine.project.all.return_value = [mock_project]
-        
+
         # Execute
         result = await list_redmine_projects()
-        
+
         # Verify
         assert result is not None
         assert isinstance(result, list)
         assert len(result) == 1
-        
+
         project = result[0]
         assert project["id"] == 1
         assert project["name"] == "Test Project"
@@ -326,23 +341,27 @@ class TestRedmineHandler:
         assert project["created_on"] is None  # hasattr check
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
+    @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_create_redmine_issue_success(self, mock_redmine, mock_redmine_issue):
         """Test successful issue creation."""
         mock_redmine.issue.create.return_value = mock_redmine_issue
 
         from redmine_mcp_server.redmine_handler import create_redmine_issue
 
-        result = await create_redmine_issue(1, "Test Issue Subject", "Test issue description")
+        result = await create_redmine_issue(
+            1, "Test Issue Subject", "Test issue description"
+        )
 
         assert result is not None
         assert result["id"] == 123
         mock_redmine.issue.create.assert_called_once_with(
-            project_id=1, subject="Test Issue Subject", description="Test issue description"
+            project_id=1,
+            subject="Test Issue Subject",
+            description="Test issue description",
         )
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
+    @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_create_redmine_issue_error(self, mock_redmine):
         """Test error during issue creation."""
         mock_redmine.issue.create.side_effect = Exception("Boom")
@@ -353,7 +372,7 @@ class TestRedmineHandler:
         assert "error" in result
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine', None)
+    @patch("redmine_mcp_server.redmine_handler.redmine", None)
     async def test_create_redmine_issue_no_client(self):
         """Test issue creation when client is not initialized."""
         from redmine_mcp_server.redmine_handler import create_redmine_issue
@@ -362,7 +381,7 @@ class TestRedmineHandler:
         assert result["error"] == "Redmine client not initialized."
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
+    @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_update_redmine_issue_success(self, mock_redmine, mock_redmine_issue):
         """Test successful issue update."""
         mock_redmine.issue.update.return_value = True
@@ -376,8 +395,10 @@ class TestRedmineHandler:
         mock_redmine.issue.update.assert_called_once_with(123, subject="New")
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
-    async def test_update_redmine_issue_status_name(self, mock_redmine, mock_redmine_issue):
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_update_redmine_issue_status_name(
+        self, mock_redmine, mock_redmine_issue
+    ):
         """Update issue using a status name instead of an ID."""
         mock_redmine.issue.update.return_value = True
         mock_redmine.issue.get.return_value = mock_redmine_issue
@@ -395,7 +416,7 @@ class TestRedmineHandler:
         mock_redmine.issue.update.assert_called_once_with(123, status_id=5)
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
+    @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_update_redmine_issue_not_found(self, mock_redmine):
         """Test update when issue not found."""
         from redminelib.exceptions import ResourceNotFoundError
@@ -409,7 +430,7 @@ class TestRedmineHandler:
         assert result["error"] == "Issue 999 not found."
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine', None)
+    @patch("redmine_mcp_server.redmine_handler.redmine", None)
     async def test_update_redmine_issue_no_client(self):
         """Test update when client not initialized."""
         from redmine_mcp_server.redmine_handler import update_redmine_issue
@@ -418,8 +439,10 @@ class TestRedmineHandler:
         assert result["error"] == "Redmine client not initialized."
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
-    async def test_list_my_redmine_issues_success(self, mock_redmine, mock_redmine_issue):
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_list_my_redmine_issues_success(
+        self, mock_redmine, mock_redmine_issue
+    ):
         """Test listing issues assigned to current user."""
         mock_redmine.issue.filter.return_value = [mock_redmine_issue]
 
@@ -429,10 +452,12 @@ class TestRedmineHandler:
 
         assert isinstance(result, list)
         assert result[0]["id"] == 123
-        mock_redmine.issue.filter.assert_called_once_with(assigned_to_id="me", offset=0, limit=25)
+        mock_redmine.issue.filter.assert_called_once_with(
+            assigned_to_id="me", offset=0, limit=25
+        )
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
+    @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_list_my_redmine_issues_empty(self, mock_redmine):
         """Test listing issues when none exist."""
         mock_redmine.issue.filter.return_value = []
@@ -445,7 +470,7 @@ class TestRedmineHandler:
         assert len(result) == 0
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
+    @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_list_my_redmine_issues_error(self, mock_redmine):
         """Test error handling when listing issues."""
         mock_redmine.issue.filter.side_effect = Exception("Boom")
@@ -458,7 +483,7 @@ class TestRedmineHandler:
         assert "error" in result[0]
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine', None)
+    @patch("redmine_mcp_server.redmine_handler.redmine", None)
     async def test_list_my_redmine_issues_no_client(self):
         """Test listing issues when client is not initialized."""
         from redmine_mcp_server.redmine_handler import list_my_redmine_issues
@@ -470,8 +495,10 @@ class TestRedmineHandler:
 
     # Pagination Test Cases
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
-    async def test_list_my_issues_with_limit_basic(self, mock_redmine, mock_redmine_issue):
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_list_my_issues_with_limit_basic(
+        self, mock_redmine, mock_redmine_issue
+    ):
         """Test basic limit functionality."""
         mock_redmine.issue.filter.return_value = [mock_redmine_issue] * 5
 
@@ -481,10 +508,12 @@ class TestRedmineHandler:
 
         assert isinstance(result, list)
         assert len(result) == 5
-        mock_redmine.issue.filter.assert_called_once_with(assigned_to_id="me", offset=0, limit=5)
+        mock_redmine.issue.filter.assert_called_once_with(
+            assigned_to_id="me", offset=0, limit=5
+        )
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
+    @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_list_my_issues_with_offset(self, mock_redmine, mock_redmine_issue):
         """Test offset pagination."""
         mock_redmine.issue.filter.return_value = [mock_redmine_issue] * 10
@@ -495,10 +524,12 @@ class TestRedmineHandler:
 
         assert isinstance(result, list)
         assert len(result) == 10
-        mock_redmine.issue.filter.assert_called_once_with(assigned_to_id="me", offset=25, limit=10)
+        mock_redmine.issue.filter.assert_called_once_with(
+            assigned_to_id="me", offset=25, limit=10
+        )
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
+    @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_list_my_issues_with_metadata(self, mock_redmine, mock_redmine_issue):
         """Test pagination metadata response."""
         # Create mock ResourceSet that behaves like a list when converted
@@ -511,7 +542,9 @@ class TestRedmineHandler:
 
         from redmine_mcp_server.redmine_handler import list_my_redmine_issues
 
-        result = await list_my_redmine_issues(limit=10, offset=25, include_pagination_info=True)
+        result = await list_my_redmine_issues(
+            limit=10, offset=25, include_pagination_info=True
+        )
 
         assert isinstance(result, dict)
         assert "issues" in result
@@ -525,7 +558,7 @@ class TestRedmineHandler:
         assert result["pagination"]["next_offset"] == 35
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
+    @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_list_my_issues_edge_cases(self, mock_redmine):
         """Test zero, negative, and excessive limits."""
         mock_redmine.issue.filter.return_value = []
@@ -546,10 +579,12 @@ class TestRedmineHandler:
         mock_redmine.issue.filter.return_value = []
         result = await list_my_redmine_issues(limit=5000)
         # Should be called with limit capped to 100 (Redmine API max per request)
-        mock_redmine.issue.filter.assert_called_with(assigned_to_id="me", offset=0, limit=100)
+        mock_redmine.issue.filter.assert_called_with(
+            assigned_to_id="me", offset=0, limit=100
+        )
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
+    @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_list_my_issues_default_limit(self, mock_redmine, mock_redmine_issue):
         """Test default limit behavior."""
         mock_redmine.issue.filter.return_value = [mock_redmine_issue] * 25
@@ -560,11 +595,15 @@ class TestRedmineHandler:
 
         assert isinstance(result, list)
         assert len(result) == 25
-        mock_redmine.issue.filter.assert_called_once_with(assigned_to_id="me", offset=0, limit=25)
+        mock_redmine.issue.filter.assert_called_once_with(
+            assigned_to_id="me", offset=0, limit=25
+        )
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
-    async def test_list_my_issues_limit_with_filters(self, mock_redmine, mock_redmine_issue):
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_list_my_issues_limit_with_filters(
+        self, mock_redmine, mock_redmine_issue
+    ):
         """Test limit + other filters."""
         mock_redmine.issue.filter.return_value = [mock_redmine_issue] * 15
 
@@ -579,8 +618,10 @@ class TestRedmineHandler:
         )
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
-    async def test_list_my_issues_pagination_navigation(self, mock_redmine, mock_redmine_issue):
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_list_my_issues_pagination_navigation(
+        self, mock_redmine, mock_redmine_issue
+    ):
         """Test next/previous logic."""
         # Create mock ResourceSet that behaves like a list when converted
         mock_resource_set = Mock()
@@ -593,7 +634,9 @@ class TestRedmineHandler:
         from redmine_mcp_server.redmine_handler import list_my_redmine_issues
 
         # Test middle page
-        result = await list_my_redmine_issues(limit=10, offset=25, include_pagination_info=True)
+        result = await list_my_redmine_issues(
+            limit=10, offset=25, include_pagination_info=True
+        )
         pagination = result["pagination"]
         assert pagination["has_next"] == True
         assert pagination["has_previous"] == True
@@ -601,14 +644,18 @@ class TestRedmineHandler:
         assert pagination["previous_offset"] == 15
 
         # Test first page
-        result = await list_my_redmine_issues(limit=10, offset=0, include_pagination_info=True)
+        result = await list_my_redmine_issues(
+            limit=10, offset=0, include_pagination_info=True
+        )
         pagination = result["pagination"]
         assert pagination["has_previous"] == False
         assert pagination["previous_offset"] == None
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
-    async def test_list_my_issues_parameter_validation(self, mock_redmine, mock_redmine_issue):
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_list_my_issues_parameter_validation(
+        self, mock_redmine, mock_redmine_issue
+    ):
         """Test input validation and sanitization."""
         mock_redmine.issue.filter.return_value = [mock_redmine_issue] * 10
 
@@ -616,21 +663,27 @@ class TestRedmineHandler:
 
         # Test string limit conversion
         result = await list_my_redmine_issues(limit="10")
-        mock_redmine.issue.filter.assert_called_with(assigned_to_id="me", offset=0, limit=10)
+        mock_redmine.issue.filter.assert_called_with(
+            assigned_to_id="me", offset=0, limit=10
+        )
 
         # Test invalid limit type
         mock_redmine.issue.filter.reset_mock()
         result = await list_my_redmine_issues(limit="invalid")
-        mock_redmine.issue.filter.assert_called_with(assigned_to_id="me", offset=0, limit=25)  # default
+        mock_redmine.issue.filter.assert_called_with(
+            assigned_to_id="me", offset=0, limit=25
+        )  # default
 
         # Test negative offset (should reset to 0)
         mock_redmine.issue.filter.reset_mock()
         result = await list_my_redmine_issues(offset=-10)
-        mock_redmine.issue.filter.assert_called_with(assigned_to_id="me", offset=0, limit=25)
+        mock_redmine.issue.filter.assert_called_with(
+            assigned_to_id="me", offset=0, limit=25
+        )
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
-    @patch.dict('os.environ', {'SERVER_HOST': 'localhost', 'SERVER_PORT': '8000'})
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch.dict("os.environ", {"SERVER_HOST": "localhost", "SERVER_PORT": "8000"})
     async def test_download_redmine_attachment_success(self, mock_redmine, tmp_path):
         """Test successful attachment download with HTTP URL return."""
         # Create a real temporary file for the mock to return
@@ -665,10 +718,11 @@ class TestRedmineHandler:
         mock_attachment.download.assert_called_once_with(savepath="attachments")
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
+    @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_download_redmine_attachment_not_found(self, mock_redmine):
         """Attachment not found scenario."""
         from redminelib.exceptions import ResourceNotFoundError
+
         mock_redmine.attachment.get.side_effect = ResourceNotFoundError()
 
         from redmine_mcp_server.redmine_handler import download_redmine_attachment
@@ -678,7 +732,7 @@ class TestRedmineHandler:
         assert result["error"] == "Attachment 999 not found."
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
+    @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_download_redmine_attachment_error(self, mock_redmine):
         """General error during download."""
         mock_redmine.attachment.get.side_effect = Exception("boom")
@@ -690,7 +744,7 @@ class TestRedmineHandler:
         assert "error" in result
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine', None)
+    @patch("redmine_mcp_server.redmine_handler.redmine", None)
     async def test_download_redmine_attachment_no_client(self):
         """Download when client not initialized."""
         from redmine_mcp_server.redmine_handler import download_redmine_attachment
@@ -701,9 +755,11 @@ class TestRedmineHandler:
 
     @pytest.mark.unit
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
-    @patch('redmine_mcp_server.redmine_handler._ensure_cleanup_started')
-    async def test_get_redmine_attachment_download_url_success(self, mock_cleanup, mock_redmine):
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    async def test_get_redmine_attachment_download_url_success(
+        self, mock_cleanup, mock_redmine
+    ):
         """Test successful URL generation with secure implementation."""
         # Mock setup
         mock_attachment = MagicMock()
@@ -713,15 +769,17 @@ class TestRedmineHandler:
 
         mock_redmine.attachment.get.return_value = mock_attachment
 
-        with patch('uuid.uuid4', return_value=MagicMock(spec=uuid.UUID)) as mock_uuid:
+        with patch("uuid.uuid4", return_value=MagicMock(spec=uuid.UUID)) as mock_uuid:
             mock_uuid.return_value.__str__ = MagicMock(return_value="test-uuid-123")
-            with patch('builtins.open', mock_open()) as mock_file:
-                with patch('pathlib.Path.mkdir'):
-                    with patch('pathlib.Path.stat') as mock_stat:
+            with patch("builtins.open", mock_open()) as mock_file:
+                with patch("pathlib.Path.mkdir"):
+                    with patch("pathlib.Path.stat") as mock_stat:
                         mock_stat.return_value.st_size = 1024
-                        with patch('os.rename'):
-                            with patch('json.dump'):
-                                from redmine_mcp_server.redmine_handler import get_redmine_attachment_download_url
+                        with patch("os.rename"):
+                            with patch("json.dump"):
+                                from redmine_mcp_server.redmine_handler import (
+                                    get_redmine_attachment_download_url,
+                                )
 
                                 result = await get_redmine_attachment_download_url(123)
 
@@ -736,12 +794,14 @@ class TestRedmineHandler:
 
     @pytest.mark.unit
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
+    @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_get_redmine_attachment_download_url_not_found(self, mock_redmine):
         """Test handling of non-existent attachment ID."""
         mock_redmine.attachment.get.side_effect = ResourceNotFoundError()
 
-        from redmine_mcp_server.redmine_handler import get_redmine_attachment_download_url
+        from redmine_mcp_server.redmine_handler import (
+            get_redmine_attachment_download_url,
+        )
 
         result = await get_redmine_attachment_download_url(999)
 
@@ -750,8 +810,10 @@ class TestRedmineHandler:
 
     @pytest.mark.unit
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.get_redmine_attachment_download_url')
-    async def test_download_redmine_attachment_deprecation_warning(self, mock_new_func, caplog):
+    @patch("redmine_mcp_server.redmine_handler.get_redmine_attachment_download_url")
+    async def test_download_redmine_attachment_deprecation_warning(
+        self, mock_new_func, caplog
+    ):
         """Test that deprecated function logs warning and delegates properly."""
         # Mock the new function
         expected_result = {"download_url": "http://test.com", "attachment_id": 123}
@@ -777,8 +839,10 @@ class TestRedmineHandler:
         mock_new_func.assert_called_once_with(123)
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
-    async def test_search_redmine_issues_success(self, mock_redmine, mock_redmine_issue):
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_search_redmine_issues_success(
+        self, mock_redmine, mock_redmine_issue
+    ):
         """Search issues successfully."""
         mock_redmine.issue.search.return_value = [mock_redmine_issue]
 
@@ -788,12 +852,10 @@ class TestRedmineHandler:
 
         assert isinstance(result, list)
         assert result[0]["id"] == 123
-        mock_redmine.issue.search.assert_called_once_with(
-            "test", offset=0, limit=25
-        )
+        mock_redmine.issue.search.assert_called_once_with("test", offset=0, limit=25)
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
+    @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_search_redmine_issues_empty(self, mock_redmine):
         """Search issues with no matches."""
         mock_redmine.issue.search.return_value = []
@@ -806,7 +868,7 @@ class TestRedmineHandler:
         assert len(result) == 0
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
+    @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_search_redmine_issues_error(self, mock_redmine):
         """General search error handling."""
         mock_redmine.issue.search.side_effect = Exception("boom")
@@ -819,7 +881,7 @@ class TestRedmineHandler:
         assert "error" in result[0]
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine', None)
+    @patch("redmine_mcp_server.redmine_handler.redmine", None)
     async def test_search_redmine_issues_no_client(self):
         """Search when client not initialized."""
         from redmine_mcp_server.redmine_handler import search_redmine_issues
@@ -858,13 +920,13 @@ class TestRedmineHandler:
     def mock_issues_list(self):
         """Create a list of mock issues for testing."""
         issues = []
-        
+
         # Create 3 mock issues with different statuses and priorities
         for i in range(3):
             issue = Mock()
             issue.id = i + 1
             issue.subject = f"Test Issue {i + 1}"
-            
+
             # Mock status
             status = Mock()
             if i == 0:
@@ -874,12 +936,12 @@ class TestRedmineHandler:
             else:
                 status.name = "Resolved"
             issue.status = status
-            
+
             # Mock priority
             priority = Mock()
             priority.name = "Normal" if i != 2 else "High"
             issue.priority = priority
-            
+
             # Mock assignee
             if i == 0:
                 issue.assigned_to = None  # Unassigned
@@ -887,15 +949,15 @@ class TestRedmineHandler:
                 assigned = Mock()
                 assigned.name = f"User {i}"
                 issue.assigned_to = assigned
-            
+
             issues.append(issue)
-        
+
         return issues
 
     def test_analyze_issues_helper(self, mock_issues_list):
         """Test the _analyze_issues helper function."""
         result = _analyze_issues(mock_issues_list)
-        
+
         assert result["total"] == 3
         assert result["by_status"]["New"] == 1
         assert result["by_status"]["In Progress"] == 1
@@ -909,21 +971,23 @@ class TestRedmineHandler:
     def test_analyze_issues_empty_list(self):
         """Test _analyze_issues with empty list."""
         result = _analyze_issues([])
-        
+
         assert result["total"] == 0
         assert result["by_status"] == {}
         assert result["by_priority"] == {}
         assert result["by_assignee"] == {}
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
-    async def test_summarize_project_status_success(self, mock_redmine, mock_project, mock_issues_list):
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_summarize_project_status_success(
+        self, mock_redmine, mock_project, mock_issues_list
+    ):
         """Test successful project status summarization."""
         mock_redmine.project.get.return_value = mock_project
         mock_redmine.issue.filter.return_value = mock_issues_list
-        
+
         result = await summarize_project_status(1, 30)
-        
+
         assert "error" not in result
         assert result["project"]["id"] == 1
         assert result["project"]["name"] == "Test Project"
@@ -931,11 +995,11 @@ class TestRedmineHandler:
         assert "recent_activity" in result
         assert "project_totals" in result
         assert "insights" in result
-        
+
         # Verify the analysis period dates are set
         assert "start_date" in result["analysis_period"]
         assert "end_date" in result["analysis_period"]
-        
+
         # Verify insights calculations
         insights = result["insights"]
         assert "daily_creation_rate" in insights
@@ -943,48 +1007,53 @@ class TestRedmineHandler:
         assert "recent_activity_percentage" in insights
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
+    @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_summarize_project_status_project_not_found(self, mock_redmine):
         """Test project status summarization with non-existent project."""
         from redminelib.exceptions import ResourceNotFoundError
+
         mock_redmine.project.get.side_effect = ResourceNotFoundError()
-        
+
         result = await summarize_project_status(999, 30)
-        
+
         assert result["error"] == "Project 999 not found."
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine', None)
+    @patch("redmine_mcp_server.redmine_handler.redmine", None)
     async def test_summarize_project_status_no_client(self):
         """Test project status summarization with no Redmine client."""
         result = await summarize_project_status(1, 30)
-        
+
         assert result["error"] == "Redmine client not initialized."
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
-    async def test_summarize_project_status_custom_days(self, mock_redmine, mock_project):
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_summarize_project_status_custom_days(
+        self, mock_redmine, mock_project
+    ):
         """Test project status summarization with custom days parameter."""
         mock_redmine.project.get.return_value = mock_project
         mock_redmine.issue.filter.return_value = []
-        
+
         result = await summarize_project_status(1, 7)
-        
+
         assert result["analysis_period"]["days"] == 7
-        
+
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
-    async def test_summarize_project_status_exception_handling(self, mock_redmine, mock_project):
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_summarize_project_status_exception_handling(
+        self, mock_redmine, mock_project
+    ):
         """Test project status summarization exception handling."""
         mock_redmine.project.get.return_value = mock_project
         mock_redmine.issue.filter.side_effect = Exception("API Error")
-        
+
         result = await summarize_project_status(1, 30)
 
         assert result["error"] == "An error occurred while summarizing project 1."
 
     @pytest.mark.asyncio
-    @patch.dict('os.environ', {'ATTACHMENTS_DIR': './test_attachments'})
+    @patch.dict("os.environ", {"ATTACHMENTS_DIR": "./test_attachments"})
     async def test_cleanup_attachment_files_success(self, tmp_path):
         """Test successful attachment cleanup."""
         from redmine_mcp_server.redmine_handler import cleanup_attachment_files
@@ -1005,4 +1074,3 @@ class TestRedmineHandler:
         assert "total_files" in result["current_storage"]
         assert "total_bytes" in result["current_storage"]
         assert "total_mb" in result["current_storage"]
-
