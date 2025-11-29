@@ -1,0 +1,4 @@
+# Ignore test certificates (regenerate with openssl as needed)
+*.pem
+*.srl
+*.csr
