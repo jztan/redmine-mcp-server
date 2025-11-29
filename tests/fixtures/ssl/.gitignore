@@ -1,6 +1,7 @@
-# Ignore certificate signing requests and serial files
+# All generated certificate files - generated dynamically in CI/CD
+*.pem
 *.srl
 *.csr
 
-# Test certificates are committed for CI/CD
-# These are NOT real certificates - safe to commit
+# Only the generation script is committed
+!generate-test-certs.sh
