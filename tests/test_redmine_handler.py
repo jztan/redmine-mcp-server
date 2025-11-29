@@ -15,7 +15,14 @@ import sys
 # Add the src directory to the path so we can import our modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from redmine_mcp_server.redmine_handler import get_redmine_issue, list_redmine_projects, summarize_project_status, _analyze_issues
+from redmine_mcp_server.redmine_handler import (
+    get_redmine_issue,
+    list_redmine_projects,
+    summarize_project_status,
+    _analyze_issues,
+    _issue_to_dict,
+    _issue_to_dict_selective,
+)
 from redminelib.exceptions import ResourceNotFoundError
 
 
@@ -781,7 +788,9 @@ class TestRedmineHandler:
 
         assert isinstance(result, list)
         assert result[0]["id"] == 123
-        mock_redmine.issue.search.assert_called_once_with("test")
+        mock_redmine.issue.search.assert_called_once_with(
+            "test", offset=0, limit=25
+        )
 
     @pytest.mark.asyncio
     @patch('redmine_mcp_server.redmine_handler.redmine')

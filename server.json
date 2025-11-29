@@ -1,19 +1,18 @@
 {
-  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-16/server.schema.json",
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
   "name": "io.github.jztan/redmine-mcp-server",
   "description": "Production-ready MCP server for Redmine with security, pagination, and enterprise features",
-  "status": "active",
   "repository": {
     "url": "https://github.com/jztan/redmine-mcp-server",
     "source": "github"
   },
-  "version": "0.6.0",
+  "version": "0.7.0",
   "packages": [
     {
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "redmine-mcp-server",
-      "version": "0.6.0",
+      "version": "0.7.0",
       "transport": {
         "type": "stdio"
       },
@@ -54,7 +53,7 @@
         {
           "description": "Port for the MCP server (default: 8000)",
           "isRequired": false,
-          "format": "integer",
+          "format": "number",
           "default": "8000",
           "name": "SERVER_PORT"
         },
@@ -68,7 +67,7 @@
         {
           "description": "Public port for file download URLs (default: 8000)",
           "isRequired": false,
-          "format": "integer",
+          "format": "number",
           "default": "8000",
           "name": "PUBLIC_PORT"
         },
@@ -89,14 +88,14 @@
         {
           "description": "Interval between cleanup runs in minutes (default: 10)",
           "isRequired": false,
-          "format": "integer",
+          "format": "number",
           "default": "10",
           "name": "CLEANUP_INTERVAL_MINUTES"
         },
         {
           "description": "Default expiry time for attachments in minutes (default: 60)",
           "isRequired": false,
-          "format": "integer",
+          "format": "number",
           "default": "60",
           "name": "ATTACHMENT_EXPIRES_MINUTES"
         }
