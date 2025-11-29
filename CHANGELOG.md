@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- **Removed private keys from repository** - Addresses GitGuardian secret exposure alert
+  - Test SSL certificates now generated dynamically in CI/CD pipeline
+  - Added `generate-test-certs.sh` script for local and CI certificate generation
+  - Updated `.gitignore` to exclude all generated certificate files
+  - Private keys no longer stored in version control
+
 ### Added
 - **SSL Certificate Configuration** - Comprehensive SSL/TLS support for secure Redmine connections
   - **Self-Signed Certificates** - `REDMINE_SSL_CERT` environment variable for custom CA certificates
