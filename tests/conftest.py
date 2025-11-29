@@ -3,16 +3,19 @@ Configuration file for pytest.
 
 This file configures pytest markers and test settings for the Redmine MCP server tests.
 """
+
 import pytest
 
 
 def pytest_configure(config):
     """Configure pytest with custom markers."""
     config.addinivalue_line(
-        "markers", "integration: mark tests as integration tests (require actual Redmine connection)"
+        "markers",
+        "integration: mark tests as integration tests (require actual Redmine connection)",
     )
     config.addinivalue_line(
-        "markers", "unit: mark tests as unit tests (use mocks, no external dependencies)"
+        "markers",
+        "unit: mark tests as unit tests (use mocks, no external dependencies)",
     )
 
 
@@ -21,20 +24,20 @@ def setup_test_environment():
     """Set up test environment before running tests."""
     import os
     import sys
-    
+
     # Add src to Python path if not already there
-    src_path = os.path.join(os.path.dirname(__file__), '..', 'src')
+    src_path = os.path.join(os.path.dirname(__file__), "..", "src")
     if src_path not in sys.path:
         sys.path.insert(0, src_path)
-    
+
     # Set test environment variable
-    os.environ['TESTING'] = 'true'
-    
+    os.environ["TESTING"] = "true"
+
     yield
-    
+
     # Cleanup after tests
-    if 'TESTING' in os.environ:
-        del os.environ['TESTING']
+    if "TESTING" in os.environ:
+        del os.environ["TESTING"]
 
 
 @pytest.fixture

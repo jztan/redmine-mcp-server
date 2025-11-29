@@ -5,6 +5,7 @@ This module contains security-focused tests to ensure that the attachment
 download functions properly prevent path traversal attacks and other
 security vulnerabilities.
 """
+
 import pytest
 import uuid
 from unittest.mock import Mock, patch, MagicMock, mock_open
@@ -13,9 +14,12 @@ import os
 import sys
 
 # Add the src directory to the path so we can import our modules
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from redmine_mcp_server.redmine_handler import get_redmine_attachment_download_url, download_redmine_attachment
+from redmine_mcp_server.redmine_handler import (
+    get_redmine_attachment_download_url,
+    download_redmine_attachment,
+)
 
 
 @pytest.mark.unit
@@ -31,7 +35,7 @@ class TestSecurityValidation:
             "/etc/shadow",
             "C:\\Windows\\System32\\config\\SAM",
             "../../sensitive/data",
-            "../../../../../root/.ssh/id_rsa"
+            "../../../../../root/.ssh/id_rsa",
         ]
 
         for dangerous_path in dangerous_paths:
@@ -44,13 +48,15 @@ class TestSecurityValidation:
 
             # Function should either work (security check passed) or fail with expected errors
             # Accept "client not initialized" as valid since we're testing without redmine setup
-            assert ("error" not in result or
-                    "not found" in result.get("error", "").lower() or
-                    "not initialized" in result.get("error", "").lower())
+            assert (
+                "error" not in result
+                or "not found" in result.get("error", "").lower()
+                or "not initialized" in result.get("error", "").lower()
+            )
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
-    @patch('redmine_mcp_server.redmine_handler._ensure_cleanup_started')
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
     async def test_uuid_filename_generation(self, mock_cleanup, mock_redmine):
         """Verify that filenames are UUID-based and secure."""
         mock_uuid = "12345678-1234-5678-9abc-123456789012"
@@ -62,16 +68,16 @@ class TestSecurityValidation:
         mock_attachment.download = MagicMock(return_value="/tmp/test_download")
         mock_redmine.attachment.get.return_value = mock_attachment
 
-        with patch('uuid.uuid4') as mock_uuid_func:
+        with patch("uuid.uuid4") as mock_uuid_func:
             mock_uuid_func.return_value = MagicMock()
             mock_uuid_func.return_value.__str__ = MagicMock(return_value=mock_uuid)
 
-            with patch('builtins.open', mock_open()):
-                with patch('pathlib.Path.mkdir'):
-                    with patch('pathlib.Path.stat') as mock_stat:
+            with patch("builtins.open", mock_open()):
+                with patch("pathlib.Path.mkdir"):
+                    with patch("pathlib.Path.stat") as mock_stat:
                         mock_stat.return_value.st_size = 1024
-                        with patch('os.rename'):
-                            with patch('json.dump'):
+                        with patch("os.rename"):
+                            with patch("json.dump"):
                                 result = await get_redmine_attachment_download_url(123)
 
         # Verify UUID is used in URL
@@ -79,7 +85,7 @@ class TestSecurityValidation:
         assert "test.pdf" in result.get("filename", "")
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.get_redmine_attachment_download_url')
+    @patch("redmine_mcp_server.redmine_handler.get_redmine_attachment_download_url")
     async def test_server_controlled_configuration(self, mock_new_func):
         """Verify that storage and expiry are server-controlled."""
         # Mock the new function response
@@ -87,13 +93,17 @@ class TestSecurityValidation:
             "download_url": "http://localhost:8000/files/uuid-123",
             "filename": "test.pdf",
             "expires_at": "2025-09-22T12:00:00Z",
-            "attachment_id": 123
+            "attachment_id": 123,
         }
         mock_new_func.return_value = expected_result
 
         # Test with various client attempts to control server behavior
-        result1 = await download_redmine_attachment(123, save_dir="./hack", expires_hours=9999)
-        result2 = await download_redmine_attachment(123, save_dir="dangerous", expires_hours=1)
+        result1 = await download_redmine_attachment(
+            123, save_dir="./hack", expires_hours=9999
+        )
+        result2 = await download_redmine_attachment(
+            123, save_dir="dangerous", expires_hours=1
+        )
 
         # Both should use server configuration, ignoring client preferences
         assert result1 == expected_result
@@ -112,7 +122,7 @@ class TestSecurityValidation:
             "C:\\Windows\\System32",
             "/root/.ssh",
             "../../../usr/bin",
-            "/tmp/../../../../etc"
+            "/tmp/../../../../etc",
         ]
 
         for storage_path in dangerous_storage_attempts:
@@ -123,11 +133,14 @@ class TestSecurityValidation:
             # but never actually use the dangerous path
             if "error" in result:
                 # Error should be about attachment not found, not storage issues
-                assert "not found" in result["error"].lower() or "not initialized" in result["error"].lower()
+                assert (
+                    "not found" in result["error"].lower()
+                    or "not initialized" in result["error"].lower()
+                )
 
     @pytest.mark.asyncio
-    @patch('redmine_mcp_server.redmine_handler.redmine')
-    @patch('redmine_mcp_server.redmine_handler._ensure_cleanup_started')
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
     async def test_secure_metadata_storage(self, mock_cleanup, mock_redmine):
         """Verify metadata is stored securely with proper validation."""
         # Mock successful attachment retrieval
@@ -142,14 +155,14 @@ class TestSecurityValidation:
         def capture_metadata(data, f=None, **kwargs):
             metadata_written.update(data)
 
-        with patch('uuid.uuid4') as mock_uuid:
+        with patch("uuid.uuid4") as mock_uuid:
             mock_uuid.return_value.__str__ = MagicMock(return_value="secure-uuid-456")
-            with patch('builtins.open', mock_open()):
-                with patch('pathlib.Path.mkdir'):
-                    with patch('pathlib.Path.stat') as mock_stat:
+            with patch("builtins.open", mock_open()):
+                with patch("pathlib.Path.mkdir"):
+                    with patch("pathlib.Path.stat") as mock_stat:
                         mock_stat.return_value.st_size = 2048
-                        with patch('os.rename'):
-                            with patch('json.dump', side_effect=capture_metadata):
+                        with patch("os.rename"):
+                            with patch("json.dump", side_effect=capture_metadata):
                                 result = await get_redmine_attachment_download_url(123)
 
         # Verify secure metadata structure
@@ -170,11 +183,25 @@ class TestSecurityValidation:
             error_msg = result["error"].lower()
             # Should not reveal internal paths, system info, or sensitive details
             sensitive_terms = [
-                "/var/", "/usr/", "/etc/", "/root/", "/home/",
-                "c:\\", "d:\\", "system32", "windows",
-                "password", "secret", "key", "token",
-                "internal", "stack trace", "exception"
+                "/var/",
+                "/usr/",
+                "/etc/",
+                "/root/",
+                "/home/",
+                "c:\\",
+                "d:\\",
+                "system32",
+                "windows",
+                "password",
+                "secret",
+                "key",
+                "token",
+                "internal",
+                "stack trace",
+                "exception",
             ]
 
             for term in sensitive_terms:
-                assert term not in error_msg, f"Error message contains sensitive term: {term}"
+                assert (
+                    term not in error_msg
+                ), f"Error message contains sensitive term: {term}"
