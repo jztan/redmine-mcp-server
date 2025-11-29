@@ -5,17 +5,50 @@ This module contains security-focused tests to ensure that the attachment
 download functions properly prevent path traversal attacks and other
 security vulnerabilities.
 """
-import pytest
-import uuid
-from unittest.mock import Mock, patch, MagicMock, mock_open
-from pathlib import Path
 import os
 import sys
+
+import pytest
+from unittest.mock import patch, MagicMock, mock_open
 
 # Add the src directory to the path so we can import our modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from redmine_mcp_server.redmine_handler import get_redmine_attachment_download_url, download_redmine_attachment
+from redmine_mcp_server.redmine_handler import (  # noqa: E402
+    get_redmine_attachment_download_url,
+    download_redmine_attachment
+)
+
+
+@pytest.mark.unit
+class TestStatelessHttpConfiguration:
+    """Tests for stateless HTTP transport configuration."""
+
+    def test_stateless_http_enabled(self):
+        """Verify that stateless HTTP mode is properly enabled."""
+        # Import from main module to get the configured mcp instance
+        from redmine_mcp_server.main import mcp
+
+        # The stateless_http setting should be True
+        assert mcp.settings.stateless_http is True, (
+            "stateless_http should be True to prevent session ID errors"
+        )
+
+    def test_session_manager_is_stateless(self):
+        """Verify that the session manager is initialized with stateless=True."""
+        from redmine_mcp_server.main import mcp
+
+        # The app is created in main.py which also creates the session manager
+        # The session manager should exist after app is created
+        assert mcp._session_manager is not None, (
+            "Session manager should be initialized after app creation"
+        )
+
+        # The session manager should be in stateless mode
+        assert mcp._session_manager.stateless is True, (
+            "Session manager should be in stateless mode to prevent "
+            "'No valid session ID provided' errors"
+        )
 
 
 @pytest.mark.unit
@@ -150,7 +183,7 @@ class TestSecurityValidation:
                         mock_stat.return_value.st_size = 2048
                         with patch('os.rename'):
                             with patch('json.dump', side_effect=capture_metadata):
-                                result = await get_redmine_attachment_download_url(123)
+                                await get_redmine_attachment_download_url(123)
 
         # Verify secure metadata structure
         assert "file_id" in metadata_written

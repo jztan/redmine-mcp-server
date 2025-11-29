@@ -65,6 +65,37 @@ This guide covers common issues and solutions for the Redmine MCP Server.
    - If using self-signed certificates, you may need to configure SSL verification
    - Contact your system administrator for proper SSL certificates
 
+### HTTP URLs and Custom Ports
+
+**Symptoms:**
+- Connection works with curl but not through MCP client
+- Server on non-standard port (e.g., `http://10.0.0.8:8080`)
+
+**Solutions:**
+
+Both HTTP URLs (not just HTTPS) and custom ports are fully supported.
+
+1. **HTTP URLs Work Fine**
+   ```bash
+   # In .env file - HTTP is supported
+   REDMINE_URL=http://your-redmine-server.com
+   # Or with IP address
+   REDMINE_URL=http://10.0.0.8
+   ```
+
+2. **Custom Ports Work Fine**
+   ```bash
+   # In .env file - custom ports are supported
+   REDMINE_URL=http://10.0.0.8:8080
+   REDMINE_URL=https://redmine.example.com:3000
+   ```
+
+3. **Test Connection**
+   ```bash
+   # Verify your Redmine URL is accessible
+   curl -v http://10.0.0.8:8080/issues.json?key=YOUR_API_KEY
+   ```
+
 ---
 
 ## Authentication Issues
@@ -378,6 +409,37 @@ This guide covers common issues and solutions for the Redmine MCP Server.
 2. **Verify Client Supports HTTP**
    - Check your MCP client's documentation
    - Some clients require specific transport types
+
+### Session ID Errors
+
+**Symptoms:**
+- "Bad Request: No valid session ID provided" errors
+- "Invalid or expired session ID" messages
+- HTTP 400 errors when connecting
+
+**Cause:** These errors typically occur when there's a version mismatch or configuration issue between the MCP server and client.
+
+**Solutions:**
+
+1. **Update to Latest Version**
+   ```bash
+   pip install --upgrade redmine-mcp-server
+   ```
+
+2. **Restart the Server**
+   ```bash
+   # Stop the current server and restart
+   redmine-mcp-server
+   ```
+
+3. **Reconnect MCP Client**
+   - Restart your MCP client (VS Code, Claude Desktop, etc.)
+   - The client should establish a fresh connection
+
+4. **Check Server Health**
+   ```bash
+   curl http://localhost:8000/health
+   ```
 
 ---
 
