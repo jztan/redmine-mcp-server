@@ -35,7 +35,14 @@ class TestStatelessHttpConfiguration:
         )
 
     def test_session_manager_is_stateless(self):
-        """Verify that the session manager is initialized with stateless=True."""
+        """Verify that the session manager is initialized with stateless=True.
+
+        Note: This test accesses the private _session_manager attribute because
+        there is no public API to check the stateless mode configuration. This
+        test may need updates if the MCP library changes its internal structure.
+        The test is essential to prevent regression of the "No valid session ID"
+        error that occurs when stateless mode is not properly configured.
+        """
         from redmine_mcp_server.main import mcp
 
         # The app is created in main.py which also creates the session manager
