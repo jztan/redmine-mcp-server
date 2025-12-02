@@ -83,7 +83,8 @@ if not REDMINE_URL:
 elif not REDMINE_API_KEY and not (REDMINE_USERNAME and REDMINE_PASSWORD):
     logger.warning(
         "No authentication configured. Redmine client will not be initialized. "
-        "Set either REDMINE_API_KEY or both REDMINE_USERNAME and REDMINE_PASSWORD in your .env file."
+        "Set either REDMINE_API_KEY or both REDMINE_USERNAME and "
+        "REDMINE_PASSWORD in your .env file."
     )
 
 if REDMINE_URL and (REDMINE_API_KEY or (REDMINE_USERNAME and REDMINE_PASSWORD)):
