@@ -38,13 +38,29 @@ from redminelib.exceptions import ResourceNotFoundError
 from mcp.server.fastmcp import FastMCP
 from .file_manager import AttachmentFileManager
 
-# Load environment variables from .env file
-load_dotenv(
-    dotenv_path=os.path.join(os.path.dirname(__file__), "..", "..", ".env")
-)  # Adjust path to .env
-
-# Configure logging (needed for SSL configuration warnings)
+# Configure logging (needed for SSL configuration warnings and initialization)
 logger = logging.getLogger(__name__)
+
+# Load environment variables from .env file
+# Try multiple locations: current working directory first, then package directory
+_env_loaded = False
+_env_search_paths = [
+    os.path.join(os.getcwd(), ".env"),  # Current working directory
+    os.path.join(os.path.dirname(__file__), "..", "..", ".env"),  # Package parent dir
+]
+
+for _env_path in _env_search_paths:
+    _resolved_path = os.path.abspath(_env_path)
+    if os.path.isfile(_resolved_path):
+        load_dotenv(dotenv_path=_resolved_path)
+        logger.info(f"Loaded .env file from: {_resolved_path}")
+        _env_loaded = True
+        break
+
+if not _env_loaded:
+    # Try default load_dotenv() which searches in CWD and parent directories
+    load_dotenv()
+    logger.debug("Using default dotenv search (no explicit .env file found)")
 
 # Load Redmine configuration
 REDMINE_URL = os.getenv("REDMINE_URL")
@@ -59,6 +75,17 @@ REDMINE_SSL_CLIENT_CERT = os.getenv("REDMINE_SSL_CLIENT_CERT")
 
 # Initialize Redmine client with SSL configuration
 redmine = None
+if not REDMINE_URL:
+    logger.warning(
+        "REDMINE_URL not set. Redmine client will not be initialized. "
+        "Ensure your .env file contains REDMINE_URL."
+    )
+elif not REDMINE_API_KEY and not (REDMINE_USERNAME and REDMINE_PASSWORD):
+    logger.warning(
+        "No authentication configured. Redmine client will not be initialized. "
+        "Set either REDMINE_API_KEY or both REDMINE_USERNAME and REDMINE_PASSWORD in your .env file."
+    )
+
 if REDMINE_URL and (REDMINE_API_KEY or (REDMINE_USERNAME and REDMINE_PASSWORD)):
     try:
         # Build requests configuration for SSL
