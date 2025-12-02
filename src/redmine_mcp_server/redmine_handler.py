@@ -39,9 +39,23 @@ from mcp.server.fastmcp import FastMCP
 from .file_manager import AttachmentFileManager
 
 # Load environment variables from .env file
-load_dotenv(
-    dotenv_path=os.path.join(os.path.dirname(__file__), "..", "..", ".env")
-)  # Adjust path to .env
+# Search order: current working directory first, then package directory
+_env_paths = [
+    Path.cwd() / ".env",  # User's current working directory (highest priority)
+    Path(__file__).parent.parent.parent / ".env",  # Package directory (fallback)
+]
+
+_env_loaded = False
+for _env_path in _env_paths:
+    if _env_path.exists():
+        load_dotenv(dotenv_path=str(_env_path))
+        print(f"Loaded .env from: {_env_path}")
+        _env_loaded = True
+        break
+
+if not _env_loaded:
+    # Try default load_dotenv() behavior as final fallback
+    load_dotenv()
 
 # Configure logging (needed for SSL configuration warnings)
 logger = logging.getLogger(__name__)
@@ -58,6 +72,23 @@ REDMINE_SSL_CERT = os.getenv("REDMINE_SSL_CERT")
 REDMINE_SSL_CLIENT_CERT = os.getenv("REDMINE_SSL_CLIENT_CERT")
 
 # Initialize Redmine client with SSL configuration
+# Provide helpful warnings for missing configuration
+if not REDMINE_URL:
+    print(
+        "WARNING: REDMINE_URL not set. "
+        "Please create a .env file in your working directory with REDMINE_URL defined."
+    )
+elif not (REDMINE_API_KEY or (REDMINE_USERNAME and REDMINE_PASSWORD)):
+    print(
+        "WARNING: No Redmine authentication configured. "
+        "Please set REDMINE_API_KEY or REDMINE_USERNAME/REDMINE_PASSWORD "
+        "in your .env file."
+    )
+
+# Initialize Redmine client
+# It's better to initialize it once if possible, or handle initialization within tools.
+# For simplicity, we'll initialize it globally here. If the environment variables
+# are missing, the client remains ``None`` so tools can handle it gracefully.
 redmine = None
 if REDMINE_URL and (REDMINE_API_KEY or (REDMINE_USERNAME and REDMINE_PASSWORD)):
     try:
