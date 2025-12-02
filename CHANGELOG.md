@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Redmine client not initialized when installed via pip** - Fixed `.env` file loading for installed packages
+  - `.env` file is now searched in the current working directory first, then falls back to the package directory
+  - Added warning messages when `REDMINE_URL` or authentication credentials are missing
+  - Added logging to indicate which `.env` file was loaded for easier debugging
+  - Fixes issue #40
+
 ### Security
 - **Removed private keys from repository** - Addresses GitGuardian secret exposure alert
   - Test SSL certificates now generated dynamically in CI/CD pipeline
