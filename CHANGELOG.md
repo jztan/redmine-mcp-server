@@ -6,6 +6,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] - 2025-12-02
+
+### Fixed
+- **Critical: Redmine client initialization failure when installed via pip** ([#40](https://github.com/jztan/redmine-mcp-server/issues/40))
+  - `.env` file is now loaded from the current working directory first, then falls back to package directory
+  - Previously, the server only looked for `.env` relative to the installed package location (site-packages), causing "Redmine client not initialized" errors for pip-installed users
+  - Added helpful warning messages when `REDMINE_URL` or authentication credentials are missing
+  - Removed redundant `load_dotenv()` call from `main.py` to avoid duplicate initialization
+
+### Added
+- **Regression Tests** - Added 8 new tests in `test_env_loading.py` to prevent future regressions:
+  - Tests for `.env` loading from current working directory
+  - Tests for warning messages when configuration is missing
+  - Tests for CWD precedence over package directory
+
+### Migration Notes
+- **No Breaking Changes** - Existing configurations continue to work
+- **Recommended** - Place your `.env` file in the directory where you run the server (current working directory)
+- **Fallback** - If no `.env` found in CWD, the package directory is checked as before
+
 ## [0.7.0] - 2025-11-29
 
 ### Added
