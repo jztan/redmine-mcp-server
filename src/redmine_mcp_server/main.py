@@ -22,6 +22,10 @@ app = mcp.streamable_http_app()
 
 def main():
     """Main entry point for the console script."""
+    # Environment variables are already loaded by redmine_handler.py at import time.
+    # These additional calls ensure any settings specific to the main entry point
+    # (like SERVER_HOST, SERVER_PORT) are also loaded if not already present.
+    load_dotenv()
     load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
 
     # Configure FastMCP settings for streamable HTTP transport

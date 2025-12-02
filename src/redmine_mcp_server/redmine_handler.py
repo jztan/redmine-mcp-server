@@ -39,9 +39,15 @@ from mcp.server.fastmcp import FastMCP
 from .file_manager import AttachmentFileManager
 
 # Load environment variables from .env file
+# First, try to load from current working directory (where user runs the server)
+# This is the standard behavior expected by users who place .env in their project directory
+load_dotenv()
+
+# Also try the package-relative path as fallback (for development environments)
+# This won't override already-loaded environment variables
 load_dotenv(
     dotenv_path=os.path.join(os.path.dirname(__file__), "..", "..", ".env")
-)  # Adjust path to .env
+)
 
 # Configure logging (needed for SSL configuration warnings)
 logger = logging.getLogger(__name__)
