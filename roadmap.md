@@ -2,7 +2,7 @@
 
 ## 🎯 Project Status
 
-**Current Version:** v0.7.1 (PyPI Published)
+**Current Version:** v0.8.0 (PyPI Published)
 **MCP Registry Status:** Published
 
 ### ✅ Completed Features
@@ -40,10 +40,11 @@
 - [x] 95% memory reduction with pagination
 - [x] 87% faster response times
 - [x] MCP security fix (CVE-2025-62518) via mcp v1.19.0 (v0.6.0)
-- [x] SSL/TLS certificate configuration support (v0.7.0+)
+- [x] SSL/TLS certificate configuration support (v0.8.0)
   - Self-signed certificates (`REDMINE_SSL_CERT`)
   - Mutual TLS/mTLS (`REDMINE_SSL_CLIENT_CERT`)
   - SSL verification control (`REDMINE_SSL_VERIFY`)
+  - Dynamic test certificate generation (removed private keys from repo)
 
 #### Documentation & Quality
 - [x] Complete API documentation with examples
@@ -91,4 +92,4 @@
 
 ---
 
-**Last Updated:** 2025-12-02 (v0.7.1)
+**Last Updated:** 2025-12-08 (v0.8.0)
