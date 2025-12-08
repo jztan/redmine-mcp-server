@@ -32,6 +32,10 @@ jobs:
           uv venv
           source .venv/bin/activate
           uv pip install -e .[test,dev]
+      - name: Generate test SSL certificates
+        run: |
+          chmod +x tests/fixtures/ssl/generate-test-certs.sh
+          tests/fixtures/ssl/generate-test-certs.sh
       - name: Run code quality checks
         run: |
           source .venv/bin/activate

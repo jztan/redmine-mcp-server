@@ -57,11 +57,21 @@ if not _env_loaded:
     # Try default load_dotenv() behavior as final fallback
     load_dotenv()
 
+# Configure logging (needed for SSL configuration warnings)
+logger = logging.getLogger(__name__)
+
+# Load Redmine configuration
 REDMINE_URL = os.getenv("REDMINE_URL")
 REDMINE_USERNAME = os.getenv("REDMINE_USERNAME")
 REDMINE_PASSWORD = os.getenv("REDMINE_PASSWORD")
 REDMINE_API_KEY = os.getenv("REDMINE_API_KEY")
 
+# SSL Configuration (optional)
+REDMINE_SSL_VERIFY = os.getenv("REDMINE_SSL_VERIFY", "true").lower() == "true"
+REDMINE_SSL_CERT = os.getenv("REDMINE_SSL_CERT")
+REDMINE_SSL_CLIENT_CERT = os.getenv("REDMINE_SSL_CLIENT_CERT")
+
+# Initialize Redmine client with SSL configuration
 # Provide helpful warnings for missing configuration
 if not REDMINE_URL:
     print(
@@ -82,18 +92,67 @@ elif not (REDMINE_API_KEY or (REDMINE_USERNAME and REDMINE_PASSWORD)):
 redmine = None
 if REDMINE_URL and (REDMINE_API_KEY or (REDMINE_USERNAME and REDMINE_PASSWORD)):
     try:
-        if REDMINE_API_KEY:
-            redmine = Redmine(REDMINE_URL, key=REDMINE_API_KEY)
-        else:
-            redmine = Redmine(
-                REDMINE_URL, username=REDMINE_USERNAME, password=REDMINE_PASSWORD
-            )
-    except Exception as e:
-        print(f"Error initializing Redmine client: {e}")
-        redmine = None
+        # Build requests configuration for SSL
+        requests_config = {}
 
-# Configure logging
-logger = logging.getLogger(__name__)
+        # SSL verification
+        if not REDMINE_SSL_VERIFY:
+            requests_config["verify"] = False
+            logger.warning("SSL verification is DISABLED - use only for development!")
+        elif REDMINE_SSL_CERT:
+            # Validate certificate file exists and resolve to absolute path
+            cert_path = Path(REDMINE_SSL_CERT).resolve()
+            if not cert_path.exists():
+                raise FileNotFoundError(
+                    f"SSL certificate not found: {REDMINE_SSL_CERT} "
+                    f"(resolved to: {cert_path})"
+                )
+            if not cert_path.is_file():
+                raise ValueError(
+                    f"SSL certificate path must be a file, not directory: "
+                    f"{cert_path}"
+                )
+            requests_config["verify"] = str(cert_path)
+            logger.info(f"Using custom SSL certificate: {cert_path}")
+
+        # Client certificate for mutual TLS
+        if REDMINE_SSL_CLIENT_CERT:
+            if "," in REDMINE_SSL_CLIENT_CERT:
+                # Tuple format: cert,key
+                cert, key = REDMINE_SSL_CLIENT_CERT.split(",", 1)
+                requests_config["cert"] = (cert.strip(), key.strip())
+                logger.info("Using client certificate for mutual TLS")
+            else:
+                # Single file format
+                requests_config["cert"] = REDMINE_SSL_CLIENT_CERT
+                logger.info("Using client certificate for mutual TLS")
+
+        # Initialize with SSL configuration
+        if REDMINE_API_KEY:
+            if requests_config:
+                redmine = Redmine(
+                    REDMINE_URL, key=REDMINE_API_KEY, requests=requests_config
+                )
+            else:
+                redmine = Redmine(REDMINE_URL, key=REDMINE_API_KEY)
+        else:
+            if requests_config:
+                redmine = Redmine(
+                    REDMINE_URL,
+                    username=REDMINE_USERNAME,
+                    password=REDMINE_PASSWORD,
+                    requests=requests_config,
+                )
+            else:
+                redmine = Redmine(
+                    REDMINE_URL,
+                    username=REDMINE_USERNAME,
+                    password=REDMINE_PASSWORD,
+                )
+        logger.info("Redmine client initialized successfully")
+    except Exception as e:
+        logger.error(f"Error initializing Redmine client: {e}")
+        redmine = None
 
 # Initialize FastMCP server
 mcp = FastMCP("redmine_mcp_tools")

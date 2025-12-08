@@ -1,0 +1,7 @@
+# All generated certificate files - generated dynamically in CI/CD
+*.pem
+*.srl
+*.csr
+
+# Only the generation script is committed
+!generate-test-certs.sh

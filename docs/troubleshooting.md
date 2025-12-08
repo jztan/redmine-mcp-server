@@ -52,6 +52,8 @@ This guide covers common issues and solutions for the Redmine MCP Server.
 **Symptoms:**
 - "SSL certificate verify failed" errors
 - "CERTIFICATE_VERIFY_FAILED" messages
+- "SSL: CERTIFICATE_VERIFY_FAILED" in connection errors
+- "SSLError" or "CertificateError" messages
 
 **Solutions:**
 
@@ -62,8 +64,139 @@ This guide covers common issues and solutions for the Redmine MCP Server.
    ```
 
 2. **Self-Signed Certificates**
-   - If using self-signed certificates, you may need to configure SSL verification
-   - Contact your system administrator for proper SSL certificates
+
+   If your Redmine server uses a self-signed certificate or internal CA, configure the custom CA certificate:
+
+   ```bash
+   # In .env file
+   REDMINE_URL=https://redmine.company.com
+   REDMINE_API_KEY=your_api_key
+   REDMINE_SSL_CERT=/path/to/ca-certificate.crt
+   ```
+
+   **Supported certificate formats:** `.pem`, `.crt`, `.cer`
+
+   **Obtaining the certificate:**
+   ```bash
+   # Export certificate from browser (Chrome/Firefox)
+   # Or get from system administrator
+
+   # Or download from server (if accessible)
+   openssl s_client -connect redmine.company.com:443 -showcerts < /dev/null 2>/dev/null | \
+     openssl x509 -outform PEM > ca-cert.pem
+   ```
+
+3. **Mutual TLS (Client Certificates)**
+
+   For environments requiring client certificate authentication:
+
+   **Option A: Separate certificate and key files**
+   ```bash
+   # In .env file
+   REDMINE_URL=https://secure.redmine.com
+   REDMINE_API_KEY=your_api_key
+   REDMINE_SSL_CERT=/path/to/ca-bundle.pem
+   REDMINE_SSL_CLIENT_CERT=/path/to/cert.pem,/path/to/key.pem
+   ```
+
+   **Option B: Combined certificate file**
+   ```bash
+   # In .env file
+   REDMINE_SSL_CLIENT_CERT=/path/to/combined-cert.pem
+   ```
+
+   **Important:** Private keys must be unencrypted (Python requests library requirement)
+
+   **Removing password from encrypted key:**
+   ```bash
+   openssl rsa -in encrypted-key.pem -out unencrypted-key.pem
+   ```
+
+4. **Disable SSL Verification (Development Only)**
+
+   ⚠️ **WARNING:** Only use in development/testing environments!
+
+   ```bash
+   # In .env file
+   REDMINE_SSL_VERIFY=false
+   ```
+
+   Disabling SSL verification makes your connection vulnerable to man-in-the-middle attacks. Never use in production.
+
+5. **Certificate File Not Found**
+
+   **Symptoms:**
+   - "SSL certificate not found: /path/to/cert.pem"
+   - "FileNotFoundError" for certificate path
+
+   **Solutions:**
+   - Verify the certificate file path is correct
+   - Use absolute paths instead of relative paths
+   - Check file permissions (must be readable)
+   ```bash
+   # Verify certificate file exists
+   ls -la /path/to/ca-cert.pem
+
+   # Check file permissions
+   chmod 644 /path/to/ca-cert.pem
+   ```
+
+6. **Certificate Path is a Directory**
+
+   **Symptoms:**
+   - "SSL certificate path must be a file, not directory"
+
+   **Solutions:**
+   - Specify the actual certificate file, not the directory
+   ```bash
+   # Wrong
+   REDMINE_SSL_CERT=/etc/ssl/certs/
+
+   # Correct
+   REDMINE_SSL_CERT=/etc/ssl/certs/ca-bundle.crt
+   ```
+
+7. **Certificate Validation Errors with Custom CA**
+
+   **Symptoms:**
+   - Still getting SSL errors even with `REDMINE_SSL_CERT` configured
+
+   **Solutions:**
+   - Verify you have the correct CA certificate (not the server certificate)
+   - Ensure certificate chain is complete
+   - Test certificate validation:
+   ```bash
+   # Test SSL connection with custom CA
+   openssl s_client -connect redmine.company.com:443 \
+     -CAfile /path/to/ca-cert.pem
+   ```
+
+8. **Docker Deployment SSL Configuration**
+
+   When using Docker, mount certificates into container:
+
+   ```bash
+   # In docker-compose.yml
+   volumes:
+     - ./certs:/certs:ro
+   ```
+
+   ```bash
+   # In .env.docker
+   REDMINE_SSL_CERT=/certs/ca-cert.pem
+   REDMINE_SSL_CLIENT_CERT=/certs/client-cert.pem,/certs/client-key.pem
+   ```
+
+**Troubleshooting Checklist:**
+- [ ] Verified `REDMINE_URL` uses `https://`
+- [ ] Certificate file exists at specified path
+- [ ] Certificate file is readable (permissions 644 or similar)
+- [ ] Using correct CA certificate (not server certificate)
+- [ ] For mutual TLS: client private key is unencrypted
+- [ ] For Docker: certificates mounted into container
+- [ ] Tested SSL connection with `openssl s_client`
+
+**See also:** [README.md - SSL Certificate Configuration](../README.md#ssl-certificate-configuration) for configuration examples.
 
 ---
 

@@ -6,6 +6,82 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2025-12-08
+
+### Security
+- **Removed private keys from repository** - Addresses GitGuardian secret exposure alert
+  - Test SSL certificates now generated dynamically in CI/CD pipeline
+  - Added `generate-test-certs.sh` script for local and CI certificate generation
+  - Updated `.gitignore` to exclude all generated certificate files
+  - Private keys no longer stored in version control
+
+### Added
+- **SSL Certificate Configuration** - Comprehensive SSL/TLS support for secure Redmine connections
+  - **Self-Signed Certificates** - `REDMINE_SSL_CERT` environment variable for custom CA certificates
+    - Support for `.pem`, `.crt`, `.cer` certificate formats
+    - Path validation with existence and file type checks
+    - Clear error messages for troubleshooting
+  - **Mutual TLS (mTLS)** - `REDMINE_SSL_CLIENT_CERT` environment variable for client certificate authentication
+    - Support for separate certificate and key files (comma-separated format)
+    - Support for combined certificate files
+    - Compatibility with unencrypted private keys (Python requests requirement)
+  - **SSL Verification Control** - `REDMINE_SSL_VERIFY` environment variable to enable/disable verification
+    - Defaults to `true` for security (secure by default)
+    - Warning logs when SSL verification is disabled
+    - Development/testing flexibility with explicit configuration
+  - **Integration Testing** - 9 comprehensive integration tests with real SSL certificates
+    - Test certificate generation using OpenSSL
+    - Validation of all SSL configuration scenarios
+    - Certificate path resolution and error handling tests
+
+### Changed
+- Enhanced Redmine client initialization with SSL configuration support
+- Updated environment variable parsing for SSL options
+- Improved error handling for SSL certificate validation
+
+### Improved
+- **Security** - Secure by default with SSL verification enabled
+  - Certificate path validation prevents configuration errors
+  - Clear warnings for insecure configurations (SSL disabled)
+  - Comprehensive logging for SSL setup and errors
+- **Flexibility** - Support for various SSL deployment scenarios
+  - Self-signed certificates for internal infrastructure
+  - Mutual TLS for high-security environments
+  - Docker-compatible certificate mounting
+- **Documentation** - Extensive updates across all documentation:
+  - **README.md** - New SSL Certificate Configuration section with examples
+    - Environment variables table updated with SSL options
+    - Collapsible sections for different SSL scenarios
+    - Link to troubleshooting guide for SSL issues
+  - **docs/troubleshooting.md** - Comprehensive SSL troubleshooting section
+    - 8 detailed troubleshooting scenarios with solutions
+    - OpenSSL command examples for certificate validation
+    - Docker deployment SSL configuration guide
+    - Troubleshooting checklist for common issues
+  - **docs/tool-reference.md** - New Security Best Practices section
+    - SSL/TLS configuration best practices
+    - Authentication security guidelines
+    - File handling security features
+    - Docker deployment security recommendations
+
+### Technical Details
+- **Test Coverage** - Added 29 comprehensive tests (20 unit + 9 integration)
+  - Unit tests for environment variable parsing and SSL configuration logic
+  - Integration tests with real certificate files
+  - Error handling tests for missing/invalid certificates
+- **Certificate Validation** - Robust path validation with clear error messages
+  - `Path.resolve()` for symlink resolution
+  - File existence and type checks
+  - Original and resolved paths in error messages
+- **Client Certificate Support** - Flexible format handling
+  - Split comma-separated paths with `maxsplit=1`
+  - Strip whitespace from paths
+  - Support both tuple and single file formats
+- **Code Quality** - All changes PEP 8 compliant and formatted with Black
+- **Backward Compatibility** - Fully compatible with existing deployments
+  - SSL verification enabled by default (same as before)
+  - No changes required for users without custom SSL needs
+  - Optional SSL configuration for advanced scenarios
 ## [0.7.1] - 2025-12-02
 
 ### Fixed
@@ -447,6 +523,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Works with Docker and docker-compose
 - Tested on macOS and Linux environments
 
+[0.8.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.8.0
+[0.7.1]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.7.1
 [0.7.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.7.0
 [0.6.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.6.0
 [0.5.2]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.5.2
