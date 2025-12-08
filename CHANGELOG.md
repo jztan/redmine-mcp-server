@@ -64,6 +64,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - File handling security features
     - Docker deployment security recommendations
 
+### Fixed
+- **CI/CD** - Added SSL certificate generation step to PyPI publish workflow
+  - Tests were failing in GitHub Actions due to missing test certificates
+  - Certificate generation now runs before tests in all CI workflows
+
 ### Technical Details
 - **Test Coverage** - Added 29 comprehensive tests (20 unit + 9 integration)
   - Unit tests for environment variable parsing and SSL configuration logic
