@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Lock closed issues
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const daysBeforeLock = 7;
