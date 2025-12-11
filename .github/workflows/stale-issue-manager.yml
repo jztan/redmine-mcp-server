@@ -1,0 +1,129 @@
+name: "Manage Stale Issues"
+
+on:
+  schedule:
+    - cron: "0 10 * * *"  # Daily at 10am UTC
+  workflow_dispatch:  # Manual trigger
+
+permissions:
+  issues: write
+
+concurrency:
+  group: stale-issue-manager
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Manage stale issues
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const daysBeforeStale = 14;
+            const daysBeforeClose = 16; // Additional days after warning
+            const exemptLabels = ['pinned'];
+
+            const warningComment = `This issue has been inactive for ${daysBeforeStale} days. If the issue is still occurring, please comment to let us know. Otherwise, this issue will be automatically closed in ${daysBeforeClose} days for housekeeping purposes.`;
+
+            const closingComment = `This issue has been automatically closed due to ${daysBeforeStale + daysBeforeClose} days of inactivity. If you're still experiencing this issue, please open a new issue with updated information.`;
+
+            const now = new Date();
+            const staleDate = new Date(now - daysBeforeStale * 24 * 60 * 60 * 1000);
+            const closeDate = new Date(now - daysBeforeClose * 24 * 60 * 60 * 1000);
+
+            let issuesWarned = 0;
+            let issuesClosed = 0;
+            let page = 1;
+
+            while (true) {
+              const { data: issues } = await github.rest.issues.listForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: 'open',
+                sort: 'updated',
+                direction: 'asc',
+                per_page: 100,
+                page: page
+              });
+
+              if (issues.length === 0) break;
+
+              for (const issue of issues) {
+                // Skip pull requests
+                if (issue.pull_request) continue;
+
+                // Skip locked issues
+                if (issue.locked) continue;
+
+                // Skip exempt labels
+                const labels = issue.labels.map(l => l.name);
+                if (exemptLabels.some(exempt => labels.includes(exempt))) continue;
+
+                const updatedAt = new Date(issue.updated_at);
+
+                // If recently updated, we can stop (issues are sorted oldest first)
+                if (updatedAt > staleDate) break;
+
+                // Check for existing bot comment
+                const { data: comments } = await github.rest.issues.listComments({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  per_page: 100
+                });
+
+                const botComment = comments.find(c =>
+                  c.user.login === 'github-actions[bot]' &&
+                  c.body.includes('has been inactive for')
+                );
+
+                if (botComment) {
+                  // Check if bot comment is old enough to close
+                  const commentDate = new Date(botComment.created_at);
+                  if (commentDate < closeDate) {
+                    // Close the issue
+                    await github.rest.issues.createComment({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      issue_number: issue.number,
+                      body: closingComment
+                    });
+
+                    await github.rest.issues.update({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      issue_number: issue.number,
+                      state: 'closed',
+                      state_reason: 'not_planned'
+                    });
+
+                    issuesClosed++;
+                    console.log(`Closed issue #${issue.number}: ${issue.title}`);
+                  }
+                } else {
+                  // Add warning comment and label
+                  await github.rest.issues.createComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: issue.number,
+                    body: warningComment
+                  });
+
+                  await github.rest.issues.addLabels({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: issue.number,
+                    labels: ['autoclose']
+                  });
+
+                  issuesWarned++;
+                  console.log(`Warned issue #${issue.number}: ${issue.title}`);
+                }
+              }
+
+              page++;
+            }
+
+            console.log(`\nSummary:`);
+            console.log(`- Issues warned: ${issuesWarned}`);
+            console.log(`- Issues closed: ${issuesClosed}`);
