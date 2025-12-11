@@ -7,10 +7,12 @@ on:
 
   push:
     branches:
+      - main
+      - develop
       - feature/*
       - release/*
       - hotfix/*
-      
+
   workflow_dispatch:  # 👈 allows manual run from GitHub UI
 
 jobs:
@@ -41,7 +43,27 @@ jobs:
           source .venv/bin/activate
           flake8 src/ --max-line-length=88
           black --check src/ --line-length=88
-      - name: Run tests
+      - name: Run tests with coverage
         run: |
           source .venv/bin/activate
-          python tests/run_tests.py --all --verbose
+          python -m pytest --cov=src/redmine_mcp_server --cov-report=xml --cov-report=term -m "not integration" tests/
+      - name: Extract coverage percentage
+        if: matrix.python-version == '3.13'
+        id: coverage
+        run: |
+          source .venv/bin/activate
+          COVERAGE=$(python -c "import xml.etree.ElementTree as ET; tree = ET.parse('coverage.xml'); print(round(float(tree.getroot().attrib['line-rate']) * 100))")
+          echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
+          echo "Coverage: $COVERAGE%"
+      - name: Update coverage badge
+        if: matrix.python-version == '3.13' && github.ref == 'refs/heads/main'
+        uses: schneegans/dynamic-badges-action@v1.7.0
+        with:
+          auth: ${{ secrets.GIST_TOKEN }}
+          gistID: ${{ vars.COVERAGE_GIST_ID }}
+          filename: coverage.json
+          label: coverage
+          message: ${{ steps.coverage.outputs.percentage }}%
+          valColorRange: ${{ steps.coverage.outputs.percentage }}
+          minColorRange: 50
+          maxColorRange: 90
