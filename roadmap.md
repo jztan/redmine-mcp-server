@@ -15,6 +15,8 @@
 - [x] Comprehensive test suite (unit, integration, security tests)
 - [x] GitHub Actions CI/CD pipeline
 - [x] Stale issue management workflow (auto-close inactive issues)
+- [x] Lock closed issues workflow (prevent zombie threads)
+- [x] Remove autoclose label workflow (respond to user activity)
 - [x] PyPI package publishing as `redmine-mcp-server` (v0.4.2)
 - [x] MCP Registry preparation with validation (v0.4.3)
 - [x] Console script entry point for easy execution
