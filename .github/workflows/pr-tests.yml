@@ -7,10 +7,12 @@ on:
 
   push:
     branches:
+      - master
+      - develop
       - feature/*
       - release/*
       - hotfix/*
-      
+
   workflow_dispatch:  # 👈 allows manual run from GitHub UI
 
 jobs:
@@ -21,8 +23,8 @@ jobs:
         python-version: ['3.10', '3.11', '3.12', '3.13']
       fail-fast: false
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install uv
@@ -41,7 +43,15 @@ jobs:
           source .venv/bin/activate
           flake8 src/ --max-line-length=88
           black --check src/ --line-length=88
-      - name: Run tests
+      - name: Run tests with coverage
         run: |
           source .venv/bin/activate
-          python tests/run_tests.py --all --verbose
+          python -m pytest --cov=src/redmine_mcp_server --cov-report=xml --cov-report=term -m "not integration" tests/
+      - name: Upload coverage to Codecov
+        if: matrix.python-version == '3.13' && github.ref == 'refs/heads/master'
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml
+          fail_ci_if_error: false
+          verbose: true

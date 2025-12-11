@@ -6,6 +6,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] - 2025-12-11
+
+### Added
+- **Test Coverage Badge** - Added test coverage tracking via Codecov integration
+- **Unit Tests for AttachmentFileManager** - Comprehensive test coverage for file management module
+
+### Changed
+- **Dependency Updates** - Updated core and development dependencies to latest versions
+  - `python-dotenv` upgraded from 1.1.0 to 1.2.1
+  - `pytest-mock` upgraded from 3.14.1 to 3.15.1
+  - `pytest-cov` upgraded from 6.2.1 to 7.0.0
+  - `pytest` upgraded from 8.4.0 to 9.0.2
+  - `uvicorn` upgraded from 0.34.2 to 0.38.0
+  - `pytest-asyncio` upgraded from 1.0.0 to 1.3.0
+  - `black` upgraded from 25.9.0 to 25.12.0
+- **CI/CD Improvements** - Updated GitHub Actions dependencies
+  - `actions/checkout` upgraded from 4 to 6
+  - `actions/setup-python` upgraded from 5 to 6
+  - `actions/github-script` upgraded from 7 to 8
+
+### Improved
+- **Issue Management Workflows** - Added GitHub issue templates and automation
+  - Bug report and feature request issue templates
+  - Stale issue manager workflow for automatic issue cleanup
+  - Lock closed issues workflow
+  - Auto-close label removal workflow
+- **Dependabot Integration** - Configured automated dependency updates for uv, GitHub Actions, and Docker
+
 ## [0.8.0] - 2025-12-08
 
 ### Security
@@ -528,6 +556,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Works with Docker and docker-compose
 - Tested on macOS and Linux environments
 
+[0.8.1]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.8.1
 [0.8.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.8.0
 [0.7.1]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.7.1
 [0.7.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.7.0

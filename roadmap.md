@@ -2,7 +2,7 @@
 
 ## 🎯 Project Status
 
-**Current Version:** v0.7.1 (PyPI Published)
+**Current Version:** v0.8.0 (PyPI Published)
 **MCP Registry Status:** Published
 
 ### ✅ Completed Features
@@ -14,6 +14,9 @@
 - [x] Enhanced error handling and structured logging
 - [x] Comprehensive test suite (unit, integration, security tests)
 - [x] GitHub Actions CI/CD pipeline
+- [x] Stale issue management workflow (auto-close inactive issues)
+- [x] Lock closed issues workflow (prevent zombie threads)
+- [x] Remove autoclose label workflow (respond to user activity)
 - [x] PyPI package publishing as `redmine-mcp-server` (v0.4.2)
 - [x] MCP Registry preparation with validation (v0.4.3)
 - [x] Console script entry point for easy execution
@@ -40,10 +43,11 @@
 - [x] 95% memory reduction with pagination
 - [x] 87% faster response times
 - [x] MCP security fix (CVE-2025-62518) via mcp v1.19.0 (v0.6.0)
-- [x] SSL/TLS certificate configuration support (v0.7.0+)
+- [x] SSL/TLS certificate configuration support (v0.8.0)
   - Self-signed certificates (`REDMINE_SSL_CERT`)
   - Mutual TLS/mTLS (`REDMINE_SSL_CLIENT_CERT`)
   - SSL verification control (`REDMINE_SSL_VERIFY`)
+  - Dynamic test certificate generation (removed private keys from repo)
 
 #### Documentation & Quality
 - [x] Complete API documentation with examples
@@ -65,13 +69,7 @@
 
 ### 📋 Planned Features
 
-#### Phase 4: Growth-Focused Improvements
-- [ ] **Example Claude Code recipes** (HIGH PRIORITY - drives adoption):
-  - Sprint Planning Assistant
-  - Daily Standup Reporter
-  - Issue Triage Helper
-  - Release Notes Generator
-  - Project Health Check
+#### Phase 4: Quality Improvements
 - [ ] Clear connection error messages:
   - "Failed to connect to Redmine" → "Cannot connect to {REDMINE_URL}. Check: 1) URL is correct, 2) Network access, 3) Redmine is running"
   - "401 Unauthorized" → "Authentication failed. Check your API key or username/password in .env"
@@ -91,4 +89,4 @@
 
 ---
 
-**Last Updated:** 2025-12-02 (v0.7.1)
+**Last Updated:** 2025-12-11 (v0.8.0)
