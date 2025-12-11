@@ -1,0 +1,85 @@
+name: "Lock Closed Issues"
+
+on:
+  schedule:
+    - cron: "0 14 * * *"  # Daily at 2pm UTC
+  workflow_dispatch:  # Manual trigger
+
+permissions:
+  issues: write
+
+concurrency:
+  group: lock-closed-issues
+
+jobs:
+  lock:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Lock closed issues
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const daysBeforeLock = 7;
+
+            const lockComment = `This issue has been automatically locked since it was closed and has not had any activity for ${daysBeforeLock} days.`;
+
+            const now = new Date();
+            const lockDate = new Date(now - daysBeforeLock * 24 * 60 * 60 * 1000);
+
+            let issuesLocked = 0;
+            let page = 1;
+
+            while (true) {
+              const { data: issues } = await github.rest.issues.listForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: 'closed',
+                sort: 'updated',
+                direction: 'asc',
+                per_page: 100,
+                page: page
+              });
+
+              if (issues.length === 0) break;
+
+              for (const issue of issues) {
+                // Skip pull requests
+                if (issue.pull_request) continue;
+
+                // Skip already locked issues
+                if (issue.locked) continue;
+
+                const updatedAt = new Date(issue.updated_at);
+
+                // If recently updated, we can stop (issues are sorted oldest first)
+                if (updatedAt > lockDate) break;
+
+                try {
+                  // Add lock comment
+                  await github.rest.issues.createComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: issue.number,
+                    body: lockComment
+                  });
+
+                  // Lock the issue
+                  await github.rest.issues.lock({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: issue.number,
+                    lock_reason: 'resolved'
+                  });
+
+                  issuesLocked++;
+                  console.log(`Locked issue #${issue.number}: ${issue.title}`);
+                } catch (error) {
+                  console.error(`Failed to lock issue #${issue.number}: ${error.message}`);
+                }
+              }
+
+              page++;
+            }
+
+            console.log(`\nSummary:`);
+            console.log(`- Issues locked: ${issuesLocked}`);
