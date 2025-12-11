@@ -47,23 +47,11 @@ jobs:
         run: |
           source .venv/bin/activate
           python -m pytest --cov=src/redmine_mcp_server --cov-report=xml --cov-report=term -m "not integration" tests/
-      - name: Extract coverage percentage
-        if: matrix.python-version == '3.13'
-        id: coverage
-        run: |
-          source .venv/bin/activate
-          COVERAGE=$(python -c "import xml.etree.ElementTree as ET; tree = ET.parse('coverage.xml'); print(round(float(tree.getroot().attrib['line-rate']) * 100))")
-          echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
-          echo "Coverage: $COVERAGE%"
-      - name: Update coverage badge
+      - name: Upload coverage to Codecov
         if: matrix.python-version == '3.13' && github.ref == 'refs/heads/master'
-        uses: schneegans/dynamic-badges-action@v1.7.0
+        uses: codecov/codecov-action@v5
         with:
-          auth: ${{ secrets.GIST_TOKEN }}
-          gistID: ${{ vars.COVERAGE_GIST_ID }}
-          filename: coverage.json
-          label: coverage
-          message: ${{ steps.coverage.outputs.percentage }}%
-          valColorRange: ${{ steps.coverage.outputs.percentage }}
-          minColorRange: 50
-          maxColorRange: 90
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml
+          fail_ci_if_error: false
+          verbose: true
