@@ -1152,46 +1152,6 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
 
 
 @mcp.tool()
-async def download_redmine_attachment(
-    attachment_id: int,
-    save_dir: str = "attachments",  # Keep compatibility with current signature
-    expires_hours: int = None,
-) -> Dict[str, Any]:
-    """Download a Redmine attachment and return HTTP download URL.
-
-    ⚠️  DEPRECATED: This function will be removed in v0.5.0
-    📝 Use get_redmine_attachment_download_url(attachment_id) instead
-
-    SECURITY WARNING: save_dir parameter allows path traversal attacks.
-    expires_hours parameter exposes server policies to clients.
-
-    Args:
-        attachment_id: The ID of the attachment to download
-        save_dir: DEPRECATED - Storage controlled by server configuration
-        expires_hours: DEPRECATED - Expiry controlled by server configuration
-
-    Returns:
-        Same format as get_redmine_attachment_download_url()
-    """
-    # Log deprecation warning
-    logger.warning(
-        f"download_redmine_attachment is DEPRECATED and will be removed in v0.5.0. "
-        f"Use get_redmine_attachment_download_url({attachment_id}) instead. "
-        f"Called with save_dir='{save_dir}', expires_hours={expires_hours}"
-    )
-
-    # Security validation for save_dir parameter
-    if save_dir != "attachments":
-        logger.error(
-            f"SECURITY: Rejected save_dir parameter '{save_dir}' - "
-            f"potential path traversal attack. Using server default."
-        )
-
-    # Delegate to secure implementation (ignoring deprecated parameters)
-    return await get_redmine_attachment_download_url(attachment_id)
-
-
-@mcp.tool()
 async def get_redmine_attachment_download_url(
     attachment_id: int,
 ) -> Dict[str, Any]:

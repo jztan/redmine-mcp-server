@@ -242,7 +242,7 @@ class TestRedmineIntegration:
             pytest.skip("Redmine client not initialized")
 
         from redmine_mcp_server.redmine_handler import (
-            download_redmine_attachment,
+            get_redmine_attachment_download_url,
             create_redmine_issue,
         )
         import tempfile
@@ -345,9 +345,9 @@ class TestRedmineIntegration:
                     os.unlink(test_file_path)
 
             # Now test downloading the attachment
-            result = await download_redmine_attachment(attachment_id, str(tmp_path))
+            result = await get_redmine_attachment_download_url(attachment_id)
 
-            # Test the current API format (HTTP download URLs, not file paths)
+            # Test the API format (HTTP download URLs)
             assert "download_url" in result
             assert "filename" in result
             assert "content_type" in result
@@ -361,9 +361,7 @@ class TestRedmineIntegration:
             assert "/files/" in result["download_url"]
 
             # Verify file was actually downloaded to the attachments directory
-            # Note: Due to security fix, files are saved to default "attachments"
-            # directory regardless of save_dir parameter (deprecated and ignored)
-            attachments_dir = "attachments"  # Always uses server default now
+            attachments_dir = "attachments"
             if os.path.exists(attachments_dir):
                 # Check that some file was created (UUID directory structure)
                 has_files = any(
