@@ -38,6 +38,9 @@ from redminelib.exceptions import ResourceNotFoundError, VersionMismatchError
 from mcp.server.fastmcp import FastMCP
 from .file_manager import AttachmentFileManager
 
+# Configure logging
+logger = logging.getLogger(__name__)
+
 # Load environment variables from .env file
 # Search order: current working directory first, then package directory
 _env_paths = [
@@ -49,16 +52,13 @@ _env_loaded = False
 for _env_path in _env_paths:
     if _env_path.exists():
         load_dotenv(dotenv_path=str(_env_path))
-        print(f"Loaded .env from: {_env_path}")
+        logger.info(f"Loaded .env from: {_env_path}")
         _env_loaded = True
         break
 
 if not _env_loaded:
     # Try default load_dotenv() behavior as final fallback
     load_dotenv()
-
-# Configure logging (needed for SSL configuration warnings)
-logger = logging.getLogger(__name__)
 
 # Load Redmine configuration
 REDMINE_URL = os.getenv("REDMINE_URL")

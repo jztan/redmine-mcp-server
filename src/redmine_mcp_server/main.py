@@ -12,9 +12,29 @@ Modules:
     - .redmine_handler: Contains the MCP server logic with FastMCP integration.
 """
 
+import logging
 import os
+from importlib.metadata import version, PackageNotFoundError
 
-from .redmine_handler import mcp
+# Configure basic logging before importing modules that log during init
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)-8s %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+
+from .redmine_handler import mcp  # noqa: E402
+
+logger = logging.getLogger(__name__)
+
+
+def get_version() -> str:
+    """Get package version from metadata."""
+    try:
+        return version("redmine-mcp-server")
+    except PackageNotFoundError:
+        return "dev"
+
 
 # Export the Starlette/FastAPI app for testing and external use
 app = mcp.streamable_http_app()
@@ -23,6 +43,10 @@ app = mcp.streamable_http_app()
 def main():
     """Main entry point for the console script."""
     # Note: .env is already loaded during redmine_handler import
+
+    # Log version at startup
+    server_version = get_version()
+    logger.info(f"Redmine MCP Server v{server_version}")
 
     # Configure FastMCP settings for streamable HTTP transport
     mcp.settings.host = os.getenv("SERVER_HOST", "127.0.0.1")
