@@ -5,17 +5,15 @@ This module contains integration tests that test the actual connection
 to Redmine and the overall functionality of the MCP server.
 """
 
-import pytest
-import asyncio
 import os
 import sys
-from unittest.mock import patch
-import httpx
+
+import pytest
 
 # Add the src directory to the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from redmine_mcp_server.redmine_handler import redmine, REDMINE_URL
+from redmine_mcp_server.redmine_handler import redmine, REDMINE_URL  # noqa: E402
 
 
 class TestRedmineIntegration:
@@ -32,9 +30,8 @@ class TestRedmineIntegration:
             # Try to access projects - this will test authentication
             projects = redmine.project.all()
             assert projects is not None
-            print(
-                f"Successfully connected to Redmine. Found {len(list(projects))} projects."
-            )
+            project_count = len(list(projects))
+            print(f"Successfully connected to Redmine. Found {project_count} projects.")
         except Exception as e:
             pytest.fail(f"Failed to connect to Redmine: {e}")
 
@@ -91,7 +88,7 @@ class TestRedmineIntegration:
                     if issues:
                         test_issue_id = issues[0].id
                         break
-                except:
+                except Exception:
                     continue
 
             if test_issue_id is None:
@@ -314,9 +311,11 @@ class TestRedmineIntegration:
                 )
 
                 if response.status_code != 201:
-                    pytest.skip(
-                        f"Failed to upload attachment: {response.status_code} - {response.text}"
+                    skip_msg = (
+                        f"Failed to upload attachment: "
+                        f"{response.status_code} - {response.text}"
                     )
+                    pytest.skip(skip_msg)
 
                 upload_token = response.json()["upload"]["token"]
 
@@ -362,8 +361,8 @@ class TestRedmineIntegration:
             assert "/files/" in result["download_url"]
 
             # Verify file was actually downloaded to the attachments directory
-            # Note: Due to security fix, files are always saved to default "attachments" directory
-            # regardless of the save_dir parameter (which is deprecated and ignored)
+            # Note: Due to security fix, files are saved to default "attachments"
+            # directory regardless of save_dir parameter (deprecated and ignored)
             attachments_dir = "attachments"  # Always uses server default now
             if os.path.exists(attachments_dir):
                 # Check that some file was created (UUID directory structure)

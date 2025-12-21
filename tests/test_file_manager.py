@@ -8,7 +8,7 @@ import json
 import pytest
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from redmine_mcp_server.file_manager import AttachmentFileManager
 
@@ -230,7 +230,9 @@ class TestCleanupExpiredFilesHappyPath:
         expired_dir = create_attachment(
             tmp_path, "uuid-expired", expired_content, expired_time
         )
-        valid_dir = create_attachment(tmp_path, "uuid-valid", valid_content, future_time)
+        valid_dir = create_attachment(
+            tmp_path, "uuid-valid", valid_content, future_time
+        )
 
         result = file_manager.cleanup_expired_files()
 

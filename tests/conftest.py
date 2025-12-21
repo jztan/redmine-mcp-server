@@ -11,7 +11,7 @@ def pytest_configure(config):
     """Configure pytest with custom markers."""
     config.addinivalue_line(
         "markers",
-        "integration: mark tests as integration tests (require actual Redmine connection)",
+        "integration: mark tests as integration tests (require Redmine)",
     )
     config.addinivalue_line(
         "markers",

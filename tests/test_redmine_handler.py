@@ -5,26 +5,23 @@ This module contains unit tests for the Redmine MCP server tools,
 including tests for project listing and issue retrieval functionality.
 """
 
-import pytest
-import asyncio
-import uuid
-from unittest.mock import Mock, patch, MagicMock, mock_open
-from typing import Dict, Any, List
 import os
 import sys
+import uuid
+
+import pytest
+from unittest.mock import AsyncMock, Mock, patch, MagicMock, mock_open
 
 # Add the src directory to the path so we can import our modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from redmine_mcp_server.redmine_handler import (
+from redmine_mcp_server.redmine_handler import (  # noqa: E402
     get_redmine_issue,
     list_redmine_projects,
     summarize_project_status,
     _analyze_issues,
-    _issue_to_dict,
-    _issue_to_dict_selective,
 )
-from redminelib.exceptions import ResourceNotFoundError
+from redminelib.exceptions import ResourceNotFoundError  # noqa: E402
 
 
 class TestRedmineHandler:
@@ -553,8 +550,8 @@ class TestRedmineHandler:
         assert result["pagination"]["total"] == 150
         assert result["pagination"]["limit"] == 10
         assert result["pagination"]["offset"] == 25
-        assert result["pagination"]["has_next"] == True
-        assert result["pagination"]["has_previous"] == True
+        assert result["pagination"]["has_next"] is True
+        assert result["pagination"]["has_previous"] is True
         assert result["pagination"]["next_offset"] == 35
 
     @pytest.mark.asyncio
@@ -638,8 +635,8 @@ class TestRedmineHandler:
             limit=10, offset=25, include_pagination_info=True
         )
         pagination = result["pagination"]
-        assert pagination["has_next"] == True
-        assert pagination["has_previous"] == True
+        assert pagination["has_next"] is True
+        assert pagination["has_previous"] is True
         assert pagination["next_offset"] == 35
         assert pagination["previous_offset"] == 15
 
@@ -648,8 +645,8 @@ class TestRedmineHandler:
             limit=10, offset=0, include_pagination_info=True
         )
         pagination = result["pagination"]
-        assert pagination["has_previous"] == False
-        assert pagination["previous_offset"] == None
+        assert pagination["has_previous"] is False
+        assert pagination["previous_offset"] is None
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
@@ -662,21 +659,21 @@ class TestRedmineHandler:
         from redmine_mcp_server.redmine_handler import list_my_redmine_issues
 
         # Test string limit conversion
-        result = await list_my_redmine_issues(limit="10")
+        await list_my_redmine_issues(limit="10")
         mock_redmine.issue.filter.assert_called_with(
             assigned_to_id="me", offset=0, limit=10
         )
 
         # Test invalid limit type
         mock_redmine.issue.filter.reset_mock()
-        result = await list_my_redmine_issues(limit="invalid")
+        await list_my_redmine_issues(limit="invalid")
         mock_redmine.issue.filter.assert_called_with(
             assigned_to_id="me", offset=0, limit=25
         )  # default
 
         # Test negative offset (should reset to 0)
         mock_redmine.issue.filter.reset_mock()
-        result = await list_my_redmine_issues(offset=-10)
+        await list_my_redmine_issues(offset=-10)
         mock_redmine.issue.filter.assert_called_with(
             assigned_to_id="me", offset=0, limit=25
         )
@@ -771,7 +768,7 @@ class TestRedmineHandler:
 
         with patch("uuid.uuid4", return_value=MagicMock(spec=uuid.UUID)) as mock_uuid:
             mock_uuid.return_value.__str__ = MagicMock(return_value="test-uuid-123")
-            with patch("builtins.open", mock_open()) as mock_file:
+            with patch("builtins.open", mock_open()):
                 with patch("pathlib.Path.mkdir"):
                     with patch("pathlib.Path.stat") as mock_stat:
                         mock_stat.return_value.st_size = 1024
@@ -1074,3 +1071,111 @@ class TestRedmineHandler:
         assert "total_files" in result["current_storage"]
         assert "total_bytes" in result["current_storage"]
         assert "total_mb" in result["current_storage"]
+
+    @pytest.mark.asyncio
+    async def test_cleanup_attachment_files_exception(self):
+        """Test exception handling in cleanup_attachment_files."""
+        from redmine_mcp_server.redmine_handler import cleanup_attachment_files
+        from redmine_mcp_server.file_manager import AttachmentFileManager
+
+        with patch.object(
+            AttachmentFileManager,
+            "cleanup_expired_files",
+            side_effect=Exception("Cleanup error"),
+        ):
+            result = await cleanup_attachment_files()
+
+        assert "error" in result
+        assert "An error occurred during cleanup" in result["error"]
+
+
+@pytest.mark.unit
+class TestAttachmentErrorRecovery:
+    """Tests for attachment download error recovery paths."""
+
+    @pytest.mark.asyncio
+    @patch(
+        "redmine_mcp_server.redmine_handler._ensure_cleanup_started",
+        new_callable=AsyncMock,
+    )
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_attachment_file_move_failure(
+        self, mock_redmine, mock_cleanup, tmp_path
+    ):
+        """Test OSError recovery during file move."""
+        from redmine_mcp_server.redmine_handler import (
+            get_redmine_attachment_download_url,
+        )
+
+        # Mock attachment with download method
+        mock_attachment = MagicMock()
+        mock_attachment.id = 123
+        mock_attachment.filename = "test.txt"
+        mock_attachment.filesize = 100
+        mock_attachment.content_type = "text/plain"
+
+        # Mock download to create a temp file
+        temp_file = tmp_path / "test.txt"
+        temp_file.write_bytes(b"test content")
+        mock_attachment.download.return_value = str(temp_file)
+
+        mock_redmine.attachment.get.return_value = mock_attachment
+
+        # Patch os.rename to fail
+        with patch("os.rename", side_effect=OSError("Permission denied")):
+            with patch.dict(os.environ, {"ATTACHMENTS_DIR": str(tmp_path)}):
+                result = await get_redmine_attachment_download_url(123)
+
+        # Should return error dict
+        assert "error" in result
+        assert "Failed to store attachment" in result["error"]
+
+    @pytest.mark.asyncio
+    @patch(
+        "redmine_mcp_server.redmine_handler._ensure_cleanup_started",
+        new_callable=AsyncMock,
+    )
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_attachment_metadata_write_failure(
+        self, mock_redmine, mock_cleanup, tmp_path
+    ):
+        """Test IOError recovery during metadata write."""
+        from redmine_mcp_server.redmine_handler import (
+            get_redmine_attachment_download_url,
+        )
+
+        # Create attachments directory
+        attachments_dir = tmp_path / "attachments"
+        attachments_dir.mkdir()
+
+        # Mock attachment
+        mock_attachment = MagicMock()
+        mock_attachment.id = 456
+        mock_attachment.filename = "doc.pdf"
+        mock_attachment.filesize = 1000
+        mock_attachment.content_type = "application/pdf"
+
+        # Mock download to create a temp file
+        temp_file = attachments_dir / "doc.pdf"
+        temp_file.write_bytes(b"pdf content")
+        mock_attachment.download.return_value = str(temp_file)
+
+        mock_redmine.attachment.get.return_value = mock_attachment
+
+        # Wrap os.rename to fail specifically on metadata file moves
+        original_rename = os.rename
+
+        def selective_rename(src, dst):
+            """Allow normal file moves, but fail on metadata JSON files."""
+            dst_str = os.fspath(dst)
+            if dst_str.endswith(".json"):
+                raise OSError("Disk full")
+            return original_rename(src, dst)
+
+        with patch("os.rename", side_effect=selective_rename):
+            with patch.dict(os.environ, {"ATTACHMENTS_DIR": str(attachments_dir)}):
+                result = await get_redmine_attachment_download_url(456)
+
+        # Should return error dict
+        assert "error" in result
+        assert "Failed to save metadata" in result["error"]
