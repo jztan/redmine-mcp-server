@@ -42,15 +42,7 @@ jobs:
           source .venv/bin/activate
           flake8 src/ --max-line-length=88
           black --check src/ --line-length=88
-      - name: Run tests with coverage
+      - name: Run tests
         run: |
           source .venv/bin/activate
-          python -m pytest --cov=src/redmine_mcp_server --cov-report=xml --cov-report=term -m "not integration" tests/
-      - name: Upload coverage to Codecov
-        if: matrix.python-version == '3.13' && github.ref == 'refs/heads/master'
-        uses: codecov/codecov-action@v5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./coverage.xml
-          fail_ci_if_error: false
-          verbose: true
+          python -m pytest -m "not integration" tests/
