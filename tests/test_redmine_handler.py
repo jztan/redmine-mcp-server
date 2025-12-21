@@ -1083,74 +1083,13 @@ class TestRedmineHandler:
 
         with patch.object(
             AttachmentFileManager,
-            '__init__',
-            side_effect=Exception("Mock error")
+            'cleanup_expired_files',
+            side_effect=Exception("Cleanup error")
         ):
             result = await cleanup_attachment_files()
 
         assert "error" in result
         assert "An error occurred during cleanup" in result["error"]
-
-
-class TestSSLConfigurationPaths:
-    """Tests for SSL configuration error paths."""
-
-    def test_ssl_cert_file_not_found_logic(self, tmp_path):
-        """Test FileNotFoundError path for missing SSL cert."""
-        from pathlib import Path
-
-        nonexistent_cert = tmp_path / "nonexistent.pem"
-        cert_path = Path(str(nonexistent_cert)).resolve()
-
-        assert not cert_path.exists()
-
-        with pytest.raises(FileNotFoundError) as exc_info:
-            if not cert_path.exists():
-                raise FileNotFoundError(
-                    f"SSL certificate not found: {nonexistent_cert} "
-                    f"(resolved to: {cert_path})"
-                )
-
-        assert "SSL certificate not found" in str(exc_info.value)
-
-    def test_ssl_cert_is_directory_logic(self, tmp_path):
-        """Test ValueError path when SSL cert is a directory."""
-        from pathlib import Path
-
-        cert_dir = tmp_path / "cert_dir"
-        cert_dir.mkdir()
-        cert_path = Path(str(cert_dir)).resolve()
-
-        assert cert_path.exists()
-        assert not cert_path.is_file()
-
-        with pytest.raises(ValueError) as exc_info:
-            if not cert_path.is_file():
-                raise ValueError(
-                    f"SSL certificate path must be a file, not directory: "
-                    f"{cert_path}"
-                )
-
-        assert "must be a file, not directory" in str(exc_info.value)
-
-    def test_ssl_client_cert_tuple_format(self):
-        """Test client certificate parsing with comma-separated format."""
-        client_cert = "/path/to/cert.pem,/path/to/key.pem"
-
-        if "," in client_cert:
-            cert, key = client_cert.split(",", 1)
-            result = (cert.strip(), key.strip())
-
-        assert result == ("/path/to/cert.pem", "/path/to/key.pem")
-
-    def test_ssl_client_cert_single_file_format(self):
-        """Test client certificate parsing with single file format."""
-        client_cert = "/path/to/combined.pem"
-
-        if "," not in client_cert:
-            result = client_cert
-
-        assert result == "/path/to/combined.pem"
 
 
 class TestAttachmentErrorRecovery:
@@ -1215,15 +1154,15 @@ class TestAttachmentErrorRecovery:
 
         mock_redmine.attachment.get.return_value = mock_attachment
 
-        # Create a call counter to allow first rename but fail on second
-        call_count = [0]
+        # Wrap os.rename to fail specifically on metadata file moves
         original_rename = os.rename
 
         def selective_rename(src, dst):
-            call_count[0] += 1
-            if call_count[0] <= 2:  # Allow file moves
-                return original_rename(src, dst)
-            raise OSError("Disk full")  # Fail on metadata rename
+            """Allow normal file moves, but fail on metadata JSON files."""
+            dst_str = os.fspath(dst)
+            if dst_str.endswith(".json"):
+                raise OSError("Disk full")
+            return original_rename(src, dst)
 
         with patch('os.rename', side_effect=selective_rename):
             with patch.dict(

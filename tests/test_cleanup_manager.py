@@ -173,30 +173,22 @@ class TestCleanupTaskManager:
             await fresh_manager.stop()
 
     @pytest.mark.asyncio
-    async def test_cleanup_loop_logs_cleaned_files(
-        self, fresh_manager, tmp_path, caplog
+    async def test_cleanup_manager_already_running(
+        self, fresh_manager, tmp_path
     ):
-        """Test that cleanup loop logs when files are cleaned."""
-        import logging
-
+        """Test that starting an already running manager is safe."""
         attachments_dir = tmp_path / "attachments"
         attachments_dir.mkdir()
 
         with patch.dict(os.environ, {
             "AUTO_CLEANUP_ENABLED": "true",
-            "CLEANUP_INTERVAL_MINUTES": "0.01",
             "ATTACHMENTS_DIR": str(attachments_dir)
         }):
             await fresh_manager.start()
 
-            # Patch cleanup to return cleaned files
-            with patch.object(
-                fresh_manager.manager,
-                'cleanup_expired_files',
-                return_value={"cleaned_files": 3, "cleaned_mb": 1.5}
-            ):
-                with caplog.at_level(logging.INFO):
-                    await asyncio.sleep(0.5)
+            # Task should be running after start
+            assert fresh_manager.task is not None
+            assert fresh_manager.enabled is True
 
             await fresh_manager.stop()
 

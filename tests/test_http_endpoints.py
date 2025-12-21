@@ -311,22 +311,20 @@ class TestCleanupStatusEndpoint:
     @pytest.mark.asyncio
     async def test_cleanup_status_with_manager_running(self, app):
         """Test cleanup status when manager is running."""
-        from redmine_mcp_server.redmine_handler import cleanup_manager
+        from redmine_mcp_server import redmine_handler
 
-        # Mock the manager status
-        original_get_status = cleanup_manager.get_status
+        mock_status = {
+            "enabled": True,
+            "running": True,
+            "interval_seconds": 600,
+            "storage_stats": {"total_files": 5, "total_mb": 1.5}
+        }
 
-        def mock_status():
-            return {
-                "enabled": True,
-                "running": True,
-                "interval_seconds": 600,
-                "storage_stats": {"total_files": 5, "total_mb": 1.5}
-            }
-
-        cleanup_manager.get_status = mock_status
-
-        try:
+        with patch.object(
+            redmine_handler.cleanup_manager,
+            'get_status',
+            return_value=mock_status
+        ):
             async with AsyncClient(
                 transport=ASGITransport(app=app),
                 base_url="http://test"
@@ -338,5 +336,3 @@ class TestCleanupStatusEndpoint:
             assert data["enabled"] is True
             assert data["running"] is True
             assert data["storage_stats"]["total_files"] == 5
-        finally:
-            cleanup_manager.get_status = original_get_status
