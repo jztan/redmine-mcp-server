@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.9.0] - 2025-12-21
 
 ### Added
 - **Global Search Tool** - `search_entire_redmine(query, resources, limit, offset)` for searching across issues and wiki pages
@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Optional version parameter for retrieving specific page versions
   - Optional attachment metadata inclusion
   - Returns full page content with author and project info
+- **Version Logging** - Server now logs version at startup
+
+### Changed
+- **Logging Improvements** - Replaced `print()` with `logging` module for consistent log formatting
 
 ## [0.8.1] - 2025-12-11
 
