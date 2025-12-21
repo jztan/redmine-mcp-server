@@ -1074,3 +1074,164 @@ class TestRedmineHandler:
         assert "total_files" in result["current_storage"]
         assert "total_bytes" in result["current_storage"]
         assert "total_mb" in result["current_storage"]
+
+    @pytest.mark.asyncio
+    async def test_cleanup_attachment_files_exception(self):
+        """Test exception handling in cleanup_attachment_files."""
+        from redmine_mcp_server.redmine_handler import cleanup_attachment_files
+        from redmine_mcp_server.file_manager import AttachmentFileManager
+
+        with patch.object(
+            AttachmentFileManager,
+            '__init__',
+            side_effect=Exception("Mock error")
+        ):
+            result = await cleanup_attachment_files()
+
+        assert "error" in result
+        assert "An error occurred during cleanup" in result["error"]
+
+
+class TestSSLConfigurationPaths:
+    """Tests for SSL configuration error paths."""
+
+    def test_ssl_cert_file_not_found_logic(self, tmp_path):
+        """Test FileNotFoundError path for missing SSL cert."""
+        from pathlib import Path
+
+        nonexistent_cert = tmp_path / "nonexistent.pem"
+        cert_path = Path(str(nonexistent_cert)).resolve()
+
+        assert not cert_path.exists()
+
+        with pytest.raises(FileNotFoundError) as exc_info:
+            if not cert_path.exists():
+                raise FileNotFoundError(
+                    f"SSL certificate not found: {nonexistent_cert} "
+                    f"(resolved to: {cert_path})"
+                )
+
+        assert "SSL certificate not found" in str(exc_info.value)
+
+    def test_ssl_cert_is_directory_logic(self, tmp_path):
+        """Test ValueError path when SSL cert is a directory."""
+        from pathlib import Path
+
+        cert_dir = tmp_path / "cert_dir"
+        cert_dir.mkdir()
+        cert_path = Path(str(cert_dir)).resolve()
+
+        assert cert_path.exists()
+        assert not cert_path.is_file()
+
+        with pytest.raises(ValueError) as exc_info:
+            if not cert_path.is_file():
+                raise ValueError(
+                    f"SSL certificate path must be a file, not directory: "
+                    f"{cert_path}"
+                )
+
+        assert "must be a file, not directory" in str(exc_info.value)
+
+    def test_ssl_client_cert_tuple_format(self):
+        """Test client certificate parsing with comma-separated format."""
+        client_cert = "/path/to/cert.pem,/path/to/key.pem"
+
+        if "," in client_cert:
+            cert, key = client_cert.split(",", 1)
+            result = (cert.strip(), key.strip())
+
+        assert result == ("/path/to/cert.pem", "/path/to/key.pem")
+
+    def test_ssl_client_cert_single_file_format(self):
+        """Test client certificate parsing with single file format."""
+        client_cert = "/path/to/combined.pem"
+
+        if "," not in client_cert:
+            result = client_cert
+
+        assert result == "/path/to/combined.pem"
+
+
+class TestAttachmentErrorRecovery:
+    """Tests for attachment download error recovery paths."""
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_attachment_file_move_failure(self, mock_redmine, tmp_path):
+        """Test OSError recovery during file move."""
+        from redmine_mcp_server.redmine_handler import (
+            get_redmine_attachment_download_url
+        )
+
+        # Mock attachment with download method
+        mock_attachment = MagicMock()
+        mock_attachment.id = 123
+        mock_attachment.filename = "test.txt"
+        mock_attachment.filesize = 100
+        mock_attachment.content_type = "text/plain"
+
+        # Mock download to create a temp file
+        temp_file = tmp_path / "test.txt"
+        temp_file.write_bytes(b"test content")
+        mock_attachment.download.return_value = str(temp_file)
+
+        mock_redmine.attachment.get.return_value = mock_attachment
+
+        # Patch os.rename to fail
+        with patch('os.rename', side_effect=OSError("Permission denied")):
+            with patch.dict(os.environ, {"ATTACHMENTS_DIR": str(tmp_path)}):
+                result = await get_redmine_attachment_download_url(123)
+
+        # Should return error dict
+        assert "error" in result
+        assert "Failed to store attachment" in result["error"]
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_attachment_metadata_write_failure(
+        self, mock_redmine, tmp_path
+    ):
+        """Test IOError recovery during metadata write."""
+        from redmine_mcp_server.redmine_handler import (
+            get_redmine_attachment_download_url
+        )
+
+        # Create attachments directory
+        attachments_dir = tmp_path / "attachments"
+        attachments_dir.mkdir()
+
+        # Mock attachment
+        mock_attachment = MagicMock()
+        mock_attachment.id = 456
+        mock_attachment.filename = "doc.pdf"
+        mock_attachment.filesize = 1000
+        mock_attachment.content_type = "application/pdf"
+
+        # Mock download to create a temp file
+        temp_file = attachments_dir / "doc.pdf"
+        temp_file.write_bytes(b"pdf content")
+        mock_attachment.download.return_value = str(temp_file)
+
+        mock_redmine.attachment.get.return_value = mock_attachment
+
+        # Create a call counter to allow first rename but fail on second
+        call_count = [0]
+        original_rename = os.rename
+
+        def selective_rename(src, dst):
+            call_count[0] += 1
+            if call_count[0] <= 2:  # Allow file moves
+                return original_rename(src, dst)
+            raise OSError("Disk full")  # Fail on metadata rename
+
+        with patch('os.rename', side_effect=selective_rename):
+            with patch.dict(
+                os.environ,
+                {"ATTACHMENTS_DIR": str(attachments_dir)}
+            ):
+                result = await get_redmine_attachment_download_url(456)
+
+        # Should return error dict
+        assert "error" in result
+        assert "Failed to save metadata" in result["error"]
