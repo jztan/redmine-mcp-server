@@ -99,7 +99,7 @@ class TestRedmineConnection:
         try:
             # Test various access levels
             projects = list(redmine.project.all())
-            print(f"\nAccess test results:")
+            print("\nAccess test results:")
             print(f"- Can access {len(projects)} projects")
 
             # Try to get current user info (if available)
@@ -109,7 +109,7 @@ class TestRedmineConnection:
                     f"- Current user: {current_user.firstname} {current_user.lastname}"
                 )
                 print(f"- User email: {getattr(current_user, 'mail', 'N/A')}")
-            except:
+            except Exception:
                 print("- Current user info: Not accessible")
 
             # Try to access issues from first project (if any)
@@ -123,8 +123,10 @@ class TestRedmineConnection:
                         f"- Can access {len(issues)} issues from '{first_project.name}'"
                     )
                 except Exception as e:
+                    err_msg = str(e)[:50]
                     print(
-                        f"- Issue access from '{first_project.name}': Limited ({str(e)[:50]})"
+                        f"- Issue access from '{first_project.name}': "
+                        f"Limited ({err_msg})"
                     )
 
             assert len(projects) > 0, "User should have access to at least one project"

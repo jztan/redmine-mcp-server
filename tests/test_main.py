@@ -6,9 +6,11 @@ Tests cover:
 - App initialization
 """
 
+import pytest
 from unittest.mock import patch
 
 
+@pytest.mark.unit
 class TestGetVersion:
     """Tests for get_version function."""
 
@@ -16,10 +18,7 @@ class TestGetVersion:
         """Test get_version returns version when package is installed."""
         from redmine_mcp_server.main import get_version
 
-        with patch(
-            'redmine_mcp_server.main.version',
-            return_value="1.2.3"
-        ):
+        with patch("redmine_mcp_server.main.version", return_value="1.2.3"):
             result = get_version()
 
         assert result == "1.2.3"
@@ -30,14 +29,14 @@ class TestGetVersion:
         from importlib.metadata import PackageNotFoundError
 
         with patch(
-            'redmine_mcp_server.main.version',
-            side_effect=PackageNotFoundError()
+            "redmine_mcp_server.main.version", side_effect=PackageNotFoundError()
         ):
             result = get_version()
 
         assert result == "dev"
 
 
+@pytest.mark.unit
 class TestAppInitialization:
     """Tests for Starlette app initialization."""
 
@@ -47,21 +46,19 @@ class TestAppInitialization:
 
         assert app is not None
         # Verify it's a Starlette app (has routes attribute)
-        assert hasattr(app, 'routes')
+        assert hasattr(app, "routes")
 
     def test_app_has_expected_routes(self):
         """Test that app has the expected routes."""
         from redmine_mcp_server.main import app
 
-        route_paths = [
-            route.path for route in app.routes
-            if hasattr(route, 'path')
-        ]
+        route_paths = [route.path for route in app.routes if hasattr(route, "path")]
 
         # Check for custom routes (the actual paths depend on FastMCP)
         assert len(route_paths) > 0
 
 
+@pytest.mark.unit
 class TestMainFunction:
     """Tests for main() entry point (limited coverage possible)."""
 
@@ -70,9 +67,9 @@ class TestMainFunction:
         # Just importing should not raise
         from redmine_mcp_server import main
 
-        assert hasattr(main, 'main')
-        assert hasattr(main, 'get_version')
-        assert hasattr(main, 'app')
+        assert hasattr(main, "main")
+        assert hasattr(main, "get_version")
+        assert hasattr(main, "app")
 
     def test_main_function_is_callable(self):
         """Test that main() function is callable."""

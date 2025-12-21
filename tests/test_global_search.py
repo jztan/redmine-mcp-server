@@ -4,7 +4,7 @@ Following existing patterns from test_redmine_handler.py.
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from redminelib.exceptions import ResourceNotFoundError
 
 
@@ -188,7 +188,7 @@ class TestSearchEntireRedmine:
         mock_issue.description = None
         mock_redmine.search.return_value = {"issues": [mock_issue]}
 
-        result = await search_entire_redmine(query="test", resources=["issues"])
+        await search_entire_redmine(query="test", resources=["issues"])
 
         # Verify resources parameter passed to API
         mock_redmine.search.assert_called_once()

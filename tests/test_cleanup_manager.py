@@ -15,14 +15,16 @@ import os
 from unittest.mock import patch, AsyncMock
 
 
+@pytest.mark.unit
 class TestCleanupTaskManager:
     """Tests for CleanupTaskManager class."""
 
     @pytest.fixture
     def fresh_manager(self):
         """Create a fresh CleanupTaskManager instance."""
-        from redmine_mcp_server.redmine_handler import CleanupTaskManager
-        return CleanupTaskManager()
+        import redmine_mcp_server.redmine_handler as handler
+
+        return handler.CleanupTaskManager()
 
     @pytest.fixture
     def reset_global_state(self):
@@ -61,18 +63,19 @@ class TestCleanupTaskManager:
         assert fresh_manager.manager is None
 
     @pytest.mark.asyncio
-    async def test_cleanup_manager_start_enabled(
-        self, fresh_manager, tmp_path
-    ):
+    async def test_cleanup_manager_start_enabled(self, fresh_manager, tmp_path):
         """Test start() when AUTO_CLEANUP_ENABLED=true."""
         attachments_dir = tmp_path / "attachments"
         attachments_dir.mkdir()
 
-        with patch.dict(os.environ, {
-            "AUTO_CLEANUP_ENABLED": "true",
-            "CLEANUP_INTERVAL_MINUTES": "5",
-            "ATTACHMENTS_DIR": str(attachments_dir)
-        }):
+        with patch.dict(
+            os.environ,
+            {
+                "AUTO_CLEANUP_ENABLED": "true",
+                "CLEANUP_INTERVAL_MINUTES": "5",
+                "ATTACHMENTS_DIR": str(attachments_dir),
+            },
+        ):
             await fresh_manager.start()
 
         try:
@@ -90,10 +93,10 @@ class TestCleanupTaskManager:
         attachments_dir = tmp_path / "attachments"
         attachments_dir.mkdir()
 
-        with patch.dict(os.environ, {
-            "AUTO_CLEANUP_ENABLED": "true",
-            "ATTACHMENTS_DIR": str(attachments_dir)
-        }):
+        with patch.dict(
+            os.environ,
+            {"AUTO_CLEANUP_ENABLED": "true", "ATTACHMENTS_DIR": str(attachments_dir)},
+        ):
             await fresh_manager.start()
 
         assert fresh_manager.task is not None
@@ -119,17 +122,15 @@ class TestCleanupTaskManager:
         assert status["storage_stats"] is None
 
     @pytest.mark.asyncio
-    async def test_cleanup_manager_get_status_running(
-        self, fresh_manager, tmp_path
-    ):
+    async def test_cleanup_manager_get_status_running(self, fresh_manager, tmp_path):
         """Test get_status() when manager is running."""
         attachments_dir = tmp_path / "attachments"
         attachments_dir.mkdir()
 
-        with patch.dict(os.environ, {
-            "AUTO_CLEANUP_ENABLED": "true",
-            "ATTACHMENTS_DIR": str(attachments_dir)
-        }):
+        with patch.dict(
+            os.environ,
+            {"AUTO_CLEANUP_ENABLED": "true", "ATTACHMENTS_DIR": str(attachments_dir)},
+        ):
             await fresh_manager.start()
 
         try:
@@ -143,25 +144,26 @@ class TestCleanupTaskManager:
             await fresh_manager.stop()
 
     @pytest.mark.asyncio
-    async def test_cleanup_loop_exception_handling(
-        self, fresh_manager, tmp_path
-    ):
+    async def test_cleanup_loop_exception_handling(self, fresh_manager, tmp_path):
         """Test that cleanup loop continues after exceptions."""
         attachments_dir = tmp_path / "attachments"
         attachments_dir.mkdir()
 
-        with patch.dict(os.environ, {
-            "AUTO_CLEANUP_ENABLED": "true",
-            "CLEANUP_INTERVAL_MINUTES": "0.01",  # Very short for testing
-            "ATTACHMENTS_DIR": str(attachments_dir)
-        }):
+        with patch.dict(
+            os.environ,
+            {
+                "AUTO_CLEANUP_ENABLED": "true",
+                "CLEANUP_INTERVAL_MINUTES": "0.01",  # Very short for testing
+                "ATTACHMENTS_DIR": str(attachments_dir),
+            },
+        ):
             await fresh_manager.start()
 
             # Patch cleanup to raise exception
             with patch.object(
                 fresh_manager.manager,
-                'cleanup_expired_files',
-                side_effect=Exception("Test error")
+                "cleanup_expired_files",
+                side_effect=Exception("Test error"),
             ):
                 # Wait for a loop iteration
                 await asyncio.sleep(0.5)
@@ -173,26 +175,32 @@ class TestCleanupTaskManager:
             await fresh_manager.stop()
 
     @pytest.mark.asyncio
-    async def test_cleanup_manager_already_running(
-        self, fresh_manager, tmp_path
-    ):
-        """Test that starting an already running manager is safe."""
+    async def test_cleanup_manager_already_running(self, fresh_manager, tmp_path):
+        """Test that starting an already running manager is safe (doesn't crash)."""
         attachments_dir = tmp_path / "attachments"
         attachments_dir.mkdir()
 
-        with patch.dict(os.environ, {
-            "AUTO_CLEANUP_ENABLED": "true",
-            "ATTACHMENTS_DIR": str(attachments_dir)
-        }):
+        with patch.dict(
+            os.environ,
+            {"AUTO_CLEANUP_ENABLED": "true", "ATTACHMENTS_DIR": str(attachments_dir)},
+        ):
             await fresh_manager.start()
 
-            # Task should be running after start
+            # Task should be running after first start
+            assert fresh_manager.task is not None
+            assert fresh_manager.enabled is True
+
+            # Calling start() again should not crash
+            await fresh_manager.start()
+
+            # Manager should still have a valid task
             assert fresh_manager.task is not None
             assert fresh_manager.enabled is True
 
             await fresh_manager.stop()
 
 
+@pytest.mark.unit
 class TestEnsureCleanupStarted:
     """Tests for _ensure_cleanup_started function."""
 
@@ -217,14 +225,12 @@ class TestEnsureCleanupStarted:
         attachments_dir = tmp_path / "attachments"
         attachments_dir.mkdir()
 
-        with patch.dict(os.environ, {
-            "AUTO_CLEANUP_ENABLED": "true",
-            "ATTACHMENTS_DIR": str(attachments_dir)
-        }):
+        with patch.dict(
+            os.environ,
+            {"AUTO_CLEANUP_ENABLED": "true", "ATTACHMENTS_DIR": str(attachments_dir)},
+        ):
             with patch.object(
-                handler.cleanup_manager,
-                'start',
-                new_callable=AsyncMock
+                handler.cleanup_manager, "start", new_callable=AsyncMock
             ) as mock_start:
                 await handler._ensure_cleanup_started()
 
@@ -233,9 +239,7 @@ class TestEnsureCleanupStarted:
         assert handler._cleanup_initialized is True
 
     @pytest.mark.asyncio
-    async def test_ensure_cleanup_started_when_disabled(
-        self, reset_global_state
-    ):
+    async def test_ensure_cleanup_started_when_disabled(self, reset_global_state):
         """Test lazy initialization when cleanup is disabled."""
         handler = reset_global_state
 
@@ -252,9 +256,7 @@ class TestEnsureCleanupStarted:
         handler._cleanup_initialized = True
 
         with patch.object(
-            handler.cleanup_manager,
-            'start',
-            new_callable=AsyncMock
+            handler.cleanup_manager, "start", new_callable=AsyncMock
         ) as mock_start:
             await handler._ensure_cleanup_started()
             await handler._ensure_cleanup_started()
