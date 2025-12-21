@@ -629,31 +629,3 @@ Removes expired attachment files and provides cleanup statistics.
 ```
 
 **Note:** Automatic cleanup runs in the background based on server configuration. This tool allows manual cleanup on demand.
-
----
-
-## Deprecated Tools
-
-### `download_redmine_attachment`
-
-**⚠️ DEPRECATED:** This tool will be removed in a future version. Use [`get_redmine_attachment_download_url`](#get_redmine_attachment_download_url) instead.
-
-**Reason for deprecation:** Security and flexibility improvements. The new tool provides:
-- Server-controlled storage and expiry
-- HTTP download URLs for better client compatibility
-- Enhanced security with UUID-based file storage
-
-**Migration:**
-```python
-# Old way (deprecated)
-result = download_redmine_attachment(
-    attachment_id=123,
-    save_dir="/path/to/save",
-    expires_hours=2
-)
-
-# New way (recommended)
-result = get_redmine_attachment_download_url(attachment_id=123)
-# Server controls storage location and expiry
-# Use the returned download_url to access the file
-```
