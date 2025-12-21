@@ -439,6 +439,138 @@ update_redmine_issue(
 
 ---
 
+## Search & Wiki
+
+### `search_entire_redmine`
+
+Search across issues and wiki pages in the Redmine instance. Requires Redmine 3.3.0 or higher.
+
+**Parameters:**
+- `query` (string, required): Text to search for
+- `resources` (list, optional): Filter by resource types. Allowed: `["issues", "wiki_pages"]`. Default: both types
+- `limit` (integer, optional): Maximum results to return (max 100). Default: 100
+- `offset` (integer, optional): Pagination offset. Default: 0
+
+**Returns:**
+```json
+{
+    "results": [
+        {
+            "id": 123,
+            "type": "issues",
+            "title": "Bug in login page",
+            "project": "Web App",
+            "status": "Open",
+            "updated_on": "2025-01-15T10:00:00Z",
+            "excerpt": "First 200 characters of description..."
+        },
+        {
+            "id": null,
+            "type": "wiki_pages",
+            "title": "Installation Guide",
+            "project": "Documentation",
+            "status": null,
+            "updated_on": "2025-01-10T14:30:00Z",
+            "excerpt": "First 200 characters of wiki text..."
+        }
+    ],
+    "results_by_type": {
+        "issues": 1,
+        "wiki_pages": 1
+    },
+    "total_count": 2,
+    "query": "installation"
+}
+```
+
+**Example:**
+```python
+# Search all resource types
+search_entire_redmine(query="installation guide")
+
+# Search only wiki pages
+search_entire_redmine(query="setup", resources=["wiki_pages"])
+
+# With pagination
+search_entire_redmine(query="bug", limit=25, offset=0)
+```
+
+**Notes:**
+- Requires Redmine 3.3.0+ for search API support
+- v1.4 scope limitation: Only `issues` and `wiki_pages` supported
+- Invalid resource types are silently filtered out
+- Search is case-sensitive/insensitive based on Redmine server DB config
+
+---
+
+### `get_redmine_wiki_page`
+
+Retrieve full wiki page content from a Redmine project.
+
+**Parameters:**
+- `project_id` (string or integer, required): Project identifier (ID number or string identifier)
+- `wiki_page_title` (string, required): Wiki page title (e.g., "Installation_Guide")
+- `version` (integer, optional): Specific version number. Default: latest version
+- `include_attachments` (boolean, optional): Include attachment metadata. Default: true
+
+**Returns:**
+```json
+{
+    "title": "Installation Guide",
+    "text": "# Installation\n\nFollow these steps to install...",
+    "version": 5,
+    "created_on": "2025-01-15T10:00:00Z",
+    "updated_on": "2025-01-20T14:30:00Z",
+    "author": {
+        "id": 123,
+        "name": "John Doe"
+    },
+    "project": {
+        "id": 1,
+        "name": "My Project"
+    },
+    "attachments": [
+        {
+            "id": 456,
+            "filename": "diagram.png",
+            "filesize": 102400,
+            "content_type": "image/png",
+            "description": "Architecture diagram",
+            "created_on": "2025-01-15T10:00:00Z"
+        }
+    ]
+}
+```
+
+**Example:**
+```python
+# Get latest version
+get_redmine_wiki_page(
+    project_id="my-project",
+    wiki_page_title="Installation_Guide"
+)
+
+# Get specific version
+get_redmine_wiki_page(
+    project_id=123,
+    wiki_page_title="Installation",
+    version=3
+)
+
+# Without attachments
+get_redmine_wiki_page(
+    project_id="docs",
+    wiki_page_title="FAQ",
+    include_attachments=False
+)
+```
+
+**Notes:**
+- Use `get_redmine_attachment_download_url()` to download wiki attachments
+- Supports both string identifiers (e.g., "my-project") and numeric IDs
+
+---
+
 ## File Operations
 
 ### `get_redmine_attachment_download_url`

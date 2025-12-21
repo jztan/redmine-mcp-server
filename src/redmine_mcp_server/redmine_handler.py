@@ -34,7 +34,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from dotenv import load_dotenv
 from redminelib import Redmine
-from redminelib.exceptions import ResourceNotFoundError
+from redminelib.exceptions import ResourceNotFoundError, VersionMismatchError
 from mcp.server.fastmcp import FastMCP
 from .file_manager import AttachmentFileManager
 
@@ -396,6 +396,83 @@ def _issue_to_dict(issue: Any) -> Dict[str, Any]:
             else None
         ),
     }
+
+
+def _resource_to_dict(resource: Any, resource_type: str) -> Dict[str, Any]:
+    """
+    Convert any Redmine resource to a serializable dict for search results.
+
+    Args:
+        resource: Python-redmine resource object (Issue, WikiPage, etc.)
+        resource_type: Type identifier ('issues', 'wiki_pages', etc.)
+
+    Returns:
+        Dictionary with standardized fields for search results
+    """
+    base_dict: Dict[str, Any] = {
+        "id": getattr(resource, "id", None),
+        "type": resource_type,
+    }
+
+    # Extract title from various possible attributes
+    if hasattr(resource, "subject"):
+        base_dict["title"] = resource.subject
+    elif hasattr(resource, "title"):
+        base_dict["title"] = resource.title
+    elif hasattr(resource, "name"):
+        base_dict["title"] = resource.name
+    else:
+        base_dict["title"] = None
+
+    # Extract project info
+    if hasattr(resource, "project") and resource.project is not None:
+        base_dict["project"] = (
+            resource.project.name
+            if hasattr(resource.project, "name")
+            else str(resource.project)
+        )
+        base_dict["project_id"] = getattr(resource.project, "id", None)
+    elif hasattr(resource, "project_id") and resource.project_id:
+        # Fallback for search results that have project_id but not project object
+        base_dict["project"] = None
+        base_dict["project_id"] = resource.project_id
+    else:
+        base_dict["project"] = None
+        base_dict["project_id"] = None
+
+    # Extract status (issues have status, wiki pages don't)
+    if hasattr(resource, "status"):
+        base_dict["status"] = (
+            resource.status.name
+            if hasattr(resource.status, "name")
+            else str(resource.status)
+        )
+    else:
+        base_dict["status"] = None
+
+    # Extract updated timestamp
+    if hasattr(resource, "updated_on"):
+        base_dict["updated_on"] = (
+            str(resource.updated_on) if resource.updated_on else None
+        )
+    else:
+        base_dict["updated_on"] = None
+
+    # Extract description/excerpt (first 200 chars)
+    if hasattr(resource, "description") and resource.description:
+        base_dict["excerpt"] = (
+            resource.description[:200] + "..."
+            if len(resource.description) > 200
+            else resource.description
+        )
+    elif hasattr(resource, "text") and resource.text:
+        base_dict["excerpt"] = (
+            resource.text[:200] + "..." if len(resource.text) > 200 else resource.text
+        )
+    else:
+        base_dict["excerpt"] = None
+
+    return base_dict
 
 
 def _issue_to_dict_selective(
@@ -1377,6 +1454,209 @@ def _analyze_issues(issues: List[Any]) -> Dict[str, Any]:
         "by_assignee": assignee_counts,
         "total": len(issues),
     }
+
+
+@mcp.tool()
+async def search_entire_redmine(
+    query: str,
+    resources: Optional[List[str]] = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> Dict[str, Any]:
+    """
+    Search for issues and wiki pages across the Redmine instance.
+
+    Args:
+        query: Text to search for. Case sensitivity controlled by server DB config.
+        resources: Filter by resource types. Allowed: ['issues', 'wiki_pages']
+                   Default: None (searches both issues and wiki_pages)
+        limit: Maximum number of results to return (max 100)
+        offset: Pagination offset for server-side pagination
+
+    Returns:
+        Dictionary containing search results, counts, and metadata.
+        On error, returns {"error": "message"}.
+
+    Note:
+        v1.4 Scope Limitation: Only 'issues' and 'wiki_pages' are supported.
+        Requires Redmine 3.3.0 or higher for search API support.
+    """
+    if not redmine:
+        return {"error": "Redmine client not initialized."}
+
+    try:
+        await _ensure_cleanup_started()
+
+        # Validate and enforce scope limitation (v1.4)
+        allowed_types = ["issues", "wiki_pages"]
+        if resources:
+            resources = [r for r in resources if r in allowed_types]
+            if not resources:
+                resources = allowed_types  # Fall back to default if all filtered
+        else:
+            resources = allowed_types
+
+        # Cap limit at 100 (Redmine API maximum)
+        limit = min(limit, 100)
+        if limit <= 0:
+            limit = 100
+
+        # Build search options
+        search_options = {
+            "resources": resources,
+            "limit": limit,
+            "offset": offset,
+        }
+
+        # Execute search
+        categorized_results = redmine.search(query, **search_options)
+
+        # Handle empty results (python-redmine returns None)
+        if not categorized_results:
+            return {
+                "results": [],
+                "results_by_type": {},
+                "total_count": 0,
+                "query": query,
+            }
+
+        # Process categorized results
+        all_results = []
+        results_by_type: Dict[str, int] = {}
+
+        for resource_type, resource_set in categorized_results.items():
+            # Skip 'unknown' category (plugin resources)
+            if resource_type == "unknown":
+                continue
+
+            # Skip if not in allowed types
+            if resource_type not in allowed_types:
+                continue
+
+            # Handle both ResourceSet and dict (for 'unknown')
+            if hasattr(resource_set, "__iter__"):
+                count = 0
+                for resource in resource_set:
+                    result_dict = _resource_to_dict(resource, resource_type)
+                    all_results.append(result_dict)
+                    count += 1
+                if count > 0:
+                    results_by_type[resource_type] = count
+
+        return {
+            "results": all_results,
+            "results_by_type": results_by_type,
+            "total_count": len(all_results),
+            "query": query,
+        }
+
+    except VersionMismatchError:
+        return {"error": "Search requires Redmine 3.3.0 or higher."}
+    except Exception as e:
+        logger.error(f"Error in search_entire_redmine: {e}")
+        return {"error": f"Search failed: {str(e)}"}
+
+
+@mcp.tool()
+async def get_redmine_wiki_page(
+    project_id: Union[str, int],
+    wiki_page_title: str,
+    version: Optional[int] = None,
+    include_attachments: bool = True,
+) -> Dict[str, Any]:
+    """
+    Retrieve full wiki page content from Redmine.
+
+    Args:
+        project_id: Project identifier (ID number or string identifier)
+        wiki_page_title: Wiki page title (e.g., "Installation_Guide")
+        version: Specific version number (None = latest version)
+        include_attachments: Include attachment metadata in response
+
+    Returns:
+        Dictionary containing full wiki page content and metadata
+
+    Note:
+        Use get_redmine_attachment_download_url() to download attachments.
+    """
+    if not redmine:
+        return {"error": "Redmine client not initialized."}
+
+    try:
+        await _ensure_cleanup_started()
+
+        # Retrieve wiki page
+        if version:
+            wiki_page = redmine.wiki_page.get(
+                wiki_page_title, project_id=project_id, version=version
+            )
+        else:
+            wiki_page = redmine.wiki_page.get(wiki_page_title, project_id=project_id)
+
+        # Build result dictionary
+        result: Dict[str, Any] = {
+            "title": wiki_page.title,
+            "text": wiki_page.text,
+            "version": wiki_page.version,
+        }
+
+        # Add optional timestamp fields
+        if hasattr(wiki_page, "created_on"):
+            result["created_on"] = (
+                str(wiki_page.created_on) if wiki_page.created_on else None
+            )
+        else:
+            result["created_on"] = None
+
+        if hasattr(wiki_page, "updated_on"):
+            result["updated_on"] = (
+                str(wiki_page.updated_on) if wiki_page.updated_on else None
+            )
+        else:
+            result["updated_on"] = None
+
+        # Add author info
+        if hasattr(wiki_page, "author"):
+            result["author"] = {
+                "id": wiki_page.author.id,
+                "name": wiki_page.author.name,
+            }
+
+        # Add project info
+        if hasattr(wiki_page, "project"):
+            result["project"] = {
+                "id": wiki_page.project.id,
+                "name": wiki_page.project.name,
+            }
+
+        # Process attachments if requested
+        if include_attachments and hasattr(wiki_page, "attachments"):
+            result["attachments"] = []
+            for attachment in wiki_page.attachments:
+                att_dict = {
+                    "id": attachment.id,
+                    "filename": attachment.filename,
+                    "filesize": attachment.filesize,
+                    "content_type": attachment.content_type,
+                    "description": getattr(attachment, "description", ""),
+                    "created_on": (
+                        str(attachment.created_on)
+                        if hasattr(attachment, "created_on") and attachment.created_on
+                        else None
+                    ),
+                }
+                result["attachments"].append(att_dict)
+
+        return result
+
+    except ResourceNotFoundError:
+        return {
+            "error": f"Wiki page '{wiki_page_title}' not found in project "
+            f"'{project_id}'"
+        }
+    except Exception as e:
+        logger.error(f"Error retrieving wiki page: {e}")
+        return {"error": f"Failed to retrieve wiki page: {str(e)}"}
 
 
 @mcp.tool()

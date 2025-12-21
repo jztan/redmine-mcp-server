@@ -6,6 +6,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Global Search Tool** - `search_entire_redmine(query, resources, limit, offset)` for searching across issues and wiki pages
+  - Supports resource type filtering (`issues`, `wiki_pages`)
+  - Server-side pagination with configurable limit (max 100) and offset
+  - Returns categorized results with count breakdown by type
+  - Requires Redmine 3.3.0+ for search API support
+- **Wiki Page Retrieval** - `get_redmine_wiki_page(project_id, wiki_page_title, version, include_attachments)` for retrieving wiki content
+  - Supports both string and integer project identifiers
+  - Optional version parameter for retrieving specific page versions
+  - Optional attachment metadata inclusion
+  - Returns full page content with author and project info
+
 ## [0.8.1] - 2025-12-11
 
 ### Added
