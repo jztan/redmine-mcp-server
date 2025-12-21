@@ -1,5 +1,5 @@
 {
-  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.jztan/redmine-mcp-server",
   "description": "Production-ready MCP server for Redmine with security, pagination, and enterprise features",
   "repository": {
@@ -25,76 +25,65 @@
         },
         {
           "description": "Redmine username for authentication (alternative to API key)",
-          "isRequired": false,
           "format": "string",
           "name": "REDMINE_USERNAME"
         },
         {
           "description": "Redmine password for authentication (alternative to API key)",
-          "isRequired": false,
           "format": "string",
           "isSecret": true,
           "name": "REDMINE_PASSWORD"
         },
         {
           "description": "Redmine API key for authentication (alternative to username/password)",
-          "isRequired": false,
           "format": "string",
           "isSecret": true,
           "name": "REDMINE_API_KEY"
         },
         {
           "description": "Host address for the MCP server (default: 0.0.0.0)",
-          "isRequired": false,
           "format": "string",
           "default": "0.0.0.0",
           "name": "SERVER_HOST"
         },
         {
           "description": "Port for the MCP server (default: 8000)",
-          "isRequired": false,
           "format": "number",
           "default": "8000",
           "name": "SERVER_PORT"
         },
         {
           "description": "Public hostname for file download URLs (default: localhost)",
-          "isRequired": false,
           "format": "string",
           "default": "localhost",
           "name": "PUBLIC_HOST"
         },
         {
           "description": "Public port for file download URLs (default: 8000)",
-          "isRequired": false,
           "format": "number",
           "default": "8000",
           "name": "PUBLIC_PORT"
         },
         {
           "description": "Directory for storing downloaded attachments (default: ./attachments)",
-          "isRequired": false,
           "format": "string",
           "default": "./attachments",
           "name": "ATTACHMENTS_DIR"
         },
         {
           "description": "Enable automatic cleanup of expired files (default: true)",
-          "isRequired": false,
           "format": "boolean",
           "default": "true",
           "name": "AUTO_CLEANUP_ENABLED"
         },
         {
           "description": "Interval between cleanup runs in minutes (default: 10)",
-          "isRequired": false,
           "format": "number",
           "default": "10",
           "name": "CLEANUP_INTERVAL_MINUTES"
         },
         {
           "description": "Default expiry time for attachments in minutes (default: 60)",
-          "isRequired": false,
           "format": "number",
           "default": "60",
           "name": "ATTACHMENT_EXPIRES_MINUTES"
