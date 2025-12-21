@@ -2,7 +2,7 @@
 
 ## 🎯 Project Status
 
-**Current Version:** v0.8.0 (PyPI Published)
+**Current Version:** v0.9.0 (PyPI Published)
 **MCP Registry Status:** Published
 
 ### ✅ Completed Features
@@ -29,7 +29,14 @@
 - [x] List issues assigned to current user
 - [x] Server-side pagination with token management (v0.4.0)
 - [x] Search issues by text query with pagination and field selection (v0.7.0)
-- [x] Global search across all Redmine resources (issues, projects, wikis, news, documents)
+- [x] Global search across all Redmine resources (v0.9.0)
+  - Search issues, wiki pages, and other resources with `search_entire_redmine()`
+  - Server-side pagination with configurable limit and offset
+  - Requires Redmine 3.3.0+
+- [x] Wiki page retrieval with version history (v0.9.0)
+  - `get_redmine_wiki_page()` for retrieving wiki content
+  - Optional version parameter for specific page versions
+  - Attachment metadata support
 - [x] Download attachments with HTTP URLs
 - [x] Smart project status summarization with activity analysis
 - [x] Automatic status name to ID resolution
@@ -60,6 +67,9 @@
   - `docs/tool-reference.md` - Complete tool documentation
   - `docs/troubleshooting.md` - Comprehensive troubleshooting guide
   - `docs/contributing.md` - Developer guide
+- [x] Test coverage tracking via Codecov integration (v0.8.1)
+- [x] GitHub issue templates (bug report, feature request) (v0.8.1)
+- [x] Dependabot integration for automated dependency updates (v0.8.1)
 
 #### Python Compatibility
 - [x] **Support Python 3.10+** (v0.5.0)
@@ -79,7 +89,7 @@
 - [ ] Custom field support
 - [ ] Bulk operations
 - [ ] User lookup tool
-- [ ] Wiki page management
+- [ ] Wiki page editing (create/update/delete)
 
 ### 🔧 Maintenance Notes
 
@@ -89,4 +99,4 @@
 
 ---
 
-**Last Updated:** 2025-12-11 (v0.8.0)
+**Last Updated:** 2025-12-21 (v0.9.0)
