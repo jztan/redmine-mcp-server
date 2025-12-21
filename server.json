@@ -6,13 +6,13 @@
     "url": "https://github.com/jztan/redmine-mcp-server",
     "source": "github"
   },
-  "version": "0.8.1",
+  "version": "0.9.0",
   "packages": [
     {
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "redmine-mcp-server",
-      "version": "0.8.1",
+      "version": "0.9.0",
       "transport": {
         "type": "stdio"
       },
