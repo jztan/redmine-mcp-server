@@ -27,7 +27,7 @@ classifiers = [
 dependencies = [
     "python-dotenv>=1.0.0",
     "fastapi[standard]>=0.120.0",
-    "mcp[cli]>=1.19.0,<2",
+    "mcp[cli]>=1.25.0,<2",
     "python-redmine>=2.5.0",
     "uvicorn>=0.24.0",
 ]
