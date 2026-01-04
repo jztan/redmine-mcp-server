@@ -9,10 +9,7 @@ packages would fail to find the .env file.
 import os
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
-
-import pytest
 
 
 class TestEnvLoading:

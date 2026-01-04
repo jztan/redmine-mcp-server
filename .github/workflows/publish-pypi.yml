@@ -11,6 +11,7 @@ jobs:
     strategy:
       matrix:
         python-version: ['3.10', '3.11', '3.12', '3.13']
+      fail-fast: false
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -25,36 +26,44 @@ jobs:
           uv pip install -e .[test]
       - name: Generate test SSL certificates
         run: bash tests/fixtures/ssl/generate-test-certs.sh
-      - name: Run tests
+      - name: Run tests with coverage
         run: |
           source .venv/bin/activate
-          python tests/run_tests.py --all --verbose
+          python -m pytest --cov=src/redmine_mcp_server --cov-report=xml --cov-report=term -m "not integration" tests/
+      - name: Upload coverage to Codecov
+        if: matrix.python-version == '3.13'
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml
+          fail_ci_if_error: false
+          verbose: true
 
   publish:
     needs: test-before-publish
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v6
+      - uses: actions/checkout@v6
 
-    - name: Set up Python
-      uses: actions/setup-python@v6
-      with:
-        python-version: '3.13'
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
 
-    - name: Install build dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install build twine
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
 
-    - name: Build package
-      run: python -m build
+      - name: Build package
+        run: python -m build
 
-    - name: Check package
-      run: twine check dist/*
+      - name: Check package
+        run: twine check dist/*
 
-    - name: Publish to PyPI
-      env:
-        TWINE_USERNAME: __token__
-        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-      run: twine upload dist/*
+      - name: Publish to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: twine upload dist/*
