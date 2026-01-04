@@ -176,7 +176,9 @@ class TestRedmineHandler:
         # Verify
         assert result is not None
         assert "error" in result
-        assert "An error occurred while fetching issue 123" in result["error"]
+        # New error format includes operation and error message
+        assert "fetching issue 123" in result["error"]
+        assert "Connection error" in result["error"]
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine", None)
@@ -291,7 +293,9 @@ class TestRedmineHandler:
         assert isinstance(result, list)
         assert len(result) == 1
         assert "error" in result[0]
-        assert "An error occurred while listing projects" in result[0]["error"]
+        # New error format includes operation and error message
+        assert "listing projects" in result[0]["error"]
+        assert "Connection error" in result[0]["error"]
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine", None)
@@ -772,8 +776,11 @@ class TestRedmineHandler:
 
         result = await search_redmine_issues("a")
 
-        assert isinstance(result, list)
-        assert "error" in result[0]
+        # Error now returns a dict, not a list
+        assert isinstance(result, dict)
+        assert "error" in result
+        assert "searching issues" in result["error"]
+        assert "boom" in result["error"]
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine", None)
@@ -945,7 +952,10 @@ class TestRedmineHandler:
 
         result = await summarize_project_status(1, 30)
 
-        assert result["error"] == "An error occurred while summarizing project 1."
+        # New error format includes operation and error message
+        assert "error" in result
+        assert "summarizing project 1" in result["error"]
+        assert "API Error" in result["error"]
 
     @pytest.mark.asyncio
     @patch.dict("os.environ", {"ATTACHMENTS_DIR": "./test_attachments"})
