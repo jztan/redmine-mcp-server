@@ -6,6 +6,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.1] - 2026-01-04
+
+### Removed
+- **BREAKING**: Removed deprecated `download_redmine_attachment()` function
+  - Was deprecated in v0.4.0 with security advisory (CWE-22, CVSS 7.5)
+  - Use `get_redmine_attachment_download_url()` instead for secure attachment downloads
+
+### Changed
+- **Dependency Updates**
+  - `mcp[cli]` pinned to >=1.25.0,<2 (from >=1.19.0) for latest stable v1.x
+  - `uvicorn` upgraded from 0.38.0 to 0.40.0
+
+### Improved
+- **Test Coverage** - Improved from 76% to 88% with comprehensive test suite enhancements
+- **CI/CD** - Moved coverage upload from PR workflow to publish workflow
+
 ## [0.9.0] - 2025-12-21
 
 ### Added
@@ -574,6 +590,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Works with Docker and docker-compose
 - Tested on macOS and Linux environments
 
+[0.9.1]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.9.1
+[0.9.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.9.0
 [0.8.1]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.8.1
 [0.8.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.8.0
 [0.7.1]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.7.1
