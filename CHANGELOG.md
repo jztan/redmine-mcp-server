@@ -6,6 +6,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Centralized Error Handler** - New `_handle_redmine_error()` function for consistent, actionable error messages
+  - Handles 12 error types: SSL, connection, timeout, auth, forbidden, server error, validation, version mismatch, protocol, not found, and more
+  - Error messages include specific error types, actionable guidance, and relevant context (URLs, resource IDs, environment variables)
+  - All 10 MCP tools updated to use centralized error handling
+  - 21 new tests added for comprehensive error handling coverage
+
+### Changed
+- **Logging Improvements** - Replaced remaining `print()` statements with proper `logger` calls throughout codebase
+
+### Improved
+- **Code Coverage Target** - Increased Codecov target from 70% to 80%
+- **Documentation** - Added MCP architecture lessons blog post to README resources section
+
 ## [0.9.1] - 2026-01-04
 
 ### Removed
