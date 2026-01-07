@@ -2,7 +2,7 @@
 
 ## 🎯 Project Status
 
-**Current Version:** v0.9.0 (PyPI Published)
+**Current Version:** v0.9.1 (PyPI Published)
 **MCP Registry Status:** Published
 
 ### ✅ Completed Features
@@ -99,4 +99,4 @@
 
 ---
 
-**Last Updated:** 2025-12-21 (v0.9.0)
+**Last Updated:** 2026-01-04 (v0.9.1)

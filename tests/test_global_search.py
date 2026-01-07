@@ -392,8 +392,9 @@ class TestGetRedmineWikiPage:
         )
 
         assert "error" in result
+        # Error message includes wiki page title and "not found"
         assert "NonExistent" in result["error"]
-        assert "my-project" in result["error"]
+        assert "not found" in result["error"].lower()
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")

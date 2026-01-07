@@ -347,9 +347,11 @@ class TestSearchRedmineIssuesPagination:
 
         result = await search_redmine_issues("bug")
 
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert "error" in result[0]
+        # Error now returns a dict, not a list
+        assert isinstance(result, dict)
+        assert "error" in result
+        assert "searching issues" in result["error"]
+        assert "API Error" in result["error"]
 
     @pytest.mark.asyncio
     async def test_pagination_info_with_limit_zero(self, mock_redmine):
