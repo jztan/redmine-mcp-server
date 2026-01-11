@@ -26,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Improved
 - **Code Coverage Target** - Increased Codecov target from 70% to 80%
+- **Test Coverage** - Improved `redmine_handler.py` coverage from 93% to 99%
+  - Added 29 new tests covering edge cases and error handling paths
+  - Total test count increased from 302 to 331
+  - Only 5 module initialization lines remain uncovered (import-time code)
 - **Documentation** - Added MCP architecture lessons blog post to README resources section
 
 ## [0.9.1] - 2026-01-04
