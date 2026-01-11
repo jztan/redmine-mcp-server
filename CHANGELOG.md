@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Wiki Page Editing** - Three new MCP tools for full wiki page lifecycle management
+  - `create_redmine_wiki_page(project_id, wiki_page_title, text, comments)` - Create new wiki pages
+  - `update_redmine_wiki_page(project_id, wiki_page_title, text, comments)` - Update existing wiki pages
+  - `delete_redmine_wiki_page(project_id, wiki_page_title)` - Delete wiki pages
+  - Includes change log comment support for create/update operations
+  - 17 new tests with comprehensive error handling coverage
 - **Centralized Error Handler** - New `_handle_redmine_error()` function for consistent, actionable error messages
   - Handles 12 error types: SSL, connection, timeout, auth, forbidden, server error, validation, version mismatch, protocol, not found, and more
   - Error messages include specific error types, actionable guidance, and relevant context (URLs, resource IDs, environment variables)

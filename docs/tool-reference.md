@@ -571,6 +571,153 @@ get_redmine_wiki_page(
 
 ---
 
+### `create_redmine_wiki_page`
+
+Create a new wiki page in a Redmine project.
+
+**Parameters:**
+- `project_id` (string or integer, required): Project identifier (ID number or string identifier)
+- `wiki_page_title` (string, required): Wiki page title (e.g., "Installation_Guide")
+- `text` (string, required): Wiki page content (Textile or Markdown depending on Redmine config)
+- `comments` (string, optional): Comment for the change log. Default: empty
+
+**Returns:**
+```json
+{
+    "title": "New Page",
+    "text": "# New Page\n\nContent here.",
+    "version": 1,
+    "created_on": "2025-01-15T10:00:00Z",
+    "updated_on": "2025-01-15T10:00:00Z",
+    "author": {
+        "id": 123,
+        "name": "John Doe"
+    },
+    "project": {
+        "id": 1,
+        "name": "My Project"
+    }
+}
+```
+
+**Example:**
+```python
+# Create a simple wiki page
+create_redmine_wiki_page(
+    project_id="my-project",
+    wiki_page_title="Getting_Started",
+    text="# Getting Started\n\nWelcome to the project!"
+)
+
+# Create with change log comment
+create_redmine_wiki_page(
+    project_id=123,
+    wiki_page_title="API_Reference",
+    text="# API Reference\n\n## Endpoints\n...",
+    comments="Initial API documentation"
+)
+```
+
+**Notes:**
+- Wiki page titles typically use underscores instead of spaces
+- Content format (Textile/Markdown) depends on Redmine server configuration
+- Requires wiki edit permissions in the target project
+
+---
+
+### `update_redmine_wiki_page`
+
+Update an existing wiki page in a Redmine project.
+
+**Parameters:**
+- `project_id` (string or integer, required): Project identifier (ID number or string identifier)
+- `wiki_page_title` (string, required): Wiki page title (e.g., "Installation_Guide")
+- `text` (string, required): New wiki page content
+- `comments` (string, optional): Comment for the change log. Default: empty
+
+**Returns:**
+```json
+{
+    "title": "Installation Guide",
+    "text": "# Installation\n\nUpdated content...",
+    "version": 6,
+    "created_on": "2025-01-10T10:00:00Z",
+    "updated_on": "2025-01-20T14:30:00Z",
+    "author": {
+        "id": 123,
+        "name": "John Doe"
+    },
+    "project": {
+        "id": 1,
+        "name": "My Project"
+    }
+}
+```
+
+**Example:**
+```python
+# Update wiki page content
+update_redmine_wiki_page(
+    project_id="my-project",
+    wiki_page_title="Installation_Guide",
+    text="# Installation\n\nUpdated installation steps..."
+)
+
+# Update with change log comment
+update_redmine_wiki_page(
+    project_id=123,
+    wiki_page_title="FAQ",
+    text="# FAQ\n\n## New Questions\n...",
+    comments="Added new FAQ entries"
+)
+```
+
+**Notes:**
+- Version number increments automatically on each update
+- Redmine maintains version history for rollback
+- Requires wiki edit permissions in the target project
+
+---
+
+### `delete_redmine_wiki_page`
+
+Delete a wiki page from a Redmine project.
+
+**Parameters:**
+- `project_id` (string or integer, required): Project identifier (ID number or string identifier)
+- `wiki_page_title` (string, required): Wiki page title to delete
+
+**Returns:**
+```json
+{
+    "success": true,
+    "title": "Obsolete_Page",
+    "message": "Wiki page 'Obsolete_Page' deleted successfully."
+}
+```
+
+**Example:**
+```python
+# Delete a wiki page
+delete_redmine_wiki_page(
+    project_id="my-project",
+    wiki_page_title="Obsolete_Page"
+)
+
+# Delete by numeric project ID
+delete_redmine_wiki_page(
+    project_id=123,
+    wiki_page_title="Old_Documentation"
+)
+```
+
+**Notes:**
+- Deletion is permanent - page and all versions are removed
+- Requires wiki delete permissions in the target project
+- Child pages (if any) may become orphaned
+
+---
+
 ## File Operations
 
 ### `get_redmine_attachment_download_url`
