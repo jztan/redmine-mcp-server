@@ -380,6 +380,137 @@ class TestRedmineIntegration:
                 except Exception:
                     pass  # Best effort cleanup
 
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_wiki_page_lifecycle_integration(self):
+        """Integration test for creating, updating, and deleting a wiki page."""
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        from redmine_mcp_server.redmine_handler import (
+            create_redmine_wiki_page,
+            update_redmine_wiki_page,
+            delete_redmine_wiki_page,
+            get_redmine_wiki_page,
+        )
+
+        # Pick the first available project
+        projects = list(redmine.project.all())
+        if not projects:
+            pytest.skip("No projects available for testing")
+
+        project_id = projects[0].identifier
+        wiki_title = "Integration_Test_Wiki_Page"
+
+        try:
+            # 1. Create a new wiki page
+            create_result = await create_redmine_wiki_page(
+                project_id=project_id,
+                wiki_page_title=wiki_title,
+                text="# Integration Test\n\nCreated by integration tests.",
+                comments="Initial creation by integration test",
+            )
+
+            # Check for permission errors (some projects may not allow wiki editing)
+            if "error" in create_result:
+                if (
+                    "denied" in create_result["error"].lower()
+                    or "permission" in create_result["error"].lower()
+                    or "forbidden" in create_result["error"].lower()
+                ):
+                    pytest.skip(
+                        "Wiki editing not permitted: " f"{create_result['error']}"
+                    )
+                pytest.fail(f"Failed to create wiki page: {create_result['error']}")
+
+            assert create_result["title"] == wiki_title
+            assert "Integration Test" in create_result["text"]
+            assert create_result["version"] == 1
+
+            # 2. Verify the page was created by reading it
+            read_result = await get_redmine_wiki_page(
+                project_id=project_id,
+                wiki_page_title=wiki_title,
+            )
+            assert "error" not in read_result
+            assert read_result["title"] == wiki_title
+
+            # 3. Update the wiki page
+            update_result = await update_redmine_wiki_page(
+                project_id=project_id,
+                wiki_page_title=wiki_title,
+                text="# Integration Test Updated\n\nUpdated by integration tests.",
+                comments="Updated by integration test",
+            )
+
+            if "error" in update_result:
+                pytest.fail(f"Failed to update wiki page: {update_result['error']}")
+
+            assert update_result["title"] == wiki_title
+            assert "Updated" in update_result["text"]
+            assert update_result["version"] >= 2  # Version should increment
+
+            # 4. Delete the wiki page
+            delete_result = await delete_redmine_wiki_page(
+                project_id=project_id,
+                wiki_page_title=wiki_title,
+            )
+
+            if "error" in delete_result:
+                pytest.fail(f"Failed to delete wiki page: {delete_result['error']}")
+
+            assert delete_result["success"] is True
+            assert delete_result["title"] == wiki_title
+
+            # 5. Verify the page was deleted
+            verify_result = await get_redmine_wiki_page(
+                project_id=project_id,
+                wiki_page_title=wiki_title,
+            )
+            assert "error" in verify_result
+            assert "not found" in verify_result["error"].lower()
+
+        except Exception as e:
+            pytest.fail(f"Integration test failed: {e}")
+        finally:
+            # Clean up: attempt to delete the wiki page if it still exists
+            try:
+                await delete_redmine_wiki_page(
+                    project_id=project_id,
+                    wiki_page_title=wiki_title,
+                )
+            except Exception:
+                pass  # Best effort cleanup
+
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_wiki_page_delete_not_found_integration(self):
+        """Integration test for deleting a non-existent wiki page."""
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        from redmine_mcp_server.redmine_handler import delete_redmine_wiki_page
+
+        # Pick the first available project
+        projects = list(redmine.project.all())
+        if not projects:
+            pytest.skip("No projects available for testing")
+
+        project_id = projects[0].identifier
+        nonexistent_title = "Nonexistent_Wiki_Page_Delete_Test_99999"
+
+        # Test delete on non-existent page - should return error
+        # Note: Redmine's wiki update API has upsert behavior (creates if not exists),
+        # so we only test delete for "not found" errors
+        delete_result = await delete_redmine_wiki_page(
+            project_id=project_id,
+            wiki_page_title=nonexistent_title,
+        )
+        assert "error" in delete_result
+        assert "not found" in delete_result["error"].lower()
+
 
 class TestFastAPIIntegration:
     """Integration tests for the FastAPI server."""
