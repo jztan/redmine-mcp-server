@@ -80,7 +80,7 @@
 ### 📋 Planned Features
 
 #### Phase 4: Quality Improvements
-- [ ] Clear connection error messages:
+- [x] Clear connection error messages:
   - "Failed to connect to Redmine" → "Cannot connect to {REDMINE_URL}. Check: 1) URL is correct, 2) Network access, 3) Redmine is running"
   - "401 Unauthorized" → "Authentication failed. Check your API key or username/password in .env"
   - "403 Forbidden" → "Access denied. Your Redmine user lacks permission for this action"
@@ -89,7 +89,7 @@
 - [ ] Custom field support
 - [ ] Bulk operations
 - [ ] User lookup tool
-- [ ] Wiki page editing (create/update/delete)
+- [x] Wiki page editing (create/update/delete)
 
 ### 🔧 Maintenance Notes
 
