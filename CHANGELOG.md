@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-01-11
+
 ### Added
 - **Wiki Page Editing** - Three new MCP tools for full wiki page lifecycle management
   - `create_redmine_wiki_page(project_id, wiki_page_title, text, comments)` - Create new wiki pages
@@ -616,6 +618,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Works with Docker and docker-compose
 - Tested on macOS and Linux environments
 
+[0.10.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.10.0
 [0.9.1]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.9.1
 [0.9.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.9.0
 [0.8.1]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.8.1
