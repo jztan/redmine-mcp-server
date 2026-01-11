@@ -419,9 +419,7 @@ class TestRedmineIntegration:
                     or "permission" in create_result["error"].lower()
                     or "forbidden" in create_result["error"].lower()
                 ):
-                    pytest.skip(
-                        "Wiki editing not permitted: " f"{create_result['error']}"
-                    )
+                    pytest.skip(f"Wiki editing not permitted: {create_result['error']}")
                 pytest.fail(f"Failed to create wiki page: {create_result['error']}")
 
             assert create_result["title"] == wiki_title
