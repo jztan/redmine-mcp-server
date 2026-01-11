@@ -1628,106 +1628,6 @@ async def search_entire_redmine(
         return _handle_redmine_error(e, f"searching Redmine for '{query}'")
 
 
-@mcp.tool()
-async def get_redmine_wiki_page(
-    project_id: Union[str, int],
-    wiki_page_title: str,
-    version: Optional[int] = None,
-    include_attachments: bool = True,
-) -> Dict[str, Any]:
-    """
-    Retrieve full wiki page content from Redmine.
-
-    Args:
-        project_id: Project identifier (ID number or string identifier)
-        wiki_page_title: Wiki page title (e.g., "Installation_Guide")
-        version: Specific version number (None = latest version)
-        include_attachments: Include attachment metadata in response
-
-    Returns:
-        Dictionary containing full wiki page content and metadata
-
-    Note:
-        Use get_redmine_attachment_download_url() to download attachments.
-    """
-    if not redmine:
-        return {"error": "Redmine client not initialized."}
-
-    try:
-        await _ensure_cleanup_started()
-
-        # Retrieve wiki page
-        if version:
-            wiki_page = redmine.wiki_page.get(
-                wiki_page_title, project_id=project_id, version=version
-            )
-        else:
-            wiki_page = redmine.wiki_page.get(wiki_page_title, project_id=project_id)
-
-        # Build result dictionary
-        result: Dict[str, Any] = {
-            "title": wiki_page.title,
-            "text": wiki_page.text,
-            "version": wiki_page.version,
-        }
-
-        # Add optional timestamp fields
-        if hasattr(wiki_page, "created_on"):
-            result["created_on"] = (
-                str(wiki_page.created_on) if wiki_page.created_on else None
-            )
-        else:
-            result["created_on"] = None
-
-        if hasattr(wiki_page, "updated_on"):
-            result["updated_on"] = (
-                str(wiki_page.updated_on) if wiki_page.updated_on else None
-            )
-        else:
-            result["updated_on"] = None
-
-        # Add author info
-        if hasattr(wiki_page, "author"):
-            result["author"] = {
-                "id": wiki_page.author.id,
-                "name": wiki_page.author.name,
-            }
-
-        # Add project info
-        if hasattr(wiki_page, "project"):
-            result["project"] = {
-                "id": wiki_page.project.id,
-                "name": wiki_page.project.name,
-            }
-
-        # Process attachments if requested
-        if include_attachments and hasattr(wiki_page, "attachments"):
-            result["attachments"] = []
-            for attachment in wiki_page.attachments:
-                att_dict = {
-                    "id": attachment.id,
-                    "filename": attachment.filename,
-                    "filesize": attachment.filesize,
-                    "content_type": attachment.content_type,
-                    "description": getattr(attachment, "description", ""),
-                    "created_on": (
-                        str(attachment.created_on)
-                        if hasattr(attachment, "created_on") and attachment.created_on
-                        else None
-                    ),
-                }
-                result["attachments"].append(att_dict)
-
-        return result
-
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"fetching wiki page '{wiki_page_title}' in project {project_id}",
-            {"resource_type": "wiki page", "resource_id": wiki_page_title},
-        )
-
-
 def _wiki_page_to_dict(
     wiki_page: Any, include_attachments: bool = True
 ) -> Dict[str, Any]:
@@ -1794,6 +1694,52 @@ def _wiki_page_to_dict(
             result["attachments"].append(att_dict)
 
     return result
+
+
+@mcp.tool()
+async def get_redmine_wiki_page(
+    project_id: Union[str, int],
+    wiki_page_title: str,
+    version: Optional[int] = None,
+    include_attachments: bool = True,
+) -> Dict[str, Any]:
+    """
+    Retrieve full wiki page content from Redmine.
+
+    Args:
+        project_id: Project identifier (ID number or string identifier)
+        wiki_page_title: Wiki page title (e.g., "Installation_Guide")
+        version: Specific version number (None = latest version)
+        include_attachments: Include attachment metadata in response
+
+    Returns:
+        Dictionary containing full wiki page content and metadata
+
+    Note:
+        Use get_redmine_attachment_download_url() to download attachments.
+    """
+    if not redmine:
+        return {"error": "Redmine client not initialized."}
+
+    try:
+        await _ensure_cleanup_started()
+
+        # Retrieve wiki page
+        if version:
+            wiki_page = redmine.wiki_page.get(
+                wiki_page_title, project_id=project_id, version=version
+            )
+        else:
+            wiki_page = redmine.wiki_page.get(wiki_page_title, project_id=project_id)
+
+        return _wiki_page_to_dict(wiki_page, include_attachments)
+
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"fetching wiki page '{wiki_page_title}' in project {project_id}",
+            {"resource_type": "wiki page", "resource_id": wiki_page_title},
+        )
 
 
 @mcp.tool()
