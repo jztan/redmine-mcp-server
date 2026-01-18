@@ -34,7 +34,21 @@ from typing import Any, Dict, List, Optional, Union
 
 from dotenv import load_dotenv
 from redminelib import Redmine
-from redminelib.exceptions import ResourceNotFoundError, VersionMismatchError
+from redminelib.exceptions import (
+    ResourceNotFoundError,
+    VersionMismatchError,
+    AuthError,
+    ForbiddenError,
+    ServerError,
+    UnknownError,
+    ValidationError,
+    HTTPProtocolError,
+)
+from requests.exceptions import (
+    ConnectionError as RequestsConnectionError,
+    Timeout as RequestsTimeout,
+    SSLError as RequestsSSLError,
+)
 from mcp.server.fastmcp import FastMCP
 from .file_manager import AttachmentFileManager
 
@@ -74,13 +88,13 @@ REDMINE_SSL_CLIENT_CERT = os.getenv("REDMINE_SSL_CLIENT_CERT")
 # Initialize Redmine client with SSL configuration
 # Provide helpful warnings for missing configuration
 if not REDMINE_URL:
-    print(
-        "WARNING: REDMINE_URL not set. "
+    logger.warning(
+        "REDMINE_URL not set. "
         "Please create a .env file in your working directory with REDMINE_URL defined."
     )
 elif not (REDMINE_API_KEY or (REDMINE_USERNAME and REDMINE_PASSWORD)):
-    print(
-        "WARNING: No Redmine authentication configured. "
+    logger.warning(
+        "No Redmine authentication configured. "
         "Please set REDMINE_API_KEY or REDMINE_USERNAME/REDMINE_PASSWORD "
         "in your .env file."
     )
@@ -350,6 +364,107 @@ async def cleanup_status(request):
     from starlette.responses import JSONResponse
 
     return JSONResponse(cleanup_manager.get_status())
+
+
+def _handle_redmine_error(
+    e: Exception, operation: str, context: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    Convert exceptions to user-friendly error messages with actionable guidance.
+    """
+    context = context or {}
+    redmine_url = REDMINE_URL or "REDMINE_URL not configured"
+
+    # Check SSLError BEFORE ConnectionError (SSLError inherits from ConnectionError)
+    if isinstance(e, RequestsSSLError):
+        logger.error(f"SSL error during {operation}: {e}")
+        return {
+            "error": (
+                f"SSL/TLS error connecting to {redmine_url}. "
+                "Please check: 1) SSL certificate validity, "
+                "2) REDMINE_SSL_VERIFY setting, 3) REDMINE_SSL_CERT path"
+            )
+        }
+
+    # Connection-level errors (from requests library)
+    if isinstance(e, RequestsConnectionError):
+        logger.error(f"Connection error during {operation}: {e}")
+        return {
+            "error": (
+                f"Cannot connect to Redmine at {redmine_url}. "
+                "Please check: 1) URL is correct, 2) Network is accessible, "
+                "3) Redmine server is running"
+            )
+        }
+
+    if isinstance(e, RequestsTimeout):
+        logger.error(f"Timeout during {operation}: {e}")
+        return {
+            "error": (
+                f"Connection to Redmine at {redmine_url} timed out. "
+                "Please check: 1) Network connectivity, 2) Redmine server load"
+            )
+        }
+
+    # HTTP-level errors (from redminelib)
+    if isinstance(e, AuthError):
+        logger.error(f"Authentication failed during {operation}")
+        return {
+            "error": (
+                "Authentication failed. Please check your credentials: "
+                "1) REDMINE_API_KEY is valid, or "
+                "2) REDMINE_USERNAME and REDMINE_PASSWORD are correct"
+            )
+        }
+
+    if isinstance(e, ForbiddenError):
+        logger.error(f"Access denied during {operation}")
+        return {
+            "error": (
+                "Access denied. Your Redmine user lacks the required permission "
+                "for this action. Contact your Redmine administrator."
+            )
+        }
+
+    if isinstance(e, ServerError):
+        logger.error(f"Redmine server error during {operation}: {e}")
+        return {
+            "error": (
+                "Redmine server returned an internal error (HTTP 500). "
+                "Check the Redmine server logs or contact your administrator."
+            )
+        }
+
+    if isinstance(e, ResourceNotFoundError):
+        resource_type = context.get("resource_type", "resource")
+        resource_id = context.get("resource_id", "")
+        if resource_id:
+            return {"error": f"{resource_type.capitalize()} {resource_id} not found."}
+        return {"error": f"Requested {resource_type} not found."}
+
+    if isinstance(e, ValidationError):
+        logger.warning(f"Validation error during {operation}: {e}")
+        return {"error": f"Validation failed: {str(e)}"}
+
+    if isinstance(e, VersionMismatchError):
+        return {"error": str(e)}
+
+    if isinstance(e, HTTPProtocolError):
+        logger.error(f"HTTP protocol error during {operation}: {e}")
+        return {
+            "error": (
+                "HTTP/HTTPS protocol mismatch. Ensure REDMINE_URL uses the correct "
+                "protocol (http:// or https://) matching your server configuration."
+            )
+        }
+
+    if isinstance(e, UnknownError):
+        logger.error(f"Unknown HTTP error during {operation}: status={e.status_code}")
+        return {"error": f"Redmine returned HTTP {e.status_code}. Check server logs."}
+
+    # Fallback
+    logger.error(f"Unexpected error during {operation}: {type(e).__name__}: {e}")
+    return {"error": f"An unexpected error occurred while {operation}: {str(e)}"}
 
 
 def _issue_to_dict(issue: Any) -> Dict[str, Any]:
@@ -686,12 +801,12 @@ async def get_redmine_issue(
             result["attachments"] = _attachments_to_list(issue)
 
         return result
-    except ResourceNotFoundError:
-        return {"error": f"Issue {issue_id} not found."}
     except Exception as e:
-        # Log the full error for debugging
-        print(f"Error fetching Redmine issue {issue_id}: {e}")
-        return {"error": f"An error occurred while fetching issue {issue_id}."}
+        return _handle_redmine_error(
+            e,
+            f"fetching issue {issue_id}",
+            {"resource_type": "issue", "resource_id": issue_id},
+        )
 
 
 @mcp.tool()
@@ -720,8 +835,7 @@ async def list_redmine_projects() -> List[Dict[str, Any]]:
             for project in projects
         ]
     except Exception as e:
-        print(f"Error listing Redmine projects: {e}")
-        return [{"error": "An error occurred while listing projects."}]
+        return [_handle_redmine_error(e, "listing projects")]
 
 
 @mcp.tool()
@@ -906,10 +1020,7 @@ async def list_my_redmine_issues(
         return result_issues
 
     except Exception as e:
-        logging.error(
-            f"Error listing issues assigned to current user: {e}", exc_info=True
-        )
-        return [{"error": "An error occurred while listing issues."}]
+        return [_handle_redmine_error(e, "listing assigned issues")]
 
 
 @mcp.tool()
@@ -1093,8 +1204,7 @@ async def search_redmine_issues(
         return result_issues
 
     except Exception as e:
-        logging.error(f"Error searching Redmine issues: {e}", exc_info=True)
-        return [{"error": "An error occurred while searching issues."}]
+        return _handle_redmine_error(e, f"searching issues with query '{query}'")
 
 
 @mcp.tool()
@@ -1113,8 +1223,7 @@ async def create_redmine_issue(
         )
         return _issue_to_dict(issue)
     except Exception as e:
-        print(f"Error creating Redmine issue: {e}")
-        return {"error": "An error occurred while creating the issue."}
+        return _handle_redmine_error(e, f"creating issue in project {project_id}")
 
 
 @mcp.tool()
@@ -1138,17 +1247,18 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
                     fields["status_id"] = status.id
                     break
         except Exception as e:
-            print(f"Error resolving status name '{name}': {e}")
+            logger.warning(f"Error resolving status name '{name}': {e}")
 
     try:
         redmine.issue.update(issue_id, **fields)
         updated_issue = redmine.issue.get(issue_id)
         return _issue_to_dict(updated_issue)
-    except ResourceNotFoundError:
-        return {"error": f"Issue {issue_id} not found."}
     except Exception as e:
-        print(f"Error updating Redmine issue {issue_id}: {e}")
-        return {"error": f"An error occurred while updating issue {issue_id}."}
+        return _handle_redmine_error(
+            e,
+            f"updating issue {issue_id}",
+            {"resource_type": "issue", "resource_id": issue_id},
+        )
 
 
 @mcp.tool()
@@ -1280,13 +1390,12 @@ async def get_redmine_attachment_download_url(
             "attachment_id": attachment_id,
         }
 
-    except ResourceNotFoundError:
-        return {"error": f"Attachment {attachment_id} not found."}
     except Exception as e:
-        logger.error(
-            f"Error in get_redmine_attachment_download_url {attachment_id}: {e}"
+        return _handle_redmine_error(
+            e,
+            f"downloading attachment {attachment_id}",
+            {"resource_type": "attachment", "resource_id": attachment_id},
         )
-        return {"error": f"Failed to prepare attachment download: {str(e)}"}
 
 
 @mcp.tool()
@@ -1373,8 +1482,11 @@ async def summarize_project_status(project_id: int, days: int = 30) -> Dict[str,
         }
 
     except Exception as e:
-        print(f"Error summarizing project {project_id}: {e}")
-        return {"error": f"An error occurred while summarizing project {project_id}."}
+        return _handle_redmine_error(
+            e,
+            f"summarizing project {project_id}",
+            {"resource_type": "project", "resource_id": project_id},
+        )
 
 
 def _analyze_issues(issues: List[Any]) -> Dict[str, Any]:
@@ -1513,8 +1625,75 @@ async def search_entire_redmine(
     except VersionMismatchError:
         return {"error": "Search requires Redmine 3.3.0 or higher."}
     except Exception as e:
-        logger.error(f"Error in search_entire_redmine: {e}")
-        return {"error": f"Search failed: {str(e)}"}
+        return _handle_redmine_error(e, f"searching Redmine for '{query}'")
+
+
+def _wiki_page_to_dict(
+    wiki_page: Any, include_attachments: bool = True
+) -> Dict[str, Any]:
+    """Convert a wiki page object to a dictionary.
+
+    Args:
+        wiki_page: Redmine wiki page object
+        include_attachments: Whether to include attachment metadata
+
+    Returns:
+        Dictionary with wiki page data
+    """
+    result: Dict[str, Any] = {
+        "title": wiki_page.title,
+        "text": wiki_page.text,
+        "version": wiki_page.version,
+    }
+
+    # Add optional timestamp fields
+    if hasattr(wiki_page, "created_on"):
+        result["created_on"] = (
+            str(wiki_page.created_on) if wiki_page.created_on else None
+        )
+    else:
+        result["created_on"] = None
+
+    if hasattr(wiki_page, "updated_on"):
+        result["updated_on"] = (
+            str(wiki_page.updated_on) if wiki_page.updated_on else None
+        )
+    else:
+        result["updated_on"] = None
+
+    # Add author info
+    if hasattr(wiki_page, "author"):
+        result["author"] = {
+            "id": wiki_page.author.id,
+            "name": wiki_page.author.name,
+        }
+
+    # Add project info
+    if hasattr(wiki_page, "project"):
+        result["project"] = {
+            "id": wiki_page.project.id,
+            "name": wiki_page.project.name,
+        }
+
+    # Process attachments if requested
+    if include_attachments and hasattr(wiki_page, "attachments"):
+        result["attachments"] = []
+        for attachment in wiki_page.attachments:
+            att_dict = {
+                "id": attachment.id,
+                "filename": attachment.filename,
+                "filesize": attachment.filesize,
+                "content_type": attachment.content_type,
+                "description": getattr(attachment, "description", ""),
+                "created_on": (
+                    str(attachment.created_on)
+                    if hasattr(attachment, "created_on") and attachment.created_on
+                    else None
+                ),
+            }
+            result["attachments"].append(att_dict)
+
+    return result
 
 
 @mcp.tool()
@@ -1553,70 +1732,141 @@ async def get_redmine_wiki_page(
         else:
             wiki_page = redmine.wiki_page.get(wiki_page_title, project_id=project_id)
 
-        # Build result dictionary
-        result: Dict[str, Any] = {
-            "title": wiki_page.title,
-            "text": wiki_page.text,
-            "version": wiki_page.version,
-        }
+        return _wiki_page_to_dict(wiki_page, include_attachments)
 
-        # Add optional timestamp fields
-        if hasattr(wiki_page, "created_on"):
-            result["created_on"] = (
-                str(wiki_page.created_on) if wiki_page.created_on else None
-            )
-        else:
-            result["created_on"] = None
-
-        if hasattr(wiki_page, "updated_on"):
-            result["updated_on"] = (
-                str(wiki_page.updated_on) if wiki_page.updated_on else None
-            )
-        else:
-            result["updated_on"] = None
-
-        # Add author info
-        if hasattr(wiki_page, "author"):
-            result["author"] = {
-                "id": wiki_page.author.id,
-                "name": wiki_page.author.name,
-            }
-
-        # Add project info
-        if hasattr(wiki_page, "project"):
-            result["project"] = {
-                "id": wiki_page.project.id,
-                "name": wiki_page.project.name,
-            }
-
-        # Process attachments if requested
-        if include_attachments and hasattr(wiki_page, "attachments"):
-            result["attachments"] = []
-            for attachment in wiki_page.attachments:
-                att_dict = {
-                    "id": attachment.id,
-                    "filename": attachment.filename,
-                    "filesize": attachment.filesize,
-                    "content_type": attachment.content_type,
-                    "description": getattr(attachment, "description", ""),
-                    "created_on": (
-                        str(attachment.created_on)
-                        if hasattr(attachment, "created_on") and attachment.created_on
-                        else None
-                    ),
-                }
-                result["attachments"].append(att_dict)
-
-        return result
-
-    except ResourceNotFoundError:
-        return {
-            "error": f"Wiki page '{wiki_page_title}' not found in project "
-            f"'{project_id}'"
-        }
     except Exception as e:
-        logger.error(f"Error retrieving wiki page: {e}")
-        return {"error": f"Failed to retrieve wiki page: {str(e)}"}
+        return _handle_redmine_error(
+            e,
+            f"fetching wiki page '{wiki_page_title}' in project {project_id}",
+            {"resource_type": "wiki page", "resource_id": wiki_page_title},
+        )
+
+
+@mcp.tool()
+async def create_redmine_wiki_page(
+    project_id: Union[str, int],
+    wiki_page_title: str,
+    text: str,
+    comments: str = "",
+) -> Dict[str, Any]:
+    """
+    Create a new wiki page in a Redmine project.
+
+    Args:
+        project_id: Project identifier (ID number or string identifier)
+        wiki_page_title: Wiki page title (e.g., "Installation_Guide")
+        text: Wiki page content (Textile or Markdown depending on Redmine config)
+        comments: Optional comment for the change log
+
+    Returns:
+        Dictionary containing created wiki page metadata, or error dict on failure
+    """
+    if not redmine:
+        return {"error": "Redmine client not initialized."}
+
+    try:
+        await _ensure_cleanup_started()
+
+        # Create wiki page
+        wiki_page = redmine.wiki_page.create(
+            project_id=project_id,
+            title=wiki_page_title,
+            text=text,
+            comments=comments if comments else None,
+        )
+
+        return _wiki_page_to_dict(wiki_page)
+
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"creating wiki page '{wiki_page_title}' in project {project_id}",
+            {"resource_type": "wiki page", "resource_id": wiki_page_title},
+        )
+
+
+@mcp.tool()
+async def update_redmine_wiki_page(
+    project_id: Union[str, int],
+    wiki_page_title: str,
+    text: str,
+    comments: str = "",
+) -> Dict[str, Any]:
+    """
+    Update an existing wiki page in a Redmine project.
+
+    Args:
+        project_id: Project identifier (ID number or string identifier)
+        wiki_page_title: Wiki page title (e.g., "Installation_Guide")
+        text: New wiki page content
+        comments: Optional comment for the change log
+
+    Returns:
+        Dictionary containing updated wiki page metadata, or error dict on failure
+    """
+    if not redmine:
+        return {"error": "Redmine client not initialized."}
+
+    try:
+        await _ensure_cleanup_started()
+
+        # Update wiki page
+        redmine.wiki_page.update(
+            wiki_page_title,
+            project_id=project_id,
+            text=text,
+            comments=comments if comments else None,
+        )
+
+        # Fetch updated page to return current state
+        wiki_page = redmine.wiki_page.get(wiki_page_title, project_id=project_id)
+
+        return _wiki_page_to_dict(wiki_page)
+
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"updating wiki page '{wiki_page_title}' in project {project_id}",
+            {"resource_type": "wiki page", "resource_id": wiki_page_title},
+        )
+
+
+@mcp.tool()
+async def delete_redmine_wiki_page(
+    project_id: Union[str, int],
+    wiki_page_title: str,
+) -> Dict[str, Any]:
+    """
+    Delete a wiki page from a Redmine project.
+
+    Args:
+        project_id: Project identifier (ID number or string identifier)
+        wiki_page_title: Wiki page title to delete
+
+    Returns:
+        Dictionary with success status, or error dict on failure
+    """
+    if not redmine:
+        return {"error": "Redmine client not initialized."}
+
+    try:
+        await _ensure_cleanup_started()
+
+        # Delete wiki page
+        redmine.wiki_page.delete(wiki_page_title, project_id=project_id)
+
+        return {
+            "success": True,
+            "title": wiki_page_title,
+            "message": f"Wiki page '{wiki_page_title}' deleted successfully.",
+        }
+
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"deleting wiki page '{wiki_page_title}' in project {project_id}",
+            {"resource_type": "wiki page", "resource_id": wiki_page_title},
+        )
 
 
 @mcp.tool()
@@ -1635,13 +1885,15 @@ async def cleanup_attachment_files() -> Dict[str, Any]:
 
         return {"cleanup": cleanup_stats, "current_storage": storage_stats}
     except Exception as e:
-        print(f"Error during attachment cleanup: {e}")
+        logger.error(f"Error during attachment cleanup: {e}")
         return {"error": f"An error occurred during cleanup: {str(e)}"}
 
 
 if __name__ == "__main__":
     if not redmine:
-        print("Redmine client could not be initialized. Some tools may not work.")
-        print("Please check your .env file and Redmine server connectivity.")
+        logger.warning(
+            "Redmine client could not be initialized. Some tools may not work. "
+            "Please check your .env file and Redmine server connectivity."
+        )
     # Initialize and run the server
     mcp.run(transport="stdio")

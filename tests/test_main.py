@@ -76,3 +76,21 @@ class TestMainFunction:
         from redmine_mcp_server.main import main
 
         assert callable(main)
+
+    @patch("redmine_mcp_server.main.mcp")
+    @patch("redmine_mcp_server.main.logger")
+    def test_main_configures_and_runs_server(self, mock_logger, mock_mcp):
+        """Test that main() configures settings and runs the server."""
+        from redmine_mcp_server.main import main
+
+        # Call main - mcp.run is mocked so it won't block
+        main()
+
+        # Verify settings were configured
+        assert mock_mcp.settings.stateless_http is True
+
+        # Verify server was started with correct transport
+        mock_mcp.run.assert_called_once_with(transport="streamable-http")
+
+        # Verify version was logged
+        assert mock_logger.info.called

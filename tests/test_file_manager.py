@@ -167,6 +167,35 @@ class TestGetStorageStats:
         assert stats["total_files"] == 0
         assert stats["total_bytes"] == 0
 
+    def test_stats_stat_failure_for_size(self, tmp_path, file_manager):
+        """Test handles OSError when stat() fails for file size only.
+
+        This test specifically targets lines 99-101 by allowing is_file() to
+        succeed (first stat call) but failing on the size fetch (second stat).
+        """
+        content = b"Test content"
+        expires_at = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+        create_attachment(tmp_path, "uuid-1", content, expires_at)
+
+        original_stat = Path.stat
+        call_count = [0]
+
+        def mock_stat(self, **kwargs):
+            # Allow is_file() check (first call per file)
+            # Fail on size fetch (second call per file)
+            if self.name == "test_file.txt":
+                call_count[0] += 1
+                if call_count[0] > 1:
+                    raise OSError("Permission denied")
+            return original_stat(self, **kwargs)
+
+        with patch.object(Path, "stat", mock_stat):
+            stats = file_manager.get_storage_stats()
+
+        # File was counted but size couldn't be fetched
+        assert stats["total_files"] == 1
+        assert stats["total_bytes"] == 0
+
 
 @pytest.mark.unit
 class TestCleanupExpiredFilesHappyPath:
@@ -394,6 +423,44 @@ class TestCleanupExpiredFilesErrorHandling:
         assert result["cleaned_files"] == 0
         assert uuid_dir.exists()
         assert file_path.exists()
+
+    def test_cleanup_inaccessible_attachments_dir(self, tmp_path):
+        """Test handles OSError when attachments_dir.iterdir() fails.
+
+        This test targets lines 25-26 where iterdir() on the attachments
+        directory itself raises an OSError.
+        """
+        manager = AttachmentFileManager(str(tmp_path))
+
+        # Mock iterdir to raise OSError
+        with patch.object(Path, "iterdir", side_effect=OSError("Permission denied")):
+            result = manager.cleanup_expired_files()
+
+        assert result == {"cleaned_files": 0, "cleaned_bytes": 0, "cleaned_mb": 0.0}
+
+    def test_cleanup_skips_dir_without_metadata(self, tmp_path, file_manager):
+        """Test skips UUID directories that have no metadata.json.
+
+        This test targets line 31 where directories without metadata.json
+        are skipped via continue.
+        """
+        # Create dir without metadata
+        no_metadata_dir = tmp_path / "uuid-no-metadata"
+        no_metadata_dir.mkdir()
+        (no_metadata_dir / "orphan_file.txt").write_text("orphan")
+
+        # Create valid expired file
+        content = b"expired content"
+        expired_time = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        valid_dir = create_attachment(tmp_path, "uuid-valid", content, expired_time)
+
+        result = file_manager.cleanup_expired_files()
+
+        # Only the valid expired file should be cleaned
+        assert result["cleaned_files"] == 1
+        assert not valid_dir.exists()
+        # Dir without metadata should still exist (skipped)
+        assert no_metadata_dir.exists()
 
 
 @pytest.mark.unit

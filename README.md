@@ -390,3 +390,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [Changelog](./CHANGELOG.md) - Detailed version history
 - [Roadmap](roadmap.md) - Future development plans
 - [Blog: How I linked a legacy system to a modern AI agent with MCP](https://www.thefirstcommit.com/how-i-linked-a-legacy-system-to-a-modern-ai-agent-with-mcp-1b14e634a4b3) - The story behind this project
+- [Blog: Designing Reliable MCP Servers: 3 Hard Lessons in Agentic Architecture](https://medium.com/the-first-commit/designing-reliable-mcp-servers-3-hard-lessons-in-agentic-architecture-7a17dd821f85) - Lessons learned building this server

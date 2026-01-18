@@ -105,8 +105,9 @@ from redmine_mcp_server import redmine_handler
             },
         )
 
-        # The warning should be printed to stdout (via print())
-        assert "WARNING" in result.stdout or "REDMINE_URL not set" in result.stdout, (
+        # The warning is logged via logger.warning() which goes to stderr
+        combined_output = result.stdout + result.stderr
+        assert "REDMINE_URL not set" in combined_output, (
             f"Expected warning about missing REDMINE_URL. "
             f"stdout: {result.stdout}, stderr: {result.stderr}"
         )
@@ -142,10 +143,9 @@ from redmine_mcp_server import redmine_handler
             },
         )
 
-        # Check for authentication warning
-        assert (
-            "WARNING" in result.stdout or "authentication" in result.stdout.lower()
-        ), (
+        # Check for authentication warning (logged via logger.warning to stderr)
+        combined_output = result.stdout + result.stderr
+        assert "authentication" in combined_output.lower(), (
             f"Expected warning about missing authentication. "
             f"stdout: {result.stdout}, stderr: {result.stderr}"
         )
