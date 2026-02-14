@@ -839,24 +839,31 @@ async def list_redmine_projects() -> List[Dict[str, Any]]:
 
 
 @mcp.tool()
-async def list_my_redmine_issues(
+async def list_redmine_issues(
     **filters: Any,
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
-    """List issues assigned to the authenticated user with pagination support.
+    """List Redmine issues with flexible filtering and pagination support.
 
-    This uses the Redmine REST API filter ``assigned_to_id='me'`` to
-    retrieve issues for the current user. Supports server-side pagination
-    to prevent MCP token overflow and improve performance.
+    A general-purpose tool for listing issues from Redmine. Supports
+    filtering by project, status, assignee, tracker, priority, and any
+    other Redmine issue filter. Use this to list all issues in a project,
+    find unassigned issues, or apply any combination of filters.
 
     Args:
-        **filters: Keyword arguments for filtering issues:
+        **filters: Keyword arguments for filtering and pagination:
+            - project_id: Filter by project (ID or string identifier)
+            - status_id: Filter by status ID
+            - tracker_id: Filter by tracker ID
+            - assigned_to_id: Filter by assignee (user ID or 'me')
+            - priority_id: Filter by priority ID
+            - sort: Sort order (e.g., "updated_on:desc")
             - limit: Maximum number of issues to return (default: 25, max: 1000)
             - offset: Number of issues to skip for pagination (default: 0)
             - include_pagination_info: Return structured response with metadata
                                    (default: False)
-            - sort: Sort order (e.g., "updated_on:desc")
-            - status_id: Filter by status ID
-            - project_id: Filter by project ID
+            - fields: List of field names to include in results (default: all)
+                     Available: id, subject, description, project, status,
+                               priority, author, assigned_to, created_on, updated_on
             - [other Redmine API filters]
 
     Returns:
@@ -864,20 +871,29 @@ async def list_my_redmine_issues(
         Issues are limited to prevent token overflow (25,000 token MCP limit).
 
     Examples:
-        >>> await list_my_redmine_issues(limit=10)
+        >>> await list_redmine_issues(project_id=1)
         [{"id": 1, "subject": "Issue 1", ...}, ...]
 
-        >>> await list_my_redmine_issues(
-        ...     limit=25, offset=50, include_pagination_info=True
+        >>> await list_redmine_issues(project_id="my-project", status_id=1)
+        [{"id": 2, "subject": "Open issue", ...}, ...]
+
+        >>> await list_redmine_issues(
+        ...     project_id=1, limit=25, offset=50, include_pagination_info=True
         ... )
         {
             "issues": [...],
             "pagination": {"total": 150, "has_next": True, "next_offset": 75, ...}
         }
 
+        >>> await list_redmine_issues(
+        ...     project_id=1, fields=["id", "subject", "status"]
+        ... )
+        [{"id": 1, "subject": "Bug fix", "status": {...}}, ...]
+
     Performance:
         - Memory efficient: Uses server-side pagination
         - Token efficient: Default limit keeps response under 2000 tokens
+        - Further reduce tokens: Use fields parameter for minimal data transfer
         - Time efficient: Typically <500ms for limit=25
     """
     if not redmine:
@@ -894,10 +910,11 @@ async def list_my_redmine_issues(
         else:
             actual_filters = filters
 
-        # Extract pagination parameters
+        # Extract pagination and field selection parameters
         limit = actual_filters.pop("limit", 25)
         offset = actual_filters.pop("offset", 0)
         include_pagination_info = actual_filters.pop("include_pagination_info", False)
+        fields = actual_filters.pop("fields", None)
 
         # Use actual_filters for remaining Redmine filters
         filters = actual_filters
@@ -954,7 +971,6 @@ async def list_my_redmine_issues(
         # Use python-redmine ResourceSet native pagination
         # Server-side filtering more efficient than client-side
         redmine_filters = {
-            "assigned_to_id": "me",
             "offset": offset,
             "limit": min(limit or 25, 100),  # Redmine API max per request
             **filters,
@@ -970,15 +986,17 @@ async def list_my_redmine_issues(
             f"Retrieved {len(issues_list)} issues with offset={offset}, limit={limit}"
         )
 
-        # Convert to dictionaries
-        result_issues = [_issue_to_dict(issue) for issue in issues_list]
+        # Convert to dictionaries with optional field selection
+        result_issues = [
+            _issue_to_dict_selective(issue, fields) for issue in issues_list
+        ]
 
         # Handle metadata response format
         if include_pagination_info:
             # Get total count from a separate query without offset/limit
             try:
                 # Create clean query for total count (no pagination parameters)
-                count_filters = {"assigned_to_id": "me", **filters}
+                count_filters = {**filters}
                 count_query = redmine.issue.filter(**count_filters)
                 # Must evaluate the query first to get accurate total_count
                 list(count_query)  # Trigger evaluation
@@ -1020,7 +1038,37 @@ async def list_my_redmine_issues(
         return result_issues
 
     except Exception as e:
-        return [_handle_redmine_error(e, "listing assigned issues")]
+        return [_handle_redmine_error(e, "listing issues")]
+
+
+@mcp.tool()
+async def list_my_redmine_issues(
+    **filters: Any,
+) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    """List issues assigned to the authenticated user with pagination support.
+
+    Convenience wrapper around list_redmine_issues that automatically
+    filters by assigned_to_id='me'. Supports all the same filters
+    and pagination options.
+
+    .. deprecated::
+        Use ``list_redmine_issues(assigned_to_id='me')`` instead.
+
+    Args:
+        **filters: Same keyword arguments as list_redmine_issues.
+            See list_redmine_issues for full documentation.
+
+    Returns:
+        List[Dict] (default) or Dict with 'issues' and 'pagination' keys.
+    """
+    # Handle MCP interface wrapping parameters in 'filters' key
+    if "filters" in filters and isinstance(filters["filters"], dict):
+        actual_filters = filters["filters"]
+    else:
+        actual_filters = filters
+
+    actual_filters["assigned_to_id"] = "me"
+    return await list_redmine_issues(**actual_filters)
 
 
 @mcp.tool()
