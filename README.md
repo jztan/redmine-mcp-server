@@ -322,15 +322,16 @@ curl http://localhost:8000/health
 
 ## Available Tools
 
-This MCP server provides 14 tools for interacting with Redmine. For detailed documentation, see [Tool Reference](./docs/tool-reference.md).
+This MCP server provides 15 tools for interacting with Redmine. For detailed documentation, see [Tool Reference](./docs/tool-reference.md).
 
 - **Project Management** (2 tools)
   - [`list_redmine_projects`](docs/tool-reference.md#list_redmine_projects) - List all accessible projects
   - [`summarize_project_status`](docs/tool-reference.md#summarize_project_status) - Get comprehensive project status summary
 
-- **Issue Operations** (5 tools)
+- **Issue Operations** (6 tools)
   - [`get_redmine_issue`](docs/tool-reference.md#get_redmine_issue) - Retrieve detailed issue information
-  - [`list_my_redmine_issues`](docs/tool-reference.md#list_my_redmine_issues) - List issues assigned to you (with pagination)
+  - [`list_redmine_issues`](docs/tool-reference.md#list_redmine_issues) - List issues with flexible filtering (project, status, assignee, etc.)
+  - [`list_my_redmine_issues`](docs/tool-reference.md#list_my_redmine_issues) - List issues assigned to you *(deprecated: will be removed in a future release, use `list_redmine_issues(assigned_to_id='me')` instead)*
   - [`search_redmine_issues`](docs/tool-reference.md#search_redmine_issues) - Search issues by text query
   - [`create_redmine_issue`](docs/tool-reference.md#create_redmine_issue) - Create new issues
   - [`update_redmine_issue`](docs/tool-reference.md#update_redmine_issue) - Update existing issues
