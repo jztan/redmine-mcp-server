@@ -1512,9 +1512,7 @@ class TestAttachmentDownloadEdgeCases:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_public_host_0000_converts_to_localhost(
-        self, mock_redmine, tmp_path
-    ):
+    async def test_public_host_0000_converts_to_localhost(self, mock_redmine, tmp_path):
         """PUBLIC_HOST=0.0.0.0 converts to localhost in URL (line 1380)."""
         from redmine_mcp_server.redmine_handler import (
             get_redmine_attachment_download_url,
@@ -1554,9 +1552,7 @@ class TestAttachmentDownloadEdgeCases:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_file_rename_error_with_cleanup_failure(
-        self, mock_redmine, tmp_path
-    ):
+    async def test_file_rename_error_with_cleanup_failure(self, mock_redmine, tmp_path):
         """File rename error with cleanup also failing (lines 1332-1333)."""
         from pathlib import Path
         from redmine_mcp_server.redmine_handler import (
@@ -1595,9 +1591,7 @@ class TestAttachmentDownloadEdgeCases:
 
         with patch("os.rename", side_effect=failing_rename):
             with patch.object(Path, "unlink", failing_unlink):
-                with patch.dict(
-                    os.environ, {"ATTACHMENTS_DIR": str(attachments_dir)}
-                ):
+                with patch.dict(os.environ, {"ATTACHMENTS_DIR": str(attachments_dir)}):
                     result = await get_redmine_attachment_download_url(999)
 
         # Should still return error even if cleanup fails
@@ -1645,9 +1639,7 @@ class TestAttachmentDownloadEdgeCases:
 
         with patch("os.rename", side_effect=selective_rename):
             with patch.object(Path, "unlink", failing_unlink):
-                with patch.dict(
-                    os.environ, {"ATTACHMENTS_DIR": str(attachments_dir)}
-                ):
+                with patch.dict(os.environ, {"ATTACHMENTS_DIR": str(attachments_dir)}):
                     result = await get_redmine_attachment_download_url(888)
 
         # Should still return error even if cleanup fails
