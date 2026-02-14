@@ -854,7 +854,9 @@ async def list_redmine_issues(
             - project_id: Filter by project (ID or string identifier)
             - status_id: Filter by status ID
             - tracker_id: Filter by tracker ID
-            - assigned_to_id: Filter by assignee (user ID or 'me')
+            - assigned_to_id: Filter by assignee. Use a numeric user ID
+                             or the special value 'me' to retrieve issues
+                             assigned to the currently authenticated user.
             - priority_id: Filter by priority ID
             - sort: Sort order (e.g., "updated_on:desc")
             - limit: Maximum number of issues to return (default: 25, max: 1000)

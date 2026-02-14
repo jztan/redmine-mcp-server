@@ -239,38 +239,93 @@ Retrieve detailed information about a specific Redmine issue.
 
 ---
 
-### `list_my_redmine_issues`
+### `list_redmine_issues`
 
-Lists issues assigned to the authenticated user with pagination support.
+List Redmine issues with flexible filtering and pagination support. A general-purpose tool for listing issues from Redmine. Supports filtering by project, status, assignee, tracker, priority, and any other Redmine issue filter.
 
 **Parameters:**
+- `project_id` (integer or string, optional): Filter by project (numeric ID or string identifier)
+- `status_id` (integer, optional): Filter by status ID
+- `tracker_id` (integer, optional): Filter by tracker ID
+- `assigned_to_id` (integer or string, optional): Filter by assignee. Use a numeric user ID or the special value `'me'` to retrieve issues assigned to the currently authenticated user.
+- `priority_id` (integer, optional): Filter by priority ID
+- `sort` (string, optional): Sort order (e.g., `"updated_on:desc"`)
 - `limit` (integer, optional): Maximum issues to return. Default: `25`, Max: `1000`
 - `offset` (integer, optional): Number of issues to skip for pagination. Default: `0`
 - `include_pagination_info` (boolean, optional): Return structured response with metadata. Default: `false`
-- `**filters` (optional): Additional query parameters (e.g., `status_id`, `project_id`)
+- `fields` (array of strings, optional): List of field names to include in results. Default: all fields
+  - Available fields: `id`, `subject`, `description`, `project`, `status`, `priority`, `author`, `assigned_to`, `created_on`, `updated_on`
+  - Special values: `["*"]` or `["all"]` for all fields
+
+**Returns:** List of issue dictionaries, or structured response with pagination metadata
+
+**Examples:**
+
+List all issues in a project:
+```python
+list_redmine_issues(project_id="my-project")
+```
+
+Filter by multiple criteria:
+```python
+list_redmine_issues(
+    project_id=1,
+    status_id=1,
+    assigned_to_id="me",
+    sort="updated_on:desc"
+)
+```
+
+With pagination metadata:
+```python
+list_redmine_issues(
+    project_id=1,
+    limit=25,
+    offset=50,
+    include_pagination_info=True
+)
+# Returns:
+# {
+#   "issues": [...],
+#   "pagination": {
+#     "total": 150,
+#     "limit": 25,
+#     "offset": 50,
+#     "has_next": true,
+#     "has_previous": true,
+#     "next_offset": 75,
+#     "previous_offset": 25
+#   }
+# }
+```
+
+With field selection (reduces token usage):
+```python
+list_redmine_issues(
+    project_id=1,
+    fields=["id", "subject", "status"]
+)
+# Returns: [{"id": 1, "subject": "Bug fix", "status": {...}}, ...]
+```
+
+---
+
+### `list_my_redmine_issues`
+
+> **Deprecated:** This tool will be removed in a future release. Use `list_redmine_issues(assigned_to_id='me')` instead.
+
+Convenience wrapper around `list_redmine_issues` that automatically filters by `assigned_to_id='me'`. Supports all the same filters and pagination options.
+
+**Parameters:**
+- Same as `list_redmine_issues` (see above)
 
 **Returns:** List of issue dictionaries assigned to current user, or structured response with pagination metadata
 
-**Example (simple):**
-```json
-[
-  {"id": 1, "subject": "Task 1"},
-  {"id": 2, "subject": "Task 2"}
-]
-```
-
-**Example (with pagination info):**
-```json
-{
-  "issues": [...],
-  "pagination": {
-    "total": 150,
-    "limit": 25,
-    "offset": 0,
-    "has_next": true,
-    "has_prev": false
-  }
-}
+**Example:**
+```python
+# These are equivalent:
+list_my_redmine_issues(project_id=1, limit=10)
+list_redmine_issues(project_id=1, assigned_to_id="me", limit=10)
 ```
 
 ---
@@ -297,10 +352,10 @@ Search issues using text queries with support for pagination, field selection, a
 
 **When to Use:**
 - **Use `search_redmine_issues()`** for text-based searches across issues
-- **Use `list_my_redmine_issues()`** for advanced filtering by project_id, status_id, priority_id, etc.
+- **Use `list_redmine_issues()`** for advanced filtering by project_id, status_id, priority_id, etc.
 
 **Search API Limitations:**
-The Search API supports text search with `scope` and `open_issues` filters only. For advanced filtering by specific field values (project_id, status_id, priority_id, etc.), use `list_my_redmine_issues()` instead.
+The Search API supports text search with `scope` and `open_issues` filters only. For advanced filtering by specific field values (project_id, status_id, priority_id, etc.), use `list_redmine_issues()` instead.
 
 **Examples:**
 
