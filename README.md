@@ -235,6 +235,45 @@ Or configure manually in your Claude Code settings file (`~/.claude.json`):
 </details>
 
 <details>
+<summary><strong>Claude Desktop (macOS & Windows)</strong></summary>
+
+Claude Desktop's config file supports stdio transport only. Use FastMCP's proxy via `uv` to bridge to this HTTP server.
+
+**Setup:**
+1. Open Claude Desktop
+2. Click the **Claude** menu (macOS menu bar / Windows title bar) > **Settings...**
+3. Click the **Developer** tab > **Edit Config**
+4. Add the following configuration:
+
+```json
+{
+  "mcpServers": {
+    "redmine": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--with", "fastmcp",
+        "fastmcp",
+        "run",
+        "http://127.0.0.1:8000/mcp"
+      ]
+    }
+  }
+}
+```
+
+5. Save the file, then **fully quit and restart** Claude Desktop
+6. Look for the tools icon in the input area to verify the connection
+
+**Config file locations:**
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+
+**Note:** The Redmine MCP server must be running before starting Claude Desktop.
+
+</details>
+
+<details>
 <summary><strong>Codex CLI</strong></summary>
 
 Add to Codex CLI using the command:
