@@ -8,6 +8,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-02-14
+
+### Added
+- **New MCP Tool: `list_redmine_issues`** - General-purpose issue listing with flexible filtering ([#64](https://github.com/jztan/redmine-mcp-server/issues/64))
+  - Filter by `project_id`, `status_id`, `tracker_id`, `assigned_to_id`, `priority_id`, `sort`
+  - `assigned_to_id` supports numeric user IDs or `'me'` for the authenticated user
+  - `fields` parameter for selective field returns to reduce token usage
+  - Full pagination support with `limit`, `offset`, and `include_pagination_info`
+  - Supports string project identifiers (e.g., `"my-project"`) in addition to numeric IDs
+- **Comprehensive Test Suite** - 34 unit tests and 15 integration tests for the new tool
+  - Covers filters, pagination, field selection, combined filters, error handling, and MCP parameter unwrapping
+  - Integration tests verify real Redmine API behavior including sort order and field selection
+
+### Changed
+- **`list_my_redmine_issues` refactored** as a thin wrapper around `list_redmine_issues(assigned_to_id='me')`
+  - Full backward compatibility maintained
+  - All existing calls continue to work unchanged
+
+### Deprecated
+- **`list_my_redmine_issues`** - Will be removed in a future release
+  - Use `list_redmine_issues(assigned_to_id='me')` instead
+  - Wrapper delegates all parameters to `list_redmine_issues`
+
+### Improved
+- **Documentation** - Updated README, tool-reference.md, and CLAUDE.md
+  - Tool count updated from 14 to 15
+  - Tool reference now the single source of truth for tool documentation
+  - CLAUDE.md simplified to reference tool-reference.md instead of duplicating details
+
 ## [0.10.0] - 2026-01-11
 
 ### Added
@@ -618,6 +647,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Works with Docker and docker-compose
 - Tested on macOS and Linux environments
 
+[0.11.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.11.0
 [0.10.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.10.0
 [0.9.1]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.9.1
 [0.9.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.9.0
