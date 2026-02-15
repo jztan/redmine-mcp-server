@@ -40,10 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Wrapper delegates all parameters to `list_redmine_issues`
 
 ### Improved
-- **Documentation** - Updated README, tool-reference.md, and CLAUDE.md
+- **Documentation** - Updated README and tool-reference.md
   - Tool count updated from 14 to 15
   - Tool reference now the single source of truth for tool documentation
-  - CLAUDE.md simplified to reference tool-reference.md instead of duplicating details
 
 ## [0.10.0] - 2026-01-11
 
