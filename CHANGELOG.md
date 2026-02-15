@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **New MCP Tool: `list_redmine_versions`** - List versions/milestones for a Redmine project
+  - Filter by `project_id` (numeric or string identifier)
+  - Optional `status_filter` parameter (open, locked, closed)
+  - Client-side filtering with input validation
+  - 18 unit tests covering helper, basic functionality, filtering, and error handling
+- **`fixed_version_id` filter** documented for `list_redmine_issues` tool
+
 ## [0.11.0] - 2026-02-14
 
 ### Added

@@ -952,6 +952,142 @@ class TestEnvironmentConfiguration:
         assert hasattr(redmine, "issue")
 
 
+class TestListRedmineVersionsIntegration:
+    """Integration tests for list_redmine_versions tool."""
+
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_list_versions_by_project_id(self):
+        """Test listing versions for a project by numeric ID."""
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        from redmine_mcp_server.redmine_handler import list_redmine_versions
+
+        projects = list(redmine.project.all())
+        if not projects:
+            pytest.skip("No projects available for testing")
+
+        project_id = projects[0].id
+        result = await list_redmine_versions(project_id=project_id)
+
+        assert isinstance(result, list)
+        for version in result:
+            if "error" in version:
+                pytest.fail(f"API error: {version['error']}")
+
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_list_versions_by_string_identifier(self):
+        """Test listing versions using a string project identifier."""
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        from redmine_mcp_server.redmine_handler import list_redmine_versions
+
+        projects = list(redmine.project.all())
+        if not projects:
+            pytest.skip("No projects available for testing")
+
+        identifier = projects[0].identifier
+        result = await list_redmine_versions(project_id=identifier)
+
+        assert isinstance(result, list)
+        for version in result:
+            assert "error" not in version
+
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_list_versions_structure(self):
+        """Test that returned version dicts have expected keys."""
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        from redmine_mcp_server.redmine_handler import list_redmine_versions
+
+        projects = list(redmine.project.all())
+        if not projects:
+            pytest.skip("No projects available for testing")
+
+        result = await list_redmine_versions(project_id=projects[0].id)
+
+        assert isinstance(result, list)
+        if not result:
+            pytest.skip("No versions found in first project")
+
+        version = result[0]
+        expected_keys = {
+            "id", "name", "description", "status", "due_date",
+            "sharing", "wiki_page_title", "project",
+            "created_on", "updated_on",
+        }
+        assert set(version.keys()) == expected_keys
+        assert isinstance(version["id"], int)
+        assert isinstance(version["name"], str)
+        assert version["status"] in ("open", "locked", "closed")
+
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_list_versions_filter_open(self):
+        """Test filtering versions by open status."""
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        from redmine_mcp_server.redmine_handler import list_redmine_versions
+
+        projects = list(redmine.project.all())
+        if not projects:
+            pytest.skip("No projects available for testing")
+
+        result = await list_redmine_versions(
+            project_id=projects[0].id, status_filter="open"
+        )
+
+        assert isinstance(result, list)
+        for version in result:
+            assert "error" not in version
+            assert version["status"] == "open"
+
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_list_versions_invalid_status_filter(self):
+        """Test that invalid status_filter returns error without API call."""
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        from redmine_mcp_server.redmine_handler import list_redmine_versions
+
+        result = await list_redmine_versions(
+            project_id=1, status_filter="invalid"
+        )
+
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert "error" in result[0]
+        assert "invalid" in result[0]["error"].lower()
+
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_list_versions_nonexistent_project(self):
+        """Test error handling for a project that doesn't exist."""
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        from redmine_mcp_server.redmine_handler import list_redmine_versions
+
+        result = await list_redmine_versions(project_id=999999)
+
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert "error" in result[0]
+
+
 if __name__ == "__main__":
     # Run integration tests
     pytest.main([__file__, "-v", "-m", "integration", "--tb=short"])
