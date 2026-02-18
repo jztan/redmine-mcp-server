@@ -441,9 +441,14 @@ Creates a new issue in the specified project.
 - `project_id` (integer, required): Target project ID
 - `subject` (string, required): Issue subject/title
 - `description` (string, optional): Issue description. Default: `""`
-- `**fields` (optional): Additional Redmine fields (e.g., `priority_id`, `assigned_to_id`, `tracker_id`, `status_id`)
+- `fields` (object|string, optional): Additional Redmine fields as:
+  - an object (`{"priority_id": 3, "tracker_id": 1}`), or
+  - a serialized JSON object string (for MCP clients that pass string payloads)
+- `**extra_fields` (optional): Additional Redmine fields passed directly as keyword arguments (e.g., `priority_id`, `assigned_to_id`, `tracker_id`, `status_id`)
 
 **Returns:** Created issue dictionary
+
+**Behavior note:** If `REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true` and Redmine returns validation errors like `<Field Name> cannot be blank`, the server fetches project custom fields, auto-fills missing required custom fields from Redmine `default_value` or `REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS`, and retries once.
 
 **Example:**
 ```python
