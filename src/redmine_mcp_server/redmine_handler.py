@@ -569,21 +569,30 @@ def _is_required_custom_field_autofill_enabled() -> bool:
 
 
 def _extract_missing_required_field_names(error_message: str) -> List[str]:
-    """Extract field names from validation text like '<name> cannot be blank'."""
+    """Extract field names from relevant validation errors."""
     message = error_message or ""
     if "Validation failed:" in message:
         message = message.split("Validation failed:", 1)[1]
 
+    # Handle common Redmine validation fragments that imply we should retry
+    # required custom field autofill.
+    markers = [
+        "cannot be blank",
+        "is not included in the list",
+        "is invalid",
+    ]
+
     missing_names: List[str] = []
     for item in [part.strip() for part in message.split(",") if part.strip()]:
         lower_item = item.lower()
-        marker = "cannot be blank"
-        marker_pos = lower_item.find(marker)
-        if marker_pos == -1:
-            continue
-        field_name = item[:marker_pos].strip(" .:")
-        if field_name:
-            missing_names.append(field_name)
+        for marker in markers:
+            marker_pos = lower_item.find(marker)
+            if marker_pos == -1:
+                continue
+            field_name = item[:marker_pos].strip(" .:")
+            if field_name:
+                missing_names.append(field_name)
+            break
 
     return missing_names
 
@@ -680,12 +689,16 @@ def _augment_fields_with_required_custom_fields(
         if normalized_name not in missing_normalized:
             continue
 
+        possible_values = _extract_possible_values(custom_field)
         field_value = _resolve_required_custom_field_value(custom_field, defaults)
         if field_value is None:
             continue
         existing_entry = existing_entries_by_id.get(field_id)
         if existing_entry is not None:
-            if _is_missing_custom_field_value(existing_entry.get("value")):
+            existing_value = existing_entry.get("value")
+            if _is_missing_custom_field_value(existing_value) or (
+                not _is_allowed_custom_field_value(existing_value, possible_values)
+            ):
                 existing_entry["value"] = field_value
             continue
 
@@ -1503,7 +1516,8 @@ async def create_redmine_issue(
     - Supports direct keyword arguments (e.g. ``priority_id=4``)
     - Supports serialized ``fields`` payload (JSON object string)
     - Retries once with auto-filled required custom fields if Redmine reports
-      ``<Field Name> cannot be blank`` validation errors and
+      relevant validation errors on required custom fields (e.g. blank/invalid)
+      and
       ``REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true``.
     """
     if not redmine:

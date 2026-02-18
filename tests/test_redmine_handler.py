@@ -572,6 +572,54 @@ class TestRedmineHandler:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_create_redmine_issue_autofills_invalid_list_value(
+        self, mock_redmine, mock_redmine_issue
+    ):
+        """Retry should replace invalid list values when validation flags inclusion."""
+        from redminelib.exceptions import ValidationError
+        from redmine_mcp_server.redmine_handler import create_redmine_issue
+
+        rise_project_field = Mock()
+        rise_project_field.id = 6
+        rise_project_field.name = "RISE Project"
+        rise_project_field.possible_values = [{"value": "Any"}, {"value": "ShowX"}]
+        rise_project_field.default_value = "Any"
+
+        mock_project = Mock()
+        mock_project.issue_custom_fields = [rise_project_field]
+        mock_redmine.project.get.return_value = mock_project
+
+        mock_redmine.issue.create.side_effect = [
+            ValidationError("RISE Project is not included in the list"),
+            mock_redmine_issue,
+        ]
+
+        with patch.dict(
+            os.environ, {"REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS": "true"}, clear=False
+        ):
+            result = await create_redmine_issue(
+                99,
+                "Autofill test",
+                "Autofill description",
+                fields=(
+                    '{"tracker_id": 5, "custom_fields": '
+                    '[{"id": 6, "value": "any"}]}'
+                ),
+            )
+
+        assert result["id"] == 123
+        assert mock_redmine.issue.create.call_count == 2
+        second_call_kwargs = mock_redmine.issue.create.call_args_list[1].kwargs
+
+        matching_values = [
+            entry["value"]
+            for entry in second_call_kwargs["custom_fields"]
+            if entry.get("id") == 6
+        ]
+        assert matching_values == ["Any"]
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_create_redmine_issue_error(self, mock_redmine):
         """Test error during issue creation."""
         mock_redmine.issue.create.side_effect = Exception("Boom")
