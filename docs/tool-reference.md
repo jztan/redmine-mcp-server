@@ -485,7 +485,9 @@ Creates a new issue in the specified project.
 - `fields` (object|string, optional): Additional Redmine fields as:
   - an object (`{"priority_id": 3, "tracker_id": 1}`), or
   - a serialized JSON object string (for MCP clients that pass string payloads)
-- `**extra_fields` (optional): Additional Redmine fields passed directly as keyword arguments (e.g., `priority_id`, `assigned_to_id`, `tracker_id`, `status_id`)
+- `extra_fields` (object|string, optional): Additional Redmine fields as:
+  - an object (`{"priority_id": 3, "tracker_id": 1}`), or
+  - a serialized JSON object string
 
 **Returns:** Created issue dictionary
 
@@ -498,8 +500,7 @@ create_redmine_issue(
     project_id=1,
     subject="Login button not working",
     description="The login button does not respond to clicks",
-    priority_id=3,  # High priority
-    tracker_id=1    # Bug tracker
+    fields={"priority_id": 3, "tracker_id": 1}
 )
 ```
 

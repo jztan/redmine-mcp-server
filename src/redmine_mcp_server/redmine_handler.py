@@ -547,6 +547,48 @@ def _parse_create_issue_fields(
     return dict(parsed)
 
 
+def _parse_optional_object_payload(
+    payload: Optional[Union[Dict[str, Any], str]], payload_name: str
+) -> Dict[str, Any]:
+    """Parse an optional payload from dict or serialized JSON object string."""
+    if payload is None:
+        return {}
+
+    if isinstance(payload, dict):
+        parsed: Any = dict(payload)
+    elif isinstance(payload, str):
+        raw = payload.strip()
+        if not raw:
+            return {}
+        try:
+            parsed = json.loads(raw)
+        except Exception as e:
+            raise ValueError(
+                f"Invalid {payload_name} payload. Expected a dict or JSON object string."
+            ) from e
+    else:
+        raise ValueError(
+            f"Invalid {payload_name} payload. Expected a dict or JSON object string."
+        )
+
+    if parsed is None:
+        raise ValueError(
+            f"Invalid {payload_name} payload. Parsed value must be an object/dict."
+        )
+
+    if isinstance(parsed, dict) and set(parsed.keys()) == {payload_name}:
+        wrapped = parsed.get(payload_name)
+        if isinstance(wrapped, dict):
+            parsed = wrapped
+
+    if not isinstance(parsed, dict):
+        raise ValueError(
+            f"Invalid {payload_name} payload. Parsed value must be an object/dict."
+        )
+
+    return dict(parsed)
+
+
 def _extract_possible_values(custom_field: Any) -> List[str]:
     """Extract possible values from a Redmine custom field in a robust way."""
     possible_values = getattr(custom_field, "possible_values", None) or []
@@ -1798,13 +1840,13 @@ async def create_redmine_issue(
     subject: str,
     description: str = "",
     fields: Optional[Union[Dict[str, Any], str]] = None,
-    **extra_fields: Any,
+    extra_fields: Optional[Union[Dict[str, Any], str]] = None,
 ) -> Dict[str, Any]:
     """Create a new issue in Redmine.
 
     Compatibility notes:
-    - Supports direct keyword arguments (e.g. ``priority_id=4``)
     - Supports serialized ``fields`` payload (JSON object string)
+    - Supports optional ``extra_fields`` payload as object/JSON string
     - Retries once with auto-filled required custom fields if Redmine reports
       relevant validation errors on required custom fields (e.g. blank/invalid)
       and
@@ -1818,13 +1860,21 @@ async def create_redmine_issue(
     except ValueError as e:
         return {"error": str(e)}
 
-    if extra_fields:
-        issue_fields.update(extra_fields)
+    try:
+        parsed_extra_fields = _parse_optional_object_payload(
+            extra_fields, "extra_fields"
+        )
+    except ValueError as e:
+        return {"error": str(e)}
+
+    if parsed_extra_fields:
+        issue_fields.update(parsed_extra_fields)
 
     # Prevent callers from overriding explicit positional parameters.
     issue_fields.pop("project_id", None)
     issue_fields.pop("subject", None)
     issue_fields.pop("description", None)
+    issue_fields.pop("extra_fields", None)
 
     try:
         issue = redmine.issue.create(

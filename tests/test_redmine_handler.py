@@ -433,6 +433,60 @@ class TestRedmineHandler:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_create_redmine_issue_extra_fields_object(
+        self, mock_redmine, mock_redmine_issue
+    ):
+        """Extra fields payload is flattened into Redmine create attributes."""
+        mock_redmine.issue.create.return_value = mock_redmine_issue
+
+        from redmine_mcp_server.redmine_handler import create_redmine_issue
+
+        result = await create_redmine_issue(
+            1,
+            "Test Issue Subject",
+            "Test issue description",
+            extra_fields={"priority_id": 4, "tracker_id": 5},
+        )
+
+        assert result is not None
+        assert result["id"] == 123
+        mock_redmine.issue.create.assert_called_once_with(
+            project_id=1,
+            subject="Test Issue Subject",
+            description="Test issue description",
+            priority_id=4,
+            tracker_id=5,
+        )
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_create_redmine_issue_extra_fields_string(
+        self, mock_redmine, mock_redmine_issue
+    ):
+        """Serialized extra_fields payload is supported."""
+        mock_redmine.issue.create.return_value = mock_redmine_issue
+
+        from redmine_mcp_server.redmine_handler import create_redmine_issue
+
+        result = await create_redmine_issue(
+            1,
+            "Test Issue Subject",
+            "Test issue description",
+            extra_fields='{"priority_id": 4, "tracker_id": 5}',
+        )
+
+        assert result is not None
+        assert result["id"] == 123
+        mock_redmine.issue.create.assert_called_once_with(
+            project_id=1,
+            subject="Test Issue Subject",
+            description="Test issue description",
+            priority_id=4,
+            tracker_id=5,
+        )
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_create_redmine_issue_invalid_fields_payload(self, mock_redmine):
         """Test invalid serialized fields payload handling."""
         from redmine_mcp_server.redmine_handler import create_redmine_issue
@@ -441,6 +495,20 @@ class TestRedmineHandler:
 
         assert "error" in result
         assert "Invalid fields payload" in result["error"]
+        mock_redmine.issue.create.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_create_redmine_issue_invalid_extra_fields_payload(self, mock_redmine):
+        """Invalid serialized extra_fields payload returns a clear error."""
+        from redmine_mcp_server.redmine_handler import create_redmine_issue
+
+        result = await create_redmine_issue(
+            1, "A", "B", extra_fields="this is not valid"
+        )
+
+        assert "error" in result
+        assert "Invalid extra_fields payload" in result["error"]
         mock_redmine.issue.create.assert_not_called()
 
     @pytest.mark.asyncio

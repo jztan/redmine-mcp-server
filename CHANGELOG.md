@@ -33,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dependency Updates**
   - `black` upgraded from 25.12.0 to 26.1.0
 - Improved issue update validation for named custom fields with clear errors when values are not allowed for the target custom field.
+- `create_redmine_issue` now accepts `extra_fields` as an explicit object/string payload and no longer forwards a literal `extra_fields` attribute to Redmine.
 
 ### Improved
 - **Test Coverage** - 44 new unit tests for custom field helper functions (`redmine_handler.py` lines 474-640)
