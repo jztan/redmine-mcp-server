@@ -932,6 +932,20 @@ class TestRedmineHandler:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_update_redmine_issue_preserves_empty_custom_fields_payload(
+        self, mock_redmine, mock_redmine_issue
+    ):
+        """Explicit empty custom_fields should be forwarded to clear values."""
+        from redmine_mcp_server.redmine_handler import update_redmine_issue
+
+        await update_redmine_issue(123, {"subject": "New", "custom_fields": []})
+
+        update_kwargs = mock_redmine.issue.update.call_args.kwargs
+        assert "custom_fields" in update_kwargs
+        assert update_kwargs["custom_fields"] == []
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_update_redmine_issue_invalid_named_custom_field_value(
         self, mock_redmine
     ):

@@ -935,7 +935,10 @@ def _map_named_custom_fields_for_update(
         return update_fields
 
     # Keep caller-provided custom_fields and merge name-based mappings into it.
-    merged_custom_fields = _coerce_update_custom_fields(update_fields.pop("custom_fields", None))
+    custom_fields_provided = "custom_fields" in update_fields
+    merged_custom_fields = _coerce_update_custom_fields(
+        update_fields.pop("custom_fields", None)
+    )
 
     named_candidates = [
         field_name
@@ -943,7 +946,7 @@ def _map_named_custom_fields_for_update(
         if not _is_standard_issue_update_key(field_name)
     ]
     if not named_candidates:
-        if merged_custom_fields:
+        if custom_fields_provided:
             update_fields["custom_fields"] = merged_custom_fields
         return update_fields
 
@@ -993,7 +996,7 @@ def _map_named_custom_fields_for_update(
             )
         _upsert_custom_field_entry(merged_custom_fields, match["id"], value)
 
-    if merged_custom_fields:
+    if merged_custom_fields or custom_fields_provided:
         update_fields["custom_fields"] = merged_custom_fields
 
     return update_fields
