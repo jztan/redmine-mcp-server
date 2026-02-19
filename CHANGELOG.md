@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-02-19
+
 ### Added
 - **New MCP Tool: `list_project_issue_custom_fields`** - Discover issue custom fields for a Redmine project
   - Lists custom field metadata (`id`, `name`, `field_format`, `is_required`, `multiple`, `default_value`)
@@ -693,6 +695,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Works with Docker and docker-compose
 - Tested on macOS and Linux environments
 
+[0.12.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.12.0
 [0.11.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.11.0
 [0.10.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.10.0
 [0.9.1]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.9.1
