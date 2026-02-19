@@ -8,6 +8,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **New MCP Tool: `list_redmine_versions`** - List versions/milestones for a Redmine project
+  - Filter by `project_id` (numeric or string identifier)
+  - Optional `status_filter` parameter (open, locked, closed)
+  - Client-side filtering with input validation
+  - 18 unit tests covering helper, basic functionality, filtering, and error handling
+  - 6 integration tests for project ID, string identifier, structure, filtering, and error handling
+- **`fixed_version_id` filter** documented for `list_redmine_issues` tool
+- **Claude Desktop MCP client configuration** added to README with stdio transport via FastMCP proxy
+
+### Fixed
+- **Required custom field handling** for `create_redmine_issue` and `update_redmine_issue` ([#65](https://github.com/jztan/redmine-mcp-server/issues/65))
+  - Auto-retry on validation errors for missing required custom fields (e.g., "cannot be blank", "is not included in the list")
+  - Fills values from Redmine custom field `default_value` or `REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS` env var
+  - Opt-in via `REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true` environment variable
+  - `create_redmine_issue` now accepts `fields` as a JSON object string for flexible custom field payloads
+  - Added `REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS` env var for specifying fallback values per field name
+  - Updated `.env.example` and `.env.docker` with new environment variables
+
+### Changed
+- **Dependency Updates**
+  - `black` upgraded from 25.12.0 to 26.1.0
+
+### Improved
+- **Test Coverage** - 44 new unit tests for custom field helper functions (`redmine_handler.py` lines 474-640)
+  - Covers `_is_true_env`, `_normalize_field_label`, `_parse_create_issue_fields`, `_extract_possible_values`, `_extract_missing_required_field_names`, `_load_required_custom_field_defaults`, `_is_missing_custom_field_value`, `_is_allowed_custom_field_value`, `_resolve_required_custom_field_value`
+  - `redmine_handler.py` coverage improved from 94% to 97% (with integration tests)
+  - Overall coverage improved from 95% to 98%
+- **Documentation** - Updated README and tool-reference.md
+  - Tool count updated from 15 to 16
+  - Added `list_redmine_versions` to Project Management category in README
+  - Added full tool documentation to tool-reference.md with parameters, examples, and usage guidance
+  - Documented `fixed_version_id` parameter for `list_redmine_issues`
+
 ## [0.11.0] - 2026-02-14
 
 ### Added
@@ -32,10 +66,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Wrapper delegates all parameters to `list_redmine_issues`
 
 ### Improved
-- **Documentation** - Updated README, tool-reference.md, and CLAUDE.md
+- **Documentation** - Updated README and tool-reference.md
   - Tool count updated from 14 to 15
   - Tool reference now the single source of truth for tool documentation
-  - CLAUDE.md simplified to reference tool-reference.md instead of duplicating details
 
 ## [0.10.0] - 2026-01-11
 

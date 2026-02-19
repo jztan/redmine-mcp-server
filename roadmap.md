@@ -62,7 +62,6 @@
 - [x] PEP 8 compliance with flake8 and black
 - [x] Comprehensive README with tool descriptions
 - [x] CHANGELOG with semantic versioning
-- [x] Development guidelines in CLAUDE.md
 - [x] Separated documentation structure (v0.5.2)
   - `docs/tool-reference.md` - Complete tool documentation
   - `docs/troubleshooting.md` - Comprehensive troubleshooting guide

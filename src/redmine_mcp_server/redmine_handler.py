@@ -1001,6 +1001,37 @@ def _attachments_to_list(issue: Any) -> List[Dict[str, Any]]:
     return attachments
 
 
+def _version_to_dict(version: Any) -> Dict[str, Any]:
+    """Convert a python-redmine Version object to a serializable dict."""
+    project = getattr(version, "project", None)
+    return {
+        "id": getattr(version, "id", None),
+        "name": getattr(version, "name", ""),
+        "description": getattr(version, "description", ""),
+        "status": getattr(version, "status", ""),
+        "due_date": (
+            str(version.due_date)
+            if getattr(version, "due_date", None) is not None
+            else None
+        ),
+        "sharing": getattr(version, "sharing", ""),
+        "wiki_page_title": getattr(version, "wiki_page_title", ""),
+        "project": (
+            {"id": project.id, "name": project.name} if project is not None else None
+        ),
+        "created_on": (
+            version.created_on.isoformat()
+            if getattr(version, "created_on", None) is not None
+            else None
+        ),
+        "updated_on": (
+            version.updated_on.isoformat()
+            if getattr(version, "updated_on", None) is not None
+            else None
+        ),
+    }
+
+
 @mcp.tool()
 async def get_redmine_issue(
     issue_id: int, include_journals: bool = True, include_attachments: bool = True
@@ -1084,6 +1115,60 @@ async def list_redmine_projects() -> List[Dict[str, Any]]:
 
 
 @mcp.tool()
+async def list_redmine_versions(
+    project_id: Union[str, int],
+    status_filter: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """List versions (roadmap milestones) for a Redmine project.
+
+    Args:
+        project_id: The project ID (numeric) or identifier (string).
+        status_filter: Optional filter by version status.
+            Allowed values: open, locked, closed.
+            When None, all versions are returned.
+
+    Returns:
+        A list of version dictionaries. On failure a list containing
+        a single dictionary with an ``"error"`` key is returned.
+    """
+    if not redmine:
+        return [{"error": "Redmine client not initialized."}]
+
+    # Validate status_filter before making API call
+    valid_statuses = {"open", "locked", "closed"}
+    if status_filter is not None:
+        status_filter = str(status_filter).lower()
+        if status_filter not in valid_statuses:
+            return [
+                {
+                    "error": (
+                        f"Invalid status_filter '{status_filter}'. "
+                        f"Allowed values: open, locked, closed"
+                    )
+                }
+            ]
+
+    await _ensure_cleanup_started()
+    try:
+        versions = redmine.version.filter(project_id=project_id)
+        result = []
+        for version in versions:
+            if status_filter is not None:
+                if getattr(version, "status", "") != status_filter:
+                    continue
+            result.append(_version_to_dict(version))
+        return result
+    except Exception as e:
+        return [
+            _handle_redmine_error(
+                e,
+                f"listing versions for project {project_id}",
+                {"resource_type": "project", "resource_id": project_id},
+            )
+        ]
+
+
+@mcp.tool()
 async def list_redmine_issues(
     **filters: Any,
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
@@ -1103,6 +1188,7 @@ async def list_redmine_issues(
                              or the special value 'me' to retrieve issues
                              assigned to the currently authenticated user.
             - priority_id: Filter by priority ID
+            - fixed_version_id: Filter by target version/milestone ID
             - sort: Sort order (e.g., "updated_on:desc")
             - limit: Maximum number of issues to return (default: 25, max: 1000)
             - offset: Number of issues to skip for pagination (default: 0)
