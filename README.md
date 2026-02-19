@@ -388,6 +388,7 @@ This MCP server provides 16 tools for interacting with Redmine. For detailed doc
   - [`search_redmine_issues`](docs/tool-reference.md#search_redmine_issues) - Search issues by text query
   - [`create_redmine_issue`](docs/tool-reference.md#create_redmine_issue) - Create new issues
   - [`update_redmine_issue`](docs/tool-reference.md#update_redmine_issue) - Update existing issues
+  - Note: `get_redmine_issue` can include `custom_fields` and `update_redmine_issue` can update custom fields by name (for example `{"size": "S"}`).
 
 - **Search & Wiki** (5 tools)
   - [`search_entire_redmine`](docs/tool-reference.md#search_entire_redmine) - Global search across issues and wiki pages (Redmine 3.3.0+)

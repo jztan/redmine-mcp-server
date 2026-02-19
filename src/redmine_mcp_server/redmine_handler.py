@@ -31,7 +31,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Set, Union
 
 from dotenv import load_dotenv
 from redminelib import Redmine
@@ -470,6 +470,30 @@ def _handle_redmine_error(
 
 _DEFAULT_REQUIRED_CUSTOM_FIELD_VALUES: Dict[str, Any] = {}
 
+_STANDARD_ISSUE_UPDATE_FIELDS: Set[str] = {
+    "subject",
+    "description",
+    "notes",
+    "private_notes",
+    "tracker_id",
+    "status_id",
+    "priority_id",
+    "category_id",
+    "fixed_version_id",
+    "assigned_to_id",
+    "parent_issue_id",
+    "start_date",
+    "due_date",
+    "done_ratio",
+    "estimated_hours",
+    "is_private",
+    "watcher_user_ids",
+    "uploads",
+    "deleted_attachment_ids",
+    "custom_fields",
+    "status_name",
+}
+
 
 def _is_true_env(var_name: str, default: str = "false") -> bool:
     """Parse common truthy env-var values."""
@@ -712,7 +736,53 @@ def _augment_fields_with_required_custom_fields(
     return updated_fields
 
 
-def _issue_to_dict(issue: Any) -> Dict[str, Any]:
+def _coerce_json_safe(value: Any) -> Any:
+    """Convert arbitrary values into JSON-safe data."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, (list, tuple, set)):
+        return [_coerce_json_safe(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _coerce_json_safe(item) for key, item in value.items()}
+    return str(value)
+
+
+def _custom_fields_to_list(issue: Any) -> List[Dict[str, Any]]:
+    """Convert issue custom_fields to a serializable list."""
+    raw_custom_fields = getattr(issue, "custom_fields", None)
+    if raw_custom_fields is None:
+        return []
+
+    custom_fields: List[Dict[str, Any]] = []
+    try:
+        iterator = iter(raw_custom_fields)
+    except TypeError:
+        return []
+
+    for custom_field in iterator:
+        if isinstance(custom_field, dict):
+            field_id = custom_field.get("id")
+            field_name = custom_field.get("name")
+            field_value = custom_field.get("value")
+        else:
+            field_id = getattr(custom_field, "id", None)
+            field_name = getattr(custom_field, "name", None)
+            field_value = getattr(custom_field, "value", None)
+
+        custom_fields.append(
+            {
+                "id": field_id,
+                "name": field_name,
+                "value": _coerce_json_safe(field_value),
+            }
+        )
+
+    return custom_fields
+
+
+def _issue_to_dict(issue: Any, include_custom_fields: bool = False) -> Dict[str, Any]:
     """Convert a python-redmine Issue object to a serializable dict."""
     # Use getattr for all potentially missing attributes (search API may not return all)
     assigned = getattr(issue, "assigned_to", None)
@@ -721,7 +791,7 @@ def _issue_to_dict(issue: Any) -> Dict[str, Any]:
     priority = getattr(issue, "priority", None)
     author = getattr(issue, "author", None)
 
-    return {
+    issue_dict = {
         "id": getattr(issue, "id", None),
         "subject": getattr(issue, "subject", ""),
         "description": getattr(issue, "description", ""),
@@ -756,6 +826,135 @@ def _issue_to_dict(issue: Any) -> Dict[str, Any]:
             else None
         ),
     }
+
+    if include_custom_fields:
+        issue_dict["custom_fields"] = _custom_fields_to_list(issue)
+
+    return issue_dict
+
+
+def _coerce_update_custom_fields(
+    custom_fields: Optional[Any],
+) -> List[Dict[str, Any]]:
+    """Normalize an update payload custom_fields value into Redmine format."""
+    if custom_fields is None:
+        return []
+    if not isinstance(custom_fields, list):
+        raise ValueError(
+            "Invalid custom_fields payload. Expected a list of "
+            "{'id': <int>, 'value': <value>} dictionaries."
+        )
+
+    normalized: List[Dict[str, Any]] = []
+    for entry in custom_fields:
+        if not isinstance(entry, dict):
+            raise ValueError(
+                "Invalid custom_fields payload. Expected a list of "
+                "{'id': <int>, 'value': <value>} dictionaries."
+            )
+        if "id" not in entry:
+            raise ValueError("Invalid custom_fields entry. Missing required 'id'.")
+        normalized.append({"id": entry["id"], "value": entry.get("value")})
+    return normalized
+
+
+def _upsert_custom_field_entry(
+    entries: List[Dict[str, Any]], field_id: Any, value: Any
+) -> None:
+    """Insert or replace a custom field entry by id."""
+    for entry in entries:
+        if entry.get("id") == field_id:
+            entry["value"] = value
+            return
+    entries.append({"id": field_id, "value": value})
+
+
+def _resolve_project_issue_custom_fields(issue_id: int) -> List[Any]:
+    """Load project custom-field definitions for a given issue."""
+    issue = redmine.issue.get(issue_id)
+    project = getattr(issue, "project", None)
+    project_id = getattr(project, "id", None)
+    if project_id is None:
+        return []
+    project_obj = redmine.project.get(project_id, include="issue_custom_fields")
+    return list(getattr(project_obj, "issue_custom_fields", None) or [])
+
+
+def _is_standard_issue_update_key(field_name: str) -> bool:
+    """Return True when a field name should be passed through unchanged."""
+    return field_name in _STANDARD_ISSUE_UPDATE_FIELDS
+
+
+def _map_named_custom_fields_for_update(
+    issue_id: int, update_fields: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Map named custom fields in an update payload to custom_fields entries."""
+    if not update_fields:
+        return update_fields
+
+    # Keep caller-provided custom_fields and merge name-based mappings into it.
+    merged_custom_fields = _coerce_update_custom_fields(update_fields.pop("custom_fields", None))
+
+    named_candidates = [
+        field_name
+        for field_name in update_fields.keys()
+        if not _is_standard_issue_update_key(field_name)
+    ]
+    if not named_candidates:
+        if merged_custom_fields:
+            update_fields["custom_fields"] = merged_custom_fields
+        return update_fields
+
+    project_custom_fields = _resolve_project_issue_custom_fields(issue_id)
+    by_normalized_name: Dict[str, Dict[str, Any]] = {}
+    ambiguous_names: Set[str] = set()
+
+    for custom_field in project_custom_fields:
+        field_id = getattr(custom_field, "id", None)
+        field_name = str(getattr(custom_field, "name", "") or "")
+        if field_id is None or not field_name:
+            continue
+        normalized = _normalize_field_label(field_name)
+        if not normalized:
+            continue
+        existing = by_normalized_name.get(normalized)
+        if existing and existing.get("id") != field_id:
+            ambiguous_names.add(normalized)
+            continue
+        by_normalized_name[normalized] = {
+            "id": field_id,
+            "name": field_name,
+            "possible_values": _extract_possible_values(custom_field),
+        }
+
+    for normalized in ambiguous_names:
+        by_normalized_name.pop(normalized, None)
+
+    for candidate in named_candidates:
+        normalized_candidate = _normalize_field_label(candidate)
+        if normalized_candidate in ambiguous_names:
+            raise ValueError(
+                f"Ambiguous custom field name '{candidate}'. "
+                "Use fields.custom_fields with explicit field IDs."
+            )
+
+        match = by_normalized_name.get(normalized_candidate)
+        if match is None:
+            continue
+
+        value = update_fields.pop(candidate)
+        possible_values = match["possible_values"]
+        if not _is_allowed_custom_field_value(value, possible_values):
+            raise ValueError(
+                f"Invalid value '{value}' for custom field '{match['name']}'. "
+                f"Allowed values: {possible_values}."
+            )
+        _upsert_custom_field_entry(merged_custom_fields, match["id"], value)
+
+    if merged_custom_fields:
+        update_fields["custom_fields"] = merged_custom_fields
+
+    return update_fields
 
 
 def _resource_to_dict(resource: Any, resource_type: str) -> Dict[str, Any]:
@@ -1034,7 +1233,10 @@ def _version_to_dict(version: Any) -> Dict[str, Any]:
 
 @mcp.tool()
 async def get_redmine_issue(
-    issue_id: int, include_journals: bool = True, include_attachments: bool = True
+    issue_id: int,
+    include_journals: bool = True,
+    include_attachments: bool = True,
+    include_custom_fields: bool = True,
 ) -> Dict[str, Any]:
     """Retrieve a specific Redmine issue by ID.
 
@@ -1043,6 +1245,8 @@ async def get_redmine_issue(
         include_journals: Whether to include journals (comments) in the result.
             Defaults to ``True``.
         include_attachments: Whether to include attachments metadata in the
+            result. Defaults to ``True``.
+        include_custom_fields: Whether to include custom fields in the
             result. Defaults to ``True``.
 
     Returns:
@@ -1070,7 +1274,7 @@ async def get_redmine_issue(
         else:
             issue = redmine.issue.get(issue_id)
 
-        result = _issue_to_dict(issue)
+        result = _issue_to_dict(issue, include_custom_fields=include_custom_fields)
         if include_journals:
             result["journals"] = _journals_to_list(issue)
         if include_attachments:
@@ -1677,6 +1881,10 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
     In addition to standard Redmine fields, a ``status_name`` key may be
     provided in ``fields``. When present and ``status_id`` is not supplied, the
     function will look up the corresponding status ID and use it for the update.
+
+    Non-standard keys in ``fields`` are treated as candidate custom-field names.
+    When a matching project custom field is found, it is translated into
+    ``custom_fields`` entries for Redmine update payloads.
     """
     if not redmine:
         return {"error": "Redmine client not initialized."}
@@ -1696,9 +1904,10 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
             logger.warning(f"Error resolving status name '{name}': {e}")
 
     try:
+        update_fields = _map_named_custom_fields_for_update(issue_id, update_fields)
         redmine.issue.update(issue_id, **update_fields)
         updated_issue = redmine.issue.get(issue_id)
-        return _issue_to_dict(updated_issue)
+        return _issue_to_dict(updated_issue, include_custom_fields=True)
     except ValidationError as e:
         if not _is_required_custom_field_autofill_enabled():
             return _handle_redmine_error(
@@ -1746,7 +1955,7 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
             )
             redmine.issue.update(issue_id, **retry_fields)
             updated_issue = redmine.issue.get(issue_id)
-            return _issue_to_dict(updated_issue)
+            return _issue_to_dict(updated_issue, include_custom_fields=True)
         except Exception as retry_error:
             return _handle_redmine_error(
                 retry_error,

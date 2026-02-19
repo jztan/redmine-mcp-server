@@ -86,6 +86,13 @@ class TestRedmineHandler:
         attachment.created_on = datetime(2025, 1, 2, 11, 0, 0)
         mock_issue.attachments = [attachment]
 
+        # Mock custom fields (e.g., Agile plugin "Size")
+        custom_field = Mock()
+        custom_field.id = 12
+        custom_field.name = "Size"
+        custom_field.value = "S"
+        mock_issue.custom_fields = [custom_field]
+
         return mock_issue
 
     @pytest.fixture
@@ -235,6 +242,42 @@ class TestRedmineHandler:
 
         assert "attachments" not in result
         mock_redmine.issue.get.assert_called_once_with(123, include="journals")
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_get_redmine_issue_without_custom_fields(
+        self, mock_redmine, mock_redmine_issue
+    ):
+        """Test opting out of custom field serialization."""
+        mock_redmine.issue.get.return_value = mock_redmine_issue
+
+        result = await get_redmine_issue(
+            123,
+            include_journals=False,
+            include_attachments=False,
+            include_custom_fields=False,
+        )
+
+        assert "custom_fields" not in result
+        mock_redmine.issue.get.assert_called_once_with(123)
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_get_redmine_issue_includes_custom_fields(
+        self, mock_redmine, mock_redmine_issue
+    ):
+        """Custom fields are included by default in issue output."""
+        mock_redmine.issue.get.return_value = mock_redmine_issue
+
+        result = await get_redmine_issue(
+            123, include_journals=False, include_attachments=False
+        )
+
+        assert "custom_fields" in result
+        assert result["custom_fields"][0]["id"] == 12
+        assert result["custom_fields"][0]["name"] == "Size"
+        assert result["custom_fields"][0]["value"] == "S"
+        mock_redmine.issue.get.assert_called_once_with(123)
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
@@ -756,6 +799,94 @@ class TestRedmineHandler:
         second_call_kwargs = mock_redmine.issue.update.call_args_list[1].kwargs
         assert second_call_kwargs["subject"] == "New"
         assert {"id": 8, "value": "Any"} in second_call_kwargs["custom_fields"]
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_update_redmine_issue_maps_named_custom_field(
+        self, mock_redmine, mock_redmine_issue
+    ):
+        """Named custom fields are mapped to custom_fields payload entries."""
+        from redmine_mcp_server.redmine_handler import update_redmine_issue
+
+        issue_for_project_lookup = Mock()
+        issue_for_project_lookup.project = Mock(id=41, name="Flatline")
+        mock_redmine.issue.get.side_effect = [issue_for_project_lookup, mock_redmine_issue]
+
+        size_custom_field = Mock()
+        size_custom_field.id = 6
+        size_custom_field.name = "Size"
+        size_custom_field.possible_values = ["S", "M", "L"]
+        project = Mock()
+        project.issue_custom_fields = [size_custom_field]
+        mock_redmine.project.get.return_value = project
+
+        result = await update_redmine_issue(123, {"size": "S", "notes": "size set"})
+
+        assert result["id"] == 123
+        assert "custom_fields" in result
+        mock_redmine.project.get.assert_called_once_with(41, include="issue_custom_fields")
+        mock_redmine.issue.update.assert_called_once()
+        update_kwargs = mock_redmine.issue.update.call_args.kwargs
+        assert update_kwargs["notes"] == "size set"
+        assert update_kwargs["custom_fields"] == [{"id": 6, "value": "S"}]
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_update_redmine_issue_merges_custom_fields(
+        self, mock_redmine, mock_redmine_issue
+    ):
+        """Named custom fields are merged with explicit custom_fields."""
+        from redmine_mcp_server.redmine_handler import update_redmine_issue
+
+        issue_for_project_lookup = Mock()
+        issue_for_project_lookup.project = Mock(id=41, name="Flatline")
+        mock_redmine.issue.get.side_effect = [issue_for_project_lookup, mock_redmine_issue]
+
+        size_custom_field = Mock()
+        size_custom_field.id = 6
+        size_custom_field.name = "Size"
+        size_custom_field.possible_values = ["S", "M", "L"]
+        project = Mock()
+        project.issue_custom_fields = [size_custom_field]
+        mock_redmine.project.get.return_value = project
+
+        await update_redmine_issue(
+            123,
+            {
+                "size": "M",
+                "custom_fields": [{"id": 99, "value": "Preserved"}],
+            },
+        )
+
+        update_kwargs = mock_redmine.issue.update.call_args.kwargs
+        assert {"id": 99, "value": "Preserved"} in update_kwargs["custom_fields"]
+        assert {"id": 6, "value": "M"} in update_kwargs["custom_fields"]
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_update_redmine_issue_invalid_named_custom_field_value(
+        self, mock_redmine
+    ):
+        """Invalid named custom-field values return an error and do not update."""
+        from redmine_mcp_server.redmine_handler import update_redmine_issue
+
+        issue_for_project_lookup = Mock()
+        issue_for_project_lookup.project = Mock(id=41, name="Flatline")
+        mock_redmine.issue.get.return_value = issue_for_project_lookup
+
+        size_custom_field = Mock()
+        size_custom_field.id = 6
+        size_custom_field.name = "Size"
+        size_custom_field.possible_values = ["S", "M", "L"]
+        project = Mock()
+        project.issue_custom_fields = [size_custom_field]
+        mock_redmine.project.get.return_value = project
+
+        result = await update_redmine_issue(123, {"size": "XXL"})
+
+        assert "error" in result
+        assert "Invalid value 'XXL' for custom field 'Size'" in result["error"]
+        mock_redmine.issue.update.assert_not_called()
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")

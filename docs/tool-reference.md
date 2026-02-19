@@ -259,6 +259,7 @@ Retrieve detailed information about a specific Redmine issue.
 - `issue_id` (integer, required): The ID of the issue to retrieve
 - `include_journals` (boolean, optional): Include journals (comments) in result. Default: `true`
 - `include_attachments` (boolean, optional): Include attachments metadata. Default: `true`
+- `include_custom_fields` (boolean, optional): Include custom fields in result. Default: `true`
 
 **Returns:** Issue dictionary with details, journals, and attachments
 
@@ -270,6 +271,7 @@ Retrieve detailed information about a specific Redmine issue.
   "description": "Users cannot login...",
   "status": {"id": 1, "name": "New"},
   "priority": {"id": 2, "name": "Normal"},
+  "custom_fields": [{"id": 6, "name": "Size", "value": "S"}],
   "journals": [...],
   "attachments": [...]
 }
@@ -514,6 +516,7 @@ Updates an existing issue with the provided fields.
 **Returns:** Updated issue dictionary
 
 **Note:** You can use either `status_id` or `status_name` in fields. When `status_name` is provided, the tool automatically resolves the corresponding status ID.
+You can also update custom fields by name (for example `{"size": "S"}`) and the tool will resolve them to Redmine `custom_fields` entries using project custom-field metadata. You can still pass explicit `custom_fields` with field IDs.
 
 **Example:**
 ```python
@@ -532,6 +535,14 @@ update_redmine_issue(
     fields={
         "status_id": 3,
         "assigned_to_id": 5
+    }
+)
+
+# Update Agile/custom field by name
+update_redmine_issue(
+    issue_id=123,
+    fields={
+        "size": "S"
     }
 )
 ```

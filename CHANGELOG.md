@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 6 integration tests for project ID, string identifier, structure, filtering, and error handling
 - **`fixed_version_id` filter** documented for `list_redmine_issues` tool
 - **Claude Desktop MCP client configuration** added to README with stdio transport via FastMCP proxy
+- `get_redmine_issue` now supports `include_custom_fields` (default: `true`) and can return serialized issue `custom_fields`.
+- `update_redmine_issue` now supports updating custom fields by name (for example `{"size": "S"}`) by resolving project custom-field metadata.
 
 ### Fixed
 - **Required custom field handling** for `create_redmine_issue` and `update_redmine_issue` ([#65](https://github.com/jztan/redmine-mcp-server/issues/65))
@@ -30,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Dependency Updates**
   - `black` upgraded from 25.12.0 to 26.1.0
+- Improved issue update validation for named custom fields with clear errors when values are not allowed for the target custom field.
 
 ### Improved
 - **Test Coverage** - 44 new unit tests for custom field helper functions (`redmine_handler.py` lines 474-640)
@@ -709,4 +712,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.1.2]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.1.2
 [0.1.1]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.1.1
 [0.1.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.1.0
-
