@@ -6,7 +6,7 @@ verifies that all MCP tools produce actionable error messages.
 """
 
 import pytest
-from unittest.mock import patch, Mock
+from unittest.mock import patch
 
 
 class TestErrorHandler:
@@ -53,7 +53,6 @@ class TestErrorHandler:
         """Connection error message includes the Redmine URL."""
         from redmine_mcp_server.redmine_handler import (
             _handle_redmine_error,
-            REDMINE_URL,
         )
         from requests.exceptions import ConnectionError
 

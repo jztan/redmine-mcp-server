@@ -363,6 +363,263 @@ class TestRedmineHandler:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_create_redmine_issue_fields_json_string(
+        self, mock_redmine, mock_redmine_issue
+    ):
+        """Test create issue with MCP-style serialized fields payload."""
+        mock_redmine.issue.create.return_value = mock_redmine_issue
+
+        from redmine_mcp_server.redmine_handler import create_redmine_issue
+
+        result = await create_redmine_issue(
+            1,
+            "Test Issue Subject",
+            "Test issue description",
+            fields='{"priority_id": 4, "tracker_id": 5}',
+        )
+
+        assert result is not None
+        assert result["id"] == 123
+        mock_redmine.issue.create.assert_called_once_with(
+            project_id=1,
+            subject="Test Issue Subject",
+            description="Test issue description",
+            priority_id=4,
+            tracker_id=5,
+        )
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_create_redmine_issue_invalid_fields_payload(self, mock_redmine):
+        """Test invalid serialized fields payload handling."""
+        from redmine_mcp_server.redmine_handler import create_redmine_issue
+
+        result = await create_redmine_issue(1, "A", "B", fields="this is not valid")
+
+        assert "error" in result
+        assert "Invalid fields payload" in result["error"]
+        mock_redmine.issue.create.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_create_redmine_issue_autofill_disabled_by_default(
+        self, mock_redmine
+    ):
+        """Validation error should not trigger retry when autofill is disabled."""
+        from redminelib.exceptions import ValidationError
+        from redmine_mcp_server.redmine_handler import create_redmine_issue
+
+        mock_redmine.issue.create.side_effect = ValidationError(
+            "Project Category cannot be blank"
+        )
+
+        with patch.dict(
+            os.environ,
+            {"REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS": "false"},
+            clear=False,
+        ):
+            result = await create_redmine_issue(
+                41, "Autofill test", "Autofill description"
+            )
+
+        assert "error" in result
+        mock_redmine.issue.create.assert_called_once()
+        mock_redmine.project.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_create_redmine_issue_autofills_required_custom_fields(
+        self, mock_redmine, mock_redmine_issue
+    ):
+        """Retry create issue with auto-filled required custom fields."""
+        from redminelib.exceptions import ValidationError
+        from redmine_mcp_server.redmine_handler import create_redmine_issue
+
+        project_field = Mock()
+        project_field.id = 6
+        project_field.name = "Project Category"
+        project_field.possible_values = [{"value": "Any"}, {"value": "Foo"}]
+        project_field.default_value = "Foo"
+
+        os_field = Mock()
+        os_field.id = 4
+        os_field.name = "Operating System"
+        os_field.possible_values = [{"value": "All"}, {"value": "Linux"}]
+        os_field.default_value = "Linux"
+
+        mock_project = Mock()
+        mock_project.issue_custom_fields = [project_field, os_field]
+        mock_redmine.project.get.return_value = mock_project
+
+        mock_redmine.issue.create.side_effect = [
+            ValidationError(
+                "Project Category cannot be blank, Operating System cannot be blank"
+            ),
+            mock_redmine_issue,
+        ]
+
+        with patch.dict(
+            os.environ, {"REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS": "true"}, clear=False
+        ):
+            result = await create_redmine_issue(
+                41,
+                "Autofill test",
+                "Autofill description",
+                fields='{"tracker_id": 5, "priority_id": 4}',
+            )
+
+        assert result["id"] == 123
+        assert mock_redmine.issue.create.call_count == 2
+        mock_redmine.project.get.assert_called_once_with(
+            41, include="issue_custom_fields"
+        )
+
+        second_call_kwargs = mock_redmine.issue.create.call_args_list[1].kwargs
+        assert second_call_kwargs["tracker_id"] == 5
+        assert second_call_kwargs["priority_id"] == 4
+        assert {"id": 6, "value": "Foo"} in second_call_kwargs["custom_fields"]
+        assert {"id": 4, "value": "Linux"} in second_call_kwargs["custom_fields"]
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_create_redmine_issue_autofills_blank_existing_custom_field(
+        self, mock_redmine, mock_redmine_issue
+    ):
+        """Retry should replace blank values for already-present custom fields."""
+        from redminelib.exceptions import ValidationError
+        from redmine_mcp_server.redmine_handler import create_redmine_issue
+
+        project_field = Mock()
+        project_field.id = 6
+        project_field.name = "Project Category"
+        project_field.possible_values = [{"value": "Any"}, {"value": "Foo"}]
+        project_field.default_value = "Foo"
+
+        mock_project = Mock()
+        mock_project.issue_custom_fields = [project_field]
+        mock_redmine.project.get.return_value = mock_project
+
+        mock_redmine.issue.create.side_effect = [
+            ValidationError("Project Category cannot be blank"),
+            mock_redmine_issue,
+        ]
+
+        with patch.dict(
+            os.environ, {"REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS": "true"}, clear=False
+        ):
+            result = await create_redmine_issue(
+                41,
+                "Autofill test",
+                "Autofill description",
+                fields='{"tracker_id": 5, "custom_fields": [{"id": 6, "value": ""}]}',
+            )
+
+        assert result["id"] == 123
+        assert mock_redmine.issue.create.call_count == 2
+        second_call_kwargs = mock_redmine.issue.create.call_args_list[1].kwargs
+
+        matching_values = [
+            entry["value"]
+            for entry in second_call_kwargs["custom_fields"]
+            if entry.get("id") == 6
+        ]
+        assert matching_values == ["Foo"]
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_create_redmine_issue_autofill_preserves_list_default_value(
+        self, mock_redmine, mock_redmine_issue
+    ):
+        """Retry should preserve list default values without stringifying them."""
+        from redminelib.exceptions import ValidationError
+        from redmine_mcp_server.redmine_handler import create_redmine_issue
+
+        components_field = Mock()
+        components_field.id = 8
+        components_field.name = "Components"
+        components_field.possible_values = [{"value": "A"}, {"value": "B"}]
+        components_field.default_value = ["A"]
+
+        mock_project = Mock()
+        mock_project.issue_custom_fields = [components_field]
+        mock_redmine.project.get.return_value = mock_project
+
+        mock_redmine.issue.create.side_effect = [
+            ValidationError("Components cannot be blank"),
+            mock_redmine_issue,
+        ]
+
+        with patch.dict(
+            os.environ, {"REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS": "true"}, clear=False
+        ):
+            result = await create_redmine_issue(
+                41,
+                "Autofill test",
+                "Autofill description",
+                fields='{"tracker_id": 5}',
+            )
+
+        assert result["id"] == 123
+        assert mock_redmine.issue.create.call_count == 2
+        second_call_kwargs = mock_redmine.issue.create.call_args_list[1].kwargs
+
+        matching_values = [
+            entry["value"]
+            for entry in second_call_kwargs["custom_fields"]
+            if entry.get("id") == 8
+        ]
+        assert matching_values == [["A"]]
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_create_redmine_issue_autofills_invalid_list_value(
+        self, mock_redmine, mock_redmine_issue
+    ):
+        """Retry should replace invalid list values when validation flags inclusion."""
+        from redminelib.exceptions import ValidationError
+        from redmine_mcp_server.redmine_handler import create_redmine_issue
+
+        rise_project_field = Mock()
+        rise_project_field.id = 6
+        rise_project_field.name = "RISE Project"
+        rise_project_field.possible_values = [{"value": "Any"}, {"value": "ShowX"}]
+        rise_project_field.default_value = "Any"
+
+        mock_project = Mock()
+        mock_project.issue_custom_fields = [rise_project_field]
+        mock_redmine.project.get.return_value = mock_project
+
+        mock_redmine.issue.create.side_effect = [
+            ValidationError("RISE Project is not included in the list"),
+            mock_redmine_issue,
+        ]
+
+        with patch.dict(
+            os.environ, {"REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS": "true"}, clear=False
+        ):
+            result = await create_redmine_issue(
+                99,
+                "Autofill test",
+                "Autofill description",
+                fields=(
+                    '{"tracker_id": 5, "custom_fields": '
+                    '[{"id": 6, "value": "any"}]}'
+                ),
+            )
+
+        assert result["id"] == 123
+        assert mock_redmine.issue.create.call_count == 2
+        second_call_kwargs = mock_redmine.issue.create.call_args_list[1].kwargs
+
+        matching_values = [
+            entry["value"]
+            for entry in second_call_kwargs["custom_fields"]
+            if entry.get("id") == 6
+        ]
+        assert matching_values == ["Any"]
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_create_redmine_issue_error(self, mock_redmine):
         """Test error during issue creation."""
         mock_redmine.issue.create.side_effect = Exception("Boom")
@@ -438,6 +695,67 @@ class TestRedmineHandler:
 
         result = await update_redmine_issue(1, {"subject": "X"})
         assert result["error"] == "Redmine client not initialized."
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_update_redmine_issue_autofill_disabled_by_default(self, mock_redmine):
+        """Validation error should not trigger update retry when autofill is disabled."""
+        from redminelib.exceptions import ValidationError
+        from redmine_mcp_server.redmine_handler import update_redmine_issue
+
+        mock_redmine.issue.update.side_effect = ValidationError("Location cannot be blank")
+
+        with patch.dict(
+            os.environ,
+            {"REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS": "false"},
+            clear=False,
+        ):
+            result = await update_redmine_issue(123, {"subject": "New"})
+
+        assert "error" in result
+        mock_redmine.issue.update.assert_called_once_with(123, subject="New")
+        mock_redmine.project.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_update_redmine_issue_autofills_required_custom_fields(
+        self, mock_redmine, mock_redmine_issue
+    ):
+        """Retry update with auto-filled required custom fields."""
+        from redminelib.exceptions import ValidationError
+        from redmine_mcp_server.redmine_handler import update_redmine_issue
+
+        location_field = Mock()
+        location_field.id = 8
+        location_field.name = "Location"
+        location_field.possible_values = [{"value": "Any"}, {"value": "Berlin"}]
+        location_field.default_value = "Any"
+
+        mock_project = Mock()
+        mock_project.issue_custom_fields = [location_field]
+        mock_redmine.project.get.return_value = mock_project
+
+        issue_for_project_lookup = Mock()
+        issue_for_project_lookup.project = Mock(id=41, name="Flatline")
+
+        mock_redmine.issue.update.side_effect = [
+            ValidationError("Location cannot be blank"),
+            None,
+        ]
+        mock_redmine.issue.get.side_effect = [issue_for_project_lookup, mock_redmine_issue]
+
+        with patch.dict(
+            os.environ, {"REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS": "true"}, clear=False
+        ):
+            result = await update_redmine_issue(123, {"subject": "New"})
+
+        assert result["id"] == 123
+        assert mock_redmine.issue.update.call_count == 2
+        mock_redmine.project.get.assert_called_once_with(41, include="issue_custom_fields")
+
+        second_call_kwargs = mock_redmine.issue.update.call_args_list[1].kwargs
+        assert second_call_kwargs["subject"] == "New"
+        assert {"id": 8, "value": "Any"} in second_call_kwargs["custom_fields"]
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
@@ -1396,9 +1714,7 @@ class TestSearchEntireRedmineValidation:
 
         mock_redmine.search.return_value = {}
 
-        result = await search_entire_redmine(
-            "test query", resources=["invalid_type", "another_bad"]
-        )
+        await search_entire_redmine("test query", resources=["invalid_type", "another_bad"])
 
         # Should have called search with default allowed types
         mock_redmine.search.assert_called_once()

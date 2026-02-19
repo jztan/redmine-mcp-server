@@ -26,6 +26,7 @@ Dependencies:
 import os
 import uuid
 import json
+import re
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
@@ -465,6 +466,250 @@ def _handle_redmine_error(
     # Fallback
     logger.error(f"Unexpected error during {operation}: {type(e).__name__}: {e}")
     return {"error": f"An unexpected error occurred while {operation}: {str(e)}"}
+
+
+_DEFAULT_REQUIRED_CUSTOM_FIELD_VALUES: Dict[str, Any] = {}
+
+
+def _is_true_env(var_name: str, default: str = "false") -> bool:
+    """Parse common truthy env-var values."""
+    return os.getenv(var_name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _normalize_field_label(label: str) -> str:
+    """Normalize a field label for case/spacing-insensitive comparisons."""
+    return re.sub(r"[^a-z0-9]+", "", label.lower())
+
+
+def _parse_create_issue_fields(
+    fields: Optional[Union[Dict[str, Any], str]],
+) -> Dict[str, Any]:
+    """Parse create issue fields from dict or serialized string payload."""
+    if fields is None:
+        return {}
+
+    if isinstance(fields, dict):
+        return dict(fields)
+
+    if not isinstance(fields, str):
+        raise ValueError(
+            "Invalid fields payload. Expected a dict or JSON object string."
+        )
+
+    raw = fields.strip()
+    if not raw:
+        return {}
+
+    parsed: Any = None
+    try:
+        parsed = json.loads(raw)
+    except Exception as e:
+        raise ValueError(
+            "Invalid fields payload. Use a JSON object string such as "
+            '{"tracker_id": 5, "custom_fields": [{"id": 6, "value": "Any"}]}.'
+        ) from e
+
+    if parsed is None:
+        raise ValueError("Invalid fields payload. Parsed value must be an object/dict.")
+
+    if isinstance(parsed, dict) and set(parsed.keys()) == {"fields"}:
+        wrapped = parsed.get("fields")
+        if isinstance(wrapped, dict):
+            parsed = wrapped
+
+    if not isinstance(parsed, dict):
+        raise ValueError("Invalid fields payload. Parsed value must be an object/dict.")
+
+    return dict(parsed)
+
+
+def _extract_possible_values(custom_field: Any) -> List[str]:
+    """Extract possible values from a Redmine custom field in a robust way."""
+    possible_values = getattr(custom_field, "possible_values", None) or []
+    result: List[str] = []
+    for value in possible_values:
+        if isinstance(value, dict):
+            extracted = value.get("value")
+        else:
+            extracted = getattr(value, "value", value)
+        if extracted is not None:
+            result.append(str(extracted))
+    return result
+
+
+def _load_required_custom_field_defaults() -> Dict[str, Any]:
+    """Load normalized custom field defaults from env + built-in fallbacks."""
+    defaults = dict(_DEFAULT_REQUIRED_CUSTOM_FIELD_VALUES)
+    raw = os.getenv("REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS", "").strip()
+    if not raw:
+        return defaults
+
+    try:
+        loaded = json.loads(raw)
+        if isinstance(loaded, dict):
+            for key, value in loaded.items():
+                if key and value is not None:
+                    defaults[_normalize_field_label(str(key))] = value
+        else:
+            logger.warning(
+                "REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS must be a JSON object."
+            )
+    except Exception as e:
+        logger.warning(
+            "Failed parsing REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS as JSON: %s",
+            e,
+        )
+
+    return defaults
+
+
+def _is_required_custom_field_autofill_enabled() -> bool:
+    """Check whether retry-based required custom field autofill is enabled."""
+    return _is_true_env("REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS", "false")
+
+
+def _extract_missing_required_field_names(error_message: str) -> List[str]:
+    """Extract field names from relevant validation errors."""
+    message = error_message or ""
+    if "Validation failed:" in message:
+        message = message.split("Validation failed:", 1)[1]
+
+    # Handle common Redmine validation fragments that imply we should retry
+    # required custom field autofill.
+    markers = [
+        "cannot be blank",
+        "is not included in the list",
+        "is invalid",
+    ]
+
+    missing_names: List[str] = []
+    for item in [part.strip() for part in message.split(",") if part.strip()]:
+        lower_item = item.lower()
+        for marker in markers:
+            marker_pos = lower_item.find(marker)
+            if marker_pos == -1:
+                continue
+            field_name = item[:marker_pos].strip(" .:")
+            if field_name:
+                missing_names.append(field_name)
+            break
+
+    return missing_names
+
+
+def _is_missing_custom_field_value(value: Any) -> bool:
+    """Return True when a custom field value should be treated as missing."""
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return value.strip() == ""
+    if isinstance(value, (list, tuple, set, dict)):
+        return len(value) == 0
+    return False
+
+
+def _is_allowed_custom_field_value(value: Any, possible_values: List[str]) -> bool:
+    """Check whether a value is compatible with field possible_values."""
+    if not possible_values:
+        return True
+    if isinstance(value, (list, tuple, set)):
+        return bool(value) and all(str(item) in possible_values for item in value)
+    return str(value) in possible_values
+
+
+def _resolve_required_custom_field_value(
+    custom_field: Any, defaults: Dict[str, Any]
+) -> Optional[Any]:
+    """Resolve value from explicit defaults only (Redmine default/env override)."""
+    name = str(getattr(custom_field, "name", "") or "")
+    normalized_name = _normalize_field_label(name)
+    possible_values = _extract_possible_values(custom_field)
+
+    default_value = getattr(custom_field, "default_value", None)
+    if not _is_missing_custom_field_value(
+        default_value
+    ) and _is_allowed_custom_field_value(default_value, possible_values):
+        return default_value
+
+    preferred = defaults.get(normalized_name)
+    if not _is_missing_custom_field_value(preferred) and _is_allowed_custom_field_value(
+        preferred, possible_values
+    ):
+        return preferred
+
+    return None
+
+
+def _augment_fields_with_required_custom_fields(
+    project_id: int,
+    issue_fields: Dict[str, Any],
+    missing_field_names: List[str],
+) -> Dict[str, Any]:
+    """Populate missing required custom fields based on project metadata."""
+    if not missing_field_names:
+        return issue_fields
+
+    missing_normalized = {_normalize_field_label(name) for name in missing_field_names}
+    if not missing_normalized:
+        return issue_fields
+
+    project = redmine.project.get(project_id, include="issue_custom_fields")
+    project_custom_fields = getattr(project, "issue_custom_fields", None) or []
+
+    updated_fields = dict(issue_fields)
+    existing_custom_fields = updated_fields.get("custom_fields", [])
+    if existing_custom_fields is None:
+        existing_custom_fields = []
+    if not isinstance(existing_custom_fields, list):
+        raise ValueError(
+            "Invalid custom_fields payload. Expected a list of "
+            "{'id': <int>, 'value': <value>} dictionaries."
+        )
+
+    merged_custom_fields: List[Dict[str, Any]] = []
+    existing_entries_by_id: Dict[Any, Dict[str, Any]] = {}
+    for entry in existing_custom_fields:
+        if not isinstance(entry, dict):
+            continue
+        entry_copy = dict(entry)
+        field_id = entry_copy.get("id")
+        if field_id is not None and field_id not in existing_entries_by_id:
+            existing_entries_by_id[field_id] = entry_copy
+        merged_custom_fields.append(entry_copy)
+
+    defaults = _load_required_custom_field_defaults()
+
+    for custom_field in project_custom_fields:
+        field_id = getattr(custom_field, "id", None)
+        field_name = str(getattr(custom_field, "name", "") or "")
+        if field_id is None or not field_name:
+            continue
+
+        normalized_name = _normalize_field_label(field_name)
+        if normalized_name not in missing_normalized:
+            continue
+
+        possible_values = _extract_possible_values(custom_field)
+        field_value = _resolve_required_custom_field_value(custom_field, defaults)
+        if field_value is None:
+            continue
+        existing_entry = existing_entries_by_id.get(field_id)
+        if existing_entry is not None:
+            existing_value = existing_entry.get("value")
+            if _is_missing_custom_field_value(existing_value) or (
+                not _is_allowed_custom_field_value(existing_value, possible_values)
+            ):
+                existing_entry["value"] = field_value
+            continue
+
+        new_entry = {"id": field_id, "value": field_value}
+        merged_custom_fields.append(new_entry)
+        existing_entries_by_id[field_id] = new_entry
+
+    if merged_custom_fields:
+        updated_fields["custom_fields"] = merged_custom_fields
+
+    return updated_fields
 
 
 def _issue_to_dict(issue: Any) -> Dict[str, Any]:
@@ -1262,16 +1507,79 @@ async def create_redmine_issue(
     project_id: int,
     subject: str,
     description: str = "",
-    **fields: Any,
+    fields: Optional[Union[Dict[str, Any], str]] = None,
+    **extra_fields: Any,
 ) -> Dict[str, Any]:
-    """Create a new issue in Redmine."""
+    """Create a new issue in Redmine.
+
+    Compatibility notes:
+    - Supports direct keyword arguments (e.g. ``priority_id=4``)
+    - Supports serialized ``fields`` payload (JSON object string)
+    - Retries once with auto-filled required custom fields if Redmine reports
+      relevant validation errors on required custom fields (e.g. blank/invalid)
+      and
+      ``REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true``.
+    """
     if not redmine:
         return {"error": "Redmine client not initialized."}
+
+    try:
+        issue_fields = _parse_create_issue_fields(fields)
+    except ValueError as e:
+        return {"error": str(e)}
+
+    if extra_fields:
+        issue_fields.update(extra_fields)
+
+    # Prevent callers from overriding explicit positional parameters.
+    issue_fields.pop("project_id", None)
+    issue_fields.pop("subject", None)
+    issue_fields.pop("description", None)
+
     try:
         issue = redmine.issue.create(
-            project_id=project_id, subject=subject, description=description, **fields
+            project_id=project_id,
+            subject=subject,
+            description=description,
+            **issue_fields,
         )
         return _issue_to_dict(issue)
+    except ValidationError as e:
+        if not _is_required_custom_field_autofill_enabled():
+            return _handle_redmine_error(e, f"creating issue in project {project_id}")
+
+        missing_names = _extract_missing_required_field_names(str(e))
+        if not missing_names:
+            return _handle_redmine_error(e, f"creating issue in project {project_id}")
+
+        try:
+            retry_fields = _augment_fields_with_required_custom_fields(
+                project_id=project_id,
+                issue_fields=issue_fields,
+                missing_field_names=missing_names,
+            )
+
+            # Retry only when we have actually augmented payload.
+            if retry_fields == issue_fields:
+                return _handle_redmine_error(
+                    e, f"creating issue in project {project_id}"
+                )
+
+            logger.info(
+                "Retrying issue creation with auto-filled custom fields: %s",
+                missing_names,
+            )
+            issue = redmine.issue.create(
+                project_id=project_id,
+                subject=subject,
+                description=description,
+                **retry_fields,
+            )
+            return _issue_to_dict(issue)
+        except Exception as retry_error:
+            return _handle_redmine_error(
+                retry_error, f"creating issue in project {project_id}"
+            )
     except Exception as e:
         return _handle_redmine_error(e, f"creating issue in project {project_id}")
 
@@ -1287,22 +1595,78 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
     if not redmine:
         return {"error": "Redmine client not initialized."}
 
+    update_fields = dict(fields)
+
     # Convert status name to id if requested
-    if "status_name" in fields and "status_id" not in fields:
-        name = str(fields.pop("status_name")).lower()
+    if "status_name" in update_fields and "status_id" not in update_fields:
+        name = str(update_fields.pop("status_name")).lower()
         try:
             statuses = redmine.issue_status.all()
             for status in statuses:
                 if getattr(status, "name", "").lower() == name:
-                    fields["status_id"] = status.id
+                    update_fields["status_id"] = status.id
                     break
         except Exception as e:
             logger.warning(f"Error resolving status name '{name}': {e}")
 
     try:
-        redmine.issue.update(issue_id, **fields)
+        redmine.issue.update(issue_id, **update_fields)
         updated_issue = redmine.issue.get(issue_id)
         return _issue_to_dict(updated_issue)
+    except ValidationError as e:
+        if not _is_required_custom_field_autofill_enabled():
+            return _handle_redmine_error(
+                e,
+                f"updating issue {issue_id}",
+                {"resource_type": "issue", "resource_id": issue_id},
+            )
+
+        missing_names = _extract_missing_required_field_names(str(e))
+        if not missing_names:
+            return _handle_redmine_error(
+                e,
+                f"updating issue {issue_id}",
+                {"resource_type": "issue", "resource_id": issue_id},
+            )
+
+        try:
+            issue = redmine.issue.get(issue_id)
+            project = getattr(issue, "project", None)
+            project_id = getattr(project, "id", None)
+            if project_id is None:
+                return _handle_redmine_error(
+                    e,
+                    f"updating issue {issue_id}",
+                    {"resource_type": "issue", "resource_id": issue_id},
+                )
+
+            retry_fields = _augment_fields_with_required_custom_fields(
+                project_id=project_id,
+                issue_fields=update_fields,
+                missing_field_names=missing_names,
+            )
+
+            # Retry only when we have actually augmented payload.
+            if retry_fields == update_fields:
+                return _handle_redmine_error(
+                    e,
+                    f"updating issue {issue_id}",
+                    {"resource_type": "issue", "resource_id": issue_id},
+                )
+
+            logger.info(
+                "Retrying issue update with auto-filled custom fields: %s",
+                missing_names,
+            )
+            redmine.issue.update(issue_id, **retry_fields)
+            updated_issue = redmine.issue.get(issue_id)
+            return _issue_to_dict(updated_issue)
+        except Exception as retry_error:
+            return _handle_redmine_error(
+                retry_error,
+                f"updating issue {issue_id}",
+                {"resource_type": "issue", "resource_id": issue_id},
+            )
     except Exception as e:
         return _handle_redmine_error(
             e,
