@@ -935,10 +935,14 @@ def _map_named_custom_fields_for_update(
         return update_fields
 
     # Keep caller-provided custom_fields and merge name-based mappings into it.
-    custom_fields_provided = "custom_fields" in update_fields
-    merged_custom_fields = _coerce_update_custom_fields(
-        update_fields.pop("custom_fields", None)
+    missing = object()
+    custom_fields_raw = update_fields.pop("custom_fields", missing)
+    custom_fields_provided = (
+        custom_fields_raw is not missing and custom_fields_raw is not None
     )
+    if custom_fields_raw is missing:
+        custom_fields_raw = None
+    merged_custom_fields = _coerce_update_custom_fields(custom_fields_raw)
 
     named_candidates = [
         field_name
@@ -989,7 +993,10 @@ def _map_named_custom_fields_for_update(
 
         value = update_fields.pop(candidate)
         possible_values = match["possible_values"]
-        if not _is_allowed_custom_field_value(value, possible_values):
+        if (
+            not _is_missing_custom_field_value(value)
+            and not _is_allowed_custom_field_value(value, possible_values)
+        ):
             raise ValueError(
                 f"Invalid value '{value}' for custom field '{match['name']}'. "
                 f"Allowed values: {possible_values}."

@@ -946,6 +946,47 @@ class TestRedmineHandler:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_update_redmine_issue_ignores_null_custom_fields_payload(
+        self, mock_redmine, mock_redmine_issue
+    ):
+        """Null custom_fields should be treated as omitted, not as clear."""
+        from redmine_mcp_server.redmine_handler import update_redmine_issue
+
+        await update_redmine_issue(123, {"subject": "New", "custom_fields": None})
+
+        update_kwargs = mock_redmine.issue.update.call_args.kwargs
+        assert update_kwargs["subject"] == "New"
+        assert "custom_fields" not in update_kwargs
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_update_redmine_issue_named_custom_field_allows_empty_list(
+        self, mock_redmine, mock_redmine_issue
+    ):
+        """Named custom fields should preserve explicit clearing payloads."""
+        from redmine_mcp_server.redmine_handler import update_redmine_issue
+
+        issue_for_project_lookup = Mock()
+        issue_for_project_lookup.project = Mock(id=41, name="Flatline")
+        mock_redmine.issue.get.side_effect = [issue_for_project_lookup, mock_redmine_issue]
+
+        size_custom_field = Mock()
+        size_custom_field.id = 6
+        size_custom_field.name = "Size"
+        size_custom_field.possible_values = ["S", "M", "L"]
+        project = Mock()
+        project.issue_custom_fields = [size_custom_field]
+        mock_redmine.project.get.return_value = project
+
+        result = await update_redmine_issue(123, {"size": []})
+
+        assert result["id"] == 123
+        mock_redmine.issue.update.assert_called_once()
+        update_kwargs = mock_redmine.issue.update.call_args.kwargs
+        assert update_kwargs["custom_fields"] == [{"id": 6, "value": []}]
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_update_redmine_issue_invalid_named_custom_field_value(
         self, mock_redmine
     ):
