@@ -1595,22 +1595,78 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
     if not redmine:
         return {"error": "Redmine client not initialized."}
 
+    update_fields = dict(fields)
+
     # Convert status name to id if requested
-    if "status_name" in fields and "status_id" not in fields:
-        name = str(fields.pop("status_name")).lower()
+    if "status_name" in update_fields and "status_id" not in update_fields:
+        name = str(update_fields.pop("status_name")).lower()
         try:
             statuses = redmine.issue_status.all()
             for status in statuses:
                 if getattr(status, "name", "").lower() == name:
-                    fields["status_id"] = status.id
+                    update_fields["status_id"] = status.id
                     break
         except Exception as e:
             logger.warning(f"Error resolving status name '{name}': {e}")
 
     try:
-        redmine.issue.update(issue_id, **fields)
+        redmine.issue.update(issue_id, **update_fields)
         updated_issue = redmine.issue.get(issue_id)
         return _issue_to_dict(updated_issue)
+    except ValidationError as e:
+        if not _is_required_custom_field_autofill_enabled():
+            return _handle_redmine_error(
+                e,
+                f"updating issue {issue_id}",
+                {"resource_type": "issue", "resource_id": issue_id},
+            )
+
+        missing_names = _extract_missing_required_field_names(str(e))
+        if not missing_names:
+            return _handle_redmine_error(
+                e,
+                f"updating issue {issue_id}",
+                {"resource_type": "issue", "resource_id": issue_id},
+            )
+
+        try:
+            issue = redmine.issue.get(issue_id)
+            project = getattr(issue, "project", None)
+            project_id = getattr(project, "id", None)
+            if project_id is None:
+                return _handle_redmine_error(
+                    e,
+                    f"updating issue {issue_id}",
+                    {"resource_type": "issue", "resource_id": issue_id},
+                )
+
+            retry_fields = _augment_fields_with_required_custom_fields(
+                project_id=project_id,
+                issue_fields=update_fields,
+                missing_field_names=missing_names,
+            )
+
+            # Retry only when we have actually augmented payload.
+            if retry_fields == update_fields:
+                return _handle_redmine_error(
+                    e,
+                    f"updating issue {issue_id}",
+                    {"resource_type": "issue", "resource_id": issue_id},
+                )
+
+            logger.info(
+                "Retrying issue update with auto-filled custom fields: %s",
+                missing_names,
+            )
+            redmine.issue.update(issue_id, **retry_fields)
+            updated_issue = redmine.issue.get(issue_id)
+            return _issue_to_dict(updated_issue)
+        except Exception as retry_error:
+            return _handle_redmine_error(
+                retry_error,
+                f"updating issue {issue_id}",
+                {"resource_type": "issue", "resource_id": issue_id},
+            )
     except Exception as e:
         return _handle_redmine_error(
             e,
