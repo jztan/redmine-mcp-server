@@ -32,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `black` upgraded from 25.12.0 to 26.1.0
 
 ### Improved
+- **Test Coverage** - 44 new unit tests for custom field helper functions (`redmine_handler.py` lines 474-640)
+  - Covers `_is_true_env`, `_normalize_field_label`, `_parse_create_issue_fields`, `_extract_possible_values`, `_extract_missing_required_field_names`, `_load_required_custom_field_defaults`, `_is_missing_custom_field_value`, `_is_allowed_custom_field_value`, `_resolve_required_custom_field_value`
+  - `redmine_handler.py` coverage improved from 94% to 97% (with integration tests)
+  - Overall coverage improved from 95% to 98%
 - **Documentation** - Updated README and tool-reference.md
   - Tool count updated from 15 to 16
   - Added `list_redmine_versions` to Project Management category in README
