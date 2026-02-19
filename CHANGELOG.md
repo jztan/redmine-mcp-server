@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **New MCP Tool: `list_project_issue_custom_fields`** - Discover issue custom fields for a Redmine project
+  - Lists custom field metadata (`id`, `name`, `field_format`, `is_required`, `multiple`, `default_value`)
+  - Includes allowed values (`possible_values`) and tracker bindings (`trackers`)
+  - Optional `tracker_id` filter to show only fields applicable to a specific tracker
+  - 7 unit tests covering serialization, filtering, validation, and error handling
 - **New MCP Tool: `list_redmine_versions`** - List versions/milestones for a Redmine project
   - Filter by `project_id` (numeric or string identifier)
   - Optional `status_filter` parameter (open, locked, closed)
@@ -41,7 +46,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `redmine_handler.py` coverage improved from 94% to 97% (with integration tests)
   - Overall coverage improved from 95% to 98%
 - **Documentation** - Updated README and tool-reference.md
-  - Tool count updated from 15 to 16
+  - Tool count updated from 15 to 17
+  - Added `list_project_issue_custom_fields` to Project Management category in README
+  - Added full `list_project_issue_custom_fields` documentation to tool-reference.md
   - Added `list_redmine_versions` to Project Management category in README
   - Added full tool documentation to tool-reference.md with parameters, examples, and usage guidance
   - Documented `fixed_version_id` parameter for `list_redmine_issues`

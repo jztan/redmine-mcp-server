@@ -1283,6 +1283,76 @@ def _version_to_dict(version: Any) -> Dict[str, Any]:
     }
 
 
+def _custom_field_trackers_to_list(custom_field: Any) -> List[Dict[str, Any]]:
+    """Serialize custom field tracker bindings into a predictable list."""
+    raw_trackers = getattr(custom_field, "trackers", None)
+    if raw_trackers is None:
+        return []
+
+    try:
+        iterator = iter(raw_trackers)
+    except TypeError:
+        return []
+
+    trackers: List[Dict[str, Any]] = []
+    for tracker in iterator:
+        tracker_id = None
+        tracker_name = None
+
+        if isinstance(tracker, dict):
+            tracker_id = tracker.get("id")
+            tracker_name = tracker.get("name")
+        else:
+            tracker_id = getattr(tracker, "id", None)
+            tracker_name = getattr(tracker, "name", None)
+
+        if tracker_id is None and tracker_name is None:
+            continue
+
+        if tracker_id is not None:
+            try:
+                tracker_id = int(tracker_id)
+            except (TypeError, ValueError):
+                tracker_id = str(tracker_id)
+
+        trackers.append({"id": tracker_id, "name": tracker_name})
+
+    return trackers
+
+
+def _custom_field_applies_to_tracker(
+    custom_field: Any, tracker_id: Optional[int]
+) -> bool:
+    """Return whether a custom field is available for the given tracker."""
+    if tracker_id is None:
+        return True
+
+    trackers = _custom_field_trackers_to_list(custom_field)
+    if not trackers:
+        # No tracker restrictions exposed by Redmine -> treat as globally available.
+        return True
+
+    for tracker in trackers:
+        if tracker.get("id") == tracker_id:
+            return True
+
+    return False
+
+
+def _custom_field_to_dict(custom_field: Any) -> Dict[str, Any]:
+    """Convert project issue custom field metadata to a serializable dict."""
+    return {
+        "id": getattr(custom_field, "id", None),
+        "name": getattr(custom_field, "name", ""),
+        "field_format": getattr(custom_field, "field_format", ""),
+        "is_required": bool(getattr(custom_field, "is_required", False)),
+        "multiple": bool(getattr(custom_field, "multiple", False)),
+        "default_value": getattr(custom_field, "default_value", None),
+        "possible_values": _extract_possible_values(custom_field),
+        "trackers": _custom_field_trackers_to_list(custom_field),
+    }
+
+
 @mcp.tool()
 async def get_redmine_issue(
     issue_id: int,
@@ -1368,6 +1438,60 @@ async def list_redmine_projects() -> List[Dict[str, Any]]:
         ]
     except Exception as e:
         return [_handle_redmine_error(e, "listing projects")]
+
+
+@mcp.tool()
+async def list_project_issue_custom_fields(
+    project_id: Union[str, int], tracker_id: Optional[Union[str, int]] = None
+) -> List[Dict[str, Any]]:
+    """List issue custom fields configured for a project.
+
+    Args:
+        project_id: Project identifier (ID number or string identifier).
+        tracker_id: Optional tracker ID to filter custom fields by applicability.
+
+    Returns:
+        A list of custom field metadata dictionaries. On failure a list containing
+        a single dictionary with an ``"error"`` key is returned.
+    """
+    if not redmine:
+        return [{"error": "Redmine client not initialized."}]
+
+    parsed_tracker_id: Optional[int] = None
+    if tracker_id is not None:
+        try:
+            parsed_tracker_id = int(tracker_id)
+        except (TypeError, ValueError):
+            return [
+                {
+                    "error": (
+                        f"Invalid tracker_id '{tracker_id}'. "
+                        "Expected an integer tracker ID."
+                    )
+                }
+            ]
+
+    await _ensure_cleanup_started()
+
+    try:
+        project = redmine.project.get(project_id, include="issue_custom_fields")
+        custom_fields = getattr(project, "issue_custom_fields", None) or []
+
+        result: List[Dict[str, Any]] = []
+        for custom_field in custom_fields:
+            if not _custom_field_applies_to_tracker(custom_field, parsed_tracker_id):
+                continue
+            result.append(_custom_field_to_dict(custom_field))
+
+        return result
+    except Exception as e:
+        return [
+            _handle_redmine_error(
+                e,
+                f"listing issue custom fields for project {project_id}",
+                {"resource_type": "project", "resource_id": project_id},
+            )
+        ]
 
 
 @mcp.tool()

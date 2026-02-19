@@ -177,6 +177,39 @@ Lists all accessible projects in the Redmine instance.
 
 ---
 
+### `list_project_issue_custom_fields`
+
+List issue custom fields configured for a project, including allowed values and tracker bindings.
+
+**Parameters:**
+- `project_id` (integer or string, required): Project ID (numeric) or identifier (string)
+- `tracker_id` (integer, optional): Restrict output to fields applicable to the given tracker ID
+
+**Returns:** List of custom field metadata dictionaries
+
+**Example:**
+```json
+[
+  {
+    "id": 6,
+    "name": "Size",
+    "field_format": "list",
+    "is_required": false,
+    "multiple": false,
+    "default_value": "M",
+    "possible_values": ["S", "M", "L"],
+    "trackers": [{"id": 5, "name": "Bug"}]
+  }
+]
+```
+
+**Example with tracker filter:**
+```python
+list_project_issue_custom_fields(project_id="pipeline", tracker_id=5)
+```
+
+---
+
 ### `summarize_project_status`
 
 Provide a comprehensive summary of project status based on issue activity over a specified time period.
