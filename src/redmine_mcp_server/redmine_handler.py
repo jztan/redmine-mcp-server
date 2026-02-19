@@ -994,10 +994,9 @@ def _map_named_custom_fields_for_update(
 
         value = update_fields.pop(candidate)
         possible_values = match["possible_values"]
-        if (
-            not _is_missing_custom_field_value(value)
-            and not _is_allowed_custom_field_value(value, possible_values)
-        ):
+        if not _is_missing_custom_field_value(
+            value
+        ) and not _is_allowed_custom_field_value(value, possible_values):
             raise ValueError(
                 f"Invalid value '{value}' for custom field '{match['name']}'. "
                 f"Allowed values: {possible_values}."
