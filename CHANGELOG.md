@@ -14,7 +14,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Optional `status_filter` parameter (open, locked, closed)
   - Client-side filtering with input validation
   - 18 unit tests covering helper, basic functionality, filtering, and error handling
+  - 6 integration tests for project ID, string identifier, structure, filtering, and error handling
 - **`fixed_version_id` filter** documented for `list_redmine_issues` tool
+- **Claude Desktop MCP client configuration** added to README with stdio transport via FastMCP proxy
+
+### Fixed
+- **Required custom field handling** for `create_redmine_issue` and `update_redmine_issue` ([#65](https://github.com/jztan/redmine-mcp-server/issues/65))
+  - Auto-retry on validation errors for missing required custom fields (e.g., "cannot be blank", "is not included in the list")
+  - Fills values from Redmine custom field `default_value` or `REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS` env var
+  - Opt-in via `REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true` environment variable
+  - `create_redmine_issue` now accepts `fields` as a JSON object string for flexible custom field payloads
+  - Added `REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS` env var for specifying fallback values per field name
+  - Updated `.env.example` and `.env.docker` with new environment variables
+
+### Changed
+- **Dependency Updates**
+  - `black` upgraded from 25.12.0 to 26.1.0
+
+### Improved
+- **Documentation** - Updated README and tool-reference.md
+  - Tool count updated from 15 to 16
+  - Added `list_redmine_versions` to Project Management category in README
+  - Added full tool documentation to tool-reference.md with parameters, examples, and usage guidance
+  - Documented `fixed_version_id` parameter for `list_redmine_issues`
 
 ## [0.11.0] - 2026-02-14
 
