@@ -564,7 +564,8 @@ def _parse_optional_object_payload(
             parsed = json.loads(raw)
         except Exception as e:
             raise ValueError(
-                f"Invalid {payload_name} payload. Expected a dict or JSON object string."
+                f"Invalid {payload_name} payload. Expected a dict or "
+                "JSON object string."
             ) from e
     else:
         raise ValueError(
