@@ -177,6 +177,39 @@ Lists all accessible projects in the Redmine instance.
 
 ---
 
+### `list_project_issue_custom_fields`
+
+List issue custom fields configured for a project, including allowed values and tracker bindings.
+
+**Parameters:**
+- `project_id` (integer or string, required): Project ID (numeric) or identifier (string)
+- `tracker_id` (integer, optional): Restrict output to fields applicable to the given tracker ID
+
+**Returns:** List of custom field metadata dictionaries
+
+**Example:**
+```json
+[
+  {
+    "id": 6,
+    "name": "Size",
+    "field_format": "list",
+    "is_required": false,
+    "multiple": false,
+    "default_value": "M",
+    "possible_values": ["S", "M", "L"],
+    "trackers": [{"id": 5, "name": "Bug"}]
+  }
+]
+```
+
+**Example with tracker filter:**
+```python
+list_project_issue_custom_fields(project_id="pipeline", tracker_id=5)
+```
+
+---
+
 ### `summarize_project_status`
 
 Provide a comprehensive summary of project status based on issue activity over a specified time period.
@@ -211,6 +244,44 @@ Provide a comprehensive summary of project status based on issue activity over a
 
 ---
 
+### `list_redmine_versions`
+
+List versions (roadmap milestones) for a Redmine project. Useful for discovering target version IDs to use with `list_redmine_issues(fixed_version_id=...)`.
+
+**Parameters:**
+- `project_id` (integer or string, required): The project ID (numeric) or identifier (string)
+- `status_filter` (string, optional): Filter by version status. Allowed values: `open`, `locked`, `closed`. Default: all versions
+
+**Returns:** List of version dictionaries
+
+**Example:**
+```json
+[
+  {
+    "id": 1,
+    "name": "v1.0",
+    "description": "First release",
+    "status": "open",
+    "due_date": "2026-03-01",
+    "sharing": "none",
+    "wiki_page_title": "",
+    "project": {"id": 1, "name": "My Project"},
+    "created_on": "2026-01-01T10:00:00",
+    "updated_on": "2026-02-01T14:30:00"
+  }
+]
+```
+
+**Usage with issue filtering:**
+```python
+# First, find versions for a project
+versions = list_redmine_versions(project_id="my-project", status_filter="open")
+# Then, list issues assigned to that version
+issues = list_redmine_issues(fixed_version_id=versions[0]["id"])
+```
+
+---
+
 ## Issue Operations
 
 ### `get_redmine_issue`
@@ -221,6 +292,7 @@ Retrieve detailed information about a specific Redmine issue.
 - `issue_id` (integer, required): The ID of the issue to retrieve
 - `include_journals` (boolean, optional): Include journals (comments) in result. Default: `true`
 - `include_attachments` (boolean, optional): Include attachments metadata. Default: `true`
+- `include_custom_fields` (boolean, optional): Include custom fields in result. Default: `true`
 
 **Returns:** Issue dictionary with details, journals, and attachments
 
@@ -232,6 +304,7 @@ Retrieve detailed information about a specific Redmine issue.
   "description": "Users cannot login...",
   "status": {"id": 1, "name": "New"},
   "priority": {"id": 2, "name": "Normal"},
+  "custom_fields": [{"id": 6, "name": "Size", "value": "S"}],
   "journals": [...],
   "attachments": [...]
 }
@@ -249,6 +322,7 @@ List Redmine issues with flexible filtering and pagination support. A general-pu
 - `tracker_id` (integer, optional): Filter by tracker ID
 - `assigned_to_id` (integer or string, optional): Filter by assignee. Use a numeric user ID or the special value `'me'` to retrieve issues assigned to the currently authenticated user.
 - `priority_id` (integer, optional): Filter by priority ID
+- `fixed_version_id` (integer, optional): Filter by target version/milestone ID
 - `sort` (string, optional): Sort order (e.g., `"updated_on:desc"`)
 - `limit` (integer, optional): Maximum issues to return. Default: `25`, Max: `1000`
 - `offset` (integer, optional): Number of issues to skip for pagination. Default: `0`
@@ -441,9 +515,16 @@ Creates a new issue in the specified project.
 - `project_id` (integer, required): Target project ID
 - `subject` (string, required): Issue subject/title
 - `description` (string, optional): Issue description. Default: `""`
-- `**fields` (optional): Additional Redmine fields (e.g., `priority_id`, `assigned_to_id`, `tracker_id`, `status_id`)
+- `fields` (object|string, optional): Additional Redmine fields as:
+  - an object (`{"priority_id": 3, "tracker_id": 1}`), or
+  - a serialized JSON object string (for MCP clients that pass string payloads)
+- `extra_fields` (object|string, optional): Additional Redmine fields as:
+  - an object (`{"priority_id": 3, "tracker_id": 1}`), or
+  - a serialized JSON object string
 
 **Returns:** Created issue dictionary
+
+**Behavior note:** If `REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true` and Redmine returns relevant custom-field validation errors (for example `<Field Name> cannot be blank` or `<Field Name> is not included in the list`), the server fetches project custom fields, auto-fills missing/invalid required custom fields from Redmine `default_value` or `REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS`, and retries once.
 
 **Example:**
 ```python
@@ -452,8 +533,7 @@ create_redmine_issue(
     project_id=1,
     subject="Login button not working",
     description="The login button does not respond to clicks",
-    priority_id=3,  # High priority
-    tracker_id=1    # Bug tracker
+    fields={"priority_id": 3, "tracker_id": 1}
 )
 ```
 
@@ -470,6 +550,7 @@ Updates an existing issue with the provided fields.
 **Returns:** Updated issue dictionary
 
 **Note:** You can use either `status_id` or `status_name` in fields. When `status_name` is provided, the tool automatically resolves the corresponding status ID.
+You can also update custom fields by name (for example `{"size": "S"}`) and the tool will resolve them to Redmine `custom_fields` entries using project custom-field metadata. You can still pass explicit `custom_fields` with field IDs.
 
 **Example:**
 ```python
@@ -488,6 +569,14 @@ update_redmine_issue(
     fields={
         "status_id": 3,
         "assigned_to_id": 5
+    }
+)
+
+# Update Agile/custom field by name
+update_redmine_issue(
+    issue_id=123,
+    fields={
+        "size": "S"
     }
 )
 ```

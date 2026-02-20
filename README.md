@@ -109,8 +109,21 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `REDMINE_SSL_VERIFY` | No | `true` | Enable/disable SSL certificate verification |
 | `REDMINE_SSL_CERT` | No | – | Path to custom CA certificate file |
 | `REDMINE_SSL_CLIENT_CERT` | No | – | Path to client certificate for mutual TLS |
+| `REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS` | No | `false` | Enable one retry for issue creation by filling missing required custom fields |
+| `REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS` | No | `{}` | JSON object mapping required custom field names to fallback values used when creating issues |
 
 *\* Either `REDMINE_API_KEY` or the combination of `REDMINE_USERNAME` and `REDMINE_PASSWORD` must be provided for authentication. API key authentication is recommended for security.*
+
+When `REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true`, `create_redmine_issue` retries once on relevant custom-field validation errors (for example `<Field Name> cannot be blank` or `<Field Name> is not included in the list`) and fills values only from:
+- the Redmine custom field `default_value`, or
+- `REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS`
+
+Example:
+
+```bash
+REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true
+REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS='{"Required Field A":"Value A","Required Field B":"Value B"}'
+```
 
 ### SSL Certificate Configuration
 
@@ -235,6 +248,45 @@ Or configure manually in your Claude Code settings file (`~/.claude.json`):
 </details>
 
 <details>
+<summary><strong>Claude Desktop (macOS & Windows)</strong></summary>
+
+Claude Desktop's config file supports stdio transport only. Use FastMCP's proxy via `uv` to bridge to this HTTP server.
+
+**Setup:**
+1. Open Claude Desktop
+2. Click the **Claude** menu (macOS menu bar / Windows title bar) > **Settings...**
+3. Click the **Developer** tab > **Edit Config**
+4. Add the following configuration:
+
+```json
+{
+  "mcpServers": {
+    "redmine": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--with", "fastmcp",
+        "fastmcp",
+        "run",
+        "http://127.0.0.1:8000/mcp"
+      ]
+    }
+  }
+}
+```
+
+5. Save the file, then **fully quit and restart** Claude Desktop
+6. Look for the tools icon in the input area to verify the connection
+
+**Config file locations:**
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+
+**Note:** The Redmine MCP server must be running before starting Claude Desktop.
+
+</details>
+
+<details>
 <summary><strong>Codex CLI</strong></summary>
 
 Add to Codex CLI using the command:
@@ -322,10 +374,12 @@ curl http://localhost:8000/health
 
 ## Available Tools
 
-This MCP server provides 15 tools for interacting with Redmine. For detailed documentation, see [Tool Reference](./docs/tool-reference.md).
+This MCP server provides 17 tools for interacting with Redmine. For detailed documentation, see [Tool Reference](./docs/tool-reference.md).
 
-- **Project Management** (2 tools)
+- **Project Management** (4 tools)
   - [`list_redmine_projects`](docs/tool-reference.md#list_redmine_projects) - List all accessible projects
+  - [`list_project_issue_custom_fields`](docs/tool-reference.md#list_project_issue_custom_fields) - List issue custom fields configured for a project
+  - [`list_redmine_versions`](docs/tool-reference.md#list_redmine_versions) - List versions/milestones for a project
   - [`summarize_project_status`](docs/tool-reference.md#summarize_project_status) - Get comprehensive project status summary
 
 - **Issue Operations** (6 tools)
@@ -335,6 +389,7 @@ This MCP server provides 15 tools for interacting with Redmine. For detailed doc
   - [`search_redmine_issues`](docs/tool-reference.md#search_redmine_issues) - Search issues by text query
   - [`create_redmine_issue`](docs/tool-reference.md#create_redmine_issue) - Create new issues
   - [`update_redmine_issue`](docs/tool-reference.md#update_redmine_issue) - Update existing issues
+  - Note: `get_redmine_issue` can include `custom_fields` and `update_redmine_issue` can update custom fields by name (for example `{"size": "S"}`).
 
 - **Search & Wiki** (5 tools)
   - [`search_entire_redmine`](docs/tool-reference.md#search_entire_redmine) - Global search across issues and wiki pages (Redmine 3.3.0+)

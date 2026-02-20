@@ -312,7 +312,6 @@ async def test_function_error():
 - `docs/troubleshooting.md` - Common issues and solutions
 - `docs/contributing.md` - This file
 - `CHANGELOG.md` - Version history
-- `CLAUDE.md` - Development guidance
 
 ### Documentation Style:
 

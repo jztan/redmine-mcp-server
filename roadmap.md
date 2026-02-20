@@ -2,7 +2,7 @@
 
 ## 🎯 Project Status
 
-**Current Version:** v0.9.1 (PyPI Published)
+**Current Version:** v0.12.0 (PyPI Published)
 **MCP Registry Status:** Published
 
 ### ✅ Completed Features
@@ -37,6 +37,16 @@
   - `get_redmine_wiki_page()` for retrieving wiki content
   - Optional version parameter for specific page versions
   - Attachment metadata support
+- [x] Wiki page editing — create, update, delete (v0.10.0)
+- [x] Centralized error handling with 12 error types and actionable messages (v0.10.0)
+- [x] General-purpose issue listing with flexible filtering (v0.11.0)
+  - `list_redmine_issues()` with project, status, tracker, assignee, priority filters
+  - Selective field returns via `fields` parameter (~96% token reduction)
+- [x] Project versions/milestones listing with status filtering (v0.12.0)
+  - `list_redmine_versions()` with open/locked/closed filtering
+- [x] Required custom field autofill with auto-retry on validation errors (v0.12.0)
+  - Opt-in via `REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true`
+  - Fills from Redmine defaults or `REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS` env var
 - [x] Download attachments with HTTP URLs
 - [x] Smart project status summarization with activity analysis
 - [x] Automatic status name to ID resolution
@@ -62,7 +72,6 @@
 - [x] PEP 8 compliance with flake8 and black
 - [x] Comprehensive README with tool descriptions
 - [x] CHANGELOG with semantic versioning
-- [x] Development guidelines in CLAUDE.md
 - [x] Separated documentation structure (v0.5.2)
   - `docs/tool-reference.md` - Complete tool documentation
   - `docs/troubleshooting.md` - Comprehensive troubleshooting guide
@@ -70,6 +79,7 @@
 - [x] Test coverage tracking via Codecov integration (v0.8.1)
 - [x] GitHub issue templates (bug report, feature request) (v0.8.1)
 - [x] Dependabot integration for automated dependency updates (v0.8.1)
+- [x] 457 tests with 98% coverage (v0.12.0)
 
 #### Python Compatibility
 - [x] **Support Python 3.10+** (v0.5.0)
@@ -79,17 +89,18 @@
 
 ### 📋 Planned Features
 
-#### Phase 4: Quality Improvements
-- [x] Clear connection error messages:
-  - "Failed to connect to Redmine" → "Cannot connect to {REDMINE_URL}. Check: 1) URL is correct, 2) Network access, 3) Redmine is running"
-  - "401 Unauthorized" → "Authentication failed. Check your API key or username/password in .env"
-  - "403 Forbidden" → "Access denied. Your Redmine user lacks permission for this action"
+#### v1.0.0: Production/Stable
+- [ ] Remove deprecated `list_my_redmine_issues` (breaking change)
+- [ ] Prompt injection protection with `<insecure-content>` boundary tags
+- [ ] Read-only mode via `REDMINE_MCP_READ_ONLY` env var
+- [ ] Journal pagination on `get_redmine_issue` (`journal_limit`/`journal_offset`)
+- [ ] Include flags on `get_redmine_issue` (watchers, relations, children)
+- [ ] Version bump to 1.0.0, Development Status → Production/Stable
 
 #### Future (Only if Users Request)
-- [ ] Custom field support
+- [ ] YAML response format option
+- [ ] User instructions file (`REDMINE_INSTRUCTIONS`)
 - [ ] Bulk operations
-- [ ] User lookup tool
-- [x] Wiki page editing (create/update/delete)
 
 ### 🔧 Maintenance Notes
 
@@ -99,4 +110,4 @@
 
 ---
 
-**Last Updated:** 2026-01-04 (v0.9.1)
+**Last Updated:** 2026-02-20 (v0.12.0)

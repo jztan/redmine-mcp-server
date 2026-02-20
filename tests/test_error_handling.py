@@ -6,7 +6,7 @@ verifies that all MCP tools produce actionable error messages.
 """
 
 import pytest
-from unittest.mock import patch, Mock
+from unittest.mock import patch
 
 
 class TestErrorHandler:
@@ -15,6 +15,7 @@ class TestErrorHandler:
     def test_handle_redmine_error_exists(self):
         """Verify the error handler function can be imported."""
         from redmine_mcp_server.redmine_handler import _handle_redmine_error
+
         assert callable(_handle_redmine_error)
 
     def test_handle_redmine_error_returns_dict(self):
@@ -52,7 +53,6 @@ class TestErrorHandler:
         """Connection error message includes the Redmine URL."""
         from redmine_mcp_server.redmine_handler import (
             _handle_redmine_error,
-            REDMINE_URL,
         )
         from requests.exceptions import ConnectionError
 
@@ -172,9 +172,7 @@ class TestErrorHandler:
 
         error = ResourceNotFoundError()
         result = _handle_redmine_error(
-            error,
-            "fetching issue",
-            {"resource_type": "issue", "resource_id": 123}
+            error, "fetching issue", {"resource_type": "issue", "resource_id": 123}
         )
 
         assert "Issue 123 not found" in result["error"]

@@ -596,7 +596,7 @@ If your issue isn't covered here:
 3. **Review Documentation**
    - [README](../README.md) - Setup and configuration
    - [Tool Reference](./tool-reference.md) - Tool usage details
-   - [CLAUDE.md](../CLAUDE.md) - Development information
+   - [Contributing](./contributing.md) - Development information
 
 4. **Community Support**
    - Check MCP community resources

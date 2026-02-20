@@ -18,6 +18,7 @@ htmlcov/
 .env
 .env.docker
 CLAUDE.md
+RELEASE_SOP.md
 .claude
 attachments
 plans
