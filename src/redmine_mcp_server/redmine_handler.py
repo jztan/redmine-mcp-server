@@ -509,42 +509,7 @@ def _parse_create_issue_fields(
     fields: Optional[Union[Dict[str, Any], str]],
 ) -> Dict[str, Any]:
     """Parse create issue fields from dict or serialized string payload."""
-    if fields is None:
-        return {}
-
-    if isinstance(fields, dict):
-        return dict(fields)
-
-    if not isinstance(fields, str):
-        raise ValueError(
-            "Invalid fields payload. Expected a dict or JSON object string."
-        )
-
-    raw = fields.strip()
-    if not raw:
-        return {}
-
-    parsed: Any = None
-    try:
-        parsed = json.loads(raw)
-    except Exception as e:
-        raise ValueError(
-            "Invalid fields payload. Use a JSON object string such as "
-            '{"tracker_id": 5, "custom_fields": [{"id": 6, "value": "Any"}]}.'
-        ) from e
-
-    if parsed is None:
-        raise ValueError("Invalid fields payload. Parsed value must be an object/dict.")
-
-    if isinstance(parsed, dict) and set(parsed.keys()) == {"fields"}:
-        wrapped = parsed.get("fields")
-        if isinstance(wrapped, dict):
-            parsed = wrapped
-
-    if not isinstance(parsed, dict):
-        raise ValueError("Invalid fields payload. Parsed value must be an object/dict.")
-
-    return dict(parsed)
+    return _parse_optional_object_payload(fields, "fields")
 
 
 def _parse_optional_object_payload(
