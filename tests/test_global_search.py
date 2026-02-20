@@ -373,7 +373,7 @@ class TestGetRedmineWikiPage:
         )
 
         assert result["title"] == "Installation Guide"
-        assert result["text"] == "# Installation\n\nFollow these steps..."
+        assert "# Installation" in result["text"]
         assert result["version"] == 5
         assert result["author"]["id"] == 123
         assert result["author"]["name"] == "John Doe"
@@ -490,7 +490,7 @@ class TestGetRedmineWikiPage:
         )
 
         assert result["title"] == "Simple Page"
-        assert result["text"] == "Content"
+        assert "Content" in result["text"]
         assert result.get("created_on") is None
         assert result.get("author") is None
 

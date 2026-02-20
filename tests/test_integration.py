@@ -953,32 +953,6 @@ class TestListRedmineIssuesIntegration:
         for issue in result:
             assert "error" not in issue
 
-    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
-    @pytest.mark.integration
-    @pytest.mark.asyncio
-    async def test_list_my_issues_backward_compatible(self):
-        """Test list_my_redmine_issues still works as a wrapper."""
-        redmine = _get_redmine_or_none()
-        if redmine is None:
-            pytest.skip("Redmine client not initialized")
-
-        from redmine_mcp_server.redmine_handler import (
-            list_redmine_issues,
-            list_my_redmine_issues,
-        )
-
-        # Both should return the same results
-        new_result = await list_redmine_issues(assigned_to_id="me", limit=10)
-        old_result = await list_my_redmine_issues(limit=10)
-
-        assert isinstance(new_result, list)
-        assert isinstance(old_result, list)
-
-        # Same issue IDs should be returned
-        new_ids = {issue["id"] for issue in new_result if "id" in issue}
-        old_ids = {issue["id"] for issue in old_result if "id" in issue}
-        assert new_ids == old_ids
-
 
 @pytest.mark.integration
 class TestEnvironmentConfiguration:

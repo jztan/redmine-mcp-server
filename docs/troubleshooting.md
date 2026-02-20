@@ -487,7 +487,7 @@ This guide covers common issues and solutions for the Redmine MCP Server.
    ```
 
 3. **Reduce Pagination Limits**
-   - Use smaller `limit` values in `list_my_redmine_issues`
+   - Use smaller `limit` values in `list_redmine_issues`
    - Default limit is 25 to prevent token overflow
 
 ---
@@ -626,9 +626,32 @@ docker logs -f <container-id>
 **Cause:** Too many results returned causing MCP token overflow
 
 **Solution:**
-1. Use smaller `limit` values in `list_my_redmine_issues`
+1. Use smaller `limit` values in `list_redmine_issues`
 2. Use pagination with `offset` parameter
 3. Filter results with specific parameters
+4. Use `journal_limit` on `get_redmine_issue` to paginate large journal lists
+
+#### "This server is in read-only mode"
+
+**Cause:** The `REDMINE_MCP_READ_ONLY` environment variable is set to `true`, blocking all write operations
+
+**Solution:**
+1. If you need write access, set the variable to `false` or remove it:
+   ```bash
+   # In .env file
+   REDMINE_MCP_READ_ONLY=false
+   ```
+2. If read-only is intentional (e.g., shared/demo instance), use only read tools:
+   - `get_redmine_issue`, `list_redmine_issues`, `list_redmine_projects`, `search_redmine_issues`, `search_entire_redmine`, `get_redmine_wiki_page`, etc.
+3. Blocked tools in read-only mode: `create_redmine_issue`, `update_redmine_issue`, `create_redmine_wiki_page`, `update_redmine_wiki_page`, `delete_redmine_wiki_page`
+
+#### "list_my_redmine_issues not found" / Import errors after upgrade
+
+**Cause:** `list_my_redmine_issues` was removed in v1.0.0
+
+**Solution:**
+- Replace all usage with `list_redmine_issues(assigned_to_id='me')`
+- The replacement supports the same filters and pagination options
 
 ---
 
