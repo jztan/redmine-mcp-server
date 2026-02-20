@@ -34,11 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added `REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS` env var for specifying fallback values per field name
   - Updated `.env.example` and `.env.docker` with new environment variables
 
+### Breaking
+- **`create_redmine_issue` `extra_fields` parameter** — Previously, passing `extra_fields` as a plain string would forward it directly to Redmine as an attribute. Now it is parsed as a JSON object (or dict) and merged into the issue payload. Callers who relied on the old behaviour of sending a raw `extra_fields` string attribute should migrate to `fields` or provide a JSON object string instead.
+
 ### Changed
 - **Dependency Updates**
   - `black` upgraded from 25.12.0 to 26.1.0
 - Improved issue update validation for named custom fields with clear errors when values are not allowed for the target custom field.
-- `create_redmine_issue` now accepts `extra_fields` as an explicit object/string payload and no longer forwards a literal `extra_fields` attribute to Redmine.
 
 ### Improved
 - **Test Coverage** - 44 new unit tests for custom field helper functions (`redmine_handler.py` lines 474-640)
