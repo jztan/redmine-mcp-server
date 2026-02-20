@@ -169,9 +169,7 @@ class TestListRedmineVersions:
 
         result = await list_redmine_versions(project_id="my-project")
 
-        mock_redmine.version.filter.assert_called_once_with(
-            project_id="my-project"
-        )
+        mock_redmine.version.filter.assert_called_once_with(project_id="my-project")
         assert len(result) == 1
 
     @pytest.mark.asyncio
@@ -186,9 +184,7 @@ class TestListRedmineVersions:
     @pytest.mark.asyncio
     async def test_version_dict_structure(self, mock_redmine):
         """Test that returned dicts have expected keys."""
-        mock_versions = [
-            create_mock_version(version_id=1, name="v1.0", status="open")
-        ]
+        mock_versions = [create_mock_version(version_id=1, name="v1.0", status="open")]
         mock_redmine.version.filter.return_value = mock_versions
 
         result = await list_redmine_versions(project_id=1)
@@ -220,9 +216,7 @@ class TestListRedmineVersions:
         ]
         mock_redmine.version.filter.return_value = mock_versions
 
-        result = await list_redmine_versions(
-            project_id=1, status_filter="open"
-        )
+        result = await list_redmine_versions(project_id=1, status_filter="open")
 
         assert len(result) == 2
         assert all(v["status"] == "open" for v in result)
@@ -236,9 +230,7 @@ class TestListRedmineVersions:
         ]
         mock_redmine.version.filter.return_value = mock_versions
 
-        result = await list_redmine_versions(
-            project_id=1, status_filter="closed"
-        )
+        result = await list_redmine_versions(project_id=1, status_filter="closed")
 
         assert len(result) == 1
         assert result[0]["status"] == "closed"
@@ -252,9 +244,7 @@ class TestListRedmineVersions:
         ]
         mock_redmine.version.filter.return_value = mock_versions
 
-        result = await list_redmine_versions(
-            project_id=1, status_filter="locked"
-        )
+        result = await list_redmine_versions(project_id=1, status_filter="locked")
 
         assert len(result) == 1
         assert result[0]["status"] == "locked"
@@ -276,9 +266,7 @@ class TestListRedmineVersions:
     @pytest.mark.asyncio
     async def test_invalid_status_filter_returns_error(self, mock_redmine):
         """Test that invalid status_filter returns error dict."""
-        result = await list_redmine_versions(
-            project_id=1, status_filter="invalid"
-        )
+        result = await list_redmine_versions(project_id=1, status_filter="invalid")
 
         assert len(result) == 1
         assert "error" in result[0]
@@ -289,9 +277,7 @@ class TestListRedmineVersions:
     @pytest.mark.asyncio
     async def test_no_client_returns_error(self):
         """Test error when Redmine client is not initialized."""
-        with patch(
-            "redmine_mcp_server.redmine_handler.redmine", None
-        ):
+        with patch("redmine_mcp_server.redmine_handler.redmine", None):
             result = await list_redmine_versions(project_id=1)
 
         assert isinstance(result, list)
@@ -300,9 +286,7 @@ class TestListRedmineVersions:
     @pytest.mark.asyncio
     async def test_api_error_returns_error(self, mock_redmine):
         """Test error handling when API call fails."""
-        mock_redmine.version.filter.side_effect = Exception(
-            "Connection refused"
-        )
+        mock_redmine.version.filter.side_effect = Exception("Connection refused")
 
         result = await list_redmine_versions(project_id=1)
 

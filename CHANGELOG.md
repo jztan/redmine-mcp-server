@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **New MCP Tool: `list_project_issue_custom_fields`** - Discover issue custom fields for a Redmine project
+  - Lists custom field metadata (`id`, `name`, `field_format`, `is_required`, `multiple`, `default_value`)
+  - Includes allowed values (`possible_values`) and tracker bindings (`trackers`)
+  - Optional `tracker_id` filter to show only fields applicable to a specific tracker
+  - 7 unit tests covering serialization, filtering, validation, and error handling
 - **New MCP Tool: `list_redmine_versions`** - List versions/milestones for a Redmine project
   - Filter by `project_id` (numeric or string identifier)
   - Optional `status_filter` parameter (open, locked, closed)
@@ -17,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 6 integration tests for project ID, string identifier, structure, filtering, and error handling
 - **`fixed_version_id` filter** documented for `list_redmine_issues` tool
 - **Claude Desktop MCP client configuration** added to README with stdio transport via FastMCP proxy
+- `get_redmine_issue` now supports `include_custom_fields` (default: `true`) and can return serialized issue `custom_fields`.
+- `update_redmine_issue` now supports updating custom fields by name (for example `{"size": "S"}`) by resolving project custom-field metadata.
 
 ### Fixed
 - **Required custom field handling** for `create_redmine_issue` and `update_redmine_issue` ([#65](https://github.com/jztan/redmine-mcp-server/issues/65))
@@ -27,9 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added `REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS` env var for specifying fallback values per field name
   - Updated `.env.example` and `.env.docker` with new environment variables
 
+### Breaking
+- **`create_redmine_issue` `extra_fields` parameter** — Previously, passing `extra_fields` as a plain string would forward it directly to Redmine as an attribute. Now it is parsed as a JSON object (or dict) and merged into the issue payload. Callers who relied on the old behaviour of sending a raw `extra_fields` string attribute should migrate to `fields` or provide a JSON object string instead.
+
 ### Changed
 - **Dependency Updates**
   - `black` upgraded from 25.12.0 to 26.1.0
+- Improved issue update validation for named custom fields with clear errors when values are not allowed for the target custom field.
 
 ### Improved
 - **Test Coverage** - 44 new unit tests for custom field helper functions (`redmine_handler.py` lines 474-640)
@@ -37,7 +48,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `redmine_handler.py` coverage improved from 94% to 97% (with integration tests)
   - Overall coverage improved from 95% to 98%
 - **Documentation** - Updated README and tool-reference.md
-  - Tool count updated from 15 to 16
+  - Tool count updated from 15 to 17
+  - Added `list_project_issue_custom_fields` to Project Management category in README
+  - Added full `list_project_issue_custom_fields` documentation to tool-reference.md
   - Added `list_redmine_versions` to Project Management category in README
   - Added full tool documentation to tool-reference.md with parameters, examples, and usage guidance
   - Documented `fixed_version_id` parameter for `list_redmine_issues`
@@ -709,4 +722,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [0.1.2]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.1.2
 [0.1.1]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.1.1
 [0.1.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.1.0
-

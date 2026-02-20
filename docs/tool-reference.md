@@ -177,6 +177,39 @@ Lists all accessible projects in the Redmine instance.
 
 ---
 
+### `list_project_issue_custom_fields`
+
+List issue custom fields configured for a project, including allowed values and tracker bindings.
+
+**Parameters:**
+- `project_id` (integer or string, required): Project ID (numeric) or identifier (string)
+- `tracker_id` (integer, optional): Restrict output to fields applicable to the given tracker ID
+
+**Returns:** List of custom field metadata dictionaries
+
+**Example:**
+```json
+[
+  {
+    "id": 6,
+    "name": "Size",
+    "field_format": "list",
+    "is_required": false,
+    "multiple": false,
+    "default_value": "M",
+    "possible_values": ["S", "M", "L"],
+    "trackers": [{"id": 5, "name": "Bug"}]
+  }
+]
+```
+
+**Example with tracker filter:**
+```python
+list_project_issue_custom_fields(project_id="pipeline", tracker_id=5)
+```
+
+---
+
 ### `summarize_project_status`
 
 Provide a comprehensive summary of project status based on issue activity over a specified time period.
@@ -259,6 +292,7 @@ Retrieve detailed information about a specific Redmine issue.
 - `issue_id` (integer, required): The ID of the issue to retrieve
 - `include_journals` (boolean, optional): Include journals (comments) in result. Default: `true`
 - `include_attachments` (boolean, optional): Include attachments metadata. Default: `true`
+- `include_custom_fields` (boolean, optional): Include custom fields in result. Default: `true`
 
 **Returns:** Issue dictionary with details, journals, and attachments
 
@@ -270,6 +304,7 @@ Retrieve detailed information about a specific Redmine issue.
   "description": "Users cannot login...",
   "status": {"id": 1, "name": "New"},
   "priority": {"id": 2, "name": "Normal"},
+  "custom_fields": [{"id": 6, "name": "Size", "value": "S"}],
   "journals": [...],
   "attachments": [...]
 }
@@ -483,7 +518,9 @@ Creates a new issue in the specified project.
 - `fields` (object|string, optional): Additional Redmine fields as:
   - an object (`{"priority_id": 3, "tracker_id": 1}`), or
   - a serialized JSON object string (for MCP clients that pass string payloads)
-- `**extra_fields` (optional): Additional Redmine fields passed directly as keyword arguments (e.g., `priority_id`, `assigned_to_id`, `tracker_id`, `status_id`)
+- `extra_fields` (object|string, optional): Additional Redmine fields as:
+  - an object (`{"priority_id": 3, "tracker_id": 1}`), or
+  - a serialized JSON object string
 
 **Returns:** Created issue dictionary
 
@@ -496,8 +533,7 @@ create_redmine_issue(
     project_id=1,
     subject="Login button not working",
     description="The login button does not respond to clicks",
-    priority_id=3,  # High priority
-    tracker_id=1    # Bug tracker
+    fields={"priority_id": 3, "tracker_id": 1}
 )
 ```
 
@@ -514,6 +550,7 @@ Updates an existing issue with the provided fields.
 **Returns:** Updated issue dictionary
 
 **Note:** You can use either `status_id` or `status_name` in fields. When `status_name` is provided, the tool automatically resolves the corresponding status ID.
+You can also update custom fields by name (for example `{"size": "S"}`) and the tool will resolve them to Redmine `custom_fields` entries using project custom-field metadata. You can still pass explicit `custom_fields` with field IDs.
 
 **Example:**
 ```python
@@ -532,6 +569,14 @@ update_redmine_issue(
     fields={
         "status_id": 3,
         "assigned_to_id": 5
+    }
+)
+
+# Update Agile/custom field by name
+update_redmine_issue(
+    issue_id=123,
+    fields={
+        "size": "S"
     }
 )
 ```

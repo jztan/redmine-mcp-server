@@ -1020,9 +1020,16 @@ class TestListRedmineVersionsIntegration:
 
         version = result[0]
         expected_keys = {
-            "id", "name", "description", "status", "due_date",
-            "sharing", "wiki_page_title", "project",
-            "created_on", "updated_on",
+            "id",
+            "name",
+            "description",
+            "status",
+            "due_date",
+            "sharing",
+            "wiki_page_title",
+            "project",
+            "created_on",
+            "updated_on",
         }
         assert set(version.keys()) == expected_keys
         assert isinstance(version["id"], int)
@@ -1062,9 +1069,7 @@ class TestListRedmineVersionsIntegration:
 
         from redmine_mcp_server.redmine_handler import list_redmine_versions
 
-        result = await list_redmine_versions(
-            project_id=1, status_filter="invalid"
-        )
+        result = await list_redmine_versions(project_id=1, status_filter="invalid")
 
         assert isinstance(result, list)
         assert len(result) == 1
