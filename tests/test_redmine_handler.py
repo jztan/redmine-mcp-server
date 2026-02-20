@@ -499,7 +499,9 @@ class TestRedmineHandler:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_create_redmine_issue_invalid_extra_fields_payload(self, mock_redmine):
+    async def test_create_redmine_issue_invalid_extra_fields_payload(
+        self, mock_redmine
+    ):
         """Invalid serialized extra_fields payload returns a clear error."""
         from redmine_mcp_server.redmine_handler import create_redmine_issue
 
@@ -713,8 +715,7 @@ class TestRedmineHandler:
                 "Autofill test",
                 "Autofill description",
                 fields=(
-                    '{"tracker_id": 5, "custom_fields": '
-                    '[{"id": 6, "value": "any"}]}'
+                    '{"tracker_id": 5, "custom_fields": ' '[{"id": 6, "value": "any"}]}'
                 ),
             )
 
@@ -809,12 +810,16 @@ class TestRedmineHandler:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_update_redmine_issue_autofill_disabled_by_default(self, mock_redmine):
-        """Validation error should not trigger update retry when autofill is disabled."""
+    async def test_update_redmine_issue_autofill_disabled_by_default(
+        self, mock_redmine
+    ):
+        """Validation error should not trigger update retry."""
         from redminelib.exceptions import ValidationError
         from redmine_mcp_server.redmine_handler import update_redmine_issue
 
-        mock_redmine.issue.update.side_effect = ValidationError("Location cannot be blank")
+        mock_redmine.issue.update.side_effect = ValidationError(
+            "Location cannot be blank"
+        )
 
         with patch.dict(
             os.environ,
@@ -853,7 +858,10 @@ class TestRedmineHandler:
             ValidationError("Location cannot be blank"),
             None,
         ]
-        mock_redmine.issue.get.side_effect = [issue_for_project_lookup, mock_redmine_issue]
+        mock_redmine.issue.get.side_effect = [
+            issue_for_project_lookup,
+            mock_redmine_issue,
+        ]
 
         with patch.dict(
             os.environ, {"REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS": "true"}, clear=False
@@ -862,7 +870,9 @@ class TestRedmineHandler:
 
         assert result["id"] == 123
         assert mock_redmine.issue.update.call_count == 2
-        mock_redmine.project.get.assert_called_once_with(41, include="issue_custom_fields")
+        mock_redmine.project.get.assert_called_once_with(
+            41, include="issue_custom_fields"
+        )
 
         second_call_kwargs = mock_redmine.issue.update.call_args_list[1].kwargs
         assert second_call_kwargs["subject"] == "New"
@@ -878,7 +888,10 @@ class TestRedmineHandler:
 
         issue_for_project_lookup = Mock()
         issue_for_project_lookup.project = Mock(id=41, name="Flatline")
-        mock_redmine.issue.get.side_effect = [issue_for_project_lookup, mock_redmine_issue]
+        mock_redmine.issue.get.side_effect = [
+            issue_for_project_lookup,
+            mock_redmine_issue,
+        ]
 
         size_custom_field = Mock()
         size_custom_field.id = 6
@@ -892,7 +905,9 @@ class TestRedmineHandler:
 
         assert result["id"] == 123
         assert "custom_fields" in result
-        mock_redmine.project.get.assert_called_once_with(41, include="issue_custom_fields")
+        mock_redmine.project.get.assert_called_once_with(
+            41, include="issue_custom_fields"
+        )
         mock_redmine.issue.update.assert_called_once()
         update_kwargs = mock_redmine.issue.update.call_args.kwargs
         assert update_kwargs["notes"] == "size set"
@@ -908,7 +923,10 @@ class TestRedmineHandler:
 
         issue_for_project_lookup = Mock()
         issue_for_project_lookup.project = Mock(id=41, name="Flatline")
-        mock_redmine.issue.get.side_effect = [issue_for_project_lookup, mock_redmine_issue]
+        mock_redmine.issue.get.side_effect = [
+            issue_for_project_lookup,
+            mock_redmine_issue,
+        ]
 
         size_custom_field = Mock()
         size_custom_field.id = 6
@@ -968,7 +986,10 @@ class TestRedmineHandler:
 
         issue_for_project_lookup = Mock()
         issue_for_project_lookup.project = Mock(id=41, name="Flatline")
-        mock_redmine.issue.get.side_effect = [issue_for_project_lookup, mock_redmine_issue]
+        mock_redmine.issue.get.side_effect = [
+            issue_for_project_lookup,
+            mock_redmine_issue,
+        ]
 
         size_custom_field = Mock()
         size_custom_field.id = 6
@@ -1009,6 +1030,40 @@ class TestRedmineHandler:
 
         assert "error" in result
         assert "Invalid value 'XXL' for custom field 'Size'" in result["error"]
+        mock_redmine.issue.update.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_update_redmine_issue_ambiguous_custom_field_name(self, mock_redmine):
+        """Ambiguous custom field names raise a clear error."""
+        from redmine_mcp_server.redmine_handler import update_redmine_issue
+
+        issue = Mock()
+        project_ref = Mock()
+        project_ref.id = 41
+        project_ref.name = "Test"
+        issue.project = project_ref
+        mock_redmine.issue.get.return_value = issue
+
+        # Two fields that normalize to the same key
+        field_a = Mock()
+        field_a.id = 10
+        field_a.name = "Project Category"
+        field_a.possible_values = []
+
+        field_b = Mock()
+        field_b.id = 11
+        field_b.name = "Project-Category"
+        field_b.possible_values = []
+
+        project = Mock()
+        project.issue_custom_fields = [field_a, field_b]
+        mock_redmine.project.get.return_value = project
+
+        result = await update_redmine_issue(123, {"project category": "Bug"})
+
+        assert "error" in result
+        assert "Ambiguous custom field name" in result["error"]
         mock_redmine.issue.update.assert_not_called()
 
     @pytest.mark.asyncio
@@ -1674,7 +1729,7 @@ class TestHelperFunctionEdgeCases:
         assert result == []
 
     def test_journals_to_list_empty_notes_filtered(self):
-        """Test _journals_to_list filters out journals with empty notes (line 695-696)."""
+        """_journals_to_list filters empty notes (line 695-696)."""
         from redmine_mcp_server.redmine_handler import _journals_to_list
 
         mock_issue = Mock()
@@ -1733,7 +1788,7 @@ class TestHelperFunctionEdgeCases:
         assert result["type"] == "custom_type"
 
     def test_resource_to_dict_project_id_without_project(self):
-        """Test _resource_to_dict with project_id but no project object (line 551-553)."""
+        """_resource_to_dict with project_id, no project (line 551)."""
         from redmine_mcp_server.redmine_handler import _resource_to_dict
 
         # Create mock with project_id but no project attribute
@@ -1789,7 +1844,7 @@ class TestGetRedmineIssueNoIncludes:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_get_issue_both_includes_false(self, mock_redmine, mock_basic_issue):
-        """Test issue fetch with both include_journals=False and include_attachments=False."""
+        """Issue fetch with both includes disabled."""
         mock_redmine.issue.get.return_value = mock_basic_issue
 
         result = await get_redmine_issue(
@@ -1825,7 +1880,7 @@ class TestListMyIssuesEdgeCases:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_limit_zero_with_pagination_info(self, mock_redmine):
-        """limit=0 with include_pagination_info returns structured empty result (line 926)."""
+        """limit=0 with pagination_info returns empty (line 926)."""
         from redmine_mcp_server.redmine_handler import list_my_redmine_issues
 
         result = await list_my_redmine_issues(
@@ -1842,7 +1897,7 @@ class TestListMyIssuesEdgeCases:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_total_count_exception_full_page(self, mock_redmine):
-        """When total count query fails, estimate from result size - full page (line 987-994)."""
+        """Estimate total from result size on full page (line 987)."""
         from redmine_mcp_server.redmine_handler import list_my_redmine_issues
         from datetime import datetime
 
@@ -1888,7 +1943,7 @@ class TestListMyIssuesEdgeCases:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_total_count_exception_partial_page(self, mock_redmine):
-        """When total count query fails, estimate from result size - partial page (line 996-997)."""
+        """Estimate total from result size on partial page (line 996)."""
         from redmine_mcp_server.redmine_handler import list_my_redmine_issues
         from datetime import datetime
 
@@ -1968,7 +2023,9 @@ class TestSearchEntireRedmineValidation:
 
         mock_redmine.search.return_value = {}
 
-        await search_entire_redmine("test query", resources=["invalid_type", "another_bad"])
+        await search_entire_redmine(
+            "test query", resources=["invalid_type", "another_bad"]
+        )
 
         # Should have called search with default allowed types
         mock_redmine.search.assert_called_once()
