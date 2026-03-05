@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-03-05
+
+### Fixed
+- **421 Misdirected Request in Docker/public deployments** ([#69](https://github.com/jztan/redmine-mcp-server/issues/69))
+  - Pass `SERVER_HOST` to FastMCP so DNS rebinding protection is configured correctly
+  - When host is `0.0.0.0` (Docker/public), FastMCP skips auto-enabling DNS rebinding protection, avoiding 421 errors for connections via public IPs
+
 ## [0.12.0] - 2026-02-19
 
 ### Added
@@ -695,6 +702,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Works with Docker and docker-compose
 - Tested on macOS and Linux environments
 
+[0.12.1]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.12.1
 [0.12.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.12.0
 [0.11.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.11.0
 [0.10.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.10.0

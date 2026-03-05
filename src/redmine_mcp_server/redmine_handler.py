@@ -170,7 +170,12 @@ if REDMINE_URL and (REDMINE_API_KEY or (REDMINE_USERNAME and REDMINE_PASSWORD)):
         redmine = None
 
 # Initialize FastMCP server
-mcp = FastMCP("redmine_mcp_tools")
+# Pass SERVER_HOST so DNS rebinding protection is configured correctly.
+# When host is 0.0.0.0 (Docker/public), FastMCP skips auto-enabling
+# DNS rebinding protection, avoiding 421 Misdirected Request errors
+# for connections via public IPs.
+_server_host = os.getenv("SERVER_HOST", "127.0.0.1")
+mcp = FastMCP("redmine_mcp_tools", host=_server_host)
 
 
 class CleanupTaskManager:
