@@ -16,6 +16,21 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from redmine_mcp_server.redmine_handler import redmine, REDMINE_URL  # noqa: E402
 
 
+def _integration_test_custom_fields():
+    """Return required custom fields for integration test issue creation.
+
+    Reads from INTEGRATION_TEST_CUSTOM_FIELDS env var (JSON), falling back
+    to a sensible default for the test Redmine instance.
+    """
+    import json
+
+    env_val = os.getenv("INTEGRATION_TEST_CUSTOM_FIELDS")
+    if env_val:
+        return json.loads(env_val)
+    # Default: Department (id=2) is required on the test Redmine server
+    return {"custom_fields": [{"id": 2, "value": "Engineering"}]}
+
+
 class TestRedmineIntegration:
     """Integration tests for Redmine connectivity."""
 
@@ -210,11 +225,15 @@ class TestRedmineIntegration:
             pytest.skip("No projects available for testing")
         project_id = projects[0].id
 
+        issue_id = None
         try:
             # Create a new issue
             new_subject = "Integration Test Issue"
             issue = await create_redmine_issue(
-                project_id, new_subject, "Created by integration test"
+                project_id,
+                new_subject,
+                "Created by integration test",
+                extra_fields=_integration_test_custom_fields(),
             )
             assert issue and "id" in issue
             issue_id = issue["id"]
@@ -228,10 +247,11 @@ class TestRedmineIntegration:
             pytest.fail(f"Integration test failed: {e}")
         finally:
             # Clean up the created issue if possible
-            try:
-                redmine.issue.delete(issue_id)
-            except Exception as e:
-                pytest.fail(f"Integration test failed: {e}")
+            if issue_id is not None:
+                try:
+                    redmine.issue.delete(issue_id)
+                except Exception as e:
+                    pytest.fail(f"Integration test failed: {e}")
 
     @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
     @pytest.mark.integration
@@ -270,7 +290,10 @@ class TestRedmineIntegration:
                 # Create a new issue
                 new_subject = "Integration Test Issue with Attachment"
                 issue = await create_redmine_issue(
-                    project_id, new_subject, "Testing attachment download functionality"
+                    project_id,
+                    new_subject,
+                    "Testing attachment download functionality",
+                    extra_fields=_integration_test_custom_fields(),
                 )
                 assert issue and "id" in issue
                 issue_id = issue["id"]
