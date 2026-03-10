@@ -1554,10 +1554,13 @@ class TestRedmineHandler:
         assert result["error"] == "Project 999 not found."
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine", None)
     async def test_summarize_project_status_no_client(self):
         """Test project status summarization with no Redmine client."""
-        result = await summarize_project_status(1, 30)
+        with patch(
+            "redmine_mcp_server.redmine_handler._get_redmine_client",
+            side_effect=RuntimeError("No Redmine authentication available"),
+        ):
+            result = await summarize_project_status(1, 30)
 
         assert "error" in result
 

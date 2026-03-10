@@ -89,6 +89,7 @@ class TestOAuthMiddlewareSkipPaths:
         "/.well-known/oauth-protected-resource",
         "/.well-known/oauth-authorization-server",
         "/health",
+        "/revoke",
     ])
     async def test_skip_path_passes_without_auth(self, path):
         """Skip-listed paths are not blocked by the middleware."""
@@ -527,3 +528,200 @@ class TestGetRedmineClient:
                 assert call_kwargs["requests"]["headers"]["Authorization"] == "Bearer oauth-wins"
         finally:
             current_redmine_token.reset(token_var)
+
+
+# ---------------------------------------------------------------------------
+# /revoke endpoint (RFC 7009 — OAuth 2.0 Token Revocation)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.unit
+class TestRevokeEndpoint:
+    """Tests for the /revoke token revocation endpoint."""
+
+    @pytest.fixture
+    def app(self):
+        from redmine_mcp_server.main import app
+        return app
+
+    @pytest.mark.asyncio
+    async def test_revoke_with_bearer_header_success(self, app):
+        """Token in Authorization header is forwarded to Redmine and returns success."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+
+        with patch("redmine_mcp_server.main.httpx.AsyncClient") as mock_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_cls.return_value = mock_client
+
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.post(
+                    "/revoke", headers={"Authorization": "Bearer test-token-123"}
+                )
+
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+        # Verify token was forwarded to Redmine
+        call_kwargs = mock_client.post.call_args
+        assert call_kwargs.kwargs["data"]["token"] == "test-token-123"
+
+    @pytest.mark.asyncio
+    async def test_revoke_with_json_body_success(self, app):
+        """Token in JSON body is forwarded to Redmine and returns success."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+
+        with patch("redmine_mcp_server.main.httpx.AsyncClient") as mock_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_cls.return_value = mock_client
+
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.post(
+                    "/revoke",
+                    json={"token": "json-body-token"},
+                    headers={"Content-Type": "application/json"},
+                )
+
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+        call_kwargs = mock_client.post.call_args
+        assert call_kwargs.kwargs["data"]["token"] == "json-body-token"
+
+    @pytest.mark.asyncio
+    async def test_revoke_with_form_body_success(self, app):
+        """Token in form-encoded body is forwarded to Redmine."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+
+        with patch("redmine_mcp_server.main.httpx.AsyncClient") as mock_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_cls.return_value = mock_client
+
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.post(
+                    "/revoke", data={"token": "form-token"}
+                )
+
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+
+    @pytest.mark.asyncio
+    async def test_revoke_no_token_returns_400(self, app):
+        """Returns 400 when no token is provided."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.post("/revoke")
+
+        assert response.status_code == 400
+        assert response.json()["error"] == "invalid_request"
+
+    @pytest.mark.asyncio
+    async def test_revoke_redmine_unreachable_returns_502(self, app):
+        """Returns 502 when Redmine cannot be reached."""
+        import httpx
+
+        with patch("redmine_mcp_server.main.httpx.AsyncClient") as mock_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.post = AsyncMock(
+                side_effect=httpx.RequestError("connection refused")
+            )
+            mock_cls.return_value = mock_client
+
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.post(
+                    "/revoke", headers={"Authorization": "Bearer any-token"}
+                )
+
+        assert response.status_code == 502
+        assert response.json()["error"] == "upstream_unavailable"
+
+    @pytest.mark.asyncio
+    async def test_revoke_returns_success_even_for_invalid_token(self, app):
+        """Per RFC 7009, returns 200 even if Redmine says token is invalid."""
+        mock_response = MagicMock()
+        mock_response.status_code = 400
+        mock_response.text = "invalid token"
+
+        with patch("redmine_mcp_server.main.httpx.AsyncClient") as mock_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_cls.return_value = mock_client
+
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.post(
+                    "/revoke", headers={"Authorization": "Bearer invalid-token"}
+                )
+
+        # RFC 7009: always return success to prevent token scanning
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+
+    @pytest.mark.asyncio
+    async def test_revoke_calls_correct_redmine_endpoint(self, app):
+        """Verifies the call goes to /oauth/revoke on Redmine."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+
+        with patch("redmine_mcp_server.main.httpx.AsyncClient") as mock_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_cls.return_value = mock_client
+
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                await client.post(
+                    "/revoke", headers={"Authorization": "Bearer token"}
+                )
+
+            call_args = mock_client.post.call_args
+            assert "/oauth/revoke" in call_args.args[0]
+
+    @pytest.mark.asyncio
+    async def test_revoke_bypasses_oauth_middleware(self, app):
+        """/revoke is accessible without OAuth middleware blocking it."""
+        # This test verifies the endpoint is in SKIP_AUTH_PATHS
+        # We don't mock httpx here - just verify no 401 from middleware
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+
+        with patch("redmine_mcp_server.main.httpx.AsyncClient") as mock_cls:
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.post = AsyncMock(return_value=mock_response)
+            mock_cls.return_value = mock_client
+
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                # Send token in body (not header) - if middleware ran, it would reject
+                response = await client.post("/revoke", json={"token": "test"})
+
+        # If we get here without 401, the middleware was bypassed
+        assert response.status_code == 200

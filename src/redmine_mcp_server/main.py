@@ -15,6 +15,7 @@ Modules:
 import logging
 import os
 import uvicorn
+import httpx
 from importlib.metadata import version, PackageNotFoundError
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -87,6 +88,81 @@ async def oauth_authorization_server(request: Request):
             ],
         }
     )
+
+
+# RFC 7009 — OAuth 2.0 Token Revocation
+# Proxies token revocation to Redmine's Doorkeeper /oauth/revoke endpoint.
+@app.route("/revoke", methods=["POST"])
+async def revoke_token(request: Request):
+    """Revoke an OAuth2 access or refresh token.
+
+    Accepts token via:
+    - Authorization header: Bearer <token>
+    - POST body: {"token": "<token>"} or form-encoded token=<token>
+
+    Returns:
+        200 OK on success (per RFC 7009, even if token was already invalid)
+        400 Bad Request if no token provided
+        502 Bad Gateway if Redmine is unreachable
+    """
+    token = None
+
+    # Try Authorization header first
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header.removeprefix("Bearer ").strip()
+
+    # Fall back to request body
+    if not token:
+        content_type = request.headers.get("Content-Type", "")
+        if "application/json" in content_type:
+            try:
+                body = await request.json()
+                token = body.get("token")
+            except Exception:
+                pass
+        else:
+            # form-encoded
+            try:
+                form = await request.form()
+                token = form.get("token")
+            except Exception:
+                pass
+
+    if not token:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "invalid_request",
+                "error_description": "No token provided",
+            },
+        )
+
+    # Forward revocation to Redmine's Doorkeeper endpoint
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(
+                f"{REDMINE_URL}/oauth/revoke",
+                data={"token": token},
+                timeout=10,
+            )
+        except httpx.RequestError as e:
+            logger.error(f"Failed to reach Redmine for token revocation: {e}")
+            return JSONResponse(
+                status_code=502,
+                content={"error": "upstream_unavailable"},
+            )
+
+    # RFC 7009: return 200 regardless of whether token was valid
+    # (to prevent token scanning attacks)
+    if response.status_code in (200, 204):
+        return JSONResponse(status_code=200, content={"success": True})
+
+    # If Redmine returns an error, log it but still return success per RFC 7009
+    logger.warning(
+        f"Redmine revocation returned {response.status_code}: {response.text}"
+    )
+    return JSONResponse(status_code=200, content={"success": True})
 
 
 def main():

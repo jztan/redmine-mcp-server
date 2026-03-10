@@ -18,6 +18,7 @@ SKIP_AUTH_PATHS = {
     "/.well-known/oauth-protected-resource",
     "/.well-known/oauth-authorization-server",
     "/health",
+    "/revoke",
 }
 
 RESOURCE_METADATA_URL = f"{REDMINE_MCP_BASE_URL}/.well-known/oauth-protected-resource"

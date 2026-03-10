@@ -212,14 +212,15 @@ REDMINE_URL=https://redmine.example.com
 REDMINE_MCP_BASE_URL=https://redmine-mcp.example.com   # public URL of this server
 ```
 
-In OAuth mode the server also exposes two OAuth2 discovery endpoints:
+In OAuth mode the server also exposes OAuth2 discovery and token management endpoints:
 
 | Endpoint | Standard | Purpose |
 |----------|----------|---------|
 | `/.well-known/oauth-protected-resource` | RFC 8707 | Tells clients where to find the authorization server |
 | `/.well-known/oauth-authorization-server` | RFC 8414 | Advertises Redmine's Doorkeeper OAuth endpoints |
+| `POST /revoke` | RFC 7009 | Revokes an OAuth2 token (proxies to Redmine's `/oauth/revoke`) |
 
-Redmine uses the [Doorkeeper](https://github.com/doorkeeper-gem/doorkeeper) gem for OAuth2 but does not serve the RFC 8414 discovery document itself. This server serves it on Redmine's behalf, pointing to Redmine's real `/oauth/authorize` and `/oauth/token` endpoints.
+Redmine uses the [Doorkeeper](https://github.com/doorkeeper-gem/doorkeeper) gem for OAuth2 but does not serve the RFC 8414 discovery document itself. This server serves it on Redmine's behalf, pointing to Redmine's real `/oauth/authorize`, `/oauth/token`, and `/oauth/revoke` endpoints.
 
 **Prerequisites for OAuth mode:**
 - An OAuth application registered in Redmine admin → **Applications** with the callback URL of your client

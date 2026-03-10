@@ -432,7 +432,10 @@ class TestListRedmineIssues:
     @pytest.mark.asyncio
     async def test_no_client_returns_error(self):
         """Test error when Redmine client is not initialized."""
-        with patch("redmine_mcp_server.redmine_handler.redmine", None):
+        with patch(
+            "redmine_mcp_server.redmine_handler._get_redmine_client",
+            side_effect=RuntimeError("No Redmine authentication available"),
+        ):
             result = await list_redmine_issues(project_id=1)
 
             assert isinstance(result, list)

@@ -14,12 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Per-request token isolation via `contextvars.ContextVar` — safe under async concurrent load
   - `GET /.well-known/oauth-protected-resource` endpoint (RFC 8707) — points MCP clients to the authorization server
   - `GET /.well-known/oauth-authorization-server` endpoint (RFC 8414) — advertises Redmine's Doorkeeper OAuth endpoints (`/oauth/authorize`, `/oauth/token`, `/oauth/revoke`) since Redmine does not serve this document itself
+  - `POST /revoke` endpoint (RFC 7009) — proxies token revocation to Redmine's `/oauth/revoke`, enabling proper disconnect flow from MCP clients
   - PKCE (`S256`) and both `client_secret_post` / `client_secret_basic` token endpoint auth methods advertised
   - Requires Redmine 6.1+ (Doorkeeper OAuth2 support)
 - **`REDMINE_AUTH_MODE` environment variable** — selects `legacy` (default) or `oauth` mode; legacy mode is unchanged so existing deployments require no changes
 - **`REDMINE_MCP_BASE_URL` environment variable** — public base URL of this server, used in OAuth discovery documents (only required in oauth mode)
 - **`_get_redmine_client()` factory function** in `redmine_handler.py` — creates a per-request Redmine client using OAuth token → API key → username/password priority; replaces the module-level shared client
-- **25 new unit tests** for OAuth middleware, discovery endpoints, and auth selection logic (`tests/test_oauth_middleware.py`)
+- **33 new unit tests** for OAuth middleware, discovery endpoints, token revocation, and auth selection logic (`tests/test_oauth_middleware.py`)
 
 ### Fixed
 - **Custom routes (well-known endpoints) not served at runtime** — `mcp.run()` created a fresh internal app discarding route registrations; switched to `uvicorn.run(app, ...)` so the decorated app instance is always what serves requests
