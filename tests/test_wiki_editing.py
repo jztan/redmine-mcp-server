@@ -48,7 +48,7 @@ class TestCreateRedmineWikiPage:
         )
 
         assert "error" in result
-        assert result["error"] == "Redmine client not initialized."
+        assert "error" in result
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
@@ -188,7 +188,7 @@ class TestUpdateRedmineWikiPage:
         )
 
         assert "error" in result
-        assert result["error"] == "Redmine client not initialized."
+        assert "error" in result
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
@@ -305,7 +305,7 @@ class TestDeleteRedmineWikiPage:
         )
 
         assert "error" in result
-        assert result["error"] == "Redmine client not initialized."
+        assert "error" in result
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")

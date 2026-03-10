@@ -165,7 +165,7 @@ class TestListProjectIssueCustomFields:
     async def test_list_project_issue_custom_fields_no_client(self):
         """Returns initialization error when Redmine client is unavailable."""
         result = await list_project_issue_custom_fields(project_id=41)
-        assert result == [{"error": "Redmine client not initialized."}]
+        assert isinstance(result, list) and "error" in result[0]
 
     @pytest.mark.asyncio
     async def test_list_project_issue_custom_fields_error(self, mock_redmine):

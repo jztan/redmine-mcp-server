@@ -70,7 +70,7 @@ class TestSSLConfigurationIntegration:
             assert redmine_handler.REDMINE_SSL_VERIFY is True
 
     def test_module_handles_missing_cert_gracefully(self):
-        """Test module handles missing certificate file gracefully."""
+        """Test that _get_redmine_client() raises FileNotFoundError for a missing cert."""
         with patch.dict(
             os.environ,
             {
@@ -79,17 +79,18 @@ class TestSSLConfigurationIntegration:
                 "REDMINE_SSL_CERT": "/nonexistent/cert.pem",
             },
         ):
-            # Reload module
             import importlib
             from redmine_mcp_server import redmine_handler
 
             importlib.reload(redmine_handler)
 
-            # Should set redmine to None instead of crashing
-            assert redmine_handler.redmine is None
+            # SSL cert validation now happens lazily inside _get_redmine_client().
+            # A missing cert path must raise FileNotFoundError when a tool is called.
+            with pytest.raises(FileNotFoundError, match="SSL certificate not found"):
+                redmine_handler._get_redmine_client()
 
     def test_module_handles_directory_as_cert_gracefully(self, ssl_cert_path):
-        """Test module handles directory path gracefully."""
+        """Test that _get_redmine_client() raises ValueError when cert path is a directory."""
         cert_dir = str(Path(ssl_cert_path).parent)
 
         with patch.dict(
@@ -100,14 +101,15 @@ class TestSSLConfigurationIntegration:
                 "REDMINE_SSL_CERT": cert_dir,
             },
         ):
-            # Reload module
             import importlib
             from redmine_mcp_server import redmine_handler
 
             importlib.reload(redmine_handler)
 
-            # Should set redmine to None instead of crashing
-            assert redmine_handler.redmine is None
+            # SSL cert validation now happens lazily inside _get_redmine_client().
+            # A directory path must raise ValueError when a tool is called.
+            with pytest.raises(ValueError, match="must be a file"):
+                redmine_handler._get_redmine_client()
 
     def test_ssl_verify_disabled(self):
         """Test SSL verification can be disabled."""

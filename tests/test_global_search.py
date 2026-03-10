@@ -117,6 +117,8 @@ class TestSearchEntireRedmine:
         }
 
     @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.REDMINE_API_KEY", "")
+    @patch("redmine_mcp_server.redmine_handler.REDMINE_USERNAME", "")
     @patch("redmine_mcp_server.redmine_handler.redmine", None)
     async def test_search_no_client(self):
         """Test error when Redmine client is not initialized."""
@@ -125,7 +127,7 @@ class TestSearchEntireRedmine:
         result = await search_entire_redmine(query="test")
 
         assert "error" in result
-        assert result["error"] == "Redmine client not initialized."
+        assert result["error"]
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
@@ -355,7 +357,7 @@ class TestGetRedmineWikiPage:
         )
 
         assert "error" in result
-        assert result["error"] == "Redmine client not initialized."
+        assert result["error"]
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")

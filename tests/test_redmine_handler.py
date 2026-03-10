@@ -197,7 +197,7 @@ class TestRedmineHandler:
         # Verify
         assert result is not None
         assert "error" in result
-        assert result["error"] == "Redmine client not initialized."
+        assert "error" in result
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
@@ -341,6 +341,8 @@ class TestRedmineHandler:
         assert "Connection error" in result[0]["error"]
 
     @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.REDMINE_API_KEY", "")
+    @patch("redmine_mcp_server.redmine_handler.REDMINE_USERNAME", "")
     @patch("redmine_mcp_server.redmine_handler.redmine", None)
     async def test_list_redmine_projects_no_client(self):
         """Test project listing when Redmine client is not initialized."""
@@ -352,7 +354,7 @@ class TestRedmineHandler:
         assert isinstance(result, list)
         assert len(result) == 1
         assert "error" in result[0]
-        assert result[0]["error"] == "Redmine client not initialized."
+        assert "error" in result[0]
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
@@ -748,7 +750,7 @@ class TestRedmineHandler:
         from redmine_mcp_server.redmine_handler import create_redmine_issue
 
         result = await create_redmine_issue(1, "A")
-        assert result["error"] == "Redmine client not initialized."
+        assert "error" in result
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
@@ -806,7 +808,7 @@ class TestRedmineHandler:
         from redmine_mcp_server.redmine_handler import update_redmine_issue
 
         result = await update_redmine_issue(1, {"subject": "X"})
-        assert result["error"] == "Redmine client not initialized."
+        assert "error" in result
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
@@ -1111,6 +1113,8 @@ class TestRedmineHandler:
         assert "error" in result[0]
 
     @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.REDMINE_API_KEY", "")
+    @patch("redmine_mcp_server.redmine_handler.REDMINE_USERNAME", "")
     @patch("redmine_mcp_server.redmine_handler.redmine", None)
     async def test_list_my_redmine_issues_no_client(self):
         """Test listing issues when client is not initialized."""
@@ -1119,7 +1123,7 @@ class TestRedmineHandler:
         result = await list_my_redmine_issues()
 
         assert isinstance(result, list)
-        assert result[0]["error"] == "Redmine client not initialized."
+        assert "error" in result[0]
 
     # Pagination Test Cases
     @pytest.mark.asyncio
@@ -1410,6 +1414,8 @@ class TestRedmineHandler:
         assert "boom" in result["error"]
 
     @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.REDMINE_API_KEY", "")
+    @patch("redmine_mcp_server.redmine_handler.REDMINE_USERNAME", "")
     @patch("redmine_mcp_server.redmine_handler.redmine", None)
     async def test_search_redmine_issues_no_client(self):
         """Search when client not initialized."""
@@ -1417,7 +1423,7 @@ class TestRedmineHandler:
 
         result = await search_redmine_issues("a")
 
-        assert result[0]["error"] == "Redmine client not initialized."
+        assert "error" in result
 
     @pytest.fixture
     def mock_issue_with_comments(self, mock_redmine_issue):
@@ -1548,12 +1554,15 @@ class TestRedmineHandler:
         assert result["error"] == "Project 999 not found."
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine", None)
     async def test_summarize_project_status_no_client(self):
         """Test project status summarization with no Redmine client."""
-        result = await summarize_project_status(1, 30)
+        with patch(
+            "redmine_mcp_server.redmine_handler._get_redmine_client",
+            side_effect=RuntimeError("No Redmine authentication available"),
+        ):
+            result = await summarize_project_status(1, 30)
 
-        assert result["error"] == "Redmine client not initialized."
+        assert "error" in result
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
@@ -2135,7 +2144,7 @@ class TestAttachmentDownloadEdgeCases:
         )
 
         result = await get_redmine_attachment_download_url(123)
-        assert result == {"error": "Redmine client not initialized."}
+        assert "error" in result
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")

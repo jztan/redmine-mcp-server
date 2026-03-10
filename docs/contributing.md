@@ -426,8 +426,9 @@ See [RELEASE_SOP.md](../RELEASE_SOP.md) for complete release procedures.
 ```
 redmine-mcp-server/
 ├── src/redmine_mcp_server/
-│   ├── main.py              # FastMCP application entry point
+│   ├── main.py              # FastMCP application entry point + OAuth discovery routes
 │   ├── redmine_handler.py   # MCP tools and Redmine integration
+│   ├── oauth_middleware.py  # OAuth2 Bearer token validation middleware
 │   └── file_manager.py      # Attachment file management and cleanup
 ├── tests/                   # Comprehensive test suite
 ├── docs/                    # Documentation
@@ -443,8 +444,9 @@ redmine-mcp-server/
 
 ### Core Components
 
-- **main.py**: FastMCP application entry point with HTTP server
-- **redmine_handler.py**: MCP tools implementation using python-redmine
+- **main.py**: FastMCP application entry point; registers OAuth middleware when `REDMINE_AUTH_MODE=oauth` and serves RFC 8707/8414 discovery endpoints
+- **redmine_handler.py**: MCP tools implementation using python-redmine; `_get_redmine_client()` selects auth per request (OAuth token → API key → username/password)
+- **oauth_middleware.py**: Starlette middleware that validates Bearer tokens against Redmine before forwarding MCP requests; uses `ContextVar` for per-request token storage
 - **file_manager.py**: Attachment file management and cleanup utilities
 
 ### Key Technologies

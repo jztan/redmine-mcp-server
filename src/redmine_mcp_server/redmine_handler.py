@@ -81,93 +81,107 @@ REDMINE_USERNAME = os.getenv("REDMINE_USERNAME")
 REDMINE_PASSWORD = os.getenv("REDMINE_PASSWORD")
 REDMINE_API_KEY = os.getenv("REDMINE_API_KEY")
 
+# Auth mode: "oauth" uses per-request Bearer tokens via OAuth middleware;
+# "legacy" uses REDMINE_API_KEY or REDMINE_USERNAME/REDMINE_PASSWORD (default).
+REDMINE_AUTH_MODE = os.getenv("REDMINE_AUTH_MODE", "legacy").lower()
+
 # SSL Configuration (optional)
 REDMINE_SSL_VERIFY = os.getenv("REDMINE_SSL_VERIFY", "true").lower() == "true"
 REDMINE_SSL_CERT = os.getenv("REDMINE_SSL_CERT")
 REDMINE_SSL_CLIENT_CERT = os.getenv("REDMINE_SSL_CLIENT_CERT")
 
-# Initialize Redmine client with SSL configuration
-# Provide helpful warnings for missing configuration
 if not REDMINE_URL:
     logger.warning(
         "REDMINE_URL not set. "
         "Please create a .env file in your working directory with REDMINE_URL defined."
     )
-elif not (REDMINE_API_KEY or (REDMINE_USERNAME and REDMINE_PASSWORD)):
+elif REDMINE_AUTH_MODE != "oauth" and not (
+    REDMINE_API_KEY or (REDMINE_USERNAME and REDMINE_PASSWORD)
+):
     logger.warning(
         "No Redmine authentication configured. "
         "Please set REDMINE_API_KEY or REDMINE_USERNAME/REDMINE_PASSWORD "
-        "in your .env file."
+        "in your .env file, or set REDMINE_AUTH_MODE=oauth."
     )
 
-# Initialize Redmine client
-# It's better to initialize it once if possible, or handle initialization within tools.
-# For simplicity, we'll initialize it globally here. If the environment variables
-# are missing, the client remains ``None`` so tools can handle it gracefully.
-redmine = None
-if REDMINE_URL and (REDMINE_API_KEY or (REDMINE_USERNAME and REDMINE_PASSWORD)):
-    try:
-        # Build requests configuration for SSL
-        requests_config = {}
 
-        # SSL verification
-        if not REDMINE_SSL_VERIFY:
-            requests_config["verify"] = False
-            logger.warning("SSL verification is DISABLED - use only for development!")
-        elif REDMINE_SSL_CERT:
-            # Validate certificate file exists and resolve to absolute path
-            cert_path = Path(REDMINE_SSL_CERT).resolve()
-            if not cert_path.exists():
-                raise FileNotFoundError(
-                    f"SSL certificate not found: {REDMINE_SSL_CERT} "
-                    f"(resolved to: {cert_path})"
-                )
-            if not cert_path.is_file():
-                raise ValueError(
-                    f"SSL certificate path must be a file, not directory: "
-                    f"{cert_path}"
-                )
-            requests_config["verify"] = str(cert_path)
-            logger.info(f"Using custom SSL certificate: {cert_path}")
-
-        # Client certificate for mutual TLS
-        if REDMINE_SSL_CLIENT_CERT:
-            if "," in REDMINE_SSL_CLIENT_CERT:
-                # Tuple format: cert,key
-                cert, key = REDMINE_SSL_CLIENT_CERT.split(",", 1)
-                requests_config["cert"] = (cert.strip(), key.strip())
-                logger.info("Using client certificate for mutual TLS")
-            else:
-                # Single file format
-                requests_config["cert"] = REDMINE_SSL_CLIENT_CERT
-                logger.info("Using client certificate for mutual TLS")
-
-        # Initialize with SSL configuration
-        if REDMINE_API_KEY:
-            if requests_config:
-                redmine = Redmine(
-                    REDMINE_URL, key=REDMINE_API_KEY, requests=requests_config
-                )
-            else:
-                redmine = Redmine(REDMINE_URL, key=REDMINE_API_KEY)
+# Build SSL requests config from environment (used by _get_redmine_client)
+def _build_requests_config() -> dict:
+    requests_config = {}
+    if not REDMINE_SSL_VERIFY:
+        requests_config["verify"] = False
+        logger.warning("SSL verification is DISABLED - use only for development!")
+    elif REDMINE_SSL_CERT:
+        cert_path = Path(REDMINE_SSL_CERT).resolve()
+        if not cert_path.exists():
+            raise FileNotFoundError(
+                f"SSL certificate not found: {REDMINE_SSL_CERT} "
+                f"(resolved to: {cert_path})"
+            )
+        if not cert_path.is_file():
+            raise ValueError(
+                f"SSL certificate path must be a file, not directory: {cert_path}"
+            )
+        requests_config["verify"] = str(cert_path)
+        logger.info(f"Using custom SSL certificate: {cert_path}")
+    if REDMINE_SSL_CLIENT_CERT:
+        if "," in REDMINE_SSL_CLIENT_CERT:
+            cert, key = REDMINE_SSL_CLIENT_CERT.split(",", 1)
+            requests_config["cert"] = (cert.strip(), key.strip())
+            logger.info("Using client certificate for mutual TLS")
         else:
-            if requests_config:
-                redmine = Redmine(
-                    REDMINE_URL,
-                    username=REDMINE_USERNAME,
-                    password=REDMINE_PASSWORD,
-                    requests=requests_config,
-                )
-            else:
-                redmine = Redmine(
-                    REDMINE_URL,
-                    username=REDMINE_USERNAME,
-                    password=REDMINE_PASSWORD,
-                )
-        logger.info("Redmine client initialized successfully")
-    except Exception as e:
-        logger.error(f"Error initializing Redmine client: {e}")
-        redmine = None
+            requests_config["cert"] = REDMINE_SSL_CLIENT_CERT
+            logger.info("Using client certificate for mutual TLS")
+    return requests_config
+
+
+# Test-compatibility hook: existing unit tests patch this module-level variable
+# directly. When non-None, _get_redmine_client() returns it immediately.
+# In production this stays None and per-request auth is always used.
+redmine = None
+
+
+def _get_redmine_client() -> Redmine:
+    if redmine is not None:
+        return redmine
+
+    from .oauth_middleware import current_redmine_token
+
+    token = current_redmine_token.get()
+    requests_config = _build_requests_config()
+
+    if token:
+        # OAuth mode: use the per-request Bearer token set by the middleware
+        headers = {"Authorization": f"Bearer {token}"}
+        if requests_config:
+            return Redmine(
+                REDMINE_URL, requests={"headers": headers, **requests_config}
+            )
+        return Redmine(REDMINE_URL, requests={"headers": headers})
+
+    # Legacy mode: use API key or username/password from environment
+    if REDMINE_API_KEY:
+        if requests_config:
+            return Redmine(REDMINE_URL, key=REDMINE_API_KEY, requests=requests_config)
+        return Redmine(REDMINE_URL, key=REDMINE_API_KEY)
+    elif REDMINE_USERNAME and REDMINE_PASSWORD:
+        if requests_config:
+            return Redmine(
+                REDMINE_URL,
+                username=REDMINE_USERNAME,
+                password=REDMINE_PASSWORD,
+                requests=requests_config,
+            )
+        return Redmine(
+            REDMINE_URL, username=REDMINE_USERNAME, password=REDMINE_PASSWORD
+        )
+    else:
+        raise RuntimeError(
+            "No Redmine authentication available. "
+            "Set REDMINE_AUTH_MODE=oauth or configure REDMINE_API_KEY / "
+            "REDMINE_USERNAME+REDMINE_PASSWORD."
+        )
+
 
 # Initialize FastMCP server
 # Pass SERVER_HOST so DNS rebinding protection is configured correctly.
@@ -690,7 +704,9 @@ def _augment_fields_with_required_custom_fields(
     if not missing_normalized:
         return issue_fields
 
-    project = redmine.project.get(project_id, include="issue_custom_fields")
+    project = _get_redmine_client().project.get(
+        project_id, include="issue_custom_fields"
+    )
     project_custom_fields = getattr(project, "issue_custom_fields", None) or []
 
     updated_fields = dict(issue_fields)
@@ -884,12 +900,14 @@ def _upsert_custom_field_entry(
 
 def _resolve_project_issue_custom_fields(issue_id: int) -> List[Any]:
     """Load project custom-field definitions for a given issue."""
-    issue = redmine.issue.get(issue_id)
+    issue = _get_redmine_client().issue.get(issue_id)
     project = getattr(issue, "project", None)
     project_id = getattr(project, "id", None)
     if project_id is None:
         return []
-    project_obj = redmine.project.get(project_id, include="issue_custom_fields")
+    project_obj = _get_redmine_client().project.get(
+        project_id, include="issue_custom_fields"
+    )
     return list(getattr(project_obj, "issue_custom_fields", None) or [])
 
 
@@ -1348,8 +1366,6 @@ async def get_redmine_issue(
         will be returned under the ``"attachments"`` key. On failure a dictionary
         with an ``"error"`` key is returned.
     """
-    if not redmine:
-        return {"error": "Redmine client not initialized."}
 
     # Ensure cleanup task is started (lazy initialization)
     await _ensure_cleanup_started()
@@ -1362,9 +1378,11 @@ async def get_redmine_issue(
             includes.append("attachments")
 
         if includes:
-            issue = redmine.issue.get(issue_id, include=",".join(includes))
+            issue = _get_redmine_client().issue.get(
+                issue_id, include=",".join(includes)
+            )
         else:
-            issue = redmine.issue.get(issue_id)
+            issue = _get_redmine_client().issue.get(issue_id)
 
         result = _issue_to_dict(issue, include_custom_fields=include_custom_fields)
         if include_journals:
@@ -1388,10 +1406,8 @@ async def list_redmine_projects() -> List[Dict[str, Any]]:
     Returns:
         A list of dictionaries, each representing a project.
     """
-    if not redmine:
-        return [{"error": "Redmine client not initialized."}]
     try:
-        projects = redmine.project.all()
+        projects = _get_redmine_client().project.all()
         return [
             {
                 "id": project.id,
@@ -1424,8 +1440,6 @@ async def list_project_issue_custom_fields(
         A list of custom field metadata dictionaries. On failure a list containing
         a single dictionary with an ``"error"`` key is returned.
     """
-    if not redmine:
-        return [{"error": "Redmine client not initialized."}]
 
     parsed_tracker_id: Optional[int] = None
     if tracker_id is not None:
@@ -1444,7 +1458,9 @@ async def list_project_issue_custom_fields(
     await _ensure_cleanup_started()
 
     try:
-        project = redmine.project.get(project_id, include="issue_custom_fields")
+        project = _get_redmine_client().project.get(
+            project_id, include="issue_custom_fields"
+        )
         custom_fields = getattr(project, "issue_custom_fields", None) or []
 
         result: List[Dict[str, Any]] = []
@@ -1481,8 +1497,6 @@ async def list_redmine_versions(
         A list of version dictionaries. On failure a list containing
         a single dictionary with an ``"error"`` key is returned.
     """
-    if not redmine:
-        return [{"error": "Redmine client not initialized."}]
 
     # Validate status_filter before making API call
     valid_statuses = {"open", "locked", "closed"}
@@ -1500,7 +1514,7 @@ async def list_redmine_versions(
 
     await _ensure_cleanup_started()
     try:
-        versions = redmine.version.filter(project_id=project_id)
+        versions = _get_redmine_client().version.filter(project_id=project_id)
         result = []
         for version in versions:
             if status_filter is not None:
@@ -1579,9 +1593,6 @@ async def list_redmine_issues(
         - Further reduce tokens: Use fields parameter for minimal data transfer
         - Time efficient: Typically <500ms for limit=25
     """
-    if not redmine:
-        logging.error("Redmine client not initialized")
-        return [{"error": "Redmine client not initialized."}]
 
     # Ensure cleanup task is started (lazy initialization)
     await _ensure_cleanup_started()
@@ -1660,8 +1671,10 @@ async def list_redmine_issues(
         }
 
         # Get paginated issues from Redmine
-        logging.debug(f"Calling redmine.issue.filter with: {redmine_filters}")
-        issues = redmine.issue.filter(**redmine_filters)
+        logging.debug(
+            f"Calling _get_redmine_client().issue.filter with: {redmine_filters}"
+        )
+        issues = _get_redmine_client().issue.filter(**redmine_filters)
 
         # Convert ResourceSet to list (triggers server-side pagination)
         issues_list = list(issues)
@@ -1680,7 +1693,7 @@ async def list_redmine_issues(
             try:
                 # Create clean query for total count (no pagination parameters)
                 count_filters = {**filters}
-                count_query = redmine.issue.filter(**count_filters)
+                count_query = _get_redmine_client().issue.filter(**count_filters)
                 # Must evaluate the query first to get accurate total_count
                 list(count_query)  # Trigger evaluation
                 total_count = count_query.total_count
@@ -1815,9 +1828,6 @@ async def search_redmine_issues(
         - Token efficient: Default limit keeps response under 2000 tokens
         - Further reduce tokens: Use fields parameter for minimal data transfer
     """
-    if not redmine:
-        logging.error("Redmine client not initialized")
-        return [{"error": "Redmine client not initialized."}]
 
     try:
         # Handle MCP interface wrapping parameters in 'options' key
@@ -1889,8 +1899,10 @@ async def search_redmine_issues(
         search_params = {"offset": offset, "limit": limit, **options}
 
         # Perform search with pagination
-        logging.debug(f"Calling redmine.issue.search with: {search_params}")
-        results = redmine.issue.search(query, **search_params)
+        logging.debug(
+            f"Calling _get_redmine_client().issue.search with: {search_params}"
+        )
+        results = _get_redmine_client().issue.search(query, **search_params)
 
         if results is None:
             results = []
@@ -1956,8 +1968,6 @@ async def create_redmine_issue(
       and
       ``REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true``.
     """
-    if not redmine:
-        return {"error": "Redmine client not initialized."}
 
     try:
         issue_fields = _parse_create_issue_fields(fields)
@@ -1981,7 +1991,7 @@ async def create_redmine_issue(
     issue_fields.pop("extra_fields", None)
 
     try:
-        issue = redmine.issue.create(
+        issue = _get_redmine_client().issue.create(
             project_id=project_id,
             subject=subject,
             description=description,
@@ -2013,7 +2023,7 @@ async def create_redmine_issue(
                 "Retrying issue creation with auto-filled custom fields: %s",
                 missing_names,
             )
-            issue = redmine.issue.create(
+            issue = _get_redmine_client().issue.create(
                 project_id=project_id,
                 subject=subject,
                 description=description,
@@ -2040,8 +2050,6 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
     When a matching project custom field is found, it is translated into
     ``custom_fields`` entries for Redmine update payloads.
     """
-    if not redmine:
-        return {"error": "Redmine client not initialized."}
 
     update_fields = dict(fields)
 
@@ -2049,7 +2057,7 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
     if "status_name" in update_fields and "status_id" not in update_fields:
         name = str(update_fields.pop("status_name")).lower()
         try:
-            statuses = redmine.issue_status.all()
+            statuses = _get_redmine_client().issue_status.all()
             for status in statuses:
                 if getattr(status, "name", "").lower() == name:
                     update_fields["status_id"] = status.id
@@ -2059,8 +2067,8 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
 
     try:
         update_fields = _map_named_custom_fields_for_update(issue_id, update_fields)
-        redmine.issue.update(issue_id, **update_fields)
-        updated_issue = redmine.issue.get(issue_id)
+        _get_redmine_client().issue.update(issue_id, **update_fields)
+        updated_issue = _get_redmine_client().issue.get(issue_id)
         return _issue_to_dict(updated_issue, include_custom_fields=True)
     except ValidationError as e:
         if not _is_required_custom_field_autofill_enabled():
@@ -2079,7 +2087,7 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
             )
 
         try:
-            issue = redmine.issue.get(issue_id)
+            issue = _get_redmine_client().issue.get(issue_id)
             project = getattr(issue, "project", None)
             project_id = getattr(project, "id", None)
             if project_id is None:
@@ -2107,8 +2115,8 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
                 "Retrying issue update with auto-filled custom fields: %s",
                 missing_names,
             )
-            redmine.issue.update(issue_id, **retry_fields)
-            updated_issue = redmine.issue.get(issue_id)
+            _get_redmine_client().issue.update(issue_id, **retry_fields)
+            updated_issue = _get_redmine_client().issue.get(issue_id)
             return _issue_to_dict(updated_issue, include_custom_fields=True)
         except Exception as retry_error:
             return _handle_redmine_error(
@@ -2145,15 +2153,13 @@ async def get_redmine_attachment_download_url(
         ResourceNotFoundError: If attachment ID doesn't exist
         Exception: For other download or processing errors
     """
-    if not redmine:
-        return {"error": "Redmine client not initialized."}
 
     # Ensure cleanup task is started (lazy initialization)
     await _ensure_cleanup_started()
 
     try:
         # Get attachment metadata from Redmine
-        attachment = redmine.attachment.get(attachment_id)
+        attachment = _get_redmine_client().attachment.get(attachment_id)
 
         # Server-controlled configuration (secure)
         attachments_dir = Path(os.getenv("ATTACHMENTS_DIR", "./attachments"))
@@ -2275,13 +2281,11 @@ async def summarize_project_status(project_id: int, days: int = 30) -> Dict[str,
         activity metrics, and trends. On error, returns a dictionary with
         an "error" key.
     """
-    if not redmine:
-        return {"error": "Redmine client not initialized."}
 
     try:
         # Validate project exists
         try:
-            project = redmine.project.get(project_id)
+            project = _get_redmine_client().project.get(project_id)
         except ResourceNotFoundError:
             return {"error": f"Project {project_id} not found."}
 
@@ -2292,12 +2296,16 @@ async def summarize_project_status(project_id: int, days: int = 30) -> Dict[str,
 
         # Get issues created in the date range
         created_issues = list(
-            redmine.issue.filter(project_id=project_id, created_on=date_filter)
+            _get_redmine_client().issue.filter(
+                project_id=project_id, created_on=date_filter
+            )
         )
 
         # Get issues updated in the date range
         updated_issues = list(
-            redmine.issue.filter(project_id=project_id, updated_on=date_filter)
+            _get_redmine_client().issue.filter(
+                project_id=project_id, updated_on=date_filter
+            )
         )
 
         # Analyze created issues
@@ -2311,7 +2319,7 @@ async def summarize_project_status(project_id: int, days: int = 30) -> Dict[str,
         total_updated = len(updated_issues)
 
         # Get all project issues for context
-        all_issues = list(redmine.issue.filter(project_id=project_id))
+        all_issues = list(_get_redmine_client().issue.filter(project_id=project_id))
         all_stats = _analyze_issues(all_issues)
 
         return {
@@ -2416,8 +2424,6 @@ async def search_entire_redmine(
         v1.4 Scope Limitation: Only 'issues' and 'wiki_pages' are supported.
         Requires Redmine 3.3.0 or higher for search API support.
     """
-    if not redmine:
-        return {"error": "Redmine client not initialized."}
 
     try:
         await _ensure_cleanup_started()
@@ -2444,7 +2450,7 @@ async def search_entire_redmine(
         }
 
         # Execute search
-        categorized_results = redmine.search(query, **search_options)
+        categorized_results = _get_redmine_client().search(query, **search_options)
 
         # Handle empty results (python-redmine returns None)
         if not categorized_results:
@@ -2679,19 +2685,19 @@ async def get_redmine_wiki_page(
     Note:
         Use get_redmine_attachment_download_url() to download attachments.
     """
-    if not redmine:
-        return {"error": "Redmine client not initialized."}
 
     try:
         await _ensure_cleanup_started()
 
         # Retrieve wiki page
         if version:
-            wiki_page = redmine.wiki_page.get(
+            wiki_page = _get_redmine_client().wiki_page.get(
                 wiki_page_title, project_id=project_id, version=version
             )
         else:
-            wiki_page = redmine.wiki_page.get(wiki_page_title, project_id=project_id)
+            wiki_page = _get_redmine_client().wiki_page.get(
+                wiki_page_title, project_id=project_id
+            )
 
         return _wiki_page_to_dict(wiki_page, include_attachments)
 
@@ -2722,14 +2728,12 @@ async def create_redmine_wiki_page(
     Returns:
         Dictionary containing created wiki page metadata, or error dict on failure
     """
-    if not redmine:
-        return {"error": "Redmine client not initialized."}
 
     try:
         await _ensure_cleanup_started()
 
         # Create wiki page
-        wiki_page = redmine.wiki_page.create(
+        wiki_page = _get_redmine_client().wiki_page.create(
             project_id=project_id,
             title=wiki_page_title,
             text=text,
@@ -2765,14 +2769,12 @@ async def update_redmine_wiki_page(
     Returns:
         Dictionary containing updated wiki page metadata, or error dict on failure
     """
-    if not redmine:
-        return {"error": "Redmine client not initialized."}
 
     try:
         await _ensure_cleanup_started()
 
         # Update wiki page
-        redmine.wiki_page.update(
+        _get_redmine_client().wiki_page.update(
             wiki_page_title,
             project_id=project_id,
             text=text,
@@ -2780,7 +2782,9 @@ async def update_redmine_wiki_page(
         )
 
         # Fetch updated page to return current state
-        wiki_page = redmine.wiki_page.get(wiki_page_title, project_id=project_id)
+        wiki_page = _get_redmine_client().wiki_page.get(
+            wiki_page_title, project_id=project_id
+        )
 
         return _wiki_page_to_dict(wiki_page)
 
@@ -2807,14 +2811,12 @@ async def delete_redmine_wiki_page(
     Returns:
         Dictionary with success status, or error dict on failure
     """
-    if not redmine:
-        return {"error": "Redmine client not initialized."}
 
     try:
         await _ensure_cleanup_started()
 
         # Delete wiki page
-        redmine.wiki_page.delete(wiki_page_title, project_id=project_id)
+        _get_redmine_client().wiki_page.delete(wiki_page_title, project_id=project_id)
 
         return {
             "success": True,
@@ -3119,10 +3121,5 @@ async def cleanup_attachment_files() -> Dict[str, Any]:
 
 
 if __name__ == "__main__":
-    if not redmine:
-        logger.warning(
-            "Redmine client could not be initialized. Some tools may not work. "
-            "Please check your .env file and Redmine server connectivity."
-        )
     # Initialize and run the server
     mcp.run(transport="stdio")
