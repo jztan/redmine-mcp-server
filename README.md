@@ -90,7 +90,10 @@ python -m redmine_mcp_server.main
 
 The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, health check at `/health`, and file serving at `/files/{file_id}`.
 
-### Environment Variables
+### Environment Variables Configuration
+
+<details>
+<summary><strong>Environment Variables</strong></summary>
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
@@ -127,6 +130,8 @@ Example:
 REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true
 REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS='{"Required Field A":"Value A","Required Field B":"Value B"}'
 ```
+
+</details>
 
 ### SSL Certificate Configuration
 
@@ -226,6 +231,8 @@ Redmine uses the [Doorkeeper](https://github.com/doorkeeper-gem/doorkeeper) gem 
 - An OAuth application registered in Redmine admin → **Applications** with the callback URL of your client
 - A client that handles the authorization code flow, stores the resulting token per user, and sends it as `Authorization: Bearer <token>` on every MCP request
 - No Dynamic Client Registration (DCR) is required — register the application manually in Redmine admin
+
+For step-by-step setup instructions, see the [OAuth2 Setup Guide](./docs/oauth-setup.md).
 
 ## MCP Client Configuration
 
