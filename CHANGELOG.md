@@ -25,9 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **Custom routes (well-known endpoints) not served at runtime** — `mcp.run()` created a fresh internal app discarding route registrations; switched to `uvicorn.run(app, ...)` so the decorated app instance is always what serves requests
 - **`REDMINE_URL` KeyError at import time** — `oauth_middleware.py` now uses `os.environ.get()` instead of `os.environ[]`, so the server starts cleanly even if `REDMINE_URL` is not set before import
+- **Legacy client recreated on every tool call** — `_get_redmine_client()` now caches a singleton `_legacy_client` in legacy mode instead of building a new `Redmine()` instance per request
+- **OAuth routes exposed in legacy mode** — well-known endpoints and `/revoke` are now only registered when `REDMINE_AUTH_MODE=oauth`
 
 ### Changed
 - `main()` now runs via `uvicorn.run(app, ...)` directly instead of `mcp.run(transport="streamable-http")` to ensure custom route registrations are preserved
+
+### Contributors
+- @mihajlovicjj — OAuth2 per-user authentication, `/revoke` endpoint, discovery endpoints, and 33 new tests ([#71](https://github.com/jztan/redmine-mcp-server/pull/71))
 
 ## [0.12.1] - 2026-03-05
 
@@ -71,6 +76,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dependency Updates**
   - `black` upgraded from 25.12.0 to 26.1.0
 - Improved issue update validation for named custom fields with clear errors when values are not allowed for the target custom field.
+
+### Contributors
+- @sebastianelsner — custom field discovery tool, required custom field handling, and custom field update support ([#65](https://github.com/jztan/redmine-mcp-server/pull/65), [#66](https://github.com/jztan/redmine-mcp-server/pull/66))
 
 ### Improved
 - **Test Coverage** - 44 new unit tests for custom field helper functions (`redmine_handler.py` lines 474-640)
