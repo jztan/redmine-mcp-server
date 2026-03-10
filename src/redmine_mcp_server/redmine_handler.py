@@ -140,26 +140,14 @@ def _build_requests_config() -> dict:
 # In production this stays None and per-request auth is always used.
 redmine = None
 
+# Cached legacy-mode client — avoids recreating Redmine() on every tool call
+# when running without OAuth.
+_legacy_client = None
 
-def _get_redmine_client() -> Redmine:
-    if redmine is not None:
-        return redmine
 
-    from .oauth_middleware import current_redmine_token
-
-    token = current_redmine_token.get()
+def _build_legacy_client() -> Redmine:
+    """Build a Redmine client using legacy credentials (API key or user/pass)."""
     requests_config = _build_requests_config()
-
-    if token:
-        # OAuth mode: use the per-request Bearer token set by the middleware
-        headers = {"Authorization": f"Bearer {token}"}
-        if requests_config:
-            return Redmine(
-                REDMINE_URL, requests={"headers": headers, **requests_config}
-            )
-        return Redmine(REDMINE_URL, requests={"headers": headers})
-
-    # Legacy mode: use API key or username/password from environment
     if REDMINE_API_KEY:
         if requests_config:
             return Redmine(REDMINE_URL, key=REDMINE_API_KEY, requests=requests_config)
@@ -181,6 +169,32 @@ def _get_redmine_client() -> Redmine:
             "Set REDMINE_AUTH_MODE=oauth or configure REDMINE_API_KEY / "
             "REDMINE_USERNAME+REDMINE_PASSWORD."
         )
+
+
+def _get_redmine_client() -> Redmine:
+    global _legacy_client
+
+    if redmine is not None:
+        return redmine
+
+    from .oauth_middleware import current_redmine_token
+
+    token = current_redmine_token.get()
+
+    if token:
+        # OAuth mode: per-request client with Bearer token (cannot be cached)
+        requests_config = _build_requests_config()
+        headers = {"Authorization": f"Bearer {token}"}
+        if requests_config:
+            return Redmine(
+                REDMINE_URL, requests={"headers": headers, **requests_config}
+            )
+        return Redmine(REDMINE_URL, requests={"headers": headers})
+
+    # Legacy mode: reuse a cached singleton
+    if _legacy_client is None:
+        _legacy_client = _build_legacy_client()
+    return _legacy_client
 
 
 # Initialize FastMCP server

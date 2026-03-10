@@ -330,7 +330,8 @@ class TestWellKnownEndpoints:
 
     @pytest.fixture
     def app(self):
-        from redmine_mcp_server.main import app
+        from redmine_mcp_server.main import app, register_oauth_routes
+        register_oauth_routes(app)
         return app
 
     @pytest.mark.asyncio
@@ -445,6 +446,14 @@ class TestWellKnownEndpoints:
 class TestGetRedmineClient:
     """Tests for _get_redmine_client() auth mode selection."""
 
+    @pytest.fixture(autouse=True)
+    def _reset_legacy_cache(self):
+        """Clear cached legacy client between tests."""
+        import redmine_mcp_server.redmine_handler as rh
+        rh._legacy_client = None
+        yield
+        rh._legacy_client = None
+
     def test_uses_oauth_token_when_context_var_is_set(self):
         """When a token is in the ContextVar, a Bearer-auth client is returned."""
         from redmine_mcp_server.oauth_middleware import current_redmine_token
@@ -540,7 +549,8 @@ class TestRevokeEndpoint:
 
     @pytest.fixture
     def app(self):
-        from redmine_mcp_server.main import app
+        from redmine_mcp_server.main import app, register_oauth_routes
+        register_oauth_routes(app)
         return app
 
     @pytest.mark.asyncio
