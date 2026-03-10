@@ -7,13 +7,8 @@ Tests for list_time_entries, create_time_entry, and update_time_entry tools.
 import pytest
 from unittest.mock import Mock, patch
 from datetime import datetime
-import os
-import sys
 
-# Add the src directory to the path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
-from redmine_mcp_server.redmine_handler import (  # noqa: E402
+from redmine_mcp_server.redmine_handler import (
     list_time_entries,
     create_time_entry,
     update_time_entry,
@@ -240,15 +235,17 @@ class TestListTimeEntries:
         assert call_kwargs["limit"] == 100
 
     @pytest.mark.asyncio
-    async def test_list_time_entries_redmine_not_initialized(self, mock_redmine):
+    async def test_list_time_entries_redmine_not_initialized(self):
         """Test error when Redmine client is not initialized."""
-        with patch("redmine_mcp_server.redmine_handler.redmine", None):
+        with patch(
+            "redmine_mcp_server.redmine_handler._get_redmine_client",
+            side_effect=RuntimeError("No Redmine authentication available"),
+        ):
             result = await list_time_entries()
 
         assert isinstance(result, list)
         assert len(result) == 1
         assert "error" in result[0]
-        assert "not initialized" in result[0]["error"]
 
     @pytest.mark.asyncio
     async def test_list_time_entries_empty_result(self, mock_redmine):
@@ -372,13 +369,15 @@ class TestCreateTimeEntry:
         assert "positive" in result["error"]
 
     @pytest.mark.asyncio
-    async def test_create_time_entry_redmine_not_initialized(self, mock_redmine):
+    async def test_create_time_entry_redmine_not_initialized(self):
         """Test error when Redmine client is not initialized."""
-        with patch("redmine_mcp_server.redmine_handler.redmine", None):
+        with patch(
+            "redmine_mcp_server.redmine_handler._get_redmine_client",
+            side_effect=RuntimeError("No Redmine authentication available"),
+        ):
             result = await create_time_entry(hours=2.0, issue_id=123)
 
         assert "error" in result
-        assert "not initialized" in result["error"]
 
     @pytest.mark.asyncio
     async def test_create_time_entry_issue_not_found(self, mock_redmine):
@@ -529,13 +528,15 @@ class TestUpdateTimeEntry:
         assert "error" in result
 
     @pytest.mark.asyncio
-    async def test_update_time_entry_redmine_not_initialized(self, mock_redmine):
+    async def test_update_time_entry_redmine_not_initialized(self):
         """Test error when Redmine client is not initialized."""
-        with patch("redmine_mcp_server.redmine_handler.redmine", None):
+        with patch(
+            "redmine_mcp_server.redmine_handler._get_redmine_client",
+            side_effect=RuntimeError("No Redmine authentication available"),
+        ):
             result = await update_time_entry(time_entry_id=1, hours=2.0)
 
         assert "error" in result
-        assert "not initialized" in result["error"]
 
     @pytest.mark.asyncio
     async def test_update_time_entry_forbidden(self, mock_redmine):

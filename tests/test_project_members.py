@@ -6,13 +6,8 @@ Tests for listing project memberships including users, groups, and roles.
 
 import pytest
 from unittest.mock import Mock, patch
-import os
-import sys
 
-# Add the src directory to the path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
-from redmine_mcp_server.redmine_handler import (  # noqa: E402
+from redmine_mcp_server.redmine_handler import (
     list_project_members,
     _membership_to_dict,
 )
@@ -218,15 +213,17 @@ class TestListProjectMembers:
         assert len(result) == 0
 
     @pytest.mark.asyncio
-    async def test_list_members_redmine_not_initialized(self, mock_redmine):
+    async def test_list_members_redmine_not_initialized(self):
         """Test error when Redmine client is not initialized."""
-        with patch("redmine_mcp_server.redmine_handler.redmine", None):
+        with patch(
+            "redmine_mcp_server.redmine_handler._get_redmine_client",
+            side_effect=RuntimeError("No Redmine authentication available"),
+        ):
             result = await list_project_members(project_id=10)
 
         assert isinstance(result, list)
         assert len(result) == 1
         assert "error" in result[0]
-        assert "not initialized" in result[0]["error"]
 
     @pytest.mark.asyncio
     async def test_list_members_project_not_found(self, mock_redmine):

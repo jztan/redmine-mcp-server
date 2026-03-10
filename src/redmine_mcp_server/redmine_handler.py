@@ -2588,13 +2588,29 @@ def _time_entry_to_dict(time_entry: Any) -> Dict[str, Any]:
             if getattr(time_entry, "spent_on", None) is not None
             else None
         ),
-        "user": ({"id": user.id, "name": user.name} if user is not None else None),
-        "project": (
-            {"id": project.id, "name": project.name} if project is not None else None
+        "user": (
+            {"id": getattr(user, "id", None), "name": getattr(user, "name", "")}
+            if user is not None
+            else None
         ),
-        "issue": ({"id": issue.id} if issue is not None else None),
+        "project": (
+            {
+                "id": getattr(project, "id", None),
+                "name": getattr(project, "name", ""),
+            }
+            if project is not None
+            else None
+        ),
+        "issue": (
+            {"id": getattr(issue, "id", None)} if issue is not None else None
+        ),
         "activity": (
-            {"id": activity.id, "name": activity.name} if activity is not None else None
+            {
+                "id": getattr(activity, "id", None),
+                "name": getattr(activity, "name", ""),
+            }
+            if activity is not None
+            else None
         ),
         "created_on": (
             time_entry.created_on.isoformat()
@@ -2875,13 +2891,10 @@ async def list_project_members(
             ...
         ]
     """
-    if not redmine:
-        return [{"error": "Redmine client not initialized."}]
-
-    await _ensure_cleanup_started()
-
     try:
-        memberships = redmine.project_membership.filter(project_id=project_id)
+        memberships = _get_redmine_client().project_membership.filter(
+            project_id=project_id
+        )
         return [_membership_to_dict(m) for m in memberships]
     except Exception as e:
         return [
@@ -2931,11 +2944,6 @@ async def list_time_entries(
         >>> await list_time_entries(user_id="me", limit=10)
         [{"id": 3, "hours": 4.0, "user": {"id": 5, "name": "Current User"}, ...}]
     """
-    if not redmine:
-        return [{"error": "Redmine client not initialized."}]
-
-    await _ensure_cleanup_started()
-
     try:
         # Build filter parameters
         filters: Dict[str, Any] = {
@@ -2954,7 +2962,7 @@ async def list_time_entries(
         if to_date is not None:
             filters["to_date"] = to_date
 
-        time_entries = redmine.time_entry.filter(**filters)
+        time_entries = _get_redmine_client().time_entry.filter(**filters)
         return [_time_entry_to_dict(te) for te in time_entries]
 
     except Exception as e:
@@ -3002,16 +3010,11 @@ async def create_time_entry(
         ... )
         {"id": 2, "hours": 1.0, "project": {"id": 1, "name": "My Project"}, ...}
     """
-    if not redmine:
-        return {"error": "Redmine client not initialized."}
-
     if project_id is None and issue_id is None:
         return {"error": "Either project_id or issue_id must be provided."}
 
     if hours <= 0:
         return {"error": "Hours must be a positive number."}
-
-    await _ensure_cleanup_started()
 
     try:
         # Build create parameters
@@ -3030,7 +3033,7 @@ async def create_time_entry(
         if spent_on is not None:
             params["spent_on"] = spent_on
 
-        time_entry = redmine.time_entry.create(**params)
+        time_entry = _get_redmine_client().time_entry.create(**params)
         return _time_entry_to_dict(time_entry)
 
     except Exception as e:
@@ -3076,13 +3079,8 @@ async def update_time_entry(
         ... )
         {"id": 1, "comments": "Updated description", ...}
     """
-    if not redmine:
-        return {"error": "Redmine client not initialized."}
-
     if hours is not None and hours <= 0:
         return {"error": "Hours must be a positive number."}
-
-    await _ensure_cleanup_started()
 
     try:
         # Build update parameters
@@ -3100,10 +3098,11 @@ async def update_time_entry(
         if not params:
             return {"error": "No fields provided for update."}
 
-        redmine.time_entry.update(time_entry_id, **params)
+        client = _get_redmine_client()
+        client.time_entry.update(time_entry_id, **params)
 
         # Fetch and return updated entry
-        updated_entry = redmine.time_entry.get(time_entry_id)
+        updated_entry = client.time_entry.get(time_entry_id)
         return _time_entry_to_dict(updated_entry)
 
     except Exception as e:
