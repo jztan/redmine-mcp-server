@@ -13,7 +13,18 @@ import pytest
 # Add the src directory to the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from redmine_mcp_server.redmine_handler import redmine, REDMINE_URL  # noqa: E402
+from redmine_mcp_server.redmine_handler import (  # noqa: E402
+    _get_redmine_client,
+    REDMINE_URL,
+)
+
+
+def _get_redmine_or_none():
+    """Try to get a Redmine client, return None if not configured."""
+    try:
+        return _get_redmine_client()
+    except RuntimeError:
+        return None
 
 
 def _integration_test_custom_fields():
@@ -38,6 +49,7 @@ class TestRedmineIntegration:
     @pytest.mark.integration
     def test_redmine_connection(self):
         """Test actual connection to Redmine server."""
+        redmine = _get_redmine_or_none()
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
@@ -55,6 +67,7 @@ class TestRedmineIntegration:
     @pytest.mark.asyncio
     async def test_list_projects_integration(self):
         """Integration test for listing projects."""
+        redmine = _get_redmine_or_none()
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
@@ -83,6 +96,7 @@ class TestRedmineIntegration:
     @pytest.mark.asyncio
     async def test_get_issue_integration(self):
         """Integration test for getting an issue with journals and attachments."""
+        redmine = _get_redmine_or_none()
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
@@ -137,6 +151,7 @@ class TestRedmineIntegration:
     @pytest.mark.asyncio
     async def test_get_issue_without_journals_integration(self):
         """Integration test for opting out of journal retrieval."""
+        redmine = _get_redmine_or_none()
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
@@ -175,6 +190,7 @@ class TestRedmineIntegration:
     @pytest.mark.asyncio
     async def test_get_issue_without_attachments_integration(self):
         """Integration test for opting out of attachment retrieval."""
+        redmine = _get_redmine_or_none()
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
@@ -211,6 +227,7 @@ class TestRedmineIntegration:
     @pytest.mark.asyncio
     async def test_create_update_issue_integration(self):
         """Integration test for creating and updating an issue."""
+        redmine = _get_redmine_or_none()
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
@@ -258,6 +275,7 @@ class TestRedmineIntegration:
     @pytest.mark.asyncio
     async def test_download_attachment_integration(self, tmp_path):
         """Integration test for downloading an attachment."""
+        redmine = _get_redmine_or_none()
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
@@ -408,6 +426,7 @@ class TestRedmineIntegration:
     @pytest.mark.asyncio
     async def test_wiki_page_lifecycle_integration(self):
         """Integration test for creating, updating, and deleting a wiki page."""
+        redmine = _get_redmine_or_none()
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
@@ -509,6 +528,7 @@ class TestRedmineIntegration:
     @pytest.mark.asyncio
     async def test_wiki_page_delete_not_found_integration(self):
         """Integration test for deleting a non-existent wiki page."""
+        redmine = _get_redmine_or_none()
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
@@ -584,6 +604,7 @@ class TestListRedmineIssuesIntegration:
     @pytest.mark.asyncio
     async def test_list_issues_by_project(self):
         """Test listing issues filtered by project_id."""
+        redmine = _get_redmine_or_none()
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
@@ -608,6 +629,7 @@ class TestListRedmineIssuesIntegration:
     @pytest.mark.asyncio
     async def test_list_issues_by_string_identifier(self):
         """Test listing issues using a string project identifier."""
+        redmine = _get_redmine_or_none()
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
@@ -630,6 +652,7 @@ class TestListRedmineIssuesIntegration:
     @pytest.mark.asyncio
     async def test_list_issues_no_filters(self):
         """Test listing issues without any filters returns results."""
+        redmine = _get_redmine_or_none()
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
@@ -644,6 +667,7 @@ class TestListRedmineIssuesIntegration:
     @pytest.mark.asyncio
     async def test_list_issues_with_limit(self):
         """Test that limit parameter caps the result count."""
+        redmine = _get_redmine_or_none()
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
@@ -659,6 +683,7 @@ class TestListRedmineIssuesIntegration:
     @pytest.mark.asyncio
     async def test_list_issues_pagination(self):
         """Test pagination with offset returns different results."""
+        redmine = _get_redmine_or_none()
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
@@ -681,6 +706,7 @@ class TestListRedmineIssuesIntegration:
     @pytest.mark.asyncio
     async def test_list_issues_with_pagination_info(self):
         """Test include_pagination_info returns metadata."""
+        redmine = _get_redmine_or_none()
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
@@ -710,6 +736,7 @@ class TestListRedmineIssuesIntegration:
     @pytest.mark.asyncio
     async def test_list_issues_with_status_filter(self):
         """Test filtering by status_id."""
+        redmine = _get_redmine_or_none()
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
@@ -728,6 +755,7 @@ class TestListRedmineIssuesIntegration:
     @pytest.mark.asyncio
     async def test_list_issues_with_sort(self):
         """Test sorting issues by updated_on descending."""
+        redmine = _get_redmine_or_none()
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
@@ -749,6 +777,7 @@ class TestListRedmineIssuesIntegration:
     @pytest.mark.asyncio
     async def test_list_issues_field_selection(self):
         """Test field selection returns only requested fields."""
+        redmine = _get_redmine_or_none()
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
@@ -770,6 +799,7 @@ class TestListRedmineIssuesIntegration:
     @pytest.mark.asyncio
     async def test_list_issues_combined_project_and_status(self):
         """Test combining project_id and status_id filters."""
+        redmine = _get_redmine_or_none()
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
@@ -795,6 +825,7 @@ class TestListRedmineIssuesIntegration:
     @pytest.mark.asyncio
     async def test_list_issues_combined_filters_with_sort_and_pagination(self):
         """Test multiple filters combined with sort and pagination info."""
+        redmine = _get_redmine_or_none()
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
@@ -833,6 +864,7 @@ class TestListRedmineIssuesIntegration:
     @pytest.mark.asyncio
     async def test_list_issues_combined_filters_with_fields(self):
         """Test combined filters with field selection."""
+        redmine = _get_redmine_or_none()
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
@@ -866,6 +898,7 @@ class TestListRedmineIssuesIntegration:
     @pytest.mark.asyncio
     async def test_list_issues_issue_structure(self):
         """Test that returned issues have expected field structure."""
+        redmine = _get_redmine_or_none()
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
@@ -897,6 +930,7 @@ class TestListRedmineIssuesIntegration:
     @pytest.mark.asyncio
     async def test_list_issues_assigned_to_me(self):
         """Test filtering by assigned_to_id='me'."""
+        redmine = _get_redmine_or_none()
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
@@ -914,6 +948,7 @@ class TestListRedmineIssuesIntegration:
     @pytest.mark.asyncio
     async def test_list_my_issues_backward_compatible(self):
         """Test list_my_redmine_issues still works as a wrapper."""
+        redmine = _get_redmine_or_none()
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
@@ -963,8 +998,7 @@ class TestEnvironmentConfiguration:
 
     def test_redmine_client_initialization(self):
         """Test that Redmine client is properly initialized."""
-        from redmine_mcp_server.redmine_handler import redmine
-
+        redmine = _get_redmine_or_none()
         if redmine is None:
             pytest.skip(
                 "Redmine client not initialized - check your .env configuration"
@@ -983,6 +1017,7 @@ class TestListRedmineVersionsIntegration:
     @pytest.mark.asyncio
     async def test_list_versions_by_project_id(self):
         """Test listing versions for a project by numeric ID."""
+        redmine = _get_redmine_or_none()
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
@@ -1005,6 +1040,7 @@ class TestListRedmineVersionsIntegration:
     @pytest.mark.asyncio
     async def test_list_versions_by_string_identifier(self):
         """Test listing versions using a string project identifier."""
+        redmine = _get_redmine_or_none()
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
@@ -1026,6 +1062,7 @@ class TestListRedmineVersionsIntegration:
     @pytest.mark.asyncio
     async def test_list_versions_structure(self):
         """Test that returned version dicts have expected keys."""
+        redmine = _get_redmine_or_none()
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
@@ -1064,6 +1101,7 @@ class TestListRedmineVersionsIntegration:
     @pytest.mark.asyncio
     async def test_list_versions_filter_open(self):
         """Test filtering versions by open status."""
+        redmine = _get_redmine_or_none()
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
@@ -1087,6 +1125,7 @@ class TestListRedmineVersionsIntegration:
     @pytest.mark.asyncio
     async def test_list_versions_invalid_status_filter(self):
         """Test that invalid status_filter returns error without API call."""
+        redmine = _get_redmine_or_none()
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
@@ -1104,6 +1143,7 @@ class TestListRedmineVersionsIntegration:
     @pytest.mark.asyncio
     async def test_list_versions_nonexistent_project(self):
         """Test error handling for a project that doesn't exist."""
+        redmine = _get_redmine_or_none()
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 

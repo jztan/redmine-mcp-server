@@ -549,7 +549,7 @@ class TestGlobalSearchIntegration:
         from redmine_mcp_server.redmine_handler import (
             search_entire_redmine,
             get_redmine_wiki_page,
-            redmine,
+            _get_redmine_client,
         )
 
         # First, search for any wiki page using common terms
@@ -581,7 +581,7 @@ class TestGlobalSearchIntegration:
 
         # Get project identifier - search API doesn't provide it for wiki pages
         # so we get the first available project
-        projects = list(redmine.project.all())
+        projects = list(_get_redmine_client().project.all())
         if not projects:
             pytest.skip("No projects available")
         project_id = projects[0].identifier
