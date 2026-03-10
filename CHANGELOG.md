@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **New MCP Tool: `list_project_members`** - List members and groups of a Redmine project
+  - Returns user/group info along with assigned roles
+  - Supports both numeric project IDs and string identifiers
+  - Includes comprehensive unit tests
+- **New MCP Tools: Time Tracking** - Full time entry management
+  - `list_time_entries` - List time entries with filtering by project, issue, user, and date range
+  - `create_time_entry` - Log time against projects or issues with activity and date support
+  - `update_time_entry` - Modify existing time entries (hours, comments, activity, date)
+  - All tools include pagination support and comprehensive unit tests
+- **Documentation** - Updated tool-reference.md with new tools and Time Tracking section
+
 ## [0.12.1] - 2026-03-05
 
 ### Fixed
