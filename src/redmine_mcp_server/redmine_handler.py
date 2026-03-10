@@ -2511,6 +2511,104 @@ async def search_entire_redmine(
         return _handle_redmine_error(e, f"searching Redmine for '{query}'")
 
 
+def _membership_to_dict(membership: Any) -> Dict[str, Any]:
+    """Convert a project membership to a serializable dict."""
+    user = getattr(membership, "user", None)
+    group = getattr(membership, "group", None)
+    project = getattr(membership, "project", None)
+    roles = getattr(membership, "roles", None) or []
+
+    result: Dict[str, Any] = {
+        "id": getattr(membership, "id", None),
+    }
+
+    # User or group (memberships can be for either)
+    if user is not None:
+        result["user"] = {
+            "id": getattr(user, "id", None),
+            "name": getattr(user, "name", ""),
+        }
+        result["group"] = None
+    elif group is not None:
+        result["user"] = None
+        result["group"] = {
+            "id": getattr(group, "id", None),
+            "name": getattr(group, "name", ""),
+        }
+    else:
+        result["user"] = None
+        result["group"] = None
+
+    # Project info
+    if project is not None:
+        result["project"] = {
+            "id": getattr(project, "id", None),
+            "name": getattr(project, "name", ""),
+        }
+    else:
+        result["project"] = None
+
+    # Roles
+    result["roles"] = []
+    try:
+        for role in roles:
+            if isinstance(role, dict):
+                result["roles"].append(
+                    {
+                        "id": role.get("id"),
+                        "name": role.get("name", ""),
+                    }
+                )
+            else:
+                result["roles"].append(
+                    {
+                        "id": getattr(role, "id", None),
+                        "name": getattr(role, "name", ""),
+                    }
+                )
+    except TypeError:
+        pass  # roles not iterable
+
+    return result
+
+
+def _time_entry_to_dict(time_entry: Any) -> Dict[str, Any]:
+    """Convert a time entry to a serializable dict."""
+    user = getattr(time_entry, "user", None)
+    project = getattr(time_entry, "project", None)
+    issue = getattr(time_entry, "issue", None)
+    activity = getattr(time_entry, "activity", None)
+
+    return {
+        "id": getattr(time_entry, "id", None),
+        "hours": getattr(time_entry, "hours", 0),
+        "comments": getattr(time_entry, "comments", ""),
+        "spent_on": (
+            str(time_entry.spent_on)
+            if getattr(time_entry, "spent_on", None) is not None
+            else None
+        ),
+        "user": ({"id": user.id, "name": user.name} if user is not None else None),
+        "project": (
+            {"id": project.id, "name": project.name} if project is not None else None
+        ),
+        "issue": ({"id": issue.id} if issue is not None else None),
+        "activity": (
+            {"id": activity.id, "name": activity.name} if activity is not None else None
+        ),
+        "created_on": (
+            time_entry.created_on.isoformat()
+            if getattr(time_entry, "created_on", None) is not None
+            else None
+        ),
+        "updated_on": (
+            time_entry.updated_on.isoformat()
+            if getattr(time_entry, "updated_on", None) is not None
+            else None
+        ),
+    }
+
+
 def _wiki_page_to_dict(
     wiki_page: Any, include_attachments: bool = True
 ) -> Dict[str, Any]:
@@ -2745,6 +2843,274 @@ async def delete_redmine_wiki_page(
             e,
             f"deleting wiki page '{wiki_page_title}' in project {project_id}",
             {"resource_type": "wiki page", "resource_id": wiki_page_title},
+        )
+
+
+@mcp.tool()
+async def list_project_members(
+    project_id: Union[str, int],
+) -> List[Dict[str, Any]]:
+    """List members of a Redmine project.
+
+    Returns all users and groups that are members of the specified project,
+    along with their assigned roles.
+
+    Args:
+        project_id: Project identifier (ID number or string identifier)
+
+    Returns:
+        A list of membership dictionaries containing user/group info and roles.
+        On failure, a list containing a single dictionary with an "error" key.
+
+    Examples:
+        >>> await list_project_members("my-project")
+        [
+            {
+                "id": 1,
+                "user": {"id": 5, "name": "John Doe"},
+                "group": null,
+                "project": {"id": 1, "name": "My Project"},
+                "roles": [{"id": 3, "name": "Developer"}]
+            },
+            ...
+        ]
+    """
+    if not redmine:
+        return [{"error": "Redmine client not initialized."}]
+
+    await _ensure_cleanup_started()
+
+    try:
+        memberships = redmine.project_membership.filter(project_id=project_id)
+        return [_membership_to_dict(m) for m in memberships]
+    except Exception as e:
+        return [
+            _handle_redmine_error(
+                e,
+                f"listing members for project {project_id}",
+                {"resource_type": "project", "resource_id": project_id},
+            )
+        ]
+
+
+@mcp.tool()
+async def list_time_entries(
+    project_id: Optional[Union[str, int]] = None,
+    issue_id: Optional[int] = None,
+    user_id: Optional[Union[str, int]] = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    limit: int = 25,
+    offset: int = 0,
+) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    """List time entries from Redmine with filtering and pagination.
+
+    Retrieve time entries with optional filtering by project, issue, user,
+    and date range. Supports pagination for handling large result sets.
+
+    Args:
+        project_id: Filter by project (ID number or string identifier).
+        issue_id: Filter by issue ID.
+        user_id: Filter by user ID. Use "me" for current user.
+        from_date: Start date filter (YYYY-MM-DD format).
+        to_date: End date filter (YYYY-MM-DD format).
+        limit: Maximum number of entries to return (default: 25, max: 100).
+        offset: Number of entries to skip for pagination (default: 0).
+
+    Returns:
+        A list of time entry dictionaries. On failure, a list containing
+        a single dictionary with an "error" key.
+
+    Examples:
+        >>> await list_time_entries(project_id="my-project")
+        [{"id": 1, "hours": 2.5, "comments": "Bug fix", ...}, ...]
+
+        >>> await list_time_entries(issue_id=123, from_date="2024-01-01")
+        [{"id": 2, "hours": 1.0, "issue": {"id": 123}, ...}, ...]
+
+        >>> await list_time_entries(user_id="me", limit=10)
+        [{"id": 3, "hours": 4.0, "user": {"id": 5, "name": "Current User"}, ...}]
+    """
+    if not redmine:
+        return [{"error": "Redmine client not initialized."}]
+
+    await _ensure_cleanup_started()
+
+    try:
+        # Build filter parameters
+        filters: Dict[str, Any] = {
+            "limit": min(limit, 100),
+            "offset": offset,
+        }
+
+        if project_id is not None:
+            filters["project_id"] = project_id
+        if issue_id is not None:
+            filters["issue_id"] = issue_id
+        if user_id is not None:
+            filters["user_id"] = user_id
+        if from_date is not None:
+            filters["from_date"] = from_date
+        if to_date is not None:
+            filters["to_date"] = to_date
+
+        time_entries = redmine.time_entry.filter(**filters)
+        return [_time_entry_to_dict(te) for te in time_entries]
+
+    except Exception as e:
+        return [_handle_redmine_error(e, "listing time entries")]
+
+
+@mcp.tool()
+async def create_time_entry(
+    hours: float,
+    project_id: Optional[Union[str, int]] = None,
+    issue_id: Optional[int] = None,
+    activity_id: Optional[int] = None,
+    comments: str = "",
+    spent_on: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Create a new time entry in Redmine.
+
+    Log time against a project or issue. Either project_id or issue_id
+    must be provided. If issue_id is provided, the time entry will be
+    associated with that issue's project.
+
+    Args:
+        hours: Number of hours spent (required). Can be decimal (e.g., 1.5).
+        project_id: Project to log time against (ID or identifier).
+            Required if issue_id is not provided.
+        issue_id: Issue to log time against. If provided, project_id is optional.
+        activity_id: Time entry activity ID (e.g., Development, Design).
+            If not provided, Redmine uses the default activity.
+        comments: Description of work performed.
+        spent_on: Date when time was spent (YYYY-MM-DD). Defaults to today.
+
+    Returns:
+        Dictionary containing the created time entry, or error dict on failure.
+
+    Examples:
+        >>> await create_time_entry(hours=2.5, issue_id=123, comments="Bug fix")
+        {"id": 1, "hours": 2.5, "issue": {"id": 123}, ...}
+
+        >>> await create_time_entry(
+        ...     hours=1.0,
+        ...     project_id="my-project",
+        ...     activity_id=9,
+        ...     comments="Code review",
+        ...     spent_on="2024-03-15"
+        ... )
+        {"id": 2, "hours": 1.0, "project": {"id": 1, "name": "My Project"}, ...}
+    """
+    if not redmine:
+        return {"error": "Redmine client not initialized."}
+
+    if project_id is None and issue_id is None:
+        return {"error": "Either project_id or issue_id must be provided."}
+
+    if hours <= 0:
+        return {"error": "Hours must be a positive number."}
+
+    await _ensure_cleanup_started()
+
+    try:
+        # Build create parameters
+        params: Dict[str, Any] = {
+            "hours": hours,
+        }
+
+        if project_id is not None:
+            params["project_id"] = project_id
+        if issue_id is not None:
+            params["issue_id"] = issue_id
+        if activity_id is not None:
+            params["activity_id"] = activity_id
+        if comments:
+            params["comments"] = comments
+        if spent_on is not None:
+            params["spent_on"] = spent_on
+
+        time_entry = redmine.time_entry.create(**params)
+        return _time_entry_to_dict(time_entry)
+
+    except Exception as e:
+        context = {}
+        if issue_id:
+            context = {"resource_type": "issue", "resource_id": issue_id}
+        elif project_id:
+            context = {"resource_type": "project", "resource_id": project_id}
+        return _handle_redmine_error(e, "creating time entry", context)
+
+
+@mcp.tool()
+async def update_time_entry(
+    time_entry_id: int,
+    hours: Optional[float] = None,
+    activity_id: Optional[int] = None,
+    comments: Optional[str] = None,
+    spent_on: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Update an existing time entry in Redmine.
+
+    Modify hours, activity, comments, or date of an existing time entry.
+    Only provided fields will be updated.
+
+    Args:
+        time_entry_id: ID of the time entry to update (required).
+        hours: New hours value. Must be positive if provided.
+        activity_id: New activity ID.
+        comments: New comments/description.
+        spent_on: New date (YYYY-MM-DD format).
+
+    Returns:
+        Dictionary containing the updated time entry, or error dict on failure.
+
+    Examples:
+        >>> await update_time_entry(time_entry_id=1, hours=3.0)
+        {"id": 1, "hours": 3.0, ...}
+
+        >>> await update_time_entry(
+        ...     time_entry_id=1,
+        ...     comments="Updated description",
+        ...     spent_on="2024-03-16"
+        ... )
+        {"id": 1, "comments": "Updated description", ...}
+    """
+    if not redmine:
+        return {"error": "Redmine client not initialized."}
+
+    if hours is not None and hours <= 0:
+        return {"error": "Hours must be a positive number."}
+
+    await _ensure_cleanup_started()
+
+    try:
+        # Build update parameters
+        params: Dict[str, Any] = {}
+
+        if hours is not None:
+            params["hours"] = hours
+        if activity_id is not None:
+            params["activity_id"] = activity_id
+        if comments is not None:
+            params["comments"] = comments
+        if spent_on is not None:
+            params["spent_on"] = spent_on
+
+        if not params:
+            return {"error": "No fields provided for update."}
+
+        redmine.time_entry.update(time_entry_id, **params)
+
+        # Fetch and return updated entry
+        updated_entry = redmine.time_entry.get(time_entry_id)
+        return _time_entry_to_dict(updated_entry)
+
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"updating time entry {time_entry_id}",
+            {"resource_type": "time entry", "resource_id": time_entry_id},
         )
 
 
