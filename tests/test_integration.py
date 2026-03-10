@@ -1273,6 +1273,8 @@ class TestTimeEntriesIntegration:
         assert isinstance(result, list)
         for entry in result:
             if "error" in entry:
+                if "denied" in entry["error"].lower():
+                    pytest.skip(f"Time tracking not permitted: {entry['error']}")
                 pytest.fail(f"API error: {entry['error']}")
 
     @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
@@ -1296,7 +1298,10 @@ class TestTimeEntriesIntegration:
 
         assert isinstance(result, list)
         for entry in result:
-            assert "error" not in entry
+            if "error" in entry:
+                if "denied" in entry["error"].lower():
+                    pytest.skip(f"Time tracking not permitted: {entry['error']}")
+                pytest.fail(f"API error: {entry['error']}")
 
     @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
     @pytest.mark.integration
@@ -1313,7 +1318,10 @@ class TestTimeEntriesIntegration:
 
         assert isinstance(result, list)
         for entry in result:
-            assert "error" not in entry
+            if "error" in entry:
+                if "denied" in entry["error"].lower():
+                    pytest.skip(f"Time tracking not permitted: {entry['error']}")
+                pytest.fail(f"API error: {entry['error']}")
 
     @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
     @pytest.mark.integration
@@ -1333,6 +1341,10 @@ class TestTimeEntriesIntegration:
             pytest.skip("No time entries found for testing")
 
         entry = result[0]
+        if "error" in entry:
+            if "denied" in entry["error"].lower():
+                pytest.skip(f"Time tracking not permitted: {entry['error']}")
+            pytest.fail(f"API error: {entry['error']}")
         assert "id" in entry
         assert "hours" in entry
         assert "comments" in entry
@@ -1355,9 +1367,14 @@ class TestTimeEntriesIntegration:
         from redmine_mcp_server.redmine_handler import list_time_entries
 
         page1 = await list_time_entries(limit=3, offset=0)
-        page2 = await list_time_entries(limit=3, offset=3)
 
         assert isinstance(page1, list)
+        if page1 and "error" in page1[0]:
+            if "denied" in page1[0]["error"].lower():
+                pytest.skip(f"Time tracking not permitted: {page1[0]['error']}")
+
+        page2 = await list_time_entries(limit=3, offset=3)
+
         assert isinstance(page2, list)
         assert len(page1) <= 3
 
@@ -1380,11 +1397,29 @@ class TestTimeEntriesIntegration:
             update_time_entry,
         )
 
+        import requests as req
+        from redmine_mcp_server.redmine_handler import REDMINE_URL
+
         # Pick the first available project
         projects = list(redmine.project.all())
         if not projects:
             pytest.skip("No projects available for testing")
         project_id = projects[0].id
+
+        # Find an activity_id (required by some Redmine configs)
+        api_key = os.getenv("REDMINE_API_KEY", "")
+        act_resp = req.get(
+            f"{REDMINE_URL}/enumerations/time_entry_activities.json",
+            headers={"X-Redmine-API-Key": api_key},
+        )
+        activities = (
+            act_resp.json().get("time_entry_activities", [])
+            if act_resp.status_code == 200
+            else []
+        )
+        if not activities:
+            pytest.skip("No time entry activities configured in Redmine")
+        activity_id = activities[0]["id"]
 
         time_entry_id = None
         try:
@@ -1392,6 +1427,7 @@ class TestTimeEntriesIntegration:
             create_result = await create_time_entry(
                 hours=0.25,
                 project_id=project_id,
+                activity_id=activity_id,
                 comments="Integration test time entry",
             )
 
