@@ -19,7 +19,7 @@ A Model Context Protocol (MCP) server that integrates with Redmine project manag
 - **Redmine Integration**: List projects, view/create/update issues, download attachments
 - **HTTP File Serving**: Secure file access via UUID-based URLs with automatic expiry
 - **MCP Compliant**: Full Model Context Protocol support with FastMCP and streamable HTTP transport
-- **Flexible Authentication**: Username/password or API key
+- **Flexible Authentication**: API key, username/password, or OAuth2 per-user tokens
 - **File Management**: Automatic cleanup of expired files with storage statistics
 - **Docker Ready**: Complete containerization support
 - **Pagination Support**: Efficiently handle large issue lists with configurable limits
@@ -95,9 +95,11 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `REDMINE_URL` | Yes | – | Base URL of your Redmine instance |
-| `REDMINE_API_KEY` | Yes* | – | API key for authentication (*or provide username/password*) |
-| `REDMINE_USERNAME` | Yes* | – | Username for basic auth (*use with password when not using API key*) |
-| `REDMINE_PASSWORD` | Yes* | – | Password for basic auth |
+| `REDMINE_AUTH_MODE` | No | `legacy` | Authentication mode: `legacy` or `oauth` (see [Authentication](#authentication)) |
+| `REDMINE_API_KEY` | Yes† | – | API key (legacy mode only) |
+| `REDMINE_USERNAME` | Yes† | – | Username for basic auth (legacy mode only) |
+| `REDMINE_PASSWORD` | Yes† | – | Password for basic auth (legacy mode only) |
+| `REDMINE_MCP_BASE_URL` | Yes‡ | `http://localhost:3040` | Public base URL of this server, no trailing slash (OAuth mode only) |
 | `SERVER_HOST` | No | `0.0.0.0` | Host/IP the MCP server binds to |
 | `SERVER_PORT` | No | `8000` | Port the MCP server listens on |
 | `PUBLIC_HOST` | No | `localhost` | Hostname used when generating download URLs |
@@ -112,7 +114,8 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS` | No | `false` | Enable one retry for issue creation by filling missing required custom fields |
 | `REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS` | No | `{}` | JSON object mapping required custom field names to fallback values used when creating issues |
 
-*\* Either `REDMINE_API_KEY` or the combination of `REDMINE_USERNAME` and `REDMINE_PASSWORD` must be provided for authentication. API key authentication is recommended for security.*
+*† Required when `REDMINE_AUTH_MODE=legacy`. Either `REDMINE_API_KEY` or `REDMINE_USERNAME`+`REDMINE_PASSWORD` must be set. API key is recommended.*
+*‡ Required when `REDMINE_AUTH_MODE=oauth`.*
 
 When `REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true`, `create_redmine_issue` retries once on relevant custom-field validation errors (for example `<Field Name> cannot be blank` or `<Field Name> is not included in the list`) and fills values only from:
 - the Redmine custom field `default_value`, or
@@ -177,6 +180,51 @@ Disabling SSL verification makes your connection vulnerable to man-in-the-middle
 </details>
 
 For SSL troubleshooting, see the [Troubleshooting Guide](./docs/troubleshooting.md#ssl-certificate-errors).
+
+## Authentication
+
+The server supports two authentication modes, selected via `REDMINE_AUTH_MODE`.
+
+> **Backward compatibility**: `REDMINE_AUTH_MODE` defaults to `legacy`, so all existing deployments continue to work without any configuration changes. OAuth2 support is purely additive — nothing breaks if you never set the variable.
+
+### Legacy mode (default)
+
+Uses a single shared credential — either an API key or a username/password pair — configured once in `.env`. Every request to Redmine uses the same identity.
+
+```bash
+REDMINE_AUTH_MODE=legacy        # or omit entirely — this is the default
+REDMINE_URL=https://redmine.example.com
+REDMINE_API_KEY=your_api_key
+# OR:
+# REDMINE_USERNAME=your_username
+# REDMINE_PASSWORD=your_password
+```
+
+### OAuth2 mode
+
+> **Requires Redmine 6.1 or newer.** OAuth2 support (via the Doorkeeper gem) was introduced in Redmine 6.1.
+
+Each MCP request carries its own `Authorization: Bearer <token>` header. The server validates the token against `GET /users/current.json` on Redmine before forwarding it. This enables multi-user deployments where each user authenticates with their own Redmine account.
+
+```bash
+REDMINE_AUTH_MODE=oauth
+REDMINE_URL=https://redmine.example.com
+REDMINE_MCP_BASE_URL=https://redmine-mcp.example.com   # public URL of this server
+```
+
+In OAuth mode the server also exposes two OAuth2 discovery endpoints:
+
+| Endpoint | Standard | Purpose |
+|----------|----------|---------|
+| `/.well-known/oauth-protected-resource` | RFC 8707 | Tells clients where to find the authorization server |
+| `/.well-known/oauth-authorization-server` | RFC 8414 | Advertises Redmine's Doorkeeper OAuth endpoints |
+
+Redmine uses the [Doorkeeper](https://github.com/doorkeeper-gem/doorkeeper) gem for OAuth2 but does not serve the RFC 8414 discovery document itself. This server serves it on Redmine's behalf, pointing to Redmine's real `/oauth/authorize` and `/oauth/token` endpoints.
+
+**Prerequisites for OAuth mode:**
+- An OAuth application registered in Redmine admin → **Applications** with the callback URL of your client
+- A client that handles the authorization code flow, stores the resulting token per user, and sends it as `Authorization: Bearer <token>` on every MCP request
+- No Dynamic Client Registration (DCR) is required — register the application manually in Redmine admin
 
 ## MCP Client Configuration
 

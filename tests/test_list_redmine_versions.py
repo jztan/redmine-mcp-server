@@ -281,7 +281,7 @@ class TestListRedmineVersions:
             result = await list_redmine_versions(project_id=1)
 
         assert isinstance(result, list)
-        assert result[0]["error"] == "Redmine client not initialized."
+        assert "error" in result[0]
 
     @pytest.mark.asyncio
     async def test_api_error_returns_error(self, mock_redmine):

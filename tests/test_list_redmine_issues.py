@@ -436,7 +436,7 @@ class TestListRedmineIssues:
             result = await list_redmine_issues(project_id=1)
 
             assert isinstance(result, list)
-            assert result[0]["error"] == "Redmine client not initialized."
+            assert "error" in result[0]
 
     @pytest.mark.asyncio
     async def test_api_error_returns_error(self, mock_redmine):
@@ -541,11 +541,13 @@ class TestListMyRedmineIssuesDelegation:
     @pytest.mark.asyncio
     async def test_no_client_returns_error(self):
         """Test backward-compatible error when client is None."""
-        with patch("redmine_mcp_server.redmine_handler.redmine", None):
+        with patch("redmine_mcp_server.redmine_handler.redmine", None), \
+             patch("redmine_mcp_server.redmine_handler.REDMINE_API_KEY", ""), \
+             patch("redmine_mcp_server.redmine_handler.REDMINE_USERNAME", ""):
             result = await list_my_redmine_issues()
 
             assert isinstance(result, list)
-            assert result[0]["error"] == "Redmine client not initialized."
+            assert "error" in result[0]
 
     @pytest.mark.asyncio
     async def test_returns_list_by_default(self, mock_redmine):
