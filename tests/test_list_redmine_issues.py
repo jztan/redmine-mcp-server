@@ -545,6 +545,7 @@ class TestListMyRedmineIssuesDelegation:
     async def test_no_client_returns_error(self):
         """Test backward-compatible error when client is None."""
         with patch("redmine_mcp_server.redmine_handler.redmine", None), \
+             patch("redmine_mcp_server.redmine_handler._legacy_client", None), \
              patch("redmine_mcp_server.redmine_handler.REDMINE_API_KEY", ""), \
              patch("redmine_mcp_server.redmine_handler.REDMINE_USERNAME", ""):
             result = await list_my_redmine_issues()

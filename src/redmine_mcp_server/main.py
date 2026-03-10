@@ -32,7 +32,7 @@ from .oauth_middleware import RedmineOAuthMiddleware  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-REDMINE_URL = os.environ["REDMINE_URL"].rstrip("/")
+REDMINE_URL = os.environ.get("REDMINE_URL", "").rstrip("/")
 REDMINE_MCP_BASE_URL = os.environ.get(
     "REDMINE_MCP_BASE_URL", "http://localhost:3040"
 ).rstrip("/")
@@ -47,17 +47,11 @@ def get_version() -> str:
         return "dev"
 
 
-# Export the Starlette/FastAPI app for testing and external use
-app = mcp.streamable_http_app()
-
-# Register OAuth2 middleware only when auth mode is oauth
-if REDMINE_AUTH_MODE == "oauth":
-    app.add_middleware(RedmineOAuthMiddleware)
+# --- OAuth2 route handlers (registered conditionally) ---
 
 
-# RFC 8707 — Protected Resource Metadata
-@app.route("/.well-known/oauth-protected-resource", methods=["GET"])
 async def oauth_protected_resource(request: Request):
+    """RFC 8707 — Protected Resource Metadata."""
     return JSONResponse(
         {
             "resource": f"{REDMINE_MCP_BASE_URL}/mcp",
@@ -68,11 +62,12 @@ async def oauth_protected_resource(request: Request):
     )
 
 
-# RFC 8414 — Authorization Server Metadata
-# Redmine uses Doorkeeper but does not serve this discovery document itself.
-# We serve it manually, pointing to Redmine's real Doorkeeper endpoints.
-@app.route("/.well-known/oauth-authorization-server", methods=["GET"])
 async def oauth_authorization_server(request: Request):
+    """RFC 8414 — Authorization Server Metadata.
+
+    Redmine uses Doorkeeper but does not serve this discovery document itself.
+    We serve it manually, pointing to Redmine's real Doorkeeper endpoints.
+    """
     return JSONResponse(
         {
             "issuer": REDMINE_MCP_BASE_URL,
@@ -80,7 +75,10 @@ async def oauth_authorization_server(request: Request):
             "token_endpoint": f"{REDMINE_URL}/oauth/token",
             "revocation_endpoint": f"{REDMINE_URL}/oauth/revoke",
             "response_types_supported": ["code"],
-            "grant_types_supported": ["authorization_code", "refresh_token"],
+            "grant_types_supported": [
+                "authorization_code",
+                "refresh_token",
+            ],
             "code_challenge_methods_supported": ["S256"],
             "token_endpoint_auth_methods_supported": [
                 "client_secret_post",
@@ -90,11 +88,10 @@ async def oauth_authorization_server(request: Request):
     )
 
 
-# RFC 7009 — OAuth 2.0 Token Revocation
-# Proxies token revocation to Redmine's Doorkeeper /oauth/revoke endpoint.
-@app.route("/revoke", methods=["POST"])
 async def revoke_token(request: Request):
-    """Revoke an OAuth2 access or refresh token.
+    """RFC 7009 — Revoke an OAuth2 access or refresh token.
+
+    Proxies token revocation to Redmine's Doorkeeper /oauth/revoke endpoint.
 
     Accepts token via:
     - Authorization header: Bearer <token>
@@ -158,11 +155,35 @@ async def revoke_token(request: Request):
     if response.status_code in (200, 204):
         return JSONResponse(status_code=200, content={"success": True})
 
-    # If Redmine returns an error, log it but still return success per RFC 7009
+    # If Redmine returns an error, log but still return success per RFC 7009
     logger.warning(
-        f"Redmine revocation returned {response.status_code}: {response.text}"
+        f"Redmine revocation returned {response.status_code}: " f"{response.text}"
     )
     return JSONResponse(status_code=200, content={"success": True})
+
+
+def register_oauth_routes(target_app):
+    """Register OAuth2 discovery and revocation routes on a Starlette app."""
+    target_app.add_route(
+        "/.well-known/oauth-protected-resource",
+        oauth_protected_resource,
+        methods=["GET"],
+    )
+    target_app.add_route(
+        "/.well-known/oauth-authorization-server",
+        oauth_authorization_server,
+        methods=["GET"],
+    )
+    target_app.add_route("/revoke", revoke_token, methods=["POST"])
+
+
+# Export the Starlette/FastAPI app for testing and external use
+app = mcp.streamable_http_app()
+
+# Register OAuth2 middleware and endpoints only when auth mode is oauth
+if REDMINE_AUTH_MODE == "oauth":
+    app.add_middleware(RedmineOAuthMiddleware)
+    register_oauth_routes(app)
 
 
 def main():

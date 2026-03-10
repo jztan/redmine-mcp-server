@@ -341,6 +341,7 @@ class TestRedmineHandler:
         assert "Connection error" in result[0]["error"]
 
     @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler._legacy_client", None)
     @patch("redmine_mcp_server.redmine_handler.REDMINE_API_KEY", "")
     @patch("redmine_mcp_server.redmine_handler.REDMINE_USERNAME", "")
     @patch("redmine_mcp_server.redmine_handler.redmine", None)
@@ -353,7 +354,6 @@ class TestRedmineHandler:
         assert result is not None
         assert isinstance(result, list)
         assert len(result) == 1
-        assert "error" in result[0]
         assert "error" in result[0]
 
     @pytest.mark.asyncio
@@ -802,6 +802,9 @@ class TestRedmineHandler:
         assert result["error"] == "Issue 999 not found."
 
     @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler._legacy_client", None)
+    @patch("redmine_mcp_server.redmine_handler.REDMINE_API_KEY", "")
+    @patch("redmine_mcp_server.redmine_handler.REDMINE_USERNAME", "")
     @patch("redmine_mcp_server.redmine_handler.redmine", None)
     async def test_update_redmine_issue_no_client(self):
         """Test update when client not initialized."""
@@ -1113,6 +1116,7 @@ class TestRedmineHandler:
         assert "error" in result[0]
 
     @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler._legacy_client", None)
     @patch("redmine_mcp_server.redmine_handler.REDMINE_API_KEY", "")
     @patch("redmine_mcp_server.redmine_handler.REDMINE_USERNAME", "")
     @patch("redmine_mcp_server.redmine_handler.redmine", None)
@@ -1414,6 +1418,7 @@ class TestRedmineHandler:
         assert "boom" in result["error"]
 
     @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler._legacy_client", None)
     @patch("redmine_mcp_server.redmine_handler.REDMINE_API_KEY", "")
     @patch("redmine_mcp_server.redmine_handler.REDMINE_USERNAME", "")
     @patch("redmine_mcp_server.redmine_handler.redmine", None)
