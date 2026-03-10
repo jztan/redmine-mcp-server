@@ -12,13 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **New MCP Tool: `list_project_members`** - List members and groups of a Redmine project
   - Returns user/group info along with assigned roles
   - Supports both numeric project IDs and string identifiers
-  - Includes comprehensive unit tests
 - **New MCP Tools: Time Tracking** - Full time entry management
   - `list_time_entries` - List time entries with filtering by project, issue, user, and date range
   - `create_time_entry` - Log time against projects or issues with activity and date support
   - `update_time_entry` - Modify existing time entries (hours, comments, activity, date)
-  - All tools include pagination support and comprehensive unit tests
-- **Documentation** - Updated tool-reference.md with new tools and Time Tracking section
+  - All tools support pagination and use `_get_redmine_client()` for OAuth compatibility
+- **50 new unit tests** for project members and time tracking tools (`test_project_members.py`, `test_time_entries.py`)
 - **OAuth2 per-user authentication mode** (`REDMINE_AUTH_MODE=oauth`)
   - New `oauth_middleware.py`: Starlette middleware that validates `Authorization: Bearer <token>` headers against Redmine's `/users/current.json` before forwarding MCP requests
   - Per-request token isolation via `contextvars.ContextVar` — safe under async concurrent load
@@ -43,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Contributors
 - @mihajlovicjj — OAuth2 per-user authentication, `/revoke` endpoint, discovery endpoints, and 33 new tests ([#71](https://github.com/jztan/redmine-mcp-server/pull/71))
+- @mihajlovicjj — Project members and time tracking tools with 50 new tests ([#72](https://github.com/jztan/redmine-mcp-server/pull/72))
 
 ## [0.12.1] - 2026-03-05
 
