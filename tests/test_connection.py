@@ -24,6 +24,7 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
 class TestRedmineConnection:
     """Test class for Redmine connection functionality."""
 
+    @pytest.mark.integration
     def test_environment_variables_exist(self):
         """Test that required environment variables are set."""
         redmine_url = os.environ.get("REDMINE_URL", "")

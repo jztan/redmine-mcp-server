@@ -77,20 +77,25 @@ class TestMainFunction:
 
         assert callable(main)
 
+    @patch("redmine_mcp_server.main.uvicorn")
     @patch("redmine_mcp_server.main.mcp")
     @patch("redmine_mcp_server.main.logger")
-    def test_main_configures_and_runs_server(self, mock_logger, mock_mcp):
+    def test_main_configures_and_runs_server(self, mock_logger, mock_mcp, mock_uvicorn):
         """Test that main() configures settings and runs the server."""
-        from redmine_mcp_server.main import main
+        from redmine_mcp_server.main import main, app
 
-        # Call main - mcp.run is mocked so it won't block
+        # Call main - uvicorn.run is mocked so it won't block
         main()
 
-        # Verify settings were configured
+        # Verify stateless mode was enabled
         assert mock_mcp.settings.stateless_http is True
 
-        # Verify server was started with correct transport
-        mock_mcp.run.assert_called_once_with(transport="streamable-http")
+        # Verify server was started with our app (so custom routes are served)
+        mock_uvicorn.run.assert_called_once()
+        call_args = mock_uvicorn.run.call_args
+        assert call_args[0][0] is app
+        assert isinstance(call_args[1]["host"], str)
+        assert isinstance(call_args[1]["port"], int)
 
         # Verify version was logged
         assert mock_logger.info.called
