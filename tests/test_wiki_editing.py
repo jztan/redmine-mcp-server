@@ -68,7 +68,7 @@ class TestCreateRedmineWikiPage:
         )
 
         assert result["title"] == "New Page"
-        assert result["text"] == "# New Page\n\nContent here."
+        assert "# New Page" in result["text"]
         assert result["version"] == 1
         assert result["author"]["id"] == 123
         mock_redmine.wiki_page.create.assert_called_once()

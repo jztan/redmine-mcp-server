@@ -2,7 +2,7 @@
 
 ## 🎯 Project Status
 
-**Current Version:** v0.12.0 (PyPI Published)
+**Current Version:** v1.0.0 (release branch ready)
 **MCP Registry Status:** Published
 
 ### ✅ Completed Features
@@ -26,8 +26,8 @@
 - [x] List accessible projects
 - [x] Get issue details with comments and attachments
 - [x] Create and update issues with field resolution
-- [x] List issues assigned to current user
-- [x] Server-side pagination with token management (v0.4.0)
+- [x] List issues with flexible filtering (project, status, tracker, assignee, priority) (v0.11.0)
+  - Selective field returns via `fields` parameter (~96% token reduction)
 - [x] Search issues by text query with pagination and field selection (v0.7.0)
 - [x] Global search across all Redmine resources (v0.9.0)
   - Search issues, wiki pages, and other resources with `search_entire_redmine()`
@@ -39,9 +39,7 @@
   - Attachment metadata support
 - [x] Wiki page editing — create, update, delete (v0.10.0)
 - [x] Centralized error handling with 12 error types and actionable messages (v0.10.0)
-- [x] General-purpose issue listing with flexible filtering (v0.11.0)
-  - `list_redmine_issues()` with project, status, tracker, assignee, priority filters
-  - Selective field returns via `fields` parameter (~96% token reduction)
+- [x] Server-side pagination with token management (v0.4.0)
 - [x] Project versions/milestones listing with status filtering (v0.12.0)
   - `list_redmine_versions()` with open/locked/closed filtering
 - [x] Required custom field autofill with auto-retry on validation errors (v0.12.0)
@@ -50,6 +48,15 @@
 - [x] Download attachments with HTTP URLs
 - [x] Smart project status summarization with activity analysis
 - [x] Automatic status name to ID resolution
+- [x] Project members listing with roles (v1.0.0)
+  - `list_project_members()` returns user/group info with assigned roles
+- [x] Time tracking — full CRUD (v1.0.0)
+  - `list_time_entries()` with filtering by project, issue, user, date range
+  - `create_time_entry()` — log time against projects or issues
+  - `update_time_entry()` — modify existing time entries
+  - `list_time_entry_activities()` — discover valid activity IDs
+- [x] Journal pagination on `get_redmine_issue` (`journal_limit`/`journal_offset`) (v1.0.0)
+- [x] Include flags on `get_redmine_issue` (watchers, relations, children) (v1.0.0)
 
 #### Security & Performance
 - [x] Path traversal vulnerability fix (CVE, CVSS 7.5)
@@ -65,6 +72,21 @@
   - Mutual TLS/mTLS (`REDMINE_SSL_CLIENT_CERT`)
   - SSL verification control (`REDMINE_SSL_VERIFY`)
   - Dynamic test certificate generation (removed private keys from repo)
+- [x] Prompt injection protection with `<insecure-content>` boundary tags (v1.0.0)
+  - `wrap_insecure_content()` wraps user-controlled content in unique boundary tags
+  - Applied to descriptions, journal notes, wiki text, excerpts, version descriptions
+- [x] Read-only mode via `REDMINE_MCP_READ_ONLY` env var (v1.0.0)
+  - Guards all write tools; read tools and local operations unaffected
+
+#### Authentication
+- [x] API key authentication
+- [x] Username/password authentication
+- [x] OAuth2 per-user authentication mode (v1.0.0)
+  - `REDMINE_AUTH_MODE=oauth` with Bearer token validation
+  - OAuth discovery endpoints (RFC 8707, RFC 8414)
+  - Token revocation endpoint (RFC 7009)
+  - Per-request client isolation via ContextVar
+  - Requires Redmine 6.1+ (Doorkeeper)
 
 #### Documentation & Quality
 - [x] Complete API documentation with examples
@@ -76,10 +98,11 @@
   - `docs/tool-reference.md` - Complete tool documentation
   - `docs/troubleshooting.md` - Comprehensive troubleshooting guide
   - `docs/contributing.md` - Developer guide
+  - `docs/oauth-setup.md` - OAuth2 multi-tenant setup guide (v1.0.0)
 - [x] Test coverage tracking via Codecov integration (v0.8.1)
 - [x] GitHub issue templates (bug report, feature request) (v0.8.1)
 - [x] Dependabot integration for automated dependency updates (v0.8.1)
-- [x] 457 tests with 98% coverage (v0.12.0)
+- [x] 689 tests passing (v1.0.0)
 
 #### Python Compatibility
 - [x] **Support Python 3.10+** (v0.5.0)
@@ -87,17 +110,20 @@
   - `requires-python = ">=3.10"` in pyproject.toml
   - CI tests multiple Python versions
 
-### 📋 Planned Features
+### 📋 v1.0.0 Release Checklist
 
-#### v1.0.0: Production/Stable
-- [ ] Remove deprecated `list_my_redmine_issues` (breaking change)
-- [ ] Prompt injection protection with `<insecure-content>` boundary tags
-- [ ] Read-only mode via `REDMINE_MCP_READ_ONLY` env var
-- [ ] Journal pagination on `get_redmine_issue` (`journal_limit`/`journal_offset`)
-- [ ] Include flags on `get_redmine_issue` (watchers, relations, children)
+- [x] Remove deprecated `list_my_redmine_issues` (breaking change)
+- [x] Prompt injection protection with `<insecure-content>` boundary tags
+- [x] Read-only mode via `REDMINE_MCP_READ_ONLY` env var
+- [x] Journal pagination on `get_redmine_issue`
+- [x] Include flags on `get_redmine_issue` (watchers, relations, children)
+- [x] OAuth2 per-user authentication
+- [x] Project members tool
+- [x] Time tracking tools (list, create, update, list activities)
+- [x] Rebase release/1.0.0 onto develop with all features
 - [ ] Version bump to 1.0.0, Development Status → Production/Stable
 
-#### Future (Only if Users Request)
+### 🔮 Future (Only if Users Request)
 - [ ] YAML response format option
 - [ ] User instructions file (`REDMINE_INSTRUCTIONS`)
 - [ ] Bulk operations
@@ -110,4 +136,4 @@
 
 ---
 
-**Last Updated:** 2026-02-20 (v0.12.0)
+**Last Updated:** 2026-03-11 (v1.0.0 release branch ready)

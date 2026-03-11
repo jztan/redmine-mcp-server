@@ -539,6 +539,17 @@ def _is_true_env(var_name: str, default: str = "false") -> bool:
     return os.getenv(var_name, default).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _is_read_only_mode() -> bool:
+    """Check if the server is in read-only mode."""
+    return _is_true_env("REDMINE_MCP_READ_ONLY", "false")
+
+
+_READ_ONLY_ERROR = {
+    "error": "This server is in read-only mode (REDMINE_MCP_READ_ONLY=true). "
+    "Write operations are disabled."
+}
+
+
 def _normalize_field_label(label: str) -> str:
     """Normalize a field label for case/spacing-insensitive comparisons."""
     return re.sub(r"[^a-z0-9]+", "", label.lower())
@@ -677,6 +688,28 @@ def _is_missing_custom_field_value(value: Any) -> bool:
     if isinstance(value, (list, tuple, set, dict)):
         return len(value) == 0
     return False
+
+
+def wrap_insecure_content(content: Any) -> Any:
+    """Wrap user-controlled content in boundary tags to prevent prompt injection.
+
+    Wraps non-empty string content in unique boundary tags so that LLM
+    consumers can distinguish trusted tool output from untrusted user data.
+
+    Args:
+        content: The content to wrap. Non-string or empty values are
+                 returned unchanged.
+
+    Returns:
+        Wrapped string with boundary tags, or original value if not a
+        non-empty string.
+    """
+    if not isinstance(content, str) or not content:
+        return content
+    boundary = uuid.uuid4().hex[:16]
+    return (
+        f"<insecure-content-{boundary}>\n{content}\n" f"</insecure-content-{boundary}>"
+    )
 
 
 def _is_allowed_custom_field_value(value: Any, possible_values: List[str]) -> bool:
@@ -843,7 +876,7 @@ def _issue_to_dict(issue: Any, include_custom_fields: bool = False) -> Dict[str,
     issue_dict = {
         "id": getattr(issue, "id", None),
         "subject": getattr(issue, "subject", ""),
-        "description": getattr(issue, "description", ""),
+        "description": wrap_insecure_content(getattr(issue, "description", "")),
         "project": (
             {"id": project.id, "name": project.name} if project is not None else None
         ),
@@ -1079,15 +1112,17 @@ def _resource_to_dict(resource: Any, resource_type: str) -> Dict[str, Any]:
 
     # Extract description/excerpt (first 200 chars)
     if hasattr(resource, "description") and resource.description:
-        base_dict["excerpt"] = (
+        raw_excerpt = (
             resource.description[:200] + "..."
             if len(resource.description) > 200
             else resource.description
         )
+        base_dict["excerpt"] = wrap_insecure_content(raw_excerpt)
     elif hasattr(resource, "text") and resource.text:
-        base_dict["excerpt"] = (
+        raw_excerpt = (
             resource.text[:200] + "..." if len(resource.text) > 200 else resource.text
         )
+        base_dict["excerpt"] = wrap_insecure_content(raw_excerpt)
     else:
         base_dict["excerpt"] = None
 
@@ -1145,7 +1180,7 @@ def _issue_to_dict_selective(
     all_fields = {
         "id": getattr(issue, "id", None),
         "subject": getattr(issue, "subject", ""),
-        "description": getattr(issue, "description", ""),
+        "description": wrap_insecure_content(getattr(issue, "description", "")),
         "project": (
             {"id": project.id, "name": project.name} if project is not None else None
         ),
@@ -1210,7 +1245,7 @@ def _journals_to_list(issue: Any) -> List[Dict[str, Any]]:
                     if user is not None
                     else None
                 ),
-                "notes": notes,
+                "notes": wrap_insecure_content(notes),
                 "created_on": (
                     journal.created_on.isoformat()
                     if getattr(journal, "created_on", None) is not None
@@ -1266,7 +1301,7 @@ def _version_to_dict(version: Any) -> Dict[str, Any]:
     return {
         "id": getattr(version, "id", None),
         "name": getattr(version, "name", ""),
-        "description": getattr(version, "description", ""),
+        "description": wrap_insecure_content(getattr(version, "description", "")),
         "status": getattr(version, "status", ""),
         "due_date": (
             str(version.due_date)
@@ -1367,6 +1402,11 @@ async def get_redmine_issue(
     include_journals: bool = True,
     include_attachments: bool = True,
     include_custom_fields: bool = True,
+    journal_limit: Optional[int] = None,
+    journal_offset: int = 0,
+    include_watchers: bool = False,
+    include_relations: bool = False,
+    include_children: bool = False,
 ) -> Dict[str, Any]:
     """Retrieve a specific Redmine issue by ID.
 
@@ -1378,6 +1418,11 @@ async def get_redmine_issue(
             result. Defaults to ``True``.
         include_custom_fields: Whether to include custom fields in the
             result. Defaults to ``True``.
+        journal_limit: Maximum number of journals to return. When set,
+            enables journal pagination and adds ``journal_pagination``
+            metadata to the response.
+        journal_offset: Number of journals to skip (used with
+            ``journal_limit``). Defaults to ``0``.
 
     Returns:
         A dictionary containing issue details. If ``include_journals`` is ``True``
@@ -1396,6 +1441,12 @@ async def get_redmine_issue(
             includes.append("journals")
         if include_attachments:
             includes.append("attachments")
+        if include_watchers:
+            includes.append("watchers")
+        if include_relations:
+            includes.append("relations")
+        if include_children:
+            includes.append("children")
 
         if includes:
             issue = _get_redmine_client().issue.get(
@@ -1406,9 +1457,52 @@ async def get_redmine_issue(
 
         result = _issue_to_dict(issue, include_custom_fields=include_custom_fields)
         if include_journals:
-            result["journals"] = _journals_to_list(issue)
+            all_journals = _journals_to_list(issue)
+            if journal_limit is not None:
+                total = len(all_journals)
+                offset = journal_offset
+                paginated = all_journals[offset : offset + journal_limit]
+                result["journals"] = paginated
+                result["journal_pagination"] = {
+                    "total": total,
+                    "offset": offset,
+                    "limit": journal_limit,
+                    "count": len(paginated),
+                    "has_more": (offset + journal_limit) < total,
+                }
+            else:
+                result["journals"] = all_journals
         if include_attachments:
             result["attachments"] = _attachments_to_list(issue)
+
+        if include_watchers:
+            raw = getattr(issue, "watchers", None) or []
+            result["watchers"] = [{"id": w.id, "name": w.name} for w in raw]
+        if include_relations:
+            raw = getattr(issue, "relations", None) or []
+            result["relations"] = [
+                {
+                    "id": r.id,
+                    "issue_id": r.issue_id,
+                    "issue_to_id": r.issue_to_id,
+                    "relation_type": r.relation_type,
+                }
+                for r in raw
+            ]
+        if include_children:
+            raw = getattr(issue, "children", None) or []
+            result["children"] = [
+                {
+                    "id": c.id,
+                    "subject": getattr(c, "subject", ""),
+                    "tracker": (
+                        {"id": c.tracker.id, "name": c.tracker.name}
+                        if getattr(c, "tracker", None)
+                        else None
+                    ),
+                }
+                for c in raw
+            ]
 
         return result
     except Exception as e:
@@ -1758,36 +1852,6 @@ async def list_redmine_issues(
 
 
 @mcp.tool()
-async def list_my_redmine_issues(
-    **filters: Any,
-) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
-    """List issues assigned to the authenticated user with pagination support.
-
-    Convenience wrapper around list_redmine_issues that automatically
-    filters by assigned_to_id='me'. Supports all the same filters
-    and pagination options.
-
-    .. deprecated::
-        Use ``list_redmine_issues(assigned_to_id='me')`` instead.
-
-    Args:
-        **filters: Same keyword arguments as list_redmine_issues.
-            See list_redmine_issues for full documentation.
-
-    Returns:
-        List[Dict] (default) or Dict with 'issues' and 'pagination' keys.
-    """
-    # Handle MCP interface wrapping parameters in 'filters' key
-    if "filters" in filters and isinstance(filters["filters"], dict):
-        actual_filters = filters["filters"]
-    else:
-        actual_filters = filters
-
-    actual_filters["assigned_to_id"] = "me"
-    return await list_redmine_issues(**actual_filters)
-
-
-@mcp.tool()
 async def search_redmine_issues(
     query: str, **options: Any
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
@@ -1840,7 +1904,7 @@ async def search_redmine_issues(
 
         Search API Limitations: The Search API supports text search with
         scope and open_issues filters only. For advanced filtering by
-        project_id, status_id, priority_id, etc., use list_my_redmine_issues()
+        project_id, status_id, priority_id, etc., use list_redmine_issues()
         instead, which uses the Issues API with full filter support.
 
     Performance:
@@ -1989,6 +2053,9 @@ async def create_redmine_issue(
       ``REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true``.
     """
 
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
     try:
         issue_fields = _parse_create_issue_fields(fields)
     except ValueError as e:
@@ -2070,6 +2137,9 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
     When a matching project custom field is found, it is translated into
     ``custom_fields`` entries for Redmine update payloads.
     """
+
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
 
     update_fields = dict(fields)
 
@@ -2643,7 +2713,7 @@ def _wiki_page_to_dict(
     """
     result: Dict[str, Any] = {
         "title": wiki_page.title,
-        "text": wiki_page.text,
+        "text": wrap_insecure_content(wiki_page.text),
         "version": wiki_page.version,
     }
 
@@ -2763,6 +2833,9 @@ async def create_redmine_wiki_page(
         Dictionary containing created wiki page metadata, or error dict on failure
     """
 
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
     try:
         await _ensure_cleanup_started()
 
@@ -2803,6 +2876,9 @@ async def update_redmine_wiki_page(
     Returns:
         Dictionary containing updated wiki page metadata, or error dict on failure
     """
+
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
 
     try:
         await _ensure_cleanup_started()
@@ -2845,6 +2921,9 @@ async def delete_redmine_wiki_page(
     Returns:
         Dictionary with success status, or error dict on failure
     """
+
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
 
     try:
         await _ensure_cleanup_started()

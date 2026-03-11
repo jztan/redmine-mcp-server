@@ -145,6 +145,36 @@ When deploying with Docker, follow these additional practices:
    - Use reverse proxy (nginx, traefik) for SSL termination
    - Restrict container network access
 
+### Read-Only Mode
+
+Block all write operations by setting the `REDMINE_MCP_READ_ONLY` environment variable:
+
+```bash
+# In .env file
+REDMINE_MCP_READ_ONLY=true
+```
+
+When enabled, the following tools return an error instead of executing:
+- `create_redmine_issue`
+- `update_redmine_issue`
+- `create_redmine_wiki_page`
+- `update_redmine_wiki_page`
+- `delete_redmine_wiki_page`
+
+All read tools (`get_redmine_issue`, `list_redmine_issues`, `list_redmine_projects`, etc.) and local operations (`cleanup_attachment_files`) continue to work normally.
+
+### Prompt Injection Protection
+
+All user-controlled content returned from Redmine (issue descriptions, journal notes, wiki page text, search excerpts, version descriptions) is automatically wrapped in unique boundary tags:
+
+```
+<insecure-content-a1b2c3d4e5f67890>
+User-controlled content here...
+</insecure-content-a1b2c3d4e5f67890>
+```
+
+This allows LLM consumers to distinguish trusted tool output from untrusted user data, preventing prompt injection attacks via Redmine content. Empty strings and non-string values are returned unchanged.
+
 ### Additional Resources
 
 - [SSL Certificate Configuration](../README.md#ssl-certificate-configuration) - Detailed configuration examples
@@ -336,6 +366,11 @@ Retrieve detailed information about a specific Redmine issue.
 - `include_journals` (boolean, optional): Include journals (comments) in result. Default: `true`
 - `include_attachments` (boolean, optional): Include attachments metadata. Default: `true`
 - `include_custom_fields` (boolean, optional): Include custom fields in result. Default: `true`
+- `journal_limit` (integer, optional): Maximum number of journals to return. When set, enables journal pagination and adds `journal_pagination` metadata. Default: `null` (all journals)
+- `journal_offset` (integer, optional): Number of journals to skip (used with `journal_limit`). Default: `0`
+- `include_watchers` (boolean, optional): Include watcher list. Default: `false`
+- `include_relations` (boolean, optional): Include issue relations. Default: `false`
+- `include_children` (boolean, optional): Include child issues. Default: `false`
 
 **Returns:** Issue dictionary with details, journals, and attachments
 
@@ -344,7 +379,7 @@ Retrieve detailed information about a specific Redmine issue.
 {
   "id": 123,
   "subject": "Bug in login form",
-  "description": "Users cannot login...",
+  "description": "<insecure-content-...>\nUsers cannot login...\n</insecure-content-...>",
   "status": {"id": 1, "name": "New"},
   "priority": {"id": 2, "name": "Normal"},
   "custom_fields": [{"id": 6, "name": "Size", "value": "S"}],
@@ -352,6 +387,45 @@ Retrieve detailed information about a specific Redmine issue.
   "attachments": [...]
 }
 ```
+
+**Journal pagination:**
+```python
+get_redmine_issue(123, journal_limit=5, journal_offset=10)
+# Returns:
+# {
+#   ...
+#   "journals": [...],  # 5 journals starting from position 10
+#   "journal_pagination": {
+#     "total": 42,
+#     "offset": 10,
+#     "limit": 5,
+#     "count": 5,
+#     "has_more": true
+#   }
+# }
+```
+
+**Include watchers, relations, and children:**
+```python
+get_redmine_issue(
+    123,
+    include_watchers=True,
+    include_relations=True,
+    include_children=True
+)
+# Returns:
+# {
+#   ...
+#   "watchers": [{"id": 10, "name": "Alice"}, {"id": 11, "name": "Bob"}],
+#   "relations": [{"id": 5, "issue_id": 123, "issue_to_id": 456, "relation_type": "relates"}],
+#   "children": [{"id": 200, "subject": "Sub-task", "tracker": {"id": 1, "name": "Bug"}}]
+# }
+```
+
+**Notes:**
+- User-controlled content (`description`, journal `notes`) is wrapped in `<insecure-content-{boundary}>` boundary tags to prevent prompt injection
+- Journal pagination metadata is only included when `journal_limit` is set
+- Watchers, relations, and children default to `false` for backward compatibility
 
 ---
 
@@ -423,26 +497,6 @@ list_redmine_issues(
     fields=["id", "subject", "status"]
 )
 # Returns: [{"id": 1, "subject": "Bug fix", "status": {...}}, ...]
-```
-
----
-
-### `list_my_redmine_issues`
-
-> **Deprecated:** This tool will be removed in a future release. Use `list_redmine_issues(assigned_to_id='me')` instead.
-
-Convenience wrapper around `list_redmine_issues` that automatically filters by `assigned_to_id='me'`. Supports all the same filters and pagination options.
-
-**Parameters:**
-- Same as `list_redmine_issues` (see above)
-
-**Returns:** List of issue dictionaries assigned to current user, or structured response with pagination metadata
-
-**Example:**
-```python
-# These are equivalent:
-list_my_redmine_issues(project_id=1, limit=10)
-list_redmine_issues(project_id=1, assigned_to_id="me", limit=10)
 ```
 
 ---
@@ -552,7 +606,7 @@ search_redmine_issues(
 
 ### `create_redmine_issue`
 
-Creates a new issue in the specified project.
+Creates a new issue in the specified project. Blocked when `REDMINE_MCP_READ_ONLY=true`.
 
 **Parameters:**
 - `project_id` (integer, required): Target project ID
@@ -584,7 +638,7 @@ create_redmine_issue(
 
 ### `update_redmine_issue`
 
-Updates an existing issue with the provided fields.
+Updates an existing issue with the provided fields. Blocked when `REDMINE_MCP_READ_ONLY=true`.
 
 **Parameters:**
 - `issue_id` (integer, required): ID of the issue to update
@@ -922,7 +976,7 @@ get_redmine_wiki_page(
 
 ### `create_redmine_wiki_page`
 
-Create a new wiki page in a Redmine project.
+Create a new wiki page in a Redmine project. Blocked when `REDMINE_MCP_READ_ONLY=true`.
 
 **Parameters:**
 - `project_id` (string or integer, required): Project identifier (ID number or string identifier)
@@ -976,7 +1030,7 @@ create_redmine_wiki_page(
 
 ### `update_redmine_wiki_page`
 
-Update an existing wiki page in a Redmine project.
+Update an existing wiki page in a Redmine project. Blocked when `REDMINE_MCP_READ_ONLY=true`.
 
 **Parameters:**
 - `project_id` (string or integer, required): Project identifier (ID number or string identifier)
@@ -1030,7 +1084,7 @@ update_redmine_wiki_page(
 
 ### `delete_redmine_wiki_page`
 
-Delete a wiki page from a Redmine project.
+Delete a wiki page from a Redmine project. Blocked when `REDMINE_MCP_READ_ONLY=true`.
 
 **Parameters:**
 - `project_id` (string or integer, required): Project identifier (ID number or string identifier)

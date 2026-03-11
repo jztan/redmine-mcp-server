@@ -32,6 +32,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`REDMINE_MCP_BASE_URL` environment variable** — public base URL of this server, used in OAuth discovery documents (only required in oauth mode)
 - **`_get_redmine_client()` factory function** in `redmine_handler.py` — creates a per-request Redmine client using OAuth token → API key → username/password priority; replaces the module-level shared client
 - **33 new unit tests** for OAuth middleware, discovery endpoints, token revocation, and auth selection logic (`tests/test_oauth_middleware.py`)
+- **Prompt Injection Protection** - User-controlled content from Redmine is now wrapped in unique boundary tags to prevent prompt injection attacks against LLM consumers
+  - New `wrap_insecure_content()` function wraps non-empty strings in `<insecure-content-{boundary}>` tags with a random 16-character hex boundary per call
+  - Applied to 6 helper functions: `_issue_to_dict` (description), `_issue_to_dict_selective` (description), `_journals_to_list` (notes), `_resource_to_dict` (excerpt), `_wiki_page_to_dict` (text), `_version_to_dict` (description)
+  - 22 new tests in `test_prompt_injection.py`
+- **Read-Only Mode** - Block all write operations via `REDMINE_MCP_READ_ONLY=true` environment variable
+  - Guards 5 write tools: `create_redmine_issue`, `update_redmine_issue`, `create_redmine_wiki_page`, `update_redmine_wiki_page`, `delete_redmine_wiki_page`
+  - Read tools (`get_redmine_issue`, `list_redmine_projects`, `list_redmine_issues`, etc.) remain fully functional
+  - Local operations (`cleanup_attachment_files`) are not restricted
+  - 15 new tests in `test_read_only_mode.py`
+  - Updated `.env.example` and `.env.docker` with `REDMINE_MCP_READ_ONLY` variable
+- **Journal Pagination on `get_redmine_issue`** - New `journal_limit` and `journal_offset` parameters for paginating through issue journals
+  - When `journal_limit` is set, response includes `journal_pagination` metadata (`total`, `offset`, `limit`, `count`, `has_more`)
+  - Default behavior unchanged (returns all journals without pagination metadata)
+  - 9 new tests covering limit, offset, combined pagination, edge cases, and backward compatibility
+- **Include Flags on `get_redmine_issue`** - Three new boolean parameters for fetching additional issue data
+  - `include_watchers` (default: `false`) - Returns watcher list with `id` and `name`
+  - `include_relations` (default: `false`) - Returns issue relations with `id`, `issue_id`, `issue_to_id`, `relation_type`
+  - `include_children` (default: `false`) - Returns child issues with `id`, `subject`, `tracker`
+  - All flags default to `false` for backward compatibility
+  - Include parameters are passed to the Redmine API for server-side inclusion
+  - 11 new tests covering all flags, combinations, missing attributes, and structure validation
+
+### Breaking
+- **Removed `list_my_redmine_issues`** - Deprecated since v0.11.0. Use `list_redmine_issues(assigned_to_id='me')` instead.
+  - All references in docstrings updated to point to `list_redmine_issues()`
 
 ### Fixed
 - **Custom routes (well-known endpoints) not served at runtime** — `mcp.run()` created a fresh internal app discarding route registrations; switched to `uvicorn.run(app, ...)` so the decorated app instance is always what serves requests
@@ -41,6 +66,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - `main()` now runs via `uvicorn.run(app, ...)` directly instead of `mcp.run(transport="streamable-http")` to ensure custom route registrations are preserved
+
+### Improved
+- **Code Quality** - Added `.flake8` config for Black compatibility (E203 ignore)
 
 ### Contributors
 - @mihajlovicjj — OAuth2 per-user authentication, `/revoke` endpoint, discovery endpoints, and 33 new tests ([#71](https://github.com/jztan/redmine-mcp-server/pull/71))

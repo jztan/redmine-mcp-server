@@ -76,7 +76,7 @@ class TestVersionToDict:
 
         assert result["id"] == 1
         assert result["name"] == "v1.0"
-        assert result["description"] == "First release"
+        assert "First release" in result["description"]
         assert result["status"] == "open"
         assert result["due_date"] == "2026-03-01"
         assert result["sharing"] == "none"
