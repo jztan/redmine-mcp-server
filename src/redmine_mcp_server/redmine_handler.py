@@ -319,7 +319,13 @@ async def health_check(request):
     # Initialize cleanup task on first health check (lazy initialization)
     await _ensure_cleanup_started()
 
-    return JSONResponse({"status": "ok", "service": "redmine_mcp_tools"})
+    return JSONResponse(
+        {
+            "status": "ok",
+            "service": "redmine_mcp_tools",
+            "auth_mode": REDMINE_AUTH_MODE,
+        }
+    )
 
 
 @mcp.custom_route("/files/{file_id}", methods=["GET"])
