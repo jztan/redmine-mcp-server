@@ -2601,9 +2601,7 @@ def _time_entry_to_dict(time_entry: Any) -> Dict[str, Any]:
             if project is not None
             else None
         ),
-        "issue": (
-            {"id": getattr(issue, "id", None)} if issue is not None else None
-        ),
+        "issue": ({"id": getattr(issue, "id", None)} if issue is not None else None),
         "activity": (
             {
                 "id": getattr(activity, "id", None),
