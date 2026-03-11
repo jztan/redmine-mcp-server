@@ -767,6 +767,27 @@ update_time_entry(
 
 ---
 
+### `list_time_entry_activities`
+
+List all available time entry activity types from Redmine.
+
+Use this tool to discover valid `activity_id` values before calling `create_time_entry` or `update_time_entry`.
+
+**Parameters:** None
+
+**Returns:** List of activity dictionaries
+
+**Example:**
+```json
+[
+  {"id": 4, "name": "Development", "active": true, "is_default": false},
+  {"id": 5, "name": "Design", "active": true, "is_default": false},
+  {"id": 6, "name": "Testing", "active": true, "is_default": false}
+]
+```
+
+---
+
 ## Search & Wiki
 
 ### `search_entire_redmine`

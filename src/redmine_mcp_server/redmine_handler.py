@@ -3118,6 +3118,39 @@ async def update_time_entry(
 
 
 @mcp.tool()
+async def list_time_entry_activities() -> List[Dict[str, Any]]:
+    """List available time entry activities from Redmine.
+
+    Returns all activity types that can be used when creating or updating
+    time entries (e.g., Development, Design, Testing).
+
+    Returns:
+        A list of activity dictionaries. On failure, a list containing
+        a single dictionary with an "error" key.
+
+    Examples:
+        >>> await list_time_entry_activities()
+        [{"id": 4, "name": "Development", "active": True, "is_default": False}, ...]
+    """
+    try:
+        activities = _get_redmine_client().enumeration.filter(
+            resource="time_entry_activities"
+        )
+        return [
+            {
+                "id": getattr(a, "id", None),
+                "name": getattr(a, "name", None),
+                "active": getattr(a, "active", None),
+                "is_default": getattr(a, "is_default", None),
+            }
+            for a in activities
+        ]
+
+    except Exception as e:
+        return [_handle_redmine_error(e, "listing time entry activities")]
+
+
+@mcp.tool()
 async def cleanup_attachment_files() -> Dict[str, Any]:
     """Clean up expired attachment files and return storage statistics.
 

@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `list_time_entries` - List time entries with filtering by project, issue, user, and date range
   - `create_time_entry` - Log time against projects or issues with activity and date support
   - `update_time_entry` - Modify existing time entries (hours, comments, activity, date)
+  - `list_time_entry_activities` - Discover available activity types (Development, Design, etc.) for time entry creation
   - All tools support pagination and use `_get_redmine_client()` for OAuth compatibility
 - **50 new unit tests** for project members and time tracking tools (`test_project_members.py`, `test_time_entries.py`)
 - **26 new integration tests** covering all 21 MCP tools with zero skips — includes project members (4), time entries (7), custom fields (3), search issues (3), summarize project (3), global search (4), and cleanup (2)

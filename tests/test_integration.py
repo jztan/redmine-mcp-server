@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from redmine_mcp_server.redmine_handler import (  # noqa: E402
     _get_redmine_client,
     REDMINE_URL,
+    list_time_entry_activities,
 )
 
 
@@ -1856,6 +1857,40 @@ class TestCleanupAttachmentFilesIntegration:
 
         storage = result["current_storage"]
         assert "total_files" in storage or "file_count" in storage
+
+
+class TestEnumerationsIntegration:
+    """Integration tests for enumeration/lookup tools."""
+
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_list_time_entry_activities(self):
+        redmine = _get_redmine_or_none()
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        result = await list_time_entry_activities()
+        assert isinstance(result, list)
+        assert len(result) > 0, "Should have at least one activity"
+
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_list_time_entry_activities_structure(self):
+        redmine = _get_redmine_or_none()
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        result = await list_time_entry_activities()
+        assert len(result) > 0
+        activity = result[0]
+        assert "id" in activity
+        assert "name" in activity
+        assert "active" in activity
+        assert "is_default" in activity
+        assert isinstance(activity["id"], int)
+        assert isinstance(activity["name"], str)
 
 
 if __name__ == "__main__":
