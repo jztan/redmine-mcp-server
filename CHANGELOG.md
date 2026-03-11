@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `update_time_entry` - Modify existing time entries (hours, comments, activity, date)
   - All tools support pagination and use `_get_redmine_client()` for OAuth compatibility
 - **50 new unit tests** for project members and time tracking tools (`test_project_members.py`, `test_time_entries.py`)
+- **26 new integration tests** covering all 21 MCP tools with zero skips — includes project members (4), time entries (7), custom fields (3), search issues (3), summarize project (3), global search (4), and cleanup (2)
 - **OAuth2 per-user authentication mode** (`REDMINE_AUTH_MODE=oauth`)
   - New `oauth_middleware.py`: Starlette middleware that validates `Authorization: Bearer <token>` headers against Redmine's `/users/current.json` before forwarding MCP requests
   - Per-request token isolation via `contextvars.ContextVar` — safe under async concurrent load

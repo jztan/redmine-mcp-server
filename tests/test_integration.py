@@ -42,6 +42,15 @@ def _integration_test_custom_fields():
     return {"custom_fields": [{"id": 2, "value": "Engineering"}]}
 
 
+def _get_activity_id(redmine):
+    """Return the first available time entry activity ID, or None."""
+    try:
+        activities = list(redmine.enumeration.filter(resource="time_entry_activities"))
+        return activities[0].id if activities else None
+    except Exception:
+        return None
+
+
 class TestRedmineIntegration:
     """Integration tests for Redmine connectivity."""
 
@@ -1332,28 +1341,48 @@ class TestTimeEntriesIntegration:
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
-        from redmine_mcp_server.redmine_handler import list_time_entries
+        from redmine_mcp_server.redmine_handler import (
+            create_time_entry,
+            list_time_entries,
+        )
 
-        result = await list_time_entries(limit=1)
+        # Ensure at least one time entry exists
+        projects = list(redmine.project.all())
+        assert projects, "No projects available"
+        activity_id = _get_activity_id(redmine)
+        assert activity_id is not None, "No time entry activities configured"
 
-        assert isinstance(result, list)
-        if not result:
-            pytest.skip("No time entries found for testing")
+        created = await create_time_entry(
+            hours=0.1,
+            project_id=projects[0].id,
+            activity_id=activity_id,
+            comments="Structure test entry",
+        )
+        assert "error" not in created, f"Failed to create: {created.get('error')}"
 
-        entry = result[0]
-        if "error" in entry:
-            if "denied" in entry["error"].lower():
-                pytest.skip(f"Time tracking not permitted: {entry['error']}")
-            pytest.fail(f"API error: {entry['error']}")
-        assert "id" in entry
-        assert "hours" in entry
-        assert "comments" in entry
-        assert "spent_on" in entry
-        assert "user" in entry
-        assert "project" in entry
-        assert "activity" in entry
-        assert isinstance(entry["id"], int)
-        assert isinstance(entry["hours"], (int, float))
+        try:
+            result = await list_time_entries(limit=1)
+
+            assert isinstance(result, list)
+            assert len(result) > 0, "Expected at least one time entry"
+
+            entry = result[0]
+            if "error" in entry:
+                pytest.fail(f"API error: {entry['error']}")
+            assert "id" in entry
+            assert "hours" in entry
+            assert "comments" in entry
+            assert "spent_on" in entry
+            assert "user" in entry
+            assert "project" in entry
+            assert "activity" in entry
+            assert isinstance(entry["id"], int)
+            assert isinstance(entry["hours"], (int, float))
+        finally:
+            try:
+                redmine.time_entry.delete(created["id"])
+            except Exception:
+                pass
 
     @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
     @pytest.mark.integration
@@ -1397,29 +1426,14 @@ class TestTimeEntriesIntegration:
             update_time_entry,
         )
 
-        import requests as req
-        from redmine_mcp_server.redmine_handler import REDMINE_URL
-
         # Pick the first available project
         projects = list(redmine.project.all())
-        if not projects:
-            pytest.skip("No projects available for testing")
+        assert projects, "No projects available for testing"
         project_id = projects[0].id
 
         # Find an activity_id (required by some Redmine configs)
-        api_key = os.getenv("REDMINE_API_KEY", "")
-        act_resp = req.get(
-            f"{REDMINE_URL}/enumerations/time_entry_activities.json",
-            headers={"X-Redmine-API-Key": api_key},
-        )
-        activities = (
-            act_resp.json().get("time_entry_activities", [])
-            if act_resp.status_code == 200
-            else []
-        )
-        if not activities:
-            pytest.skip("No time entry activities configured in Redmine")
-        activity_id = activities[0]["id"]
+        activity_id = _get_activity_id(redmine)
+        assert activity_id is not None, "No time entry activities configured"
 
         time_entry_id = None
         try:
@@ -1488,6 +1502,360 @@ class TestTimeEntriesIntegration:
         result = await create_time_entry(hours=-1.0, project_id=1)
         assert "error" in result
         assert "positive" in result["error"]
+
+
+class TestListProjectIssueCustomFieldsIntegration:
+    """Integration tests for list_project_issue_custom_fields tool."""
+
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_list_custom_fields_for_project(self):
+        """Test listing custom fields for an existing project."""
+        redmine = _get_redmine_or_none()
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        from redmine_mcp_server.redmine_handler import (
+            list_project_issue_custom_fields,
+        )
+
+        projects = list(redmine.project.all())
+        assert projects, "No projects available"
+
+        result = await list_project_issue_custom_fields(
+            project_id=projects[0].identifier
+        )
+
+        assert isinstance(result, list)
+        if result and "error" in result[0]:
+            pytest.fail(f"API error: {result[0]['error']}")
+
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_list_custom_fields_structure(self):
+        """Test that custom field dicts have expected keys."""
+        redmine = _get_redmine_or_none()
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        from redmine_mcp_server.redmine_handler import (
+            list_project_issue_custom_fields,
+        )
+
+        projects = list(redmine.project.all())
+        assert projects, "No projects available"
+
+        result = await list_project_issue_custom_fields(
+            project_id=projects[0].identifier
+        )
+
+        assert isinstance(result, list)
+        if not result:
+            # Project may have no custom fields; that's valid
+            return
+
+        if "error" in result[0]:
+            pytest.fail(f"API error: {result[0]['error']}")
+
+        field = result[0]
+        assert "id" in field
+        assert "name" in field
+
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_list_custom_fields_nonexistent_project(self):
+        """Test error handling for nonexistent project."""
+        redmine = _get_redmine_or_none()
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        from redmine_mcp_server.redmine_handler import (
+            list_project_issue_custom_fields,
+        )
+
+        result = await list_project_issue_custom_fields(
+            project_id="nonexistent-project-xyz-99999"
+        )
+
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert "error" in result[0]
+
+
+class TestSearchRedmineIssuesIntegration:
+    """Integration tests for search_redmine_issues tool."""
+
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_search_issues_basic(self):
+        """Test basic issue search."""
+        redmine = _get_redmine_or_none()
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        from redmine_mcp_server.redmine_handler import search_redmine_issues
+
+        result = await search_redmine_issues("test", limit=5)
+
+        assert isinstance(result, list)
+        for item in result:
+            if "error" in item:
+                pytest.fail(f"API error: {item['error']}")
+
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_search_issues_with_pagination(self):
+        """Test search with pagination info."""
+        redmine = _get_redmine_or_none()
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        from redmine_mcp_server.redmine_handler import search_redmine_issues
+
+        result = await search_redmine_issues(
+            "test", limit=2, include_pagination_info=True
+        )
+
+        assert isinstance(result, dict)
+        assert "issues" in result
+        assert "pagination" in result
+        assert isinstance(result["issues"], list)
+
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_search_issues_no_results(self):
+        """Test search with a query that returns no results."""
+        redmine = _get_redmine_or_none()
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        from redmine_mcp_server.redmine_handler import search_redmine_issues
+
+        result = await search_redmine_issues(
+            "zzz_nonexistent_xyzzy_999", limit=5
+        )
+
+        assert isinstance(result, list)
+        assert len(result) == 0
+
+
+class TestSummarizeProjectStatusIntegration:
+    """Integration tests for summarize_project_status tool."""
+
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_summarize_project_basic(self):
+        """Test basic project status summary."""
+        redmine = _get_redmine_or_none()
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        from redmine_mcp_server.redmine_handler import summarize_project_status
+
+        projects = list(redmine.project.all())
+        assert projects, "No projects available"
+
+        result = await summarize_project_status(
+            project_id=projects[0].id, days=30
+        )
+
+        assert isinstance(result, dict)
+        if "error" in result:
+            pytest.fail(f"API error: {result['error']}")
+
+        assert "project" in result
+        assert "analysis_period" in result
+
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_summarize_project_structure(self):
+        """Test that summary has expected structure."""
+        redmine = _get_redmine_or_none()
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        from redmine_mcp_server.redmine_handler import summarize_project_status
+
+        projects = list(redmine.project.all())
+        assert projects, "No projects available"
+
+        result = await summarize_project_status(
+            project_id=projects[0].id, days=7
+        )
+
+        assert isinstance(result, dict)
+        if "error" in result:
+            pytest.fail(f"API error: {result['error']}")
+
+        assert "project" in result
+        assert "analysis_period" in result
+        assert "project_totals" in result
+        assert "recent_activity" in result
+        assert "insights" in result
+        period = result["analysis_period"]
+        assert "days" in period
+        assert "start_date" in period
+        assert "end_date" in period
+        assert "total_issues" in result["project_totals"]
+
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_summarize_nonexistent_project(self):
+        """Test error handling for nonexistent project."""
+        redmine = _get_redmine_or_none()
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        from redmine_mcp_server.redmine_handler import summarize_project_status
+
+        result = await summarize_project_status(project_id=999999, days=30)
+
+        assert isinstance(result, dict)
+        assert "error" in result
+
+
+class TestSearchEntireRedmineIntegration:
+    """Integration tests for search_entire_redmine tool."""
+
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_search_entire_basic(self):
+        """Test basic cross-resource search."""
+        redmine = _get_redmine_or_none()
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        from redmine_mcp_server.redmine_handler import search_entire_redmine
+
+        result = await search_entire_redmine(query="test", limit=5)
+
+        assert isinstance(result, dict)
+        if "error" in result:
+            pytest.fail(f"API error: {result['error']}")
+
+        assert "results" in result
+        assert "total_count" in result
+
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_search_entire_filter_issues(self):
+        """Test searching only issues."""
+        redmine = _get_redmine_or_none()
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        from redmine_mcp_server.redmine_handler import search_entire_redmine
+
+        result = await search_entire_redmine(
+            query="test", resources=["issues"], limit=5
+        )
+
+        assert isinstance(result, dict)
+        if "error" in result:
+            pytest.fail(f"API error: {result['error']}")
+
+        assert "results" in result
+
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_search_entire_filter_wiki(self):
+        """Test searching only wiki pages."""
+        redmine = _get_redmine_or_none()
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        from redmine_mcp_server.redmine_handler import search_entire_redmine
+
+        result = await search_entire_redmine(
+            query="test", resources=["wiki_pages"], limit=5
+        )
+
+        assert isinstance(result, dict)
+        if "error" in result:
+            pytest.fail(f"API error: {result['error']}")
+
+        assert "results" in result
+
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_search_entire_no_results(self):
+        """Test search that returns no results."""
+        redmine = _get_redmine_or_none()
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        from redmine_mcp_server.redmine_handler import search_entire_redmine
+
+        result = await search_entire_redmine(
+            query="zzz_nonexistent_xyzzy_999", limit=5
+        )
+
+        assert isinstance(result, dict)
+        if "error" in result:
+            pytest.fail(f"API error: {result['error']}")
+
+        assert result["total_count"] == 0
+
+
+class TestCleanupAttachmentFilesIntegration:
+    """Integration tests for cleanup_attachment_files tool."""
+
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_cleanup_basic(self):
+        """Test cleanup returns expected structure."""
+        redmine = _get_redmine_or_none()
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        from redmine_mcp_server.redmine_handler import cleanup_attachment_files
+
+        result = await cleanup_attachment_files()
+
+        assert isinstance(result, dict)
+        if "error" in result:
+            pytest.fail(f"API error: {result['error']}")
+
+        assert "cleanup" in result
+        assert "current_storage" in result
+
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_cleanup_structure(self):
+        """Test cleanup stats have expected keys."""
+        redmine = _get_redmine_or_none()
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        from redmine_mcp_server.redmine_handler import cleanup_attachment_files
+
+        result = await cleanup_attachment_files()
+
+        assert isinstance(result, dict)
+        if "error" in result:
+            pytest.fail(f"API error: {result['error']}")
+
+        cleanup = result["cleanup"]
+        assert "cleaned_files" in cleanup
+        assert isinstance(cleanup["cleaned_files"], int)
+
+        storage = result["current_storage"]
+        assert "total_files" in storage or "file_count" in storage
 
 
 if __name__ == "__main__":
