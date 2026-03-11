@@ -202,6 +202,58 @@ This guide covers common issues and solutions for the Redmine MCP Server.
 
 ## Authentication Issues
 
+### Server Unexpectedly Requires OAuth / "unauthorized" Error
+
+**Symptoms:**
+- MCP client fails to connect with `{"error":"unauthorized"}`
+- Server returns `401 Unauthorized` with a `WWW-Authenticate: Bearer` header
+- Health endpoint shows `"auth_mode":"oauth"` when you expected legacy mode
+
+**Cause:** The server is running in OAuth mode (`REDMINE_AUTH_MODE=oauth`) instead of legacy mode. This can happen if:
+- `REDMINE_AUTH_MODE=oauth` is set in your shell environment (e.g., via `export`), which takes precedence over `.env`
+- The `.env` file doesn't explicitly set `REDMINE_AUTH_MODE=legacy`, and a shell variable overrides the default
+- The server was started with a previous configuration and hasn't been restarted after changes
+
+**Solutions:**
+
+1. **Check current auth mode**
+   ```bash
+   # Query the health endpoint
+   curl http://localhost:8000/health
+   # Look for "auth_mode" in the response
+   ```
+
+2. **Check for shell environment overrides**
+   ```bash
+   # Shell env vars take precedence over .env file
+   echo $REDMINE_AUTH_MODE
+
+   # If set, unset it
+   unset REDMINE_AUTH_MODE
+   ```
+
+3. **Explicitly set auth mode in `.env`**
+   ```bash
+   # Add to your .env file
+   REDMINE_AUTH_MODE=legacy
+   ```
+
+4. **Restart the server**
+   - Configuration changes require a server restart
+   - The auth mode is determined at startup and cannot change at runtime
+   ```bash
+   # Find and stop the running server
+   lsof -i :8000
+   kill <PID>
+
+   # Restart
+   redmine-mcp-server
+   ```
+
+5. **Verify after restart**
+   - Check server startup logs for: `Auth mode: legacy`
+   - Query health endpoint to confirm: `curl http://localhost:8000/health`
+
 ### API Key Not Working
 
 **Symptoms:**

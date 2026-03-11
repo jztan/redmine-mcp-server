@@ -282,6 +282,49 @@ issues = list_redmine_issues(fixed_version_id=versions[0]["id"])
 
 ---
 
+### `list_project_members`
+
+List all members (users and groups) of a Redmine project along with their assigned roles.
+
+**Parameters:**
+- `project_id` (integer or string, required): Project ID (numeric) or identifier (string)
+
+**Returns:** List of membership dictionaries containing user/group info and roles
+
+**Example:**
+```json
+[
+  {
+    "id": 1,
+    "user": {"id": 5, "name": "John Doe"},
+    "group": null,
+    "project": {"id": 10, "name": "My Project"},
+    "roles": [{"id": 3, "name": "Developer"}]
+  },
+  {
+    "id": 2,
+    "user": null,
+    "group": {"id": 15, "name": "Dev Team"},
+    "project": {"id": 10, "name": "My Project"},
+    "roles": [{"id": 4, "name": "Manager"}]
+  }
+]
+```
+
+**Usage:**
+```python
+# List members by project ID
+members = list_project_members(project_id=10)
+
+# List members by project identifier
+members = list_project_members(project_id="my-project")
+
+# Get all developers in a project
+devs = [m for m in members if any(r["name"] == "Developer" for r in m["roles"])]
+```
+
+---
+
 ## Issue Operations
 
 ### `get_redmine_issue`
@@ -579,6 +622,168 @@ update_redmine_issue(
         "size": "S"
     }
 )
+```
+
+---
+
+## Time Tracking
+
+### `list_time_entries`
+
+List time entries from Redmine with optional filtering and pagination.
+
+**Parameters:**
+- `project_id` (integer or string, optional): Filter by project (numeric ID or string identifier)
+- `issue_id` (integer, optional): Filter by issue ID
+- `user_id` (integer or string, optional): Filter by user ID. Use `"me"` for current user
+- `from_date` (string, optional): Start date filter (YYYY-MM-DD format)
+- `to_date` (string, optional): End date filter (YYYY-MM-DD format)
+- `limit` (integer, optional): Maximum entries to return. Default: `25`, Max: `100`
+- `offset` (integer, optional): Number of entries to skip for pagination. Default: `0`
+
+**Returns:** List of time entry dictionaries
+
+**Example:**
+```json
+[
+  {
+    "id": 1,
+    "hours": 2.5,
+    "comments": "Bug fix work",
+    "spent_on": "2024-03-15",
+    "user": {"id": 5, "name": "John Doe"},
+    "project": {"id": 10, "name": "My Project"},
+    "issue": {"id": 123},
+    "activity": {"id": 9, "name": "Development"},
+    "created_on": "2024-03-15T10:30:00",
+    "updated_on": "2024-03-15T10:30:00"
+  }
+]
+```
+
+**Usage:**
+```python
+# List all time entries for a project
+entries = list_time_entries(project_id="my-project")
+
+# Filter by issue and date range
+entries = list_time_entries(
+    issue_id=123,
+    from_date="2024-01-01",
+    to_date="2024-03-31"
+)
+
+# Get current user's time entries
+my_entries = list_time_entries(user_id="me")
+```
+
+---
+
+### `create_time_entry`
+
+Create a new time entry in Redmine. Log time against a project or issue.
+
+**Parameters:**
+- `hours` (float, required): Number of hours spent. Must be positive. Can be decimal (e.g., `1.5`)
+- `project_id` (integer or string, optional): Project to log time against. Required if `issue_id` is not provided
+- `issue_id` (integer, optional): Issue to log time against. If provided, `project_id` is optional
+- `activity_id` (integer, optional): Time entry activity ID (e.g., Development, Design). Uses default if not provided
+- `comments` (string, optional): Description of work performed
+- `spent_on` (string, optional): Date when time was spent (YYYY-MM-DD). Defaults to today
+
+**Returns:** Created time entry dictionary
+
+**Example:**
+```json
+{
+  "id": 1,
+  "hours": 2.5,
+  "comments": "Bug fix",
+  "spent_on": "2024-03-15",
+  "user": {"id": 5, "name": "John Doe"},
+  "project": {"id": 10, "name": "My Project"},
+  "issue": {"id": 123},
+  "activity": {"id": 9, "name": "Development"}
+}
+```
+
+**Usage:**
+```python
+# Log time against an issue
+create_time_entry(
+    hours=2.5,
+    issue_id=123,
+    comments="Fixed login bug"
+)
+
+# Log time against a project with specific date
+create_time_entry(
+    hours=1.0,
+    project_id="my-project",
+    activity_id=9,
+    comments="Code review",
+    spent_on="2024-03-15"
+)
+```
+
+---
+
+### `update_time_entry`
+
+Update an existing time entry in Redmine.
+
+**Parameters:**
+- `time_entry_id` (integer, required): ID of the time entry to update
+- `hours` (float, optional): New hours value. Must be positive if provided
+- `activity_id` (integer, optional): New activity ID
+- `comments` (string, optional): New comments/description
+- `spent_on` (string, optional): New date (YYYY-MM-DD format)
+
+**Returns:** Updated time entry dictionary
+
+**Example:**
+```json
+{
+  "id": 1,
+  "hours": 3.0,
+  "comments": "Extended work on bug fix",
+  "spent_on": "2024-03-15"
+}
+```
+
+**Usage:**
+```python
+# Update hours
+update_time_entry(time_entry_id=1, hours=3.0)
+
+# Update multiple fields
+update_time_entry(
+    time_entry_id=1,
+    hours=4.0,
+    comments="Extended debugging session",
+    spent_on="2024-03-16"
+)
+```
+
+---
+
+### `list_time_entry_activities`
+
+List all available time entry activity types from Redmine.
+
+Use this tool to discover valid `activity_id` values before calling `create_time_entry` or `update_time_entry`.
+
+**Parameters:** None
+
+**Returns:** List of activity dictionaries
+
+**Example:**
+```json
+[
+  {"id": 4, "name": "Development", "active": true, "is_default": false},
+  {"id": 5, "name": "Design", "active": true, "is_default": false},
+  {"id": 6, "name": "Testing", "active": true, "is_default": false}
+]
 ```
 
 ---

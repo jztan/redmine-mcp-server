@@ -25,3 +25,4 @@ plans
 .mcpregistry_github_token
 .mcpregistry_registry_token
 coverage.xml
+docs_internal/

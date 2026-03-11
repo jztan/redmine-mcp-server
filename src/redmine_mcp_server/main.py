@@ -190,9 +190,10 @@ def main():
     """Main entry point for the console script."""
     # Note: .env is already loaded during redmine_handler import
 
-    # Log version at startup
+    # Log version and auth mode at startup
     server_version = get_version()
     logger.info(f"Redmine MCP Server v{server_version}")
+    logger.info(f"Auth mode: {REDMINE_AUTH_MODE}")
 
     # Enable stateless HTTP mode (checked at request time by FastMCP)
     mcp.settings.stateless_http = True

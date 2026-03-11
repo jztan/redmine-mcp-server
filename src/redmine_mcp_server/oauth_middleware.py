@@ -40,7 +40,14 @@ class RedmineOAuthMiddleware(BaseHTTPMiddleware):
         if not auth_header.startswith("Bearer "):
             return JSONResponse(
                 status_code=401,
-                content={"error": "unauthorized"},
+                content={
+                    "error": "unauthorized",
+                    "error_description": (
+                        "Bearer token required. Server is running in OAuth mode "
+                        "(REDMINE_AUTH_MODE=oauth). If you intended legacy mode, "
+                        "set REDMINE_AUTH_MODE=legacy and restart the server."
+                    ),
+                },
                 headers={
                     "WWW-Authenticate": _www_authenticate_header(include_error=False)
                 },
