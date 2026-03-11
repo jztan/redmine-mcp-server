@@ -313,16 +313,65 @@ def update_uv_lock(project_root: Path, dry_run: bool) -> None:
 
 
 def extract_changelog_section(project_root: Path, version: str) -> str:
-    """Extract the changelog section for a specific version."""
+    """Extract the changelog section for a specific version.
+
+    Returns a tuple-like pair: (main_body, acknowledgements).
+    The Contributors subsection is split out and reformatted as an
+    Acknowledgements block that matches the existing release style.
+    """
     changelog = project_root / "CHANGELOG.md"
     content = changelog.read_text()
 
     pattern = rf"## \[{re.escape(version)}\][^\n]*\n(.*?)(?=\n## \[|\Z)"
     match = re.search(pattern, content, re.DOTALL)
 
-    if match:
-        return match.group(1).strip()
-    return "Release " + version
+    if not match:
+        return "Release " + version, ""
+
+    section = match.group(1).strip()
+
+    # Split out ### Contributors into a separate acknowledgements block
+    contrib_pattern = r"### Contributors\s*\n(.*?)(?=\n###\s|\Z)"
+    contrib_match = re.search(contrib_pattern, section, re.DOTALL)
+
+    if not contrib_match:
+        return section, ""
+
+    # Remove ### Contributors from main body
+    body = re.sub(
+        r"\n*### Contributors\s*\n.*?(?=\n###\s|\Z)",
+        "",
+        section,
+        flags=re.DOTALL,
+    ).strip()
+
+    # Build acknowledgements: group contributions by author
+    contrib_text = contrib_match.group(1).strip()
+    authors: dict[str, list[str]] = {}
+    for line in contrib_text.split("\n"):
+        line = line.strip()
+        if not line.startswith("- "):
+            continue
+        # Format: "- @username — description ([#PR](url))"
+        author_match = re.match(
+            r"-\s+(@\S+)\s*[—–-]\s*(.*)", line
+        )
+        if author_match:
+            author = author_match.group(1)
+            desc = author_match.group(2).strip()
+            authors.setdefault(author, []).append(desc)
+
+    if not authors:
+        return body, ""
+
+    ack_lines = []
+    for author, contribs in authors.items():
+        ack_lines.append(f"Thanks to **{author}** for contributing:")
+        for c in contribs:
+            ack_lines.append(f"- {c}")
+        ack_lines.append("")
+
+    return body, "\n".join(ack_lines).strip()
 
 
 # ---------------------------------------------------------------------------
@@ -425,11 +474,15 @@ def create_github_release(config: ReleaseConfig, new_version: str) -> None:
     print("\n=== GitHub Release ===\n")
 
     tag = f"v{new_version}"
-    changelog_section = extract_changelog_section(config.project_root, new_version)
+    body, acknowledgements = extract_changelog_section(
+        config.project_root, new_version
+    )
+
+    ack_block = f"\n\n## Acknowledgements\n\n{acknowledgements}" if acknowledgements else ""
 
     notes = f"""## What's New in {tag}
 
-{changelog_section}
+{body}{ack_block}
 
 ## Installation
 
