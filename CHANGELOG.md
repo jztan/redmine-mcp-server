@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-03-14
 ### Added
 - **New MCP Tool: `list_project_members`** - List members and groups of a Redmine project
   - Returns user/group info along with assigned roles
