@@ -1189,10 +1189,11 @@ wheels = [
 
 [[package]]
 name = "redmine-mcp-server"
-version = "0.12.1"
+version = "1.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi", extra = ["standard"] },
+    { name = "httpx" },
     { name = "mcp", extra = ["cli"] },
     { name = "python-dotenv" },
     { name = "python-redmine" },
@@ -1222,6 +1223,7 @@ requires-dist = [
     { name = "black", marker = "extra == 'dev'", specifier = ">=23.0.0" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.120.0" },
     { name = "flake8", marker = "extra == 'dev'", specifier = ">=6.0.0" },
+    { name = "httpx", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.28.1" },
     { name = "httpx", marker = "extra == 'test'", specifier = ">=0.28.1" },
     { name = "mcp", extras = ["cli"], specifier = ">=1.25.0,<2" },

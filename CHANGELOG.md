@@ -8,6 +8,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-03-14
+### Added
+- **New MCP Tool: `list_project_members`** - List members and groups of a Redmine project
+  - Returns user/group info along with assigned roles
+  - Supports both numeric project IDs and string identifiers
+- **New MCP Tools: Time Tracking** - Full time entry management
+  - `list_time_entries` - List time entries with filtering by project, issue, user, and date range
+  - `create_time_entry` - Log time against projects or issues with activity and date support
+  - `update_time_entry` - Modify existing time entries (hours, comments, activity, date)
+  - `list_time_entry_activities` - Discover available activity types (Development, Design, etc.) for time entry creation
+  - All tools support pagination and use `_get_redmine_client()` for OAuth compatibility
+- **50 new unit tests** for project members and time tracking tools (`test_project_members.py`, `test_time_entries.py`)
+- **26 new integration tests** covering all 21 MCP tools with zero skips — includes project members (4), time entries (7), custom fields (3), search issues (3), summarize project (3), global search (4), and cleanup (2)
+- **OAuth2 per-user authentication mode** (`REDMINE_AUTH_MODE=oauth`)
+  - New `oauth_middleware.py`: Starlette middleware that validates `Authorization: Bearer <token>` headers against Redmine's `/users/current.json` before forwarding MCP requests
+  - Per-request token isolation via `contextvars.ContextVar` — safe under async concurrent load
+  - `GET /.well-known/oauth-protected-resource` endpoint (RFC 8707) — points MCP clients to the authorization server
+  - `GET /.well-known/oauth-authorization-server` endpoint (RFC 8414) — advertises Redmine's Doorkeeper OAuth endpoints (`/oauth/authorize`, `/oauth/token`, `/oauth/revoke`) since Redmine does not serve this document itself
+  - `POST /revoke` endpoint (RFC 7009) — proxies token revocation to Redmine's `/oauth/revoke`, enabling proper disconnect flow from MCP clients
+  - PKCE (`S256`) and both `client_secret_post` / `client_secret_basic` token endpoint auth methods advertised
+  - Requires Redmine 6.1+ (Doorkeeper OAuth2 support)
+- **`REDMINE_AUTH_MODE` environment variable** — selects `legacy` (default) or `oauth` mode; legacy mode is unchanged so existing deployments require no changes
+- **`REDMINE_MCP_BASE_URL` environment variable** — public base URL of this server, used in OAuth discovery documents (only required in oauth mode)
+- **`_get_redmine_client()` factory function** in `redmine_handler.py` — creates a per-request Redmine client using OAuth token → API key → username/password priority; replaces the module-level shared client
+- **33 new unit tests** for OAuth middleware, discovery endpoints, token revocation, and auth selection logic (`tests/test_oauth_middleware.py`)
+- **Prompt Injection Protection** - User-controlled content from Redmine is now wrapped in unique boundary tags to prevent prompt injection attacks against LLM consumers
+  - New `wrap_insecure_content()` function wraps non-empty strings in `<insecure-content-{boundary}>` tags with a random 16-character hex boundary per call
+  - Applied to 6 helper functions: `_issue_to_dict` (description), `_issue_to_dict_selective` (description), `_journals_to_list` (notes), `_resource_to_dict` (excerpt), `_wiki_page_to_dict` (text), `_version_to_dict` (description)
+  - 22 new tests in `test_prompt_injection.py`
+- **Read-Only Mode** - Block all write operations via `REDMINE_MCP_READ_ONLY=true` environment variable
+  - Guards 5 write tools: `create_redmine_issue`, `update_redmine_issue`, `create_redmine_wiki_page`, `update_redmine_wiki_page`, `delete_redmine_wiki_page`
+  - Read tools (`get_redmine_issue`, `list_redmine_projects`, `list_redmine_issues`, etc.) remain fully functional
+  - Local operations (`cleanup_attachment_files`) are not restricted
+  - 15 new tests in `test_read_only_mode.py`
+  - Updated `.env.example` and `.env.docker` with `REDMINE_MCP_READ_ONLY` variable
+- **Journal Pagination on `get_redmine_issue`** - New `journal_limit` and `journal_offset` parameters for paginating through issue journals
+  - When `journal_limit` is set, response includes `journal_pagination` metadata (`total`, `offset`, `limit`, `count`, `has_more`)
+  - Default behavior unchanged (returns all journals without pagination metadata)
+  - 9 new tests covering limit, offset, combined pagination, edge cases, and backward compatibility
+- **Include Flags on `get_redmine_issue`** - Three new boolean parameters for fetching additional issue data
+  - `include_watchers` (default: `false`) - Returns watcher list with `id` and `name`
+  - `include_relations` (default: `false`) - Returns issue relations with `id`, `issue_id`, `issue_to_id`, `relation_type`
+  - `include_children` (default: `false`) - Returns child issues with `id`, `subject`, `tracker`
+  - All flags default to `false` for backward compatibility
+  - Include parameters are passed to the Redmine API for server-side inclusion
+  - 11 new tests covering all flags, combinations, missing attributes, and structure validation
+
+### Breaking
+- **Removed `list_my_redmine_issues`** - Deprecated since v0.11.0. Use `list_redmine_issues(assigned_to_id='me')` instead.
+  - All references in docstrings updated to point to `list_redmine_issues()`
+
+### Fixed
+- **Custom routes (well-known endpoints) not served at runtime** — `mcp.run()` created a fresh internal app discarding route registrations; switched to `uvicorn.run(app, ...)` so the decorated app instance is always what serves requests
+- **`REDMINE_URL` KeyError at import time** — `oauth_middleware.py` now uses `os.environ.get()` instead of `os.environ[]`, so the server starts cleanly even if `REDMINE_URL` is not set before import
+- **Legacy client recreated on every tool call** — `_get_redmine_client()` now caches a singleton `_legacy_client` in legacy mode instead of building a new `Redmine()` instance per request
+- **OAuth routes exposed in legacy mode** — well-known endpoints and `/revoke` are now only registered when `REDMINE_AUTH_MODE=oauth`
+
+### Changed
+- `main()` now runs via `uvicorn.run(app, ...)` directly instead of `mcp.run(transport="streamable-http")` to ensure custom route registrations are preserved
+
+### Improved
+- **Code Quality** - Added `.flake8` config for Black compatibility (E203 ignore)
+
+### Contributors
+- @mihajlovicjj — OAuth2 per-user authentication, `/revoke` endpoint, discovery endpoints, and 33 new tests ([#71](https://github.com/jztan/redmine-mcp-server/pull/71))
+- @mihajlovicjj — Project members and time tracking tools with 50 new tests ([#72](https://github.com/jztan/redmine-mcp-server/pull/72))
+
 ## [0.12.1] - 2026-03-05
 
 ### Fixed
@@ -50,6 +117,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dependency Updates**
   - `black` upgraded from 25.12.0 to 26.1.0
 - Improved issue update validation for named custom fields with clear errors when values are not allowed for the target custom field.
+
+### Contributors
+- @sebastianelsner — custom field discovery tool, required custom field handling, and custom field update support ([#65](https://github.com/jztan/redmine-mcp-server/pull/65), [#66](https://github.com/jztan/redmine-mcp-server/pull/66))
 
 ### Improved
 - **Test Coverage** - 44 new unit tests for custom field helper functions (`redmine_handler.py` lines 474-640)

@@ -16,7 +16,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from redmine_mcp_server.redmine_handler import (  # noqa: E402
     list_redmine_issues,
-    list_my_redmine_issues,
 )
 
 
@@ -432,11 +431,14 @@ class TestListRedmineIssues:
     @pytest.mark.asyncio
     async def test_no_client_returns_error(self):
         """Test error when Redmine client is not initialized."""
-        with patch("redmine_mcp_server.redmine_handler.redmine", None):
+        with patch(
+            "redmine_mcp_server.redmine_handler._get_redmine_client",
+            side_effect=RuntimeError("No Redmine authentication available"),
+        ):
             result = await list_redmine_issues(project_id=1)
 
             assert isinstance(result, list)
-            assert result[0]["error"] == "Redmine client not initialized."
+            assert "error" in result[0]
 
     @pytest.mark.asyncio
     async def test_api_error_returns_error(self, mock_redmine):
@@ -476,104 +478,3 @@ class TestListRedmineIssues:
         assert len(result) == 5
         call_kwargs = mock_redmine.issue.filter.call_args[1]
         assert call_kwargs.get("project_id") == 1
-
-
-class TestListMyRedmineIssuesDelegation:
-    """Test that list_my_redmine_issues delegates to list_redmine_issues."""
-
-    @pytest.fixture
-    def mock_redmine(self):
-        """Create a mock Redmine client."""
-        with patch("redmine_mcp_server.redmine_handler.redmine") as mock:
-            yield mock
-
-    def create_mock_issue(self, issue_id=1):
-        """Create a single mock issue."""
-        mock_issue = Mock()
-        mock_issue.id = issue_id
-        mock_issue.subject = f"Issue {issue_id}"
-        mock_issue.description = f"Description for issue {issue_id}"
-        mock_issue.project = Mock(id=1, name="Test Project")
-        mock_issue.status = Mock(id=1, name="New")
-        mock_issue.priority = Mock(id=2, name="Normal")
-        mock_issue.author = Mock(id=10, name="John Doe")
-        mock_issue.assigned_to = Mock(id=20, name="Jane Smith")
-        mock_issue.created_on = None
-        mock_issue.updated_on = None
-        return mock_issue
-
-    @pytest.mark.asyncio
-    async def test_delegates_with_assigned_to_me(self, mock_redmine):
-        """Test that list_my_redmine_issues passes assigned_to_id='me'."""
-        mock_issues = [self.create_mock_issue(1)]
-        mock_redmine.issue.filter.return_value = mock_issues
-
-        await list_my_redmine_issues()
-
-        call_kwargs = mock_redmine.issue.filter.call_args[1]
-        assert call_kwargs.get("assigned_to_id") == "me"
-
-    @pytest.mark.asyncio
-    async def test_passes_through_filters(self, mock_redmine):
-        """Test that additional filters are passed through."""
-        mock_issues = [self.create_mock_issue(1)]
-        mock_redmine.issue.filter.return_value = mock_issues
-
-        await list_my_redmine_issues(project_id=5, status_id=2)
-
-        call_kwargs = mock_redmine.issue.filter.call_args[1]
-        assert call_kwargs.get("assigned_to_id") == "me"
-        assert call_kwargs.get("project_id") == 5
-
-    @pytest.mark.asyncio
-    async def test_passes_through_pagination(self, mock_redmine):
-        """Test that pagination parameters are passed through."""
-        mock_issues = [self.create_mock_issue(1)]
-        mock_redmine.issue.filter.return_value = mock_issues
-
-        await list_my_redmine_issues(limit=10, offset=20)
-
-        call_kwargs = mock_redmine.issue.filter.call_args[1]
-        assert call_kwargs.get("assigned_to_id") == "me"
-        assert call_kwargs["limit"] == 10
-        assert call_kwargs["offset"] == 20
-
-    @pytest.mark.asyncio
-    async def test_no_client_returns_error(self):
-        """Test backward-compatible error when client is None."""
-        with patch("redmine_mcp_server.redmine_handler.redmine", None):
-            result = await list_my_redmine_issues()
-
-            assert isinstance(result, list)
-            assert result[0]["error"] == "Redmine client not initialized."
-
-    @pytest.mark.asyncio
-    async def test_returns_list_by_default(self, mock_redmine):
-        """Test backward-compatible list return type."""
-        mock_issues = [self.create_mock_issue(1)]
-        mock_redmine.issue.filter.return_value = mock_issues
-
-        result = await list_my_redmine_issues()
-
-        assert isinstance(result, list)
-
-    @pytest.mark.asyncio
-    async def test_returns_dict_with_pagination_info(self, mock_redmine):
-        """Test dict return type with pagination info."""
-        mock_issues = [self.create_mock_issue(1)]
-
-        first_call = Mock()
-        first_call.__iter__ = Mock(return_value=iter(mock_issues))
-        second_call = Mock()
-        second_call.__iter__ = Mock(return_value=iter([]))
-        second_call.total_count = 1
-
-        mock_redmine.issue.filter.side_effect = [first_call, second_call]
-
-        result = await list_my_redmine_issues(
-            limit=25, offset=0, include_pagination_info=True
-        )
-
-        assert isinstance(result, dict)
-        assert "issues" in result
-        assert "pagination" in result

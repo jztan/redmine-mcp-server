@@ -81,93 +81,121 @@ REDMINE_USERNAME = os.getenv("REDMINE_USERNAME")
 REDMINE_PASSWORD = os.getenv("REDMINE_PASSWORD")
 REDMINE_API_KEY = os.getenv("REDMINE_API_KEY")
 
+# Auth mode: "oauth" uses per-request Bearer tokens via OAuth middleware;
+# "legacy" uses REDMINE_API_KEY or REDMINE_USERNAME/REDMINE_PASSWORD (default).
+REDMINE_AUTH_MODE = os.getenv("REDMINE_AUTH_MODE", "legacy").lower()
+
 # SSL Configuration (optional)
 REDMINE_SSL_VERIFY = os.getenv("REDMINE_SSL_VERIFY", "true").lower() == "true"
 REDMINE_SSL_CERT = os.getenv("REDMINE_SSL_CERT")
 REDMINE_SSL_CLIENT_CERT = os.getenv("REDMINE_SSL_CLIENT_CERT")
 
-# Initialize Redmine client with SSL configuration
-# Provide helpful warnings for missing configuration
 if not REDMINE_URL:
     logger.warning(
         "REDMINE_URL not set. "
         "Please create a .env file in your working directory with REDMINE_URL defined."
     )
-elif not (REDMINE_API_KEY or (REDMINE_USERNAME and REDMINE_PASSWORD)):
+elif REDMINE_AUTH_MODE != "oauth" and not (
+    REDMINE_API_KEY or (REDMINE_USERNAME and REDMINE_PASSWORD)
+):
     logger.warning(
         "No Redmine authentication configured. "
         "Please set REDMINE_API_KEY or REDMINE_USERNAME/REDMINE_PASSWORD "
-        "in your .env file."
+        "in your .env file, or set REDMINE_AUTH_MODE=oauth."
     )
 
-# Initialize Redmine client
-# It's better to initialize it once if possible, or handle initialization within tools.
-# For simplicity, we'll initialize it globally here. If the environment variables
-# are missing, the client remains ``None`` so tools can handle it gracefully.
-redmine = None
-if REDMINE_URL and (REDMINE_API_KEY or (REDMINE_USERNAME and REDMINE_PASSWORD)):
-    try:
-        # Build requests configuration for SSL
-        requests_config = {}
 
-        # SSL verification
-        if not REDMINE_SSL_VERIFY:
-            requests_config["verify"] = False
-            logger.warning("SSL verification is DISABLED - use only for development!")
-        elif REDMINE_SSL_CERT:
-            # Validate certificate file exists and resolve to absolute path
-            cert_path = Path(REDMINE_SSL_CERT).resolve()
-            if not cert_path.exists():
-                raise FileNotFoundError(
-                    f"SSL certificate not found: {REDMINE_SSL_CERT} "
-                    f"(resolved to: {cert_path})"
-                )
-            if not cert_path.is_file():
-                raise ValueError(
-                    f"SSL certificate path must be a file, not directory: "
-                    f"{cert_path}"
-                )
-            requests_config["verify"] = str(cert_path)
-            logger.info(f"Using custom SSL certificate: {cert_path}")
-
-        # Client certificate for mutual TLS
-        if REDMINE_SSL_CLIENT_CERT:
-            if "," in REDMINE_SSL_CLIENT_CERT:
-                # Tuple format: cert,key
-                cert, key = REDMINE_SSL_CLIENT_CERT.split(",", 1)
-                requests_config["cert"] = (cert.strip(), key.strip())
-                logger.info("Using client certificate for mutual TLS")
-            else:
-                # Single file format
-                requests_config["cert"] = REDMINE_SSL_CLIENT_CERT
-                logger.info("Using client certificate for mutual TLS")
-
-        # Initialize with SSL configuration
-        if REDMINE_API_KEY:
-            if requests_config:
-                redmine = Redmine(
-                    REDMINE_URL, key=REDMINE_API_KEY, requests=requests_config
-                )
-            else:
-                redmine = Redmine(REDMINE_URL, key=REDMINE_API_KEY)
+# Build SSL requests config from environment (used by _get_redmine_client)
+def _build_requests_config() -> dict:
+    requests_config = {}
+    if not REDMINE_SSL_VERIFY:
+        requests_config["verify"] = False
+        logger.warning("SSL verification is DISABLED - use only for development!")
+    elif REDMINE_SSL_CERT:
+        cert_path = Path(REDMINE_SSL_CERT).resolve()
+        if not cert_path.exists():
+            raise FileNotFoundError(
+                f"SSL certificate not found: {REDMINE_SSL_CERT} "
+                f"(resolved to: {cert_path})"
+            )
+        if not cert_path.is_file():
+            raise ValueError(
+                f"SSL certificate path must be a file, not directory: {cert_path}"
+            )
+        requests_config["verify"] = str(cert_path)
+        logger.info(f"Using custom SSL certificate: {cert_path}")
+    if REDMINE_SSL_CLIENT_CERT:
+        if "," in REDMINE_SSL_CLIENT_CERT:
+            cert, key = REDMINE_SSL_CLIENT_CERT.split(",", 1)
+            requests_config["cert"] = (cert.strip(), key.strip())
+            logger.info("Using client certificate for mutual TLS")
         else:
-            if requests_config:
-                redmine = Redmine(
-                    REDMINE_URL,
-                    username=REDMINE_USERNAME,
-                    password=REDMINE_PASSWORD,
-                    requests=requests_config,
-                )
-            else:
-                redmine = Redmine(
-                    REDMINE_URL,
-                    username=REDMINE_USERNAME,
-                    password=REDMINE_PASSWORD,
-                )
-        logger.info("Redmine client initialized successfully")
-    except Exception as e:
-        logger.error(f"Error initializing Redmine client: {e}")
-        redmine = None
+            requests_config["cert"] = REDMINE_SSL_CLIENT_CERT
+            logger.info("Using client certificate for mutual TLS")
+    return requests_config
+
+
+# Test-compatibility hook: existing unit tests patch this module-level variable
+# directly. When non-None, _get_redmine_client() returns it immediately.
+# In production this stays None and per-request auth is always used.
+redmine = None
+
+# Cached legacy-mode client — avoids recreating Redmine() on every tool call
+# when running without OAuth.
+_legacy_client = None
+
+
+def _build_legacy_client() -> Redmine:
+    """Build a Redmine client using legacy credentials (API key or user/pass)."""
+    requests_config = _build_requests_config()
+    if REDMINE_API_KEY:
+        if requests_config:
+            return Redmine(REDMINE_URL, key=REDMINE_API_KEY, requests=requests_config)
+        return Redmine(REDMINE_URL, key=REDMINE_API_KEY)
+    elif REDMINE_USERNAME and REDMINE_PASSWORD:
+        if requests_config:
+            return Redmine(
+                REDMINE_URL,
+                username=REDMINE_USERNAME,
+                password=REDMINE_PASSWORD,
+                requests=requests_config,
+            )
+        return Redmine(
+            REDMINE_URL, username=REDMINE_USERNAME, password=REDMINE_PASSWORD
+        )
+    else:
+        raise RuntimeError(
+            "No Redmine authentication available. "
+            "Set REDMINE_AUTH_MODE=oauth or configure REDMINE_API_KEY / "
+            "REDMINE_USERNAME+REDMINE_PASSWORD."
+        )
+
+
+def _get_redmine_client() -> Redmine:
+    global _legacy_client
+
+    if redmine is not None:
+        return redmine
+
+    from .oauth_middleware import current_redmine_token
+
+    token = current_redmine_token.get()
+
+    if token:
+        # OAuth mode: per-request client with Bearer token (cannot be cached)
+        requests_config = _build_requests_config()
+        headers = {"Authorization": f"Bearer {token}"}
+        if requests_config:
+            return Redmine(
+                REDMINE_URL, requests={"headers": headers, **requests_config}
+            )
+        return Redmine(REDMINE_URL, requests={"headers": headers})
+
+    # Legacy mode: reuse a cached singleton
+    if _legacy_client is None:
+        _legacy_client = _build_legacy_client()
+    return _legacy_client
+
 
 # Initialize FastMCP server
 # Pass SERVER_HOST so DNS rebinding protection is configured correctly.
@@ -291,7 +319,13 @@ async def health_check(request):
     # Initialize cleanup task on first health check (lazy initialization)
     await _ensure_cleanup_started()
 
-    return JSONResponse({"status": "ok", "service": "redmine_mcp_tools"})
+    return JSONResponse(
+        {
+            "status": "ok",
+            "service": "redmine_mcp_tools",
+            "auth_mode": REDMINE_AUTH_MODE,
+        }
+    )
 
 
 @mcp.custom_route("/files/{file_id}", methods=["GET"])
@@ -505,6 +539,17 @@ def _is_true_env(var_name: str, default: str = "false") -> bool:
     return os.getenv(var_name, default).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _is_read_only_mode() -> bool:
+    """Check if the server is in read-only mode."""
+    return _is_true_env("REDMINE_MCP_READ_ONLY", "false")
+
+
+_READ_ONLY_ERROR = {
+    "error": "This server is in read-only mode (REDMINE_MCP_READ_ONLY=true). "
+    "Write operations are disabled."
+}
+
+
 def _normalize_field_label(label: str) -> str:
     """Normalize a field label for case/spacing-insensitive comparisons."""
     return re.sub(r"[^a-z0-9]+", "", label.lower())
@@ -645,6 +690,28 @@ def _is_missing_custom_field_value(value: Any) -> bool:
     return False
 
 
+def wrap_insecure_content(content: Any) -> Any:
+    """Wrap user-controlled content in boundary tags to prevent prompt injection.
+
+    Wraps non-empty string content in unique boundary tags so that LLM
+    consumers can distinguish trusted tool output from untrusted user data.
+
+    Args:
+        content: The content to wrap. Non-string or empty values are
+                 returned unchanged.
+
+    Returns:
+        Wrapped string with boundary tags, or original value if not a
+        non-empty string.
+    """
+    if not isinstance(content, str) or not content:
+        return content
+    boundary = uuid.uuid4().hex[:16]
+    return (
+        f"<insecure-content-{boundary}>\n{content}\n" f"</insecure-content-{boundary}>"
+    )
+
+
 def _is_allowed_custom_field_value(value: Any, possible_values: List[str]) -> bool:
     """Check whether a value is compatible with field possible_values."""
     if not possible_values:
@@ -690,7 +757,9 @@ def _augment_fields_with_required_custom_fields(
     if not missing_normalized:
         return issue_fields
 
-    project = redmine.project.get(project_id, include="issue_custom_fields")
+    project = _get_redmine_client().project.get(
+        project_id, include="issue_custom_fields"
+    )
     project_custom_fields = getattr(project, "issue_custom_fields", None) or []
 
     updated_fields = dict(issue_fields)
@@ -807,7 +876,7 @@ def _issue_to_dict(issue: Any, include_custom_fields: bool = False) -> Dict[str,
     issue_dict = {
         "id": getattr(issue, "id", None),
         "subject": getattr(issue, "subject", ""),
-        "description": getattr(issue, "description", ""),
+        "description": wrap_insecure_content(getattr(issue, "description", "")),
         "project": (
             {"id": project.id, "name": project.name} if project is not None else None
         ),
@@ -884,12 +953,14 @@ def _upsert_custom_field_entry(
 
 def _resolve_project_issue_custom_fields(issue_id: int) -> List[Any]:
     """Load project custom-field definitions for a given issue."""
-    issue = redmine.issue.get(issue_id)
+    issue = _get_redmine_client().issue.get(issue_id)
     project = getattr(issue, "project", None)
     project_id = getattr(project, "id", None)
     if project_id is None:
         return []
-    project_obj = redmine.project.get(project_id, include="issue_custom_fields")
+    project_obj = _get_redmine_client().project.get(
+        project_id, include="issue_custom_fields"
+    )
     return list(getattr(project_obj, "issue_custom_fields", None) or [])
 
 
@@ -1041,15 +1112,17 @@ def _resource_to_dict(resource: Any, resource_type: str) -> Dict[str, Any]:
 
     # Extract description/excerpt (first 200 chars)
     if hasattr(resource, "description") and resource.description:
-        base_dict["excerpt"] = (
+        raw_excerpt = (
             resource.description[:200] + "..."
             if len(resource.description) > 200
             else resource.description
         )
+        base_dict["excerpt"] = wrap_insecure_content(raw_excerpt)
     elif hasattr(resource, "text") and resource.text:
-        base_dict["excerpt"] = (
+        raw_excerpt = (
             resource.text[:200] + "..." if len(resource.text) > 200 else resource.text
         )
+        base_dict["excerpt"] = wrap_insecure_content(raw_excerpt)
     else:
         base_dict["excerpt"] = None
 
@@ -1107,7 +1180,7 @@ def _issue_to_dict_selective(
     all_fields = {
         "id": getattr(issue, "id", None),
         "subject": getattr(issue, "subject", ""),
-        "description": getattr(issue, "description", ""),
+        "description": wrap_insecure_content(getattr(issue, "description", "")),
         "project": (
             {"id": project.id, "name": project.name} if project is not None else None
         ),
@@ -1172,7 +1245,7 @@ def _journals_to_list(issue: Any) -> List[Dict[str, Any]]:
                     if user is not None
                     else None
                 ),
-                "notes": notes,
+                "notes": wrap_insecure_content(notes),
                 "created_on": (
                     journal.created_on.isoformat()
                     if getattr(journal, "created_on", None) is not None
@@ -1228,7 +1301,7 @@ def _version_to_dict(version: Any) -> Dict[str, Any]:
     return {
         "id": getattr(version, "id", None),
         "name": getattr(version, "name", ""),
-        "description": getattr(version, "description", ""),
+        "description": wrap_insecure_content(getattr(version, "description", "")),
         "status": getattr(version, "status", ""),
         "due_date": (
             str(version.due_date)
@@ -1329,6 +1402,11 @@ async def get_redmine_issue(
     include_journals: bool = True,
     include_attachments: bool = True,
     include_custom_fields: bool = True,
+    journal_limit: Optional[int] = None,
+    journal_offset: int = 0,
+    include_watchers: bool = False,
+    include_relations: bool = False,
+    include_children: bool = False,
 ) -> Dict[str, Any]:
     """Retrieve a specific Redmine issue by ID.
 
@@ -1340,6 +1418,11 @@ async def get_redmine_issue(
             result. Defaults to ``True``.
         include_custom_fields: Whether to include custom fields in the
             result. Defaults to ``True``.
+        journal_limit: Maximum number of journals to return. When set,
+            enables journal pagination and adds ``journal_pagination``
+            metadata to the response.
+        journal_offset: Number of journals to skip (used with
+            ``journal_limit``). Defaults to ``0``.
 
     Returns:
         A dictionary containing issue details. If ``include_journals`` is ``True``
@@ -1348,8 +1431,6 @@ async def get_redmine_issue(
         will be returned under the ``"attachments"`` key. On failure a dictionary
         with an ``"error"`` key is returned.
     """
-    if not redmine:
-        return {"error": "Redmine client not initialized."}
 
     # Ensure cleanup task is started (lazy initialization)
     await _ensure_cleanup_started()
@@ -1360,17 +1441,68 @@ async def get_redmine_issue(
             includes.append("journals")
         if include_attachments:
             includes.append("attachments")
+        if include_watchers:
+            includes.append("watchers")
+        if include_relations:
+            includes.append("relations")
+        if include_children:
+            includes.append("children")
 
         if includes:
-            issue = redmine.issue.get(issue_id, include=",".join(includes))
+            issue = _get_redmine_client().issue.get(
+                issue_id, include=",".join(includes)
+            )
         else:
-            issue = redmine.issue.get(issue_id)
+            issue = _get_redmine_client().issue.get(issue_id)
 
         result = _issue_to_dict(issue, include_custom_fields=include_custom_fields)
         if include_journals:
-            result["journals"] = _journals_to_list(issue)
+            all_journals = _journals_to_list(issue)
+            if journal_limit is not None:
+                total = len(all_journals)
+                offset = journal_offset
+                paginated = all_journals[offset : offset + journal_limit]
+                result["journals"] = paginated
+                result["journal_pagination"] = {
+                    "total": total,
+                    "offset": offset,
+                    "limit": journal_limit,
+                    "count": len(paginated),
+                    "has_more": (offset + journal_limit) < total,
+                }
+            else:
+                result["journals"] = all_journals
         if include_attachments:
             result["attachments"] = _attachments_to_list(issue)
+
+        if include_watchers:
+            raw = getattr(issue, "watchers", None) or []
+            result["watchers"] = [{"id": w.id, "name": w.name} for w in raw]
+        if include_relations:
+            raw = getattr(issue, "relations", None) or []
+            result["relations"] = [
+                {
+                    "id": r.id,
+                    "issue_id": r.issue_id,
+                    "issue_to_id": r.issue_to_id,
+                    "relation_type": r.relation_type,
+                }
+                for r in raw
+            ]
+        if include_children:
+            raw = getattr(issue, "children", None) or []
+            result["children"] = [
+                {
+                    "id": c.id,
+                    "subject": getattr(c, "subject", ""),
+                    "tracker": (
+                        {"id": c.tracker.id, "name": c.tracker.name}
+                        if getattr(c, "tracker", None)
+                        else None
+                    ),
+                }
+                for c in raw
+            ]
 
         return result
     except Exception as e:
@@ -1388,10 +1520,8 @@ async def list_redmine_projects() -> List[Dict[str, Any]]:
     Returns:
         A list of dictionaries, each representing a project.
     """
-    if not redmine:
-        return [{"error": "Redmine client not initialized."}]
     try:
-        projects = redmine.project.all()
+        projects = _get_redmine_client().project.all()
         return [
             {
                 "id": project.id,
@@ -1424,8 +1554,6 @@ async def list_project_issue_custom_fields(
         A list of custom field metadata dictionaries. On failure a list containing
         a single dictionary with an ``"error"`` key is returned.
     """
-    if not redmine:
-        return [{"error": "Redmine client not initialized."}]
 
     parsed_tracker_id: Optional[int] = None
     if tracker_id is not None:
@@ -1444,7 +1572,9 @@ async def list_project_issue_custom_fields(
     await _ensure_cleanup_started()
 
     try:
-        project = redmine.project.get(project_id, include="issue_custom_fields")
+        project = _get_redmine_client().project.get(
+            project_id, include="issue_custom_fields"
+        )
         custom_fields = getattr(project, "issue_custom_fields", None) or []
 
         result: List[Dict[str, Any]] = []
@@ -1481,8 +1611,6 @@ async def list_redmine_versions(
         A list of version dictionaries. On failure a list containing
         a single dictionary with an ``"error"`` key is returned.
     """
-    if not redmine:
-        return [{"error": "Redmine client not initialized."}]
 
     # Validate status_filter before making API call
     valid_statuses = {"open", "locked", "closed"}
@@ -1500,7 +1628,7 @@ async def list_redmine_versions(
 
     await _ensure_cleanup_started()
     try:
-        versions = redmine.version.filter(project_id=project_id)
+        versions = _get_redmine_client().version.filter(project_id=project_id)
         result = []
         for version in versions:
             if status_filter is not None:
@@ -1579,9 +1707,6 @@ async def list_redmine_issues(
         - Further reduce tokens: Use fields parameter for minimal data transfer
         - Time efficient: Typically <500ms for limit=25
     """
-    if not redmine:
-        logging.error("Redmine client not initialized")
-        return [{"error": "Redmine client not initialized."}]
 
     # Ensure cleanup task is started (lazy initialization)
     await _ensure_cleanup_started()
@@ -1660,8 +1785,10 @@ async def list_redmine_issues(
         }
 
         # Get paginated issues from Redmine
-        logging.debug(f"Calling redmine.issue.filter with: {redmine_filters}")
-        issues = redmine.issue.filter(**redmine_filters)
+        logging.debug(
+            f"Calling _get_redmine_client().issue.filter with: {redmine_filters}"
+        )
+        issues = _get_redmine_client().issue.filter(**redmine_filters)
 
         # Convert ResourceSet to list (triggers server-side pagination)
         issues_list = list(issues)
@@ -1680,7 +1807,7 @@ async def list_redmine_issues(
             try:
                 # Create clean query for total count (no pagination parameters)
                 count_filters = {**filters}
-                count_query = redmine.issue.filter(**count_filters)
+                count_query = _get_redmine_client().issue.filter(**count_filters)
                 # Must evaluate the query first to get accurate total_count
                 list(count_query)  # Trigger evaluation
                 total_count = count_query.total_count
@@ -1722,36 +1849,6 @@ async def list_redmine_issues(
 
     except Exception as e:
         return [_handle_redmine_error(e, "listing issues")]
-
-
-@mcp.tool()
-async def list_my_redmine_issues(
-    **filters: Any,
-) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
-    """List issues assigned to the authenticated user with pagination support.
-
-    Convenience wrapper around list_redmine_issues that automatically
-    filters by assigned_to_id='me'. Supports all the same filters
-    and pagination options.
-
-    .. deprecated::
-        Use ``list_redmine_issues(assigned_to_id='me')`` instead.
-
-    Args:
-        **filters: Same keyword arguments as list_redmine_issues.
-            See list_redmine_issues for full documentation.
-
-    Returns:
-        List[Dict] (default) or Dict with 'issues' and 'pagination' keys.
-    """
-    # Handle MCP interface wrapping parameters in 'filters' key
-    if "filters" in filters and isinstance(filters["filters"], dict):
-        actual_filters = filters["filters"]
-    else:
-        actual_filters = filters
-
-    actual_filters["assigned_to_id"] = "me"
-    return await list_redmine_issues(**actual_filters)
 
 
 @mcp.tool()
@@ -1807,7 +1904,7 @@ async def search_redmine_issues(
 
         Search API Limitations: The Search API supports text search with
         scope and open_issues filters only. For advanced filtering by
-        project_id, status_id, priority_id, etc., use list_my_redmine_issues()
+        project_id, status_id, priority_id, etc., use list_redmine_issues()
         instead, which uses the Issues API with full filter support.
 
     Performance:
@@ -1815,9 +1912,6 @@ async def search_redmine_issues(
         - Token efficient: Default limit keeps response under 2000 tokens
         - Further reduce tokens: Use fields parameter for minimal data transfer
     """
-    if not redmine:
-        logging.error("Redmine client not initialized")
-        return [{"error": "Redmine client not initialized."}]
 
     try:
         # Handle MCP interface wrapping parameters in 'options' key
@@ -1889,8 +1983,10 @@ async def search_redmine_issues(
         search_params = {"offset": offset, "limit": limit, **options}
 
         # Perform search with pagination
-        logging.debug(f"Calling redmine.issue.search with: {search_params}")
-        results = redmine.issue.search(query, **search_params)
+        logging.debug(
+            f"Calling _get_redmine_client().issue.search with: {search_params}"
+        )
+        results = _get_redmine_client().issue.search(query, **search_params)
 
         if results is None:
             results = []
@@ -1956,8 +2052,9 @@ async def create_redmine_issue(
       and
       ``REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true``.
     """
-    if not redmine:
-        return {"error": "Redmine client not initialized."}
+
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
 
     try:
         issue_fields = _parse_create_issue_fields(fields)
@@ -1981,7 +2078,7 @@ async def create_redmine_issue(
     issue_fields.pop("extra_fields", None)
 
     try:
-        issue = redmine.issue.create(
+        issue = _get_redmine_client().issue.create(
             project_id=project_id,
             subject=subject,
             description=description,
@@ -2013,7 +2110,7 @@ async def create_redmine_issue(
                 "Retrying issue creation with auto-filled custom fields: %s",
                 missing_names,
             )
-            issue = redmine.issue.create(
+            issue = _get_redmine_client().issue.create(
                 project_id=project_id,
                 subject=subject,
                 description=description,
@@ -2040,8 +2137,9 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
     When a matching project custom field is found, it is translated into
     ``custom_fields`` entries for Redmine update payloads.
     """
-    if not redmine:
-        return {"error": "Redmine client not initialized."}
+
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
 
     update_fields = dict(fields)
 
@@ -2049,7 +2147,7 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
     if "status_name" in update_fields and "status_id" not in update_fields:
         name = str(update_fields.pop("status_name")).lower()
         try:
-            statuses = redmine.issue_status.all()
+            statuses = _get_redmine_client().issue_status.all()
             for status in statuses:
                 if getattr(status, "name", "").lower() == name:
                     update_fields["status_id"] = status.id
@@ -2059,8 +2157,8 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
 
     try:
         update_fields = _map_named_custom_fields_for_update(issue_id, update_fields)
-        redmine.issue.update(issue_id, **update_fields)
-        updated_issue = redmine.issue.get(issue_id)
+        _get_redmine_client().issue.update(issue_id, **update_fields)
+        updated_issue = _get_redmine_client().issue.get(issue_id)
         return _issue_to_dict(updated_issue, include_custom_fields=True)
     except ValidationError as e:
         if not _is_required_custom_field_autofill_enabled():
@@ -2079,7 +2177,7 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
             )
 
         try:
-            issue = redmine.issue.get(issue_id)
+            issue = _get_redmine_client().issue.get(issue_id)
             project = getattr(issue, "project", None)
             project_id = getattr(project, "id", None)
             if project_id is None:
@@ -2107,8 +2205,8 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
                 "Retrying issue update with auto-filled custom fields: %s",
                 missing_names,
             )
-            redmine.issue.update(issue_id, **retry_fields)
-            updated_issue = redmine.issue.get(issue_id)
+            _get_redmine_client().issue.update(issue_id, **retry_fields)
+            updated_issue = _get_redmine_client().issue.get(issue_id)
             return _issue_to_dict(updated_issue, include_custom_fields=True)
         except Exception as retry_error:
             return _handle_redmine_error(
@@ -2145,15 +2243,13 @@ async def get_redmine_attachment_download_url(
         ResourceNotFoundError: If attachment ID doesn't exist
         Exception: For other download or processing errors
     """
-    if not redmine:
-        return {"error": "Redmine client not initialized."}
 
     # Ensure cleanup task is started (lazy initialization)
     await _ensure_cleanup_started()
 
     try:
         # Get attachment metadata from Redmine
-        attachment = redmine.attachment.get(attachment_id)
+        attachment = _get_redmine_client().attachment.get(attachment_id)
 
         # Server-controlled configuration (secure)
         attachments_dir = Path(os.getenv("ATTACHMENTS_DIR", "./attachments"))
@@ -2275,13 +2371,11 @@ async def summarize_project_status(project_id: int, days: int = 30) -> Dict[str,
         activity metrics, and trends. On error, returns a dictionary with
         an "error" key.
     """
-    if not redmine:
-        return {"error": "Redmine client not initialized."}
 
     try:
         # Validate project exists
         try:
-            project = redmine.project.get(project_id)
+            project = _get_redmine_client().project.get(project_id)
         except ResourceNotFoundError:
             return {"error": f"Project {project_id} not found."}
 
@@ -2292,12 +2386,16 @@ async def summarize_project_status(project_id: int, days: int = 30) -> Dict[str,
 
         # Get issues created in the date range
         created_issues = list(
-            redmine.issue.filter(project_id=project_id, created_on=date_filter)
+            _get_redmine_client().issue.filter(
+                project_id=project_id, created_on=date_filter
+            )
         )
 
         # Get issues updated in the date range
         updated_issues = list(
-            redmine.issue.filter(project_id=project_id, updated_on=date_filter)
+            _get_redmine_client().issue.filter(
+                project_id=project_id, updated_on=date_filter
+            )
         )
 
         # Analyze created issues
@@ -2311,7 +2409,7 @@ async def summarize_project_status(project_id: int, days: int = 30) -> Dict[str,
         total_updated = len(updated_issues)
 
         # Get all project issues for context
-        all_issues = list(redmine.issue.filter(project_id=project_id))
+        all_issues = list(_get_redmine_client().issue.filter(project_id=project_id))
         all_stats = _analyze_issues(all_issues)
 
         return {
@@ -2416,8 +2514,6 @@ async def search_entire_redmine(
         v1.4 Scope Limitation: Only 'issues' and 'wiki_pages' are supported.
         Requires Redmine 3.3.0 or higher for search API support.
     """
-    if not redmine:
-        return {"error": "Redmine client not initialized."}
 
     try:
         await _ensure_cleanup_started()
@@ -2444,7 +2540,7 @@ async def search_entire_redmine(
         }
 
         # Execute search
-        categorized_results = redmine.search(query, **search_options)
+        categorized_results = _get_redmine_client().search(query, **search_options)
 
         # Handle empty results (python-redmine returns None)
         if not categorized_results:
@@ -2491,6 +2587,118 @@ async def search_entire_redmine(
         return _handle_redmine_error(e, f"searching Redmine for '{query}'")
 
 
+def _membership_to_dict(membership: Any) -> Dict[str, Any]:
+    """Convert a project membership to a serializable dict."""
+    user = getattr(membership, "user", None)
+    group = getattr(membership, "group", None)
+    project = getattr(membership, "project", None)
+    roles = getattr(membership, "roles", None) or []
+
+    result: Dict[str, Any] = {
+        "id": getattr(membership, "id", None),
+    }
+
+    # User or group (memberships can be for either)
+    if user is not None:
+        result["user"] = {
+            "id": getattr(user, "id", None),
+            "name": getattr(user, "name", ""),
+        }
+        result["group"] = None
+    elif group is not None:
+        result["user"] = None
+        result["group"] = {
+            "id": getattr(group, "id", None),
+            "name": getattr(group, "name", ""),
+        }
+    else:
+        result["user"] = None
+        result["group"] = None
+
+    # Project info
+    if project is not None:
+        result["project"] = {
+            "id": getattr(project, "id", None),
+            "name": getattr(project, "name", ""),
+        }
+    else:
+        result["project"] = None
+
+    # Roles
+    result["roles"] = []
+    try:
+        for role in roles:
+            if isinstance(role, dict):
+                result["roles"].append(
+                    {
+                        "id": role.get("id"),
+                        "name": role.get("name", ""),
+                    }
+                )
+            else:
+                result["roles"].append(
+                    {
+                        "id": getattr(role, "id", None),
+                        "name": getattr(role, "name", ""),
+                    }
+                )
+    except TypeError:
+        pass  # roles not iterable
+
+    return result
+
+
+def _time_entry_to_dict(time_entry: Any) -> Dict[str, Any]:
+    """Convert a time entry to a serializable dict."""
+    user = getattr(time_entry, "user", None)
+    project = getattr(time_entry, "project", None)
+    issue = getattr(time_entry, "issue", None)
+    activity = getattr(time_entry, "activity", None)
+
+    return {
+        "id": getattr(time_entry, "id", None),
+        "hours": getattr(time_entry, "hours", 0),
+        "comments": getattr(time_entry, "comments", ""),
+        "spent_on": (
+            str(time_entry.spent_on)
+            if getattr(time_entry, "spent_on", None) is not None
+            else None
+        ),
+        "user": (
+            {"id": getattr(user, "id", None), "name": getattr(user, "name", "")}
+            if user is not None
+            else None
+        ),
+        "project": (
+            {
+                "id": getattr(project, "id", None),
+                "name": getattr(project, "name", ""),
+            }
+            if project is not None
+            else None
+        ),
+        "issue": ({"id": getattr(issue, "id", None)} if issue is not None else None),
+        "activity": (
+            {
+                "id": getattr(activity, "id", None),
+                "name": getattr(activity, "name", ""),
+            }
+            if activity is not None
+            else None
+        ),
+        "created_on": (
+            time_entry.created_on.isoformat()
+            if getattr(time_entry, "created_on", None) is not None
+            else None
+        ),
+        "updated_on": (
+            time_entry.updated_on.isoformat()
+            if getattr(time_entry, "updated_on", None) is not None
+            else None
+        ),
+    }
+
+
 def _wiki_page_to_dict(
     wiki_page: Any, include_attachments: bool = True
 ) -> Dict[str, Any]:
@@ -2505,7 +2713,7 @@ def _wiki_page_to_dict(
     """
     result: Dict[str, Any] = {
         "title": wiki_page.title,
-        "text": wiki_page.text,
+        "text": wrap_insecure_content(wiki_page.text),
         "version": wiki_page.version,
     }
 
@@ -2581,19 +2789,19 @@ async def get_redmine_wiki_page(
     Note:
         Use get_redmine_attachment_download_url() to download attachments.
     """
-    if not redmine:
-        return {"error": "Redmine client not initialized."}
 
     try:
         await _ensure_cleanup_started()
 
         # Retrieve wiki page
         if version:
-            wiki_page = redmine.wiki_page.get(
+            wiki_page = _get_redmine_client().wiki_page.get(
                 wiki_page_title, project_id=project_id, version=version
             )
         else:
-            wiki_page = redmine.wiki_page.get(wiki_page_title, project_id=project_id)
+            wiki_page = _get_redmine_client().wiki_page.get(
+                wiki_page_title, project_id=project_id
+            )
 
         return _wiki_page_to_dict(wiki_page, include_attachments)
 
@@ -2624,14 +2832,15 @@ async def create_redmine_wiki_page(
     Returns:
         Dictionary containing created wiki page metadata, or error dict on failure
     """
-    if not redmine:
-        return {"error": "Redmine client not initialized."}
+
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
 
     try:
         await _ensure_cleanup_started()
 
         # Create wiki page
-        wiki_page = redmine.wiki_page.create(
+        wiki_page = _get_redmine_client().wiki_page.create(
             project_id=project_id,
             title=wiki_page_title,
             text=text,
@@ -2667,14 +2876,15 @@ async def update_redmine_wiki_page(
     Returns:
         Dictionary containing updated wiki page metadata, or error dict on failure
     """
-    if not redmine:
-        return {"error": "Redmine client not initialized."}
+
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
 
     try:
         await _ensure_cleanup_started()
 
         # Update wiki page
-        redmine.wiki_page.update(
+        _get_redmine_client().wiki_page.update(
             wiki_page_title,
             project_id=project_id,
             text=text,
@@ -2682,7 +2892,9 @@ async def update_redmine_wiki_page(
         )
 
         # Fetch updated page to return current state
-        wiki_page = redmine.wiki_page.get(wiki_page_title, project_id=project_id)
+        wiki_page = _get_redmine_client().wiki_page.get(
+            wiki_page_title, project_id=project_id
+        )
 
         return _wiki_page_to_dict(wiki_page)
 
@@ -2709,14 +2921,15 @@ async def delete_redmine_wiki_page(
     Returns:
         Dictionary with success status, or error dict on failure
     """
-    if not redmine:
-        return {"error": "Redmine client not initialized."}
+
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
 
     try:
         await _ensure_cleanup_started()
 
         # Delete wiki page
-        redmine.wiki_page.delete(wiki_page_title, project_id=project_id)
+        _get_redmine_client().wiki_page.delete(wiki_page_title, project_id=project_id)
 
         return {
             "success": True,
@@ -2730,6 +2943,290 @@ async def delete_redmine_wiki_page(
             f"deleting wiki page '{wiki_page_title}' in project {project_id}",
             {"resource_type": "wiki page", "resource_id": wiki_page_title},
         )
+
+
+@mcp.tool()
+async def list_project_members(
+    project_id: Union[str, int],
+) -> List[Dict[str, Any]]:
+    """List members of a Redmine project.
+
+    Returns all users and groups that are members of the specified project,
+    along with their assigned roles.
+
+    Args:
+        project_id: Project identifier (ID number or string identifier)
+
+    Returns:
+        A list of membership dictionaries containing user/group info and roles.
+        On failure, a list containing a single dictionary with an "error" key.
+
+    Examples:
+        >>> await list_project_members("my-project")
+        [
+            {
+                "id": 1,
+                "user": {"id": 5, "name": "John Doe"},
+                "group": null,
+                "project": {"id": 1, "name": "My Project"},
+                "roles": [{"id": 3, "name": "Developer"}]
+            },
+            ...
+        ]
+    """
+    try:
+        memberships = _get_redmine_client().project_membership.filter(
+            project_id=project_id
+        )
+        return [_membership_to_dict(m) for m in memberships]
+    except Exception as e:
+        return [
+            _handle_redmine_error(
+                e,
+                f"listing members for project {project_id}",
+                {"resource_type": "project", "resource_id": project_id},
+            )
+        ]
+
+
+@mcp.tool()
+async def list_time_entries(
+    project_id: Optional[Union[str, int]] = None,
+    issue_id: Optional[int] = None,
+    user_id: Optional[Union[str, int]] = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    limit: int = 25,
+    offset: int = 0,
+) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    """List time entries from Redmine with filtering and pagination.
+
+    Retrieve time entries with optional filtering by project, issue, user,
+    and date range. Supports pagination for handling large result sets.
+
+    Args:
+        project_id: Filter by project (ID number or string identifier).
+        issue_id: Filter by issue ID.
+        user_id: Filter by user ID. Use "me" for current user.
+        from_date: Start date filter (YYYY-MM-DD format).
+        to_date: End date filter (YYYY-MM-DD format).
+        limit: Maximum number of entries to return (default: 25, max: 100).
+        offset: Number of entries to skip for pagination (default: 0).
+
+    Returns:
+        A list of time entry dictionaries. On failure, a list containing
+        a single dictionary with an "error" key.
+
+    Examples:
+        >>> await list_time_entries(project_id="my-project")
+        [{"id": 1, "hours": 2.5, "comments": "Bug fix", ...}, ...]
+
+        >>> await list_time_entries(issue_id=123, from_date="2024-01-01")
+        [{"id": 2, "hours": 1.0, "issue": {"id": 123}, ...}, ...]
+
+        >>> await list_time_entries(user_id="me", limit=10)
+        [{"id": 3, "hours": 4.0, "user": {"id": 5, "name": "Current User"}, ...}]
+    """
+    try:
+        # Build filter parameters
+        filters: Dict[str, Any] = {
+            "limit": min(limit, 100),
+            "offset": offset,
+        }
+
+        if project_id is not None:
+            filters["project_id"] = project_id
+        if issue_id is not None:
+            filters["issue_id"] = issue_id
+        if user_id is not None:
+            filters["user_id"] = user_id
+        if from_date is not None:
+            filters["from_date"] = from_date
+        if to_date is not None:
+            filters["to_date"] = to_date
+
+        time_entries = _get_redmine_client().time_entry.filter(**filters)
+        return [_time_entry_to_dict(te) for te in time_entries]
+
+    except Exception as e:
+        return [_handle_redmine_error(e, "listing time entries")]
+
+
+@mcp.tool()
+async def create_time_entry(
+    hours: float,
+    project_id: Optional[Union[str, int]] = None,
+    issue_id: Optional[int] = None,
+    activity_id: Optional[int] = None,
+    comments: str = "",
+    spent_on: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Create a new time entry in Redmine.
+
+    Log time against a project or issue. Either project_id or issue_id
+    must be provided. If issue_id is provided, the time entry will be
+    associated with that issue's project.
+
+    Args:
+        hours: Number of hours spent (required). Can be decimal (e.g., 1.5).
+        project_id: Project to log time against (ID or identifier).
+            Required if issue_id is not provided.
+        issue_id: Issue to log time against. If provided, project_id is optional.
+        activity_id: Time entry activity ID (e.g., Development, Design).
+            If not provided, Redmine uses the default activity.
+        comments: Description of work performed.
+        spent_on: Date when time was spent (YYYY-MM-DD). Defaults to today.
+
+    Returns:
+        Dictionary containing the created time entry, or error dict on failure.
+
+    Examples:
+        >>> await create_time_entry(hours=2.5, issue_id=123, comments="Bug fix")
+        {"id": 1, "hours": 2.5, "issue": {"id": 123}, ...}
+
+        >>> await create_time_entry(
+        ...     hours=1.0,
+        ...     project_id="my-project",
+        ...     activity_id=9,
+        ...     comments="Code review",
+        ...     spent_on="2024-03-15"
+        ... )
+        {"id": 2, "hours": 1.0, "project": {"id": 1, "name": "My Project"}, ...}
+    """
+    if project_id is None and issue_id is None:
+        return {"error": "Either project_id or issue_id must be provided."}
+
+    if hours <= 0:
+        return {"error": "Hours must be a positive number."}
+
+    try:
+        # Build create parameters
+        params: Dict[str, Any] = {
+            "hours": hours,
+        }
+
+        if project_id is not None:
+            params["project_id"] = project_id
+        if issue_id is not None:
+            params["issue_id"] = issue_id
+        if activity_id is not None:
+            params["activity_id"] = activity_id
+        if comments:
+            params["comments"] = comments
+        if spent_on is not None:
+            params["spent_on"] = spent_on
+
+        time_entry = _get_redmine_client().time_entry.create(**params)
+        return _time_entry_to_dict(time_entry)
+
+    except Exception as e:
+        context = {}
+        if issue_id:
+            context = {"resource_type": "issue", "resource_id": issue_id}
+        elif project_id:
+            context = {"resource_type": "project", "resource_id": project_id}
+        return _handle_redmine_error(e, "creating time entry", context)
+
+
+@mcp.tool()
+async def update_time_entry(
+    time_entry_id: int,
+    hours: Optional[float] = None,
+    activity_id: Optional[int] = None,
+    comments: Optional[str] = None,
+    spent_on: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Update an existing time entry in Redmine.
+
+    Modify hours, activity, comments, or date of an existing time entry.
+    Only provided fields will be updated.
+
+    Args:
+        time_entry_id: ID of the time entry to update (required).
+        hours: New hours value. Must be positive if provided.
+        activity_id: New activity ID.
+        comments: New comments/description.
+        spent_on: New date (YYYY-MM-DD format).
+
+    Returns:
+        Dictionary containing the updated time entry, or error dict on failure.
+
+    Examples:
+        >>> await update_time_entry(time_entry_id=1, hours=3.0)
+        {"id": 1, "hours": 3.0, ...}
+
+        >>> await update_time_entry(
+        ...     time_entry_id=1,
+        ...     comments="Updated description",
+        ...     spent_on="2024-03-16"
+        ... )
+        {"id": 1, "comments": "Updated description", ...}
+    """
+    if hours is not None and hours <= 0:
+        return {"error": "Hours must be a positive number."}
+
+    try:
+        # Build update parameters
+        params: Dict[str, Any] = {}
+
+        if hours is not None:
+            params["hours"] = hours
+        if activity_id is not None:
+            params["activity_id"] = activity_id
+        if comments is not None:
+            params["comments"] = comments
+        if spent_on is not None:
+            params["spent_on"] = spent_on
+
+        if not params:
+            return {"error": "No fields provided for update."}
+
+        client = _get_redmine_client()
+        client.time_entry.update(time_entry_id, **params)
+
+        # Fetch and return updated entry
+        updated_entry = client.time_entry.get(time_entry_id)
+        return _time_entry_to_dict(updated_entry)
+
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"updating time entry {time_entry_id}",
+            {"resource_type": "time entry", "resource_id": time_entry_id},
+        )
+
+
+@mcp.tool()
+async def list_time_entry_activities() -> List[Dict[str, Any]]:
+    """List available time entry activities from Redmine.
+
+    Returns all activity types that can be used when creating or updating
+    time entries (e.g., Development, Design, Testing).
+
+    Returns:
+        A list of activity dictionaries. On failure, a list containing
+        a single dictionary with an "error" key.
+
+    Examples:
+        >>> await list_time_entry_activities()
+        [{"id": 4, "name": "Development", "active": True, "is_default": False}, ...]
+    """
+    try:
+        activities = _get_redmine_client().enumeration.filter(
+            resource="time_entry_activities"
+        )
+        return [
+            {
+                "id": getattr(a, "id", None),
+                "name": getattr(a, "name", None),
+                "active": getattr(a, "active", None),
+                "is_default": getattr(a, "is_default", None),
+            }
+            for a in activities
+        ]
+
+    except Exception as e:
+        return [_handle_redmine_error(e, "listing time entry activities")]
 
 
 @mcp.tool()
@@ -2753,10 +3250,5 @@ async def cleanup_attachment_files() -> Dict[str, Any]:
 
 
 if __name__ == "__main__":
-    if not redmine:
-        logger.warning(
-            "Redmine client could not be initialized. Some tools may not work. "
-            "Please check your .env file and Redmine server connectivity."
-        )
     # Initialize and run the server
     mcp.run(transport="stdio")

@@ -76,7 +76,7 @@ class TestVersionToDict:
 
         assert result["id"] == 1
         assert result["name"] == "v1.0"
-        assert result["description"] == "First release"
+        assert "First release" in result["description"]
         assert result["status"] == "open"
         assert result["due_date"] == "2026-03-01"
         assert result["sharing"] == "none"
@@ -277,11 +277,14 @@ class TestListRedmineVersions:
     @pytest.mark.asyncio
     async def test_no_client_returns_error(self):
         """Test error when Redmine client is not initialized."""
-        with patch("redmine_mcp_server.redmine_handler.redmine", None):
+        with patch(
+            "redmine_mcp_server.redmine_handler._get_redmine_client",
+            side_effect=RuntimeError("No Redmine authentication available"),
+        ):
             result = await list_redmine_versions(project_id=1)
 
         assert isinstance(result, list)
-        assert result[0]["error"] == "Redmine client not initialized."
+        assert "error" in result[0]
 
     @pytest.mark.asyncio
     async def test_api_error_returns_error(self, mock_redmine):

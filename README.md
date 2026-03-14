@@ -19,10 +19,12 @@ A Model Context Protocol (MCP) server that integrates with Redmine project manag
 - **Redmine Integration**: List projects, view/create/update issues, download attachments
 - **HTTP File Serving**: Secure file access via UUID-based URLs with automatic expiry
 - **MCP Compliant**: Full Model Context Protocol support with FastMCP and streamable HTTP transport
-- **Flexible Authentication**: Username/password or API key
+- **Flexible Authentication**: API key, username/password, or OAuth2 per-user tokens
 - **File Management**: Automatic cleanup of expired files with storage statistics
 - **Docker Ready**: Complete containerization support
 - **Pagination Support**: Efficiently handle large issue lists with configurable limits
+- **Read-Only Mode**: Restrict to read-only operations via `REDMINE_MCP_READ_ONLY` environment variable
+- **Prompt Injection Protection**: User-controlled content wrapped in boundary tags for safe LLM consumption
 
 ## Quick Start
 
@@ -90,14 +92,19 @@ python -m redmine_mcp_server.main
 
 The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, health check at `/health`, and file serving at `/files/{file_id}`.
 
-### Environment Variables
+### Environment Variables Configuration
+
+<details>
+<summary><strong>Environment Variables</strong></summary>
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `REDMINE_URL` | Yes | – | Base URL of your Redmine instance |
-| `REDMINE_API_KEY` | Yes* | – | API key for authentication (*or provide username/password*) |
-| `REDMINE_USERNAME` | Yes* | – | Username for basic auth (*use with password when not using API key*) |
-| `REDMINE_PASSWORD` | Yes* | – | Password for basic auth |
+| `REDMINE_AUTH_MODE` | No | `legacy` | Authentication mode: `legacy` or `oauth` (see [Authentication](#authentication)) |
+| `REDMINE_API_KEY` | Yes† | – | API key (legacy mode only) |
+| `REDMINE_USERNAME` | Yes† | – | Username for basic auth (legacy mode only) |
+| `REDMINE_PASSWORD` | Yes† | – | Password for basic auth (legacy mode only) |
+| `REDMINE_MCP_BASE_URL` | Yes‡ | `http://localhost:3040` | Public base URL of this server, no trailing slash (OAuth mode only) |
 | `SERVER_HOST` | No | `0.0.0.0` | Host/IP the MCP server binds to |
 | `SERVER_PORT` | No | `8000` | Port the MCP server listens on |
 | `PUBLIC_HOST` | No | `localhost` | Hostname used when generating download URLs |
@@ -109,10 +116,12 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `REDMINE_SSL_VERIFY` | No | `true` | Enable/disable SSL certificate verification |
 | `REDMINE_SSL_CERT` | No | – | Path to custom CA certificate file |
 | `REDMINE_SSL_CLIENT_CERT` | No | – | Path to client certificate for mutual TLS |
+| `REDMINE_MCP_READ_ONLY` | No | `false` | Block all write operations (create/update/delete) when set to `true` |
 | `REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS` | No | `false` | Enable one retry for issue creation by filling missing required custom fields |
 | `REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS` | No | `{}` | JSON object mapping required custom field names to fallback values used when creating issues |
 
-*\* Either `REDMINE_API_KEY` or the combination of `REDMINE_USERNAME` and `REDMINE_PASSWORD` must be provided for authentication. API key authentication is recommended for security.*
+*† Required when `REDMINE_AUTH_MODE=legacy`. Either `REDMINE_API_KEY` or `REDMINE_USERNAME`+`REDMINE_PASSWORD` must be set. API key is recommended.*
+*‡ Required when `REDMINE_AUTH_MODE=oauth`.*
 
 When `REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true`, `create_redmine_issue` retries once on relevant custom-field validation errors (for example `<Field Name> cannot be blank` or `<Field Name> is not included in the list`) and fills values only from:
 - the Redmine custom field `default_value`, or
@@ -124,6 +133,8 @@ Example:
 REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true
 REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS='{"Required Field A":"Value A","Required Field B":"Value B"}'
 ```
+
+</details>
 
 ### SSL Certificate Configuration
 
@@ -177,6 +188,54 @@ Disabling SSL verification makes your connection vulnerable to man-in-the-middle
 </details>
 
 For SSL troubleshooting, see the [Troubleshooting Guide](./docs/troubleshooting.md#ssl-certificate-errors).
+
+## Authentication
+
+The server supports two authentication modes, selected via `REDMINE_AUTH_MODE`.
+
+> **Backward compatibility**: `REDMINE_AUTH_MODE` defaults to `legacy`, so all existing deployments continue to work without any configuration changes. OAuth2 support is purely additive — nothing breaks if you never set the variable.
+
+### Legacy mode (default)
+
+Uses a single shared credential — either an API key or a username/password pair — configured once in `.env`. Every request to Redmine uses the same identity.
+
+```bash
+REDMINE_AUTH_MODE=legacy        # or omit entirely — this is the default
+REDMINE_URL=https://redmine.example.com
+REDMINE_API_KEY=your_api_key
+# OR:
+# REDMINE_USERNAME=your_username
+# REDMINE_PASSWORD=your_password
+```
+
+### OAuth2 mode
+
+> **Requires Redmine 6.1 or newer.** OAuth2 support (via the Doorkeeper gem) was introduced in Redmine 6.1.
+
+Each MCP request carries its own `Authorization: Bearer <token>` header. The server validates the token against `GET /users/current.json` on Redmine before forwarding it. This enables multi-user deployments where each user authenticates with their own Redmine account.
+
+```bash
+REDMINE_AUTH_MODE=oauth
+REDMINE_URL=https://redmine.example.com
+REDMINE_MCP_BASE_URL=https://redmine-mcp.example.com   # public URL of this server
+```
+
+In OAuth mode the server also exposes OAuth2 discovery and token management endpoints:
+
+| Endpoint | Standard | Purpose |
+|----------|----------|---------|
+| `/.well-known/oauth-protected-resource` | RFC 8707 | Tells clients where to find the authorization server |
+| `/.well-known/oauth-authorization-server` | RFC 8414 | Advertises Redmine's Doorkeeper OAuth endpoints |
+| `POST /revoke` | RFC 7009 | Revokes an OAuth2 token (proxies to Redmine's `/oauth/revoke`) |
+
+Redmine uses the [Doorkeeper](https://github.com/doorkeeper-gem/doorkeeper) gem for OAuth2 but does not serve the RFC 8414 discovery document itself. This server serves it on Redmine's behalf, pointing to Redmine's real `/oauth/authorize`, `/oauth/token`, and `/oauth/revoke` endpoints.
+
+**Prerequisites for OAuth mode:**
+- An OAuth application registered in Redmine admin → **Applications** with the callback URL of your client
+- A client that handles the authorization code flow, stores the resulting token per user, and sends it as `Authorization: Bearer <token>` on every MCP request
+- No Dynamic Client Registration (DCR) is required — register the application manually in Redmine admin
+
+For step-by-step setup instructions, see the [OAuth2 Setup Guide](./docs/oauth-setup.md).
 
 ## MCP Client Configuration
 
@@ -374,22 +433,28 @@ curl http://localhost:8000/health
 
 ## Available Tools
 
-This MCP server provides 17 tools for interacting with Redmine. For detailed documentation, see [Tool Reference](./docs/tool-reference.md).
+This MCP server provides 21 tools for interacting with Redmine. For detailed documentation, see [Tool Reference](./docs/tool-reference.md).
 
-- **Project Management** (4 tools)
+- **Project Management** (5 tools)
   - [`list_redmine_projects`](docs/tool-reference.md#list_redmine_projects) - List all accessible projects
   - [`list_project_issue_custom_fields`](docs/tool-reference.md#list_project_issue_custom_fields) - List issue custom fields configured for a project
   - [`list_redmine_versions`](docs/tool-reference.md#list_redmine_versions) - List versions/milestones for a project
+  - [`list_project_members`](docs/tool-reference.md#list_project_members) - List members and roles of a project
   - [`summarize_project_status`](docs/tool-reference.md#summarize_project_status) - Get comprehensive project status summary
 
-- **Issue Operations** (6 tools)
-  - [`get_redmine_issue`](docs/tool-reference.md#get_redmine_issue) - Retrieve detailed issue information
+- **Issue Operations** (5 tools)
+  - [`get_redmine_issue`](docs/tool-reference.md#get_redmine_issue) - Retrieve detailed issue information (supports journal pagination, watchers, relations, children)
   - [`list_redmine_issues`](docs/tool-reference.md#list_redmine_issues) - List issues with flexible filtering (project, status, assignee, etc.)
-  - [`list_my_redmine_issues`](docs/tool-reference.md#list_my_redmine_issues) - List issues assigned to you *(deprecated: will be removed in a future release, use `list_redmine_issues(assigned_to_id='me')` instead)*
   - [`search_redmine_issues`](docs/tool-reference.md#search_redmine_issues) - Search issues by text query
   - [`create_redmine_issue`](docs/tool-reference.md#create_redmine_issue) - Create new issues
   - [`update_redmine_issue`](docs/tool-reference.md#update_redmine_issue) - Update existing issues
   - Note: `get_redmine_issue` can include `custom_fields` and `update_redmine_issue` can update custom fields by name (for example `{"size": "S"}`).
+
+- **Time Tracking** (4 tools)
+  - [`list_time_entries`](docs/tool-reference.md#list_time_entries) - List time entries with filtering by project, issue, user, and date range
+  - [`create_time_entry`](docs/tool-reference.md#create_time_entry) - Log time against projects or issues
+  - [`update_time_entry`](docs/tool-reference.md#update_time_entry) - Modify existing time entries
+  - [`list_time_entry_activities`](docs/tool-reference.md#list_time_entry_activities) - Discover available activity types for time entries
 
 - **Search & Wiki** (5 tools)
   - [`search_entire_redmine`](docs/tool-reference.md#search_entire_redmine) - Global search across issues and wiki pages (Redmine 3.3.0+)

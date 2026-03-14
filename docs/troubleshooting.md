@@ -202,6 +202,58 @@ This guide covers common issues and solutions for the Redmine MCP Server.
 
 ## Authentication Issues
 
+### Server Unexpectedly Requires OAuth / "unauthorized" Error
+
+**Symptoms:**
+- MCP client fails to connect with `{"error":"unauthorized"}`
+- Server returns `401 Unauthorized` with a `WWW-Authenticate: Bearer` header
+- Health endpoint shows `"auth_mode":"oauth"` when you expected legacy mode
+
+**Cause:** The server is running in OAuth mode (`REDMINE_AUTH_MODE=oauth`) instead of legacy mode. This can happen if:
+- `REDMINE_AUTH_MODE=oauth` is set in your shell environment (e.g., via `export`), which takes precedence over `.env`
+- The `.env` file doesn't explicitly set `REDMINE_AUTH_MODE=legacy`, and a shell variable overrides the default
+- The server was started with a previous configuration and hasn't been restarted after changes
+
+**Solutions:**
+
+1. **Check current auth mode**
+   ```bash
+   # Query the health endpoint
+   curl http://localhost:8000/health
+   # Look for "auth_mode" in the response
+   ```
+
+2. **Check for shell environment overrides**
+   ```bash
+   # Shell env vars take precedence over .env file
+   echo $REDMINE_AUTH_MODE
+
+   # If set, unset it
+   unset REDMINE_AUTH_MODE
+   ```
+
+3. **Explicitly set auth mode in `.env`**
+   ```bash
+   # Add to your .env file
+   REDMINE_AUTH_MODE=legacy
+   ```
+
+4. **Restart the server**
+   - Configuration changes require a server restart
+   - The auth mode is determined at startup and cannot change at runtime
+   ```bash
+   # Find and stop the running server
+   lsof -i :8000
+   kill <PID>
+
+   # Restart
+   redmine-mcp-server
+   ```
+
+5. **Verify after restart**
+   - Check server startup logs for: `Auth mode: legacy`
+   - Query health endpoint to confirm: `curl http://localhost:8000/health`
+
 ### API Key Not Working
 
 **Symptoms:**
@@ -435,7 +487,7 @@ This guide covers common issues and solutions for the Redmine MCP Server.
    ```
 
 3. **Reduce Pagination Limits**
-   - Use smaller `limit` values in `list_my_redmine_issues`
+   - Use smaller `limit` values in `list_redmine_issues`
    - Default limit is 25 to prevent token overflow
 
 ---
@@ -574,9 +626,32 @@ docker logs -f <container-id>
 **Cause:** Too many results returned causing MCP token overflow
 
 **Solution:**
-1. Use smaller `limit` values in `list_my_redmine_issues`
+1. Use smaller `limit` values in `list_redmine_issues`
 2. Use pagination with `offset` parameter
 3. Filter results with specific parameters
+4. Use `journal_limit` on `get_redmine_issue` to paginate large journal lists
+
+#### "This server is in read-only mode"
+
+**Cause:** The `REDMINE_MCP_READ_ONLY` environment variable is set to `true`, blocking all write operations
+
+**Solution:**
+1. If you need write access, set the variable to `false` or remove it:
+   ```bash
+   # In .env file
+   REDMINE_MCP_READ_ONLY=false
+   ```
+2. If read-only is intentional (e.g., shared/demo instance), use only read tools:
+   - `get_redmine_issue`, `list_redmine_issues`, `list_redmine_projects`, `search_redmine_issues`, `search_entire_redmine`, `get_redmine_wiki_page`, etc.
+3. Blocked tools in read-only mode: `create_redmine_issue`, `update_redmine_issue`, `create_redmine_wiki_page`, `update_redmine_wiki_page`, `delete_redmine_wiki_page`
+
+#### "list_my_redmine_issues not found" / Import errors after upgrade
+
+**Cause:** `list_my_redmine_issues` was removed in v1.0.0
+
+**Solution:**
+- Replace all usage with `list_redmine_issues(assigned_to_id='me')`
+- The replacement supports the same filters and pagination options
 
 ---
 
