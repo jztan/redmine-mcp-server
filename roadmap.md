@@ -47,6 +47,10 @@
   - Fills from Redmine defaults or `REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS` env var
 - [x] Download attachments with HTTP URLs
 - [x] Smart project status summarization with activity analysis
+- [x] Project risk analysis with quantified health scoring
+  - `analyze_project_risks()` synthesizes issues, versions, time entries, and assignments
+  - Detects overdue versions, blocked issues, stale issues, workload imbalance
+  - Quantified risk score (0-100) with low/medium/high levels
 - [x] Automatic status name to ID resolution
 - [x] Project members listing with roles (v1.0.0)
   - `list_project_members()` returns user/group info with assigned roles

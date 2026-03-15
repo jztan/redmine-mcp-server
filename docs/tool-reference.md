@@ -274,6 +274,68 @@ Provide a comprehensive summary of project status based on issue activity over a
 
 ---
 
+### `analyze_project_risks`
+
+Analyze a project for risks, blockers, and health signals. Synthesizes data across issues, versions, time entries, and assignments to surface actionable risk intelligence in a single call.
+
+**Parameters:**
+- `project_id` (integer, required): The ID of the project to analyze
+- `stale_days` (integer, optional): Days without updates before an open issue is stale. Default: `14`
+- `include_time_analysis` (boolean, optional): Include estimated vs actual hours analysis. Default: `true`
+
+**Returns:** Risk analysis containing:
+- **risk_summary**: Quantified score (0-100), level (low/medium/high), and risk factors
+- **overdue_versions**: Open versions past their due date with open issue counts
+- **blocked_issues**: Issues blocked by other issues via relations
+- **blocking_chains**: Issues that are blocking other issues
+- **stale_issues**: Open issues with no updates in `stale_days`
+- **unassigned_high_priority**: High/Urgent/Immediate priority issues without an assignee
+- **workload**: Assignment distribution across team members with imbalance warnings
+- **time_analysis**: Estimated vs actual hours with over-budget issue details
+
+**Example:**
+```json
+{
+  "project": {"id": 1, "name": "My Project", "identifier": "my-project"},
+  "risk_summary": {
+    "score": 45,
+    "level": "medium",
+    "factors": [
+      "1 overdue version(s)",
+      "2 blocked issue(s)",
+      "3 unassigned high-priority issue(s)"
+    ]
+  },
+  "overdue_versions": [
+    {"id": 3, "name": "v2.0", "due_date": "2026-03-01", "days_overdue": 14, "open_issues": 5}
+  ],
+  "blocked_issues": [
+    {"id": 42, "subject": "Deploy new API", "blocked_by": 38}
+  ],
+  "stale_issues": [
+    {"id": 15, "subject": "Update docs", "last_updated": "2026-02-01", "assigned_to": null}
+  ],
+  "unassigned_high_priority": [
+    {"id": 99, "subject": "Security patch", "priority": "Urgent"}
+  ],
+  "workload": {
+    "distribution": {"Alice": 12, "Bob": 3, "Unassigned": 5},
+    "total_open": 20,
+    "imbalance_warning": "Potential overload: Alice"
+  },
+  "time_analysis": {
+    "total_estimated_hours": 120.0,
+    "total_spent_hours": 95.5,
+    "budget_utilization_pct": 79.6,
+    "over_budget_issues": [
+      {"id": 7, "subject": "Complex refactor", "estimated_hours": 8.0, "spent_hours": 16.5, "overage_pct": 106.3}
+    ]
+  }
+}
+```
+
+---
+
 ### `list_redmine_versions`
 
 List versions (roadmap milestones) for a Redmine project. Useful for discovering target version IDs to use with `list_redmine_issues(fixed_version_id=...)`.

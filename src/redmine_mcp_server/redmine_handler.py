@@ -3230,6 +3230,291 @@ async def list_time_entry_activities() -> List[Dict[str, Any]]:
 
 
 @mcp.tool()
+async def analyze_project_risks(
+    project_id: int,
+    stale_days: int = 14,
+    include_time_analysis: bool = True,
+) -> Dict[str, Any]:
+    """Analyze a project for risks, blockers, and health signals.
+
+    Synthesizes data across issues, versions, time entries, and assignments
+    to surface actionable risk signals in a single call.
+
+    Args:
+        project_id: The ID of the project to analyze.
+        stale_days: Number of days without updates before an open issue is
+            considered stale. Defaults to 14.
+        include_time_analysis: Whether to include estimated vs actual hours
+            analysis. Defaults to True.
+
+    Returns:
+        A dictionary containing risk signals organized by category:
+        overdue_versions, blocked_issues, stale_issues,
+        unassigned_high_priority, workload_distribution, time_analysis,
+        and an overall risk_summary with a quantified score. On error,
+        returns a dictionary with an "error" key.
+    """
+    try:
+        client = _get_redmine_client()
+
+        # Validate project exists
+        try:
+            project = client.project.get(project_id)
+        except ResourceNotFoundError:
+            return {"error": f"Project {project_id} not found."}
+
+        today = datetime.now().date()
+        stale_cutoff = (datetime.now() - timedelta(days=stale_days)).strftime("%Y-%m-%d")
+        risk_score = 0
+        risk_factors = []
+
+        # --- 1. Overdue versions ---
+        overdue_versions = []
+        try:
+            versions = list(client.project_version.filter(project_id=project_id))
+            for v in versions:
+                status = getattr(v, "status", "")
+                due_date = getattr(v, "due_date", None)
+                if status == "open" and due_date is not None:
+                    if due_date < today:
+                        # Count open issues in this version
+                        version_issues = list(
+                            client.issue.filter(
+                                project_id=project_id,
+                                fixed_version_id=v.id,
+                                status_id="open",
+                            )
+                        )
+                        overdue_versions.append(
+                            {
+                                "id": v.id,
+                                "name": getattr(v, "name", ""),
+                                "due_date": str(due_date),
+                                "days_overdue": (today - due_date).days,
+                                "open_issues": len(version_issues),
+                            }
+                        )
+        except Exception as e:
+            logger.debug(f"Could not fetch versions for project {project_id}: {e}")
+
+        if overdue_versions:
+            risk_score += min(len(overdue_versions) * 15, 30)
+            risk_factors.append(
+                f"{len(overdue_versions)} overdue version(s)"
+            )
+
+        # --- 2. All open issues (used for multiple analyses) ---
+        open_issues = list(
+            client.issue.filter(project_id=project_id, status_id="open")
+        )
+
+        # --- 3. Blocked issues (issues with "blocks"/"blocked" relations) ---
+        blocked_issues = []
+        blocking_chains = []
+        for issue in open_issues:
+            try:
+                full_issue = client.issue.get(issue.id, include="relations")
+                relations = getattr(full_issue, "relations", None) or []
+                for rel in relations:
+                    rel_type = getattr(rel, "relation_type", "")
+                    if rel_type == "blocked" and rel.issue_to_id == issue.id:
+                        blocked_issues.append(
+                            {
+                                "id": issue.id,
+                                "subject": getattr(issue, "subject", ""),
+                                "blocked_by": rel.issue_id,
+                            }
+                        )
+                    elif rel_type == "blocks" and rel.issue_id == issue.id:
+                        blocking_chains.append(
+                            {
+                                "blocker_id": issue.id,
+                                "blocker_subject": getattr(issue, "subject", ""),
+                                "blocks_id": rel.issue_to_id,
+                            }
+                        )
+            except Exception:
+                continue  # Skip issues we can't fetch relations for
+
+        if blocked_issues:
+            risk_score += min(len(blocked_issues) * 10, 25)
+            risk_factors.append(f"{len(blocked_issues)} blocked issue(s)")
+
+        # --- 4. Stale issues ---
+        stale_issues = []
+        for issue in open_issues:
+            updated_on = getattr(issue, "updated_on", None)
+            if updated_on is not None:
+                updated_str = (
+                    updated_on.strftime("%Y-%m-%d")
+                    if hasattr(updated_on, "strftime")
+                    else str(updated_on)[:10]
+                )
+                if updated_str < stale_cutoff:
+                    stale_issues.append(
+                        {
+                            "id": issue.id,
+                            "subject": getattr(issue, "subject", ""),
+                            "last_updated": updated_str,
+                            "assigned_to": (
+                                getattr(issue.assigned_to, "name", None)
+                                if getattr(issue, "assigned_to", None)
+                                else None
+                            ),
+                        }
+                    )
+
+        if stale_issues:
+            stale_pct = len(stale_issues) / max(len(open_issues), 1) * 100
+            risk_score += min(int(stale_pct / 5), 20)
+            risk_factors.append(
+                f"{len(stale_issues)} stale issue(s) ({stale_pct:.0f}% of open)"
+            )
+
+        # --- 5. Unassigned high-priority issues ---
+        unassigned_high = []
+        for issue in open_issues:
+            priority = getattr(issue, "priority", None)
+            priority_name = getattr(priority, "name", "").lower() if priority else ""
+            assigned = getattr(issue, "assigned_to", None)
+            if not assigned and priority_name in ("high", "urgent", "immediate"):
+                unassigned_high.append(
+                    {
+                        "id": issue.id,
+                        "subject": getattr(issue, "subject", ""),
+                        "priority": getattr(priority, "name", ""),
+                    }
+                )
+
+        if unassigned_high:
+            risk_score += min(len(unassigned_high) * 10, 25)
+            risk_factors.append(
+                f"{len(unassigned_high)} unassigned high-priority issue(s)"
+            )
+
+        # --- 6. Workload distribution ---
+        assignee_counts: Dict[str, int] = {}
+        for issue in open_issues:
+            assigned = getattr(issue, "assigned_to", None)
+            name = getattr(assigned, "name", "Unassigned") if assigned else "Unassigned"
+            assignee_counts[name] = assignee_counts.get(name, 0) + 1
+
+        workload = {
+            "distribution": assignee_counts,
+            "total_open": len(open_issues),
+        }
+
+        if assignee_counts:
+            counts = [v for k, v in assignee_counts.items() if k != "Unassigned"]
+            if counts:
+                avg = sum(counts) / len(counts)
+                max_load = max(counts)
+                if avg > 0 and max_load > avg * 2:
+                    overloaded = [
+                        k
+                        for k, v in assignee_counts.items()
+                        if k != "Unassigned" and v > avg * 2
+                    ]
+                    workload["imbalance_warning"] = (
+                        f"Potential overload: {', '.join(overloaded)}"
+                    )
+                    risk_score += 10
+                    risk_factors.append("Workload imbalance detected")
+
+        unassigned_count = assignee_counts.get("Unassigned", 0)
+        if unassigned_count > len(open_issues) * 0.3 and len(open_issues) > 5:
+            risk_score += 10
+            risk_factors.append(
+                f"{unassigned_count} unassigned issues "
+                f"({unassigned_count / max(len(open_issues), 1) * 100:.0f}%)"
+            )
+
+        # --- 7. Time analysis (estimated vs actual) ---
+        time_analysis = None
+        if include_time_analysis:
+            total_estimated = 0.0
+            total_spent = 0.0
+            over_budget_issues = []
+
+            for issue in open_issues:
+                estimated = getattr(issue, "estimated_hours", None)
+                spent = getattr(issue, "spent_hours", None)
+                if estimated and estimated > 0:
+                    total_estimated += float(estimated)
+                    actual_spent = float(spent) if spent else 0.0
+                    total_spent += actual_spent
+                    if actual_spent > float(estimated):
+                        over_budget_issues.append(
+                            {
+                                "id": issue.id,
+                                "subject": getattr(issue, "subject", ""),
+                                "estimated_hours": float(estimated),
+                                "spent_hours": actual_spent,
+                                "overage_pct": round(
+                                    (actual_spent / float(estimated) - 1) * 100, 1
+                                ),
+                            }
+                        )
+
+            time_analysis = {
+                "total_estimated_hours": round(total_estimated, 1),
+                "total_spent_hours": round(total_spent, 1),
+                "budget_utilization_pct": (
+                    round(total_spent / total_estimated * 100, 1)
+                    if total_estimated > 0
+                    else None
+                ),
+                "over_budget_issues": over_budget_issues[:10],
+            }
+
+            if over_budget_issues:
+                risk_score += min(len(over_budget_issues) * 5, 15)
+                risk_factors.append(
+                    f"{len(over_budget_issues)} issue(s) over time budget"
+                )
+
+        # --- Build risk summary ---
+        risk_score = min(risk_score, 100)
+        if risk_score >= 60:
+            risk_level = "high"
+        elif risk_score >= 30:
+            risk_level = "medium"
+        else:
+            risk_level = "low"
+
+        result: Dict[str, Any] = {
+            "project": {
+                "id": project.id,
+                "name": project.name,
+                "identifier": getattr(project, "identifier", ""),
+            },
+            "risk_summary": {
+                "score": risk_score,
+                "level": risk_level,
+                "factors": risk_factors,
+            },
+            "overdue_versions": overdue_versions,
+            "blocked_issues": blocked_issues,
+            "blocking_chains": blocking_chains,
+            "stale_issues": stale_issues[:20],
+            "unassigned_high_priority": unassigned_high,
+            "workload": workload,
+        }
+
+        if time_analysis is not None:
+            result["time_analysis"] = time_analysis
+
+        return result
+
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"analyzing risks for project {project_id}",
+            {"resource_type": "project", "resource_id": project_id},
+        )
+
+
+@mcp.tool()
 async def cleanup_attachment_files() -> Dict[str, Any]:
     """Clean up expired attachment files and return storage statistics.
 

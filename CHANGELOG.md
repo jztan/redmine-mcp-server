@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **New MCP Tool: `analyze_project_risks`** - Intelligent cross-entity risk and health analysis
+  - Synthesizes data across issues, versions, time entries, and assignments in a single call
+  - Detects overdue versions with open issue counts
+  - Identifies blocked/blocking issue chains via relations
+  - Surfaces stale issues (configurable threshold via `stale_days` parameter)
+  - Finds unassigned high-priority issues (High/Urgent/Immediate)
+  - Analyzes workload distribution with imbalance warnings
+  - Compares estimated vs actual hours with over-budget issue details
+  - Produces a quantified risk score (0-100) with low/medium/high level
+  - Graceful degradation: version or relation fetch failures don't break the analysis
+- **18 new unit tests** for `analyze_project_risks` (`test_analyze_project_risks.py`)
+
 ## [1.0.0] - 2026-03-14
 ### Added
 - **New MCP Tool: `list_project_members`** - List members and groups of a Redmine project
