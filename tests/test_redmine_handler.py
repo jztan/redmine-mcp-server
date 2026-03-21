@@ -2094,7 +2094,7 @@ class TestServeAttachmentEndpointEdgeCases:
         metadata_file.write_text(json.dumps(metadata))
 
         # Get the underlying Starlette app
-        app = mcp.streamable_http_app()
+        app = mcp.http_app(stateless_http=True)
 
         # Make the unlink fail during cleanup
         original_unlink = Path.unlink
@@ -2143,7 +2143,7 @@ class TestServeAttachmentEndpointEdgeCases:
         metadata_file = uuid_dir / "metadata.json"
         metadata_file.write_text(json.dumps(metadata))
 
-        app = mcp.streamable_http_app()
+        app = mcp.http_app(stateless_http=True)
 
         with patch.dict(os.environ, {"ATTACHMENTS_DIR": str(attachments_dir)}):
             async with AsyncClient(

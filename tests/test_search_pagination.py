@@ -333,7 +333,7 @@ class TestSearchRedmineIssuesPagination:
         mock_redmine.issue.search.return_value = mock_issues
 
         result = await search_redmine_issues(  # noqa: F841
-            "bug", limit=10, custom_param="value"
+            "bug", limit=10, options={"custom_param": "value"}
         )
 
         # Verify custom parameter was passed through

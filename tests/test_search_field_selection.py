@@ -264,14 +264,13 @@ class TestSearchFieldSelection:
         assert len(result[0]) == 10
 
     @pytest.mark.asyncio
-    async def test_fields_with_mcp_parameter_unwrapping(self, mock_redmine):
-        """Test field selection with MCP parameter unwrapping."""
+    async def test_fields_with_explicit_params(self, mock_redmine):
+        """Test field selection with explicit parameters."""
         mock_issue = self.create_mock_issue()
         mock_redmine.issue.search.return_value = [mock_issue]
 
-        # Simulate MCP wrapping parameters
         result = await search_redmine_issues(
-            "bug", options={"fields": ["id", "subject"], "limit": 10}
+            "bug", fields=["id", "subject"], limit=10
         )
 
         assert len(result[0]) == 2

@@ -1,8 +1,7 @@
 """
 Main entry point for the MCP Redmine server.
 
-This module uses FastMCP's native streamable HTTP transport for MCP protocol
-communication.
+This module uses FastMCP's native HTTP transport for MCP protocol communication.
 The server runs with built-in HTTP endpoints and handles MCP requests natively.
 
 Endpoints:
@@ -177,8 +176,8 @@ def register_oauth_routes(target_app):
     target_app.add_route("/revoke", revoke_token, methods=["POST"])
 
 
-# Export the Starlette/FastAPI app for testing and external use
-app = mcp.streamable_http_app()
+# Export the Starlette app for testing and external use
+app = mcp.http_app(stateless_http=True)
 
 # Register OAuth2 middleware and endpoints only when auth mode is oauth
 if REDMINE_AUTH_MODE == "oauth":
@@ -194,9 +193,6 @@ def main():
     server_version = get_version()
     logger.info(f"Redmine MCP Server v{server_version}")
     logger.info(f"Auth mode: {REDMINE_AUTH_MODE}")
-
-    # Enable stateless HTTP mode (checked at request time by FastMCP)
-    mcp.settings.stateless_http = True
 
     host = os.getenv("SERVER_HOST", "127.0.0.1")
     port = int(os.getenv("SERVER_PORT", "8000"))
