@@ -125,20 +125,15 @@
 
 ### 📅 Planned Releases
 
-#### v1.1.0 — FastMCP v3 Core Migration
-*Priority: High | Effort: Low*
+#### v1.1.0 — FastMCP v3 Core Migration ✅
+*Priority: High | Effort: Low | Status: Implemented on `feature/fastmcp-v3`*
 
-Five targeted, mechanical changes required — all localized to 3 files:
-
-- [ ] `pyproject.toml`: replace `mcp[cli]>=1.25.0,<2` with `fastmcp>=3.0.0,<4`
-- [ ] `redmine_handler.py`: update import from `mcp.server.fastmcp` → `fastmcp`
-- [ ] `redmine_handler.py`: remove `host=_server_host` from `FastMCP()` constructor (not a valid v3 param)
-- [ ] `main.py`: replace `mcp.streamable_http_app()` with `mcp.http_app(stateless_http=True)`; remove `mcp.settings.stateless_http = True`
-- [ ] `test_main.py`: remove `mock_mcp.settings.stateless_http` assertion
-
-> **Open question before shipping**: verify DNS rebinding protection in v3 — the `host=_server_host` removal may need a compensating env var or `http_app()` parameter (currently suppresses FastMCP's auto DNS rebinding protection when `host=0.0.0.0` in Docker).
-
-See [docs/fastmcp-v3-compatibility-analysis.md](docs/fastmcp-v3-compatibility-analysis.md) for full analysis.
+- [x] `pyproject.toml`: replace `mcp[cli]>=1.25.0,<2` with `fastmcp>=3.0.0,<4`
+- [x] `redmine_handler.py`: update import from `mcp.server.fastmcp` → `fastmcp`
+- [x] `redmine_handler.py`: remove `host=_server_host` from `FastMCP()` constructor (DNS rebinding protection removed entirely from v3 — no behaviour change for Docker deployments)
+- [x] `main.py`: replace `mcp.streamable_http_app()` with `mcp.http_app(stateless_http=True)`; remove `mcp.settings.stateless_http = True`
+- [x] `test_main.py`: remove `mock_mcp.settings.stateless_http` assertion; delete `test_dns_rebinding_protection.py`
+- [x] `list_redmine_issues` / `search_redmine_issues`: convert `**kwargs` → explicit typed parameters (FastMCP v3 rejects `**kwargs` tool functions); extra filters still available via `filters={}`/`options={}` dict params
 
 #### v1.2.0 — OpenTelemetry Observability
 *Priority: Medium | Effort: Low*
@@ -170,4 +165,4 @@ Replace `RedmineOAuthMiddleware` with FastMCP v3's native `auth=` constructor pa
 
 ---
 
-**Last Updated:** 2026-03-21 (v1.0.0 released; FastMCP v3 roadmap added)
+**Last Updated:** 2026-03-21 (v1.0.0 released; FastMCP v3 migration implemented on `feature/fastmcp-v3`)
