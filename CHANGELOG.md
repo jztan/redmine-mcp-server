@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Changed
 - Migrated from `mcp[cli]>=1.25.0,<2` to `fastmcp>=3.0.0,<4` (standalone FastMCP v3 package)
+
+### Dependencies
+- Bump `uvicorn` from 0.40.0 to 0.42.0
+- Bump `black` from 26.1.0 to 26.3.1
+- Bump `python-dotenv` from 1.2.1 to 1.2.2
 - Updated import from `mcp.server.fastmcp` to `fastmcp`
 - Replaced `mcp.streamable_http_app()` with `mcp.http_app(stateless_http=True)` (v3 API)
 - Removed `mcp.settings.stateless_http` runtime mutation (`stateless_http` is now passed to `http_app()`)
