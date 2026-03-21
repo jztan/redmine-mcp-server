@@ -7,6 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- Migrated from `mcp[cli]>=1.25.0,<2` to `fastmcp>=3.0.0,<4` (standalone FastMCP v3 package)
+- Updated import from `mcp.server.fastmcp` to `fastmcp`
+- Replaced `mcp.streamable_http_app()` with `mcp.http_app(stateless_http=True)` (v3 API)
+- Removed `mcp.settings.stateless_http` runtime mutation (`stateless_http` is now passed to `http_app()`)
+- Removed `host=` parameter from `FastMCP()` constructor (not a valid v3 parameter; DNS rebinding protection removed from FastMCP v3 entirely — no behaviour change for Docker deployments)
+- Converted `list_redmine_issues` and `search_redmine_issues` from `**kwargs` to explicit parameters (FastMCP v3 no longer supports `**kwargs` tool functions); additional arbitrary filters still available via `filters={}` / `options={}` dict parameters
 
 ## [1.0.0] - 2026-03-14
 ### Added

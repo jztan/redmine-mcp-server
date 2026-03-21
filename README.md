@@ -18,7 +18,7 @@ A Model Context Protocol (MCP) server that integrates with Redmine project manag
 
 - **Redmine Integration**: List projects, view/create/update issues, download attachments
 - **HTTP File Serving**: Secure file access via UUID-based URLs with automatic expiry
-- **MCP Compliant**: Full Model Context Protocol support with FastMCP and streamable HTTP transport
+- **MCP Compliant**: Full Model Context Protocol support with FastMCP and HTTP transport
 - **Flexible Authentication**: API key, username/password, or OAuth2 per-user tokens
 - **File Management**: Automatic cleanup of expired files with storage statistics
 - **Docker Ready**: Complete containerization support
