@@ -184,21 +184,21 @@ if REDMINE_AUTH_MODE == "oauth":
     app.add_middleware(RedmineOAuthMiddleware)
     register_oauth_routes(app)
 
+# Log version at module load time so it appears regardless of how the server is started
+logger.info("Redmine MCP Server v%s", get_version())
+logger.info("Auth mode: %s", REDMINE_AUTH_MODE)
+
 
 def main():
     """Main entry point for the console script."""
     # Note: .env is already loaded during redmine_handler import
-
-    # Log version and auth mode at startup
-    server_version = get_version()
-    logger.info(f"Redmine MCP Server v{server_version}")
-    logger.info(f"Auth mode: {REDMINE_AUTH_MODE}")
+    # Note: version/auth mode are logged at module level (works for both direct and uvicorn invocation)
 
     host = os.getenv("SERVER_HOST", "127.0.0.1")
     port = int(os.getenv("SERVER_PORT", "8000"))
 
     # Run with our app directly so custom routes (well-known endpoints) are served
-    uvicorn.run(app, host=host, port=port)
+    uvicorn.run(app, host=host, port=port, log_config=None)
 
 
 if __name__ == "__main__":

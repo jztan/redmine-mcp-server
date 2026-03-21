@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Fixed
+- Version and auth mode are now logged at module import time, ensuring they appear in Docker deployments where the server is started via `uvicorn main:app` directly (bypassing `main()`)
+- Pass `log_config=None` to `uvicorn.run()` to preserve the configured logging format in local deployments
+
 ### Changed
 - Migrated from `mcp[cli]>=1.25.0,<2` to `fastmcp>=3.0.0,<4` (standalone FastMCP v3 package)
 

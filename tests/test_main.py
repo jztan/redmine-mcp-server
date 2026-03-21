@@ -93,6 +93,3 @@ class TestMainFunction:
         assert call_args[0][0] is app
         assert isinstance(call_args[1]["host"], str)
         assert isinstance(call_args[1]["port"], int)
-
-        # Verify version was logged
-        assert mock_logger.info.called
