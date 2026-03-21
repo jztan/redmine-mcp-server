@@ -192,7 +192,8 @@ logger.info("Auth mode: %s", REDMINE_AUTH_MODE)
 def main():
     """Main entry point for the console script."""
     # Note: .env is already loaded during redmine_handler import
-    # Note: version/auth mode are logged at module level (works for both direct and uvicorn invocation)
+    # Note: version/auth mode are logged at module level
+    # (works for both direct and uvicorn invocation)
 
     host = os.getenv("SERVER_HOST", "127.0.0.1")
     port = int(os.getenv("SERVER_PORT", "8000"))
