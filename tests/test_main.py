@@ -87,15 +87,9 @@ class TestMainFunction:
         # Call main - uvicorn.run is mocked so it won't block
         main()
 
-        # Verify stateless mode was enabled
-        assert mock_mcp.settings.stateless_http is True
-
         # Verify server was started with our app (so custom routes are served)
         mock_uvicorn.run.assert_called_once()
         call_args = mock_uvicorn.run.call_args
         assert call_args[0][0] is app
         assert isinstance(call_args[1]["host"], str)
         assert isinstance(call_args[1]["port"], int)
-
-        # Verify version was logged
-        assert mock_logger.info.called

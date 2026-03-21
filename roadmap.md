@@ -121,7 +121,36 @@
 - [x] Project members tool
 - [x] Time tracking tools (list, create, update, list activities)
 - [x] Rebase release/1.0.0 onto develop with all features
-- [ ] Version bump to 1.0.0, Development Status → Production/Stable
+- [x] Version bump to 1.0.0, Development Status → Production/Stable
+
+### 📅 Planned Releases
+
+#### v1.1.0 — FastMCP v3 Core Migration ✅
+*Priority: High | Effort: Low | Status: Implemented on `feature/fastmcp-v3`*
+
+- [x] `pyproject.toml`: replace `mcp[cli]>=1.25.0,<2` with `fastmcp>=3.0.0,<4`
+- [x] `redmine_handler.py`: update import from `mcp.server.fastmcp` → `fastmcp`
+- [x] `redmine_handler.py`: remove `host=_server_host` from `FastMCP()` constructor (DNS rebinding protection removed entirely from v3 — no behaviour change for Docker deployments)
+- [x] `main.py`: replace `mcp.streamable_http_app()` with `mcp.http_app(stateless_http=True)`; remove `mcp.settings.stateless_http = True`
+- [x] `test_main.py`: remove `mock_mcp.settings.stateless_http` assertion; delete `test_dns_rebinding_protection.py`
+- [x] `list_redmine_issues` / `search_redmine_issues`: convert `**kwargs` → explicit typed parameters (FastMCP v3 rejects `**kwargs` tool functions); extra filters still available via `filters={}`/`options={}` dict params
+
+#### v1.2.0 — OpenTelemetry Observability
+*Priority: Medium | Effort: Low*
+
+- [ ] Add optional `opentelemetry-sdk` dependency
+- [ ] Document OTEL configuration in `docs/contributing.md`
+- [ ] Zero overhead when unconfigured; production-grade tracing (tool calls, Redmine API latency, error rates) when OTEL SDK is present
+
+#### v2.0.0 — Native FastMCP v3 Auth Migration
+*Priority: High (security) | Effort: Medium*
+
+Replace `RedmineOAuthMiddleware` with FastMCP v3's native `auth=` constructor parameter (`JWTVerifier` / `OAuthProxy` / `MultiAuth`). Closes the medium-likelihood `custom_route` auth bypass risk identified in the compatibility analysis.
+
+- [ ] Evaluate `JWTVerifier` vs `OAuthProxy` fit for Doorkeeper OAuth flow
+- [ ] Migrate `RedmineOAuthMiddleware` Starlette middleware to native `auth=` parameter
+- [ ] Verify OAuth discovery endpoints remain functional
+- [ ] Full auth integration tests
 
 ### 🔮 Future (Only if Users Request)
 - [ ] YAML response format option
@@ -136,4 +165,4 @@
 
 ---
 
-**Last Updated:** 2026-03-11 (v1.0.0 release branch ready)
+**Last Updated:** 2026-03-21 (v1.0.0 released; FastMCP v3 migration implemented on `feature/fastmcp-v3`)

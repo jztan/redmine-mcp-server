@@ -109,15 +109,15 @@ class TestSearchNativeFilters:
 
     @pytest.mark.asyncio
     async def test_open_issues_false(self, mock_redmine):
-        """Test open_issues=False parameter is passed to API."""
+        """Test open_issues=False (default) is not passed to API."""
         mock_issue = self.create_mock_issue()
         mock_redmine.issue.search.return_value = [mock_issue]
 
         result = await search_redmine_issues("bug", open_issues=False)  # noqa: F841
 
-        # Verify API was called with open_issues parameter
+        # Verify open_issues=False is not forwarded (it's the default/falsy)
         call_args = mock_redmine.issue.search.call_args
-        assert call_args[1]["open_issues"] is False
+        assert "open_issues" not in call_args[1]
 
     @pytest.mark.asyncio
     async def test_scope_and_open_issues_combined(self, mock_redmine):

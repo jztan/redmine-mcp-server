@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-03-21
+### Fixed
+- Version and auth mode are now logged at module import time, ensuring they appear in Docker deployments where the server is started via `uvicorn main:app` directly (bypassing `main()`)
+- Pass `log_config=None` to `uvicorn.run()` to preserve the configured logging format in local deployments
+
+### Changed
+- Migrated from `mcp[cli]>=1.25.0,<2` to `fastmcp>=3.0.0,<4` (standalone FastMCP v3 package)
+
+### Dependencies
+- Bump `uvicorn` from 0.40.0 to 0.42.0
+- Bump `black` from 26.1.0 to 26.3.1
+- Bump `python-dotenv` from 1.2.1 to 1.2.2
+- Updated import from `mcp.server.fastmcp` to `fastmcp`
+- Replaced `mcp.streamable_http_app()` with `mcp.http_app(stateless_http=True)` (v3 API)
+- Removed `mcp.settings.stateless_http` runtime mutation (`stateless_http` is now passed to `http_app()`)
+- Removed `host=` parameter from `FastMCP()` constructor (not a valid v3 parameter; DNS rebinding protection removed from FastMCP v3 entirely — no behaviour change for Docker deployments)
+- Converted `list_redmine_issues` and `search_redmine_issues` from `**kwargs` to explicit parameters (FastMCP v3 no longer supports `**kwargs` tool functions); additional arbitrary filters still available via `filters={}` / `options={}` dict parameters
+
 ## [1.0.0] - 2026-03-14
 ### Added
 - **New MCP Tool: `list_project_members`** - List members and groups of a Redmine project

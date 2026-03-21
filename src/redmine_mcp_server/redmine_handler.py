@@ -20,7 +20,7 @@ Environment Variables Required:
 Dependencies:
     - redminelib: Python library for Redmine API interactions
     - python-dotenv: Environment variable management
-    - mcp.server.fastmcp: FastMCP server implementation
+    - fastmcp: FastMCP server implementation
 """
 
 import os
@@ -50,7 +50,7 @@ from requests.exceptions import (
     Timeout as RequestsTimeout,
     SSLError as RequestsSSLError,
 )
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 from .file_manager import AttachmentFileManager
 
 # Configure logging
@@ -198,12 +198,7 @@ def _get_redmine_client() -> Redmine:
 
 
 # Initialize FastMCP server
-# Pass SERVER_HOST so DNS rebinding protection is configured correctly.
-# When host is 0.0.0.0 (Docker/public), FastMCP skips auto-enabling
-# DNS rebinding protection, avoiding 421 Misdirected Request errors
-# for connections via public IPs.
-_server_host = os.getenv("SERVER_HOST", "127.0.0.1")
-mcp = FastMCP("redmine_mcp_tools", host=_server_host)
+mcp = FastMCP("redmine_mcp_tools")
 
 
 class CleanupTaskManager:
@@ -1648,7 +1643,18 @@ async def list_redmine_versions(
 
 @mcp.tool()
 async def list_redmine_issues(
-    **filters: Any,
+    project_id: Optional[Union[int, str]] = None,
+    status_id: Optional[int] = None,
+    tracker_id: Optional[int] = None,
+    assigned_to_id: Optional[Union[int, str]] = None,
+    priority_id: Optional[int] = None,
+    fixed_version_id: Optional[int] = None,
+    sort: Optional[str] = None,
+    limit: Optional[int] = 25,
+    offset: int = 0,
+    include_pagination_info: bool = False,
+    fields: Optional[List[str]] = None,
+    filters: Optional[Dict[str, Any]] = None,
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """List Redmine issues with flexible filtering and pagination support.
 
@@ -1658,24 +1664,24 @@ async def list_redmine_issues(
     find unassigned issues, or apply any combination of filters.
 
     Args:
-        **filters: Keyword arguments for filtering and pagination:
-            - project_id: Filter by project (ID or string identifier)
-            - status_id: Filter by status ID
-            - tracker_id: Filter by tracker ID
-            - assigned_to_id: Filter by assignee. Use a numeric user ID
-                             or the special value 'me' to retrieve issues
-                             assigned to the currently authenticated user.
-            - priority_id: Filter by priority ID
-            - fixed_version_id: Filter by target version/milestone ID
-            - sort: Sort order (e.g., "updated_on:desc")
-            - limit: Maximum number of issues to return (default: 25, max: 1000)
-            - offset: Number of issues to skip for pagination (default: 0)
-            - include_pagination_info: Return structured response with metadata
-                                   (default: False)
-            - fields: List of field names to include in results (default: all)
-                     Available: id, subject, description, project, status,
-                               priority, author, assigned_to, created_on, updated_on
-            - [other Redmine API filters]
+        project_id: Filter by project (ID or string identifier).
+        status_id: Filter by status ID.
+        tracker_id: Filter by tracker ID.
+        assigned_to_id: Filter by assignee. Use a numeric user ID or the
+            special value 'me' to retrieve issues assigned to the currently
+            authenticated user.
+        priority_id: Filter by priority ID.
+        fixed_version_id: Filter by target version/milestone ID.
+        sort: Sort order (e.g., "updated_on:desc").
+        limit: Maximum number of issues to return (default: 25, max: 1000).
+        offset: Number of issues to skip for pagination (default: 0).
+        include_pagination_info: Return structured response with pagination
+            metadata (default: False).
+        fields: List of field names to include in results (default: all).
+            Available: id, subject, description, project, status, priority,
+            author, assigned_to, created_on, updated_on.
+        filters: Additional Redmine API filter parameters as a dict. Use this
+            for any filter not listed above (e.g., {"cf_1": "value"}).
 
     Returns:
         List[Dict] (default) or Dict with 'issues' and 'pagination' keys.
@@ -1712,20 +1718,26 @@ async def list_redmine_issues(
     await _ensure_cleanup_started()
 
     try:
-        # Handle MCP interface wrapping parameters in 'filters' key
-        if "filters" in filters and isinstance(filters["filters"], dict):
-            actual_filters = filters["filters"]
-        else:
-            actual_filters = filters
-
-        # Extract pagination and field selection parameters
-        limit = actual_filters.pop("limit", 25)
-        offset = actual_filters.pop("offset", 0)
-        include_pagination_info = actual_filters.pop("include_pagination_info", False)
-        fields = actual_filters.pop("fields", None)
-
-        # Use actual_filters for remaining Redmine filters
-        filters = actual_filters
+        # Build Redmine API filter dict from explicit parameters
+        redmine_api_filters: Dict[str, Any] = {}
+        if project_id is not None:
+            redmine_api_filters["project_id"] = project_id
+        if status_id is not None:
+            redmine_api_filters["status_id"] = status_id
+        if tracker_id is not None:
+            redmine_api_filters["tracker_id"] = tracker_id
+        if assigned_to_id is not None:
+            redmine_api_filters["assigned_to_id"] = assigned_to_id
+        if priority_id is not None:
+            redmine_api_filters["priority_id"] = priority_id
+        if fixed_version_id is not None:
+            redmine_api_filters["fixed_version_id"] = fixed_version_id
+        if sort is not None:
+            redmine_api_filters["sort"] = sort
+        # Merge additional arbitrary Redmine filters if provided
+        if filters:
+            redmine_api_filters.update(filters)
+        filters = redmine_api_filters
 
         # Log request for monitoring
         filter_keys = list(filters.keys()) if filters else []
@@ -1853,7 +1865,14 @@ async def list_redmine_issues(
 
 @mcp.tool()
 async def search_redmine_issues(
-    query: str, **options: Any
+    query: str,
+    limit: Optional[int] = 25,
+    offset: int = 0,
+    include_pagination_info: bool = False,
+    fields: Optional[List[str]] = None,
+    scope: Optional[str] = None,
+    open_issues: bool = False,
+    options: Optional[Dict[str, Any]] = None,
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """Search Redmine issues matching a query string with pagination support.
 
@@ -1862,18 +1881,16 @@ async def search_redmine_issues(
 
     Args:
         query: Text to search for in issues.
-        **options: Search, pagination, and field selection options:
-            - limit: Maximum number of issues to return (default: 25, max: 1000)
-            - offset: Number of issues to skip for pagination (default: 0)
-            - include_pagination_info: Return structured response with metadata
-                                   (default: False)
-            - fields: List of field names to include in results (default: None = all)
-                     Available: id, subject, description, project, status,
-                               priority, author, assigned_to, created_on, updated_on
-            - scope: Search scope (default: "all")
-                    Values: "all", "my_project", "subprojects"
-            - open_issues: Search only open issues (default: False)
-            - [other Redmine Search API parameters]
+        limit: Maximum number of issues to return (default: 25, max: 1000).
+        offset: Number of issues to skip for pagination (default: 0).
+        include_pagination_info: Return structured response with pagination
+            metadata (default: False).
+        fields: List of field names to include in results (default: all).
+            Available: id, subject, description, project, status, priority,
+            author, assigned_to, created_on, updated_on.
+        scope: Search scope. Values: "all", "my_project", "subprojects".
+        open_issues: Search only open issues (default: False).
+        options: Additional Redmine Search API parameters as a dict.
 
     Returns:
         List[Dict] (default) or Dict with 'issues' and 'pagination' keys.
@@ -1914,20 +1931,16 @@ async def search_redmine_issues(
     """
 
     try:
-        # Handle MCP interface wrapping parameters in 'options' key
-        if "options" in options and isinstance(options["options"], dict):
-            actual_options = options["options"]
-        else:
-            actual_options = options
-
-        # Extract pagination and field selection parameters
-        limit = actual_options.pop("limit", 25)
-        offset = actual_options.pop("offset", 0)
-        include_pagination_info = actual_options.pop("include_pagination_info", False)
-        fields = actual_options.pop("fields", None)
-
-        # Use actual_options for remaining Redmine search options
-        options = actual_options
+        # Build search options dict from explicit parameters
+        search_options: Dict[str, Any] = {}
+        if scope is not None:
+            search_options["scope"] = scope
+        if open_issues:
+            search_options["open_issues"] = open_issues
+        # Merge additional arbitrary search options if provided
+        if options:
+            search_options.update(options)
+        options = search_options
 
         # Log request for monitoring
         option_keys = list(options.keys()) if options else []
