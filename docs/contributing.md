@@ -451,7 +451,7 @@ redmine-mcp-server/
 
 ### Key Technologies
 
-- **FastMCP**: MCP protocol implementation with streamable HTTP transport
+- **FastMCP**: MCP protocol implementation with HTTP transport
 - **python-redmine**: Official Redmine Python library
 - **FastAPI**: HTTP server framework
 - **uvicorn**: ASGI server

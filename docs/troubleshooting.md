@@ -544,7 +544,7 @@ This guide covers common issues and solutions for the Redmine MCP Server.
 
 **Symptoms:**
 - "HTTP transport not supported" errors
-- "Streamable HTTP failed" messages
+- "HTTP transport failed" messages
 
 **Solutions:**
 
