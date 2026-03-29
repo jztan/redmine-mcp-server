@@ -18,18 +18,15 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install uv
-        run: pip install uv
+        uses: astral-sh/setup-uv@v4
       - name: Set up environment
         run: |
-          uv venv
-          source .venv/bin/activate
-          uv pip install -e .[test]
+          uv sync --locked --extra test
       - name: Generate test SSL certificates
         run: bash tests/fixtures/ssl/generate-test-certs.sh
       - name: Run tests with coverage
         run: |
-          source .venv/bin/activate
-          python -m pytest --cov=src/redmine_mcp_server --cov-report=xml --cov-report=term -m "not integration" tests/
+          uv run pytest --cov=src/redmine_mcp_server --cov-report=xml --cov-report=term -m "not integration" tests/
       - name: Upload coverage to Codecov
         if: matrix.python-version == '3.13'
         uses: codecov/codecov-action@v5
