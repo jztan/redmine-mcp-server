@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### CI
+- Add `dependency-audit.yml` workflow: lockfile integrity check (`uv lock --check`), CVE scanning via `pip-audit`, and PR step summary flagging lockfile changes for supply-chain review
+- Pin upper bounds on all runtime and dev dependencies in `pyproject.toml` to prevent unexpected major-version upgrades
+- Upgrade CI workflows to `actions/checkout@v6` and `actions/setup-python@v6`
+- Replace manual venv activation with `astral-sh/setup-uv@v4` and `uv sync --locked` for reproducible installs
+- Use `uv run` for all tool invocations (`flake8`, `black`, `pytest`) instead of sourcing `.venv`
+
 ## [1.1.0] - 2026-03-21
 ### Fixed
 - Version and auth mode are now logged at module import time, ensuring they appear in Docker deployments where the server is started via `uvicorn main:app` directly (bypassing `main()`)

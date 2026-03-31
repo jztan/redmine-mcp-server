@@ -1,0 +1,70 @@
+name: Dependency Audit
+
+on:
+  pull_request:
+    paths:
+      - 'pyproject.toml'
+      - 'uv.lock'
+  push:
+    branches:
+      - develop
+      - master
+    paths:
+      - 'pyproject.toml'
+      - 'uv.lock'
+  schedule:
+    # Run weekly on Monday at 08:00 UTC
+    - cron: '0 8 * * 1'
+  workflow_dispatch:
+
+jobs:
+  lockfile-integrity:
+    name: Verify lockfile integrity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v4
+      - name: Verify lockfile is up-to-date
+        run: uv lock --check
+
+  audit-vulnerabilities:
+    name: Audit for known vulnerabilities
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Install pip-audit
+        run: pip install pip-audit
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+      - name: Audit dependencies
+        run: |
+          uv export --no-hashes > /tmp/requirements-audit.txt
+          pip-audit -r /tmp/requirements-audit.txt --strict
+
+  lockfile-diff:
+    name: Flag dependency changes in PRs
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Check for lockfile changes
+        run: |
+          if git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -q '^uv.lock$'; then
+            echo "::warning::uv.lock has changed — review dependency changes carefully"
+            echo "## Dependency changes detected" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "The lockfile \`uv.lock\` was modified in this PR." >> $GITHUB_STEP_SUMMARY
+            echo "Please review dependency additions/removals/upgrades for supply-chain risk." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Changed packages:" >> $GITHUB_STEP_SUMMARY
+            echo '```diff' >> $GITHUB_STEP_SUMMARY
+            git diff origin/${{ github.base_ref }}...HEAD -- uv.lock | grep -E '^\+name|^\-name|^\+version|^\-version' | head -100 >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No lockfile changes detected."
+          fi
