@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- Patch 14 CVEs across 7 transitive dependencies: pyjwt→2.12.1 (CVE-2026-32597), cryptography→46.0.6 (CVE-2026-26007, CVE-2026-34073), starlette→1.0.0 / fastapi→0.135.2 (CVE-2025-54121, CVE-2025-62727), urllib3→2.6.3 (CVE-2025-50181/82, CVE-2025-66418/71, CVE-2026-21441), requests→2.33.1 (CVE-2024-47081, CVE-2026-25645), python-multipart→0.0.22 (CVE-2026-24486), pygments→2.20.0 (CVE-2026-4539)
+
 ### CI
 - Add `dependency-audit.yml` workflow: lockfile integrity check (`uv lock --check`), CVE scanning via `pip-audit`, and PR step summary flagging lockfile changes for supply-chain review
 - Pin upper bounds on all runtime and dev dependencies in `pyproject.toml` to prevent unexpected major-version upgrades
