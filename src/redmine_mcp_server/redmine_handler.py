@@ -813,6 +813,22 @@ def _augment_fields_with_required_custom_fields(
     return updated_fields
 
 
+def _safe_isoformat(val: Any) -> Optional[str]:
+    """Return an ISO-8601 string for a date/datetime value.
+
+    Some Redmine fields arrive as pre-formatted strings instead of
+    ``datetime`` objects.  Calling ``.isoformat()`` on those strings
+    raises ``AttributeError``, so this helper passes strings through
+    unchanged and only calls ``.isoformat()`` on real date/datetime
+    instances.
+    """
+    if val is None:
+        return None
+    if isinstance(val, str):
+        return val
+    return val.isoformat()
+
+
 def _coerce_json_safe(value: Any) -> Any:
     """Convert arbitrary values into JSON-safe data."""
     if value is None or isinstance(value, (str, int, float, bool)):
@@ -892,16 +908,8 @@ def _issue_to_dict(issue: Any, include_custom_fields: bool = False) -> Dict[str,
             if assigned is not None
             else None
         ),
-        "created_on": (
-            issue.created_on.isoformat()
-            if getattr(issue, "created_on", None) is not None
-            else None
-        ),
-        "updated_on": (
-            issue.updated_on.isoformat()
-            if getattr(issue, "updated_on", None) is not None
-            else None
-        ),
+        "created_on": _safe_isoformat(getattr(issue, "created_on", None)),
+        "updated_on": _safe_isoformat(getattr(issue, "updated_on", None)),
     }
 
     if include_custom_fields:
@@ -1196,16 +1204,8 @@ def _issue_to_dict_selective(
             if assigned is not None
             else None
         ),
-        "created_on": (
-            issue.created_on.isoformat()
-            if getattr(issue, "created_on", None) is not None
-            else None
-        ),
-        "updated_on": (
-            issue.updated_on.isoformat()
-            if getattr(issue, "updated_on", None) is not None
-            else None
-        ),
+        "created_on": _safe_isoformat(getattr(issue, "created_on", None)),
+        "updated_on": _safe_isoformat(getattr(issue, "updated_on", None)),
     }
 
     # Return only requested fields (silently skip invalid field names)
@@ -1241,11 +1241,7 @@ def _journals_to_list(issue: Any) -> List[Dict[str, Any]]:
                     else None
                 ),
                 "notes": wrap_insecure_content(notes),
-                "created_on": (
-                    journal.created_on.isoformat()
-                    if getattr(journal, "created_on", None) is not None
-                    else None
-                ),
+                "created_on": _safe_isoformat(getattr(journal, "created_on", None)),
             }
         )
     return journals
@@ -1280,11 +1276,7 @@ def _attachments_to_list(issue: Any) -> List[Dict[str, Any]]:
                     if getattr(attachment, "author", None) is not None
                     else None
                 ),
-                "created_on": (
-                    attachment.created_on.isoformat()
-                    if getattr(attachment, "created_on", None) is not None
-                    else None
-                ),
+                "created_on": _safe_isoformat(getattr(attachment, "created_on", None)),
             }
         )
     return attachments
@@ -1308,16 +1300,8 @@ def _version_to_dict(version: Any) -> Dict[str, Any]:
         "project": (
             {"id": project.id, "name": project.name} if project is not None else None
         ),
-        "created_on": (
-            version.created_on.isoformat()
-            if getattr(version, "created_on", None) is not None
-            else None
-        ),
-        "updated_on": (
-            version.updated_on.isoformat()
-            if getattr(version, "updated_on", None) is not None
-            else None
-        ),
+        "created_on": _safe_isoformat(getattr(version, "created_on", None)),
+        "updated_on": _safe_isoformat(getattr(version, "updated_on", None)),
     }
 
 
@@ -1523,11 +1507,7 @@ async def list_redmine_projects() -> List[Dict[str, Any]]:
                 "name": project.name,
                 "identifier": project.identifier,
                 "description": getattr(project, "description", ""),
-                "created_on": (
-                    project.created_on.isoformat()
-                    if getattr(project, "created_on", None) is not None
-                    else None
-                ),
+                "created_on": _safe_isoformat(getattr(project, "created_on", None)),
             }
             for project in projects
         ]
@@ -2699,16 +2679,8 @@ def _time_entry_to_dict(time_entry: Any) -> Dict[str, Any]:
             if activity is not None
             else None
         ),
-        "created_on": (
-            time_entry.created_on.isoformat()
-            if getattr(time_entry, "created_on", None) is not None
-            else None
-        ),
-        "updated_on": (
-            time_entry.updated_on.isoformat()
-            if getattr(time_entry, "updated_on", None) is not None
-            else None
-        ),
+        "created_on": _safe_isoformat(getattr(time_entry, "created_on", None)),
+        "updated_on": _safe_isoformat(getattr(time_entry, "updated_on", None)),
     }
 
 
