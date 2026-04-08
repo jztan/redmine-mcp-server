@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [1.1.2] - 2026-04-08
 ### Fixed
 - Fix `AttributeError: 'str' object has no attribute 'isoformat'` crash when Redmine server returns date fields as pre-formatted strings instead of datetime objects (affects non-UTC timezone configurations and certain Redmine versions)
 
