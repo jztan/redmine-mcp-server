@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Fix `AttributeError: 'str' object has no attribute 'isoformat'` crash when Redmine server returns date fields as pre-formatted strings instead of datetime objects (affects non-UTC timezone configurations and certain Redmine versions)
 
+### Tests
+- Expand `test_safe_isoformat.py` with coverage for `_issue_to_dict_selective` and `list_redmine_projects` — the two paths omitted from the original PR
+
+### Contributors
+- @mihajlovicjj — reported and fixed the `isoformat` crash on non-UTC Redmine configurations ([#82](https://github.com/jztan/redmine-mcp-server/pull/82))
+
 ## [1.1.1] - 2026-03-31
 ### Security
 - Patch 14 CVEs across 7 transitive dependencies: pyjwt→2.12.1 (CVE-2026-32597), cryptography→46.0.6 (CVE-2026-26007, CVE-2026-34073), starlette→1.0.0 / fastapi→0.135.2 (CVE-2025-54121, CVE-2025-62727), urllib3→2.6.3 (CVE-2025-50181/82, CVE-2025-66418/71, CVE-2026-21441), requests→2.33.1 (CVE-2024-47081, CVE-2026-25645), python-multipart→0.0.22 (CVE-2026-24486), pygments→2.20.0 (CVE-2026-4539)

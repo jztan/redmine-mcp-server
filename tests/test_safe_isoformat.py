@@ -6,15 +6,19 @@ configurations) are handled gracefully instead of raising AttributeError.
 """
 
 from datetime import datetime, date
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
+
+import pytest
 
 from redmine_mcp_server.redmine_handler import (
     _safe_isoformat,
     _issue_to_dict,
+    _issue_to_dict_selective,
     _version_to_dict,
     _time_entry_to_dict,
     _journals_to_list,
     _attachments_to_list,
+    list_redmine_projects,
 )
 
 
@@ -194,3 +198,89 @@ class TestAttachmentsList_StringDates:
         result = _attachments_to_list(issue)
         assert len(result) == 1
         assert result[0]["created_on"] == "2024-01-15T10:30:00+02:00"
+
+
+class TestIssueToDictSelective_StringDates:
+    """Verify _issue_to_dict_selective handles string date fields without crashing."""
+
+    def test_string_dates(self):
+        issue = _make_mock_issue(
+            created_on="2024-01-15T10:30:00+02:00",
+            updated_on="2024-01-16T14:00:00+02:00",
+        )
+        result = _issue_to_dict_selective(issue, ["created_on", "updated_on"])
+        assert result["created_on"] == "2024-01-15T10:30:00+02:00"
+        assert result["updated_on"] == "2024-01-16T14:00:00+02:00"
+
+    def test_datetime_dates(self):
+        issue = _make_mock_issue(
+            created_on=datetime(2024, 1, 15, 10, 30, 0),
+            updated_on=datetime(2024, 1, 16, 14, 0, 0),
+        )
+        result = _issue_to_dict_selective(issue, ["created_on", "updated_on"])
+        assert result["created_on"] == "2024-01-15T10:30:00"
+        assert result["updated_on"] == "2024-01-16T14:00:00"
+
+    def test_none_dates(self):
+        issue = _make_mock_issue(created_on=None, updated_on=None)
+        result = _issue_to_dict_selective(issue, ["created_on", "updated_on"])
+        assert result["created_on"] is None
+        assert result["updated_on"] is None
+
+    def test_only_requested_fields_returned(self):
+        """Selective mode only returns the requested fields."""
+        issue = _make_mock_issue(
+            created_on="2024-01-15T10:30:00+02:00",
+            updated_on="2024-01-16T14:00:00+02:00",
+        )
+        result = _issue_to_dict_selective(issue, ["id", "created_on"])
+        assert "created_on" in result
+        assert "updated_on" not in result
+
+
+class TestListRedmineProjects_StringDates:
+    """Verify list_redmine_projects handles string date fields without crashing."""
+
+    def _make_mock_project(self, project_id, created_on=None):
+        p = Mock()
+        p.id = project_id
+        p.name = f"Project {project_id}"
+        p.identifier = f"project-{project_id}"
+        p.description = f"Description {project_id}"
+        p.created_on = created_on
+        return p
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_string_dates(self, mock_redmine):
+        """list_redmine_projects passes string dates through without crashing."""
+        mock_redmine.project.all.return_value = [
+            self._make_mock_project(1, created_on="2024-01-15T10:30:00+02:00"),
+            self._make_mock_project(2, created_on="2024-02-01T08:00:00+02:00"),
+        ]
+        result = await list_redmine_projects()
+        assert len(result) == 2
+        assert result[0]["created_on"] == "2024-01-15T10:30:00+02:00"
+        assert result[1]["created_on"] == "2024-02-01T08:00:00+02:00"
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_datetime_dates(self, mock_redmine):
+        """list_redmine_projects converts datetime objects to ISO strings."""
+        mock_redmine.project.all.return_value = [
+            self._make_mock_project(1, created_on=datetime(2024, 1, 15, 10, 30, 0)),
+        ]
+        result = await list_redmine_projects()
+        assert len(result) == 1
+        assert result[0]["created_on"] == "2024-01-15T10:30:00"
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_none_dates(self, mock_redmine):
+        """list_redmine_projects returns None for missing date fields."""
+        mock_redmine.project.all.return_value = [
+            self._make_mock_project(1, created_on=None),
+        ]
+        result = await list_redmine_projects()
+        assert len(result) == 1
+        assert result[0]["created_on"] is None
