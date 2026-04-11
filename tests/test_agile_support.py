@@ -4,7 +4,6 @@ import json
 import os
 import sys
 
-import pytest
 from unittest.mock import Mock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -13,8 +12,6 @@ from redmine_mcp_server.redmine_handler import (  # noqa: E402
     _is_agile_enabled,
     _fetch_agile_data,
     _apply_agile_story_points,
-    get_redmine_issue,
-    update_redmine_issue,
 )
 
 
