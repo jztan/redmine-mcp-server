@@ -539,6 +539,46 @@ def _is_read_only_mode() -> bool:
     return _is_true_env("REDMINE_MCP_READ_ONLY", "false")
 
 
+def _is_agile_enabled() -> bool:
+    """Check if RedmineUP Agile plugin support is enabled."""
+    return _is_true_env("REDMINE_AGILE_ENABLED", "false")
+
+
+def _fetch_agile_data(issue_id: int) -> Dict[str, Any]:
+    """Fetch agile fields for an issue from the RedmineUP Agile endpoint.
+
+    Returns a dict with story_points, agile_sprint_id, and agile_position.
+    Raises on any HTTP error (caller is responsible for catching).
+    """
+    client = _get_redmine_client()
+    url = f"{REDMINE_URL}/issues/{issue_id}/agile_data.json"
+    response = client.engine.request("get", url)
+    agile_data = response.json().get("agile_data", {}) or {}
+    return {
+        "story_points": agile_data.get("story_points"),
+        "agile_sprint_id": agile_data.get("agile_sprint_id"),
+        "agile_position": agile_data.get("position"),
+    }
+
+
+def _apply_agile_story_points(issue_id: int, story_points) -> None:
+    """Write story_points for an issue via the RedmineUP Agile endpoint.
+
+    Raises on any HTTP error (caller is responsible for catching).
+    """
+    client = _get_redmine_client()
+    url = f"{REDMINE_URL}/issues/{issue_id}.json"
+    payload = json.dumps(
+        {"issue": {"agile_data_attributes": {"story_points": story_points}}}
+    )
+    client.engine.request(
+        "put",
+        url,
+        headers={"Content-Type": "application/json"},
+        data=payload,
+    )
+
+
 _READ_ONLY_ERROR = {
     "error": "This server is in read-only mode (REDMINE_MCP_READ_ONLY=true). "
     "Write operations are disabled."
