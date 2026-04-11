@@ -485,6 +485,27 @@ This guide covers common issues and solutions for the Redmine MCP Server.
    - Access your Redmine administration panel
    - Go to Administration → Plugins and confirm the Agile plugin is listed
 
+### Custom Field Named "story_points" Cannot Be Updated by Name
+
+**Symptoms:**
+- Passing `{"story_points": "value"}` in `update_redmine_issue` has no effect on the custom field
+- The update succeeds but the custom field value does not change
+
+**Cause:**
+The key `story_points` is reserved — it is intercepted before custom field resolution regardless of whether `REDMINE_AGILE_ENABLED` is set. When the plugin is disabled, the value is silently dropped; when enabled, it is routed to the Agile endpoint.
+
+**Solution:**
+Use the explicit `custom_fields` format with the field's numeric ID:
+```python
+update_redmine_issue(
+    issue_id=123,
+    fields={
+        "custom_fields": [{"id": 42, "value": "8"}]
+    }
+)
+```
+Find the field ID via `list_project_issue_custom_fields(project_id)`.
+
 ### Agile Story Points Update Fails
 
 **Symptoms:**

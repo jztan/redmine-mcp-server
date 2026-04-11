@@ -663,6 +663,8 @@ You can also update custom fields by name (for example `{"size": "S"}`) and the 
 
 When `REDMINE_AGILE_ENABLED=true`, you can also pass `story_points` (non-negative integer or `null` to clear) and it will be written via the RedmineUP Agile plugin endpoint. If the plugin is disabled, `story_points` is silently ignored.
 
+**Note:** `story_points` is always intercepted before custom field resolution, regardless of the `REDMINE_AGILE_ENABLED` setting. If your Redmine instance has a custom field literally named `"story_points"`, it cannot be updated by name through this tool — use explicit `custom_fields` with its field ID instead (e.g. `{"custom_fields": [{"id": 42, "value": "8"}]}`).
+
 **Example:**
 ```python
 # Update issue status using status name
