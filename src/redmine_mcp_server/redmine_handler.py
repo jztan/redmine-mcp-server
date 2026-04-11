@@ -2177,6 +2177,12 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
     provided in ``fields``. When present and ``status_id`` is not supplied, the
     function will look up the corresponding status ID and use it for the update.
 
+    When ``REDMINE_AGILE_ENABLED=true``, a ``story_points`` key may also be
+    provided in ``fields``; it is routed to the RedmineUP Agile plugin endpoint
+    separately and is not passed to the standard Redmine update. When
+    ``REDMINE_AGILE_ENABLED=false`` (default), ``story_points`` is silently
+    ignored.
+
     Non-standard keys in ``fields`` are treated as candidate custom-field names.
     When a matching project custom field is found, it is translated into
     ``custom_fields`` entries for Redmine update payloads.
@@ -2215,7 +2221,14 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
         update_fields = _map_named_custom_fields_for_update(issue_id, update_fields)
         _get_redmine_client().issue.update(issue_id, **update_fields)
         if agile_update_needed:
-            _apply_agile_story_points(issue_id, story_points)
+            try:
+                _apply_agile_story_points(issue_id, story_points)
+            except Exception as agile_e:
+                return _handle_redmine_error(
+                    agile_e,
+                    f"updating agile story_points for issue {issue_id}",
+                    {"resource_type": "issue", "resource_id": issue_id},
+                )
         updated_issue = _get_redmine_client().issue.get(issue_id)
         return _issue_to_dict(updated_issue, include_custom_fields=True)
     except ValidationError as e:
@@ -2265,7 +2278,14 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
             )
             _get_redmine_client().issue.update(issue_id, **retry_fields)
             if agile_update_needed:
-                _apply_agile_story_points(issue_id, story_points)
+                try:
+                    _apply_agile_story_points(issue_id, story_points)
+                except Exception as agile_e:
+                    return _handle_redmine_error(
+                        agile_e,
+                        f"updating agile story_points for issue {issue_id}",
+                        {"resource_type": "issue", "resource_id": issue_id},
+                    )
             updated_issue = _get_redmine_client().issue.get(issue_id)
             return _issue_to_dict(updated_issue, include_custom_fields=True)
         except Exception as retry_error:
