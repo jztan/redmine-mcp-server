@@ -463,6 +463,43 @@ This guide covers common issues and solutions for the Redmine MCP Server.
    ATTACHMENT_EXPIRES_MINUTES=120  # Increase expiry time
    ```
 
+### Agile Fields Missing from Issue Results
+
+**Symptoms:**
+- `story_points`, `agile_sprint_id`, `agile_position` not present in `get_redmine_issue` response even though `REDMINE_AGILE_ENABLED=true`
+
+**Solutions:**
+
+1. **Verify `REDMINE_AGILE_ENABLED` is set correctly**
+   ```bash
+   # In .env file
+   REDMINE_AGILE_ENABLED=true
+   ```
+
+2. **Enable the Agile module for the project**
+   - Go to Project Settings → Modules in Redmine
+   - Check the **Agile** checkbox and save
+   - Without this, the agile endpoint returns 403 and fields are silently omitted
+
+3. **Verify the RedmineUP Agile plugin is installed**
+   - Access your Redmine administration panel
+   - Go to Administration → Plugins and confirm the Agile plugin is listed
+
+### Agile Story Points Update Fails
+
+**Symptoms:**
+- `update_redmine_issue` with `story_points` returns an error
+- Error message mentions "Story points is invalid"
+
+**Solutions:**
+
+1. **Use a non-negative integer or `null`**
+   - Valid values: `0`, `1`, `5`, `8`, etc.
+   - Pass `null` to clear story points
+   - Negative values (e.g. `-1`) are rejected by Redmine with a 422 error
+
+2. **Check the Agile module is enabled for the project** (see above)
+
 ### Memory or Performance Issues
 
 **Symptoms:**

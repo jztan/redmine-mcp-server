@@ -372,7 +372,7 @@ Retrieve detailed information about a specific Redmine issue.
 - `include_relations` (boolean, optional): Include issue relations. Default: `false`
 - `include_children` (boolean, optional): Include child issues. Default: `false`
 
-**Returns:** Issue dictionary with details, journals, and attachments
+**Returns:** Issue dictionary with details, journals, and attachments. When `REDMINE_AGILE_ENABLED=true`, also includes `story_points`, `agile_sprint_id`, and `agile_position` from the RedmineUP Agile plugin.
 
 **Example:**
 ```json
@@ -385,6 +385,18 @@ Retrieve detailed information about a specific Redmine issue.
   "custom_fields": [{"id": 6, "name": "Size", "value": "S"}],
   "journals": [...],
   "attachments": [...]
+}
+```
+
+**With `REDMINE_AGILE_ENABLED=true`:**
+```json
+{
+  "id": 123,
+  "subject": "Bug in login form",
+  "story_points": 5,
+  "agile_sprint_id": null,
+  "agile_position": 2,
+  ...
 }
 ```
 
@@ -649,6 +661,8 @@ Updates an existing issue with the provided fields. Blocked when `REDMINE_MCP_RE
 **Note:** You can use either `status_id` or `status_name` in fields. When `status_name` is provided, the tool automatically resolves the corresponding status ID.
 You can also update custom fields by name (for example `{"size": "S"}`) and the tool will resolve them to Redmine `custom_fields` entries using project custom-field metadata. You can still pass explicit `custom_fields` with field IDs.
 
+When `REDMINE_AGILE_ENABLED=true`, you can also pass `story_points` (non-negative integer or `null` to clear) and it will be written via the RedmineUP Agile plugin endpoint. If the plugin is disabled, `story_points` is silently ignored.
+
 **Example:**
 ```python
 # Update issue status using status name
@@ -669,11 +683,19 @@ update_redmine_issue(
     }
 )
 
-# Update Agile/custom field by name
+# Update custom field by name
 update_redmine_issue(
     issue_id=123,
     fields={
         "size": "S"
+    }
+)
+
+# Set story points (requires REDMINE_AGILE_ENABLED=true)
+update_redmine_issue(
+    issue_id=123,
+    fields={
+        "story_points": 8
     }
 )
 ```
