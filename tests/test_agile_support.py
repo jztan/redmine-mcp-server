@@ -14,6 +14,7 @@ from redmine_mcp_server.redmine_handler import (  # noqa: E402
     _fetch_agile_data,
     _apply_agile_story_points,
     get_redmine_issue,
+    update_redmine_issue,
 )
 
 
@@ -185,3 +186,98 @@ class TestGetRedmineIssueAgile:
         assert "error" not in result
         assert result["id"] == 1
         assert "story_points" not in result
+
+
+class TestUpdateRedmineIssueAgile:
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_extracts_story_points_and_calls_agile_endpoint(self, mock_redmine):
+        mock_redmine.issue.update.return_value = True
+        mock_redmine.issue.get.return_value = _make_minimal_issue(1)
+        mock_redmine.engine.request.return_value = Mock()
+
+        with patch.dict(os.environ, {"REDMINE_AGILE_ENABLED": "true"}):
+            result = await update_redmine_issue(
+                1, {"subject": "New", "story_points": 8}
+            )
+
+        # story_points must NOT be passed to issue.update
+        mock_redmine.issue.update.assert_called_once_with(1, subject="New")
+        # agile endpoint must be called with correct payload
+        mock_redmine.engine.request.assert_called_once_with(
+            "put",
+            "http://localhost:3000/issues/1.json",
+            headers={"Content-Type": "application/json"},
+            data=json.dumps(
+                {"issue": {"agile_data_attributes": {"story_points": 8}}}
+            ),
+        )
+        assert result["id"] == 1
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_null_story_points_clears_field(self, mock_redmine):
+        mock_redmine.issue.update.return_value = True
+        mock_redmine.issue.get.return_value = _make_minimal_issue(1)
+        mock_redmine.engine.request.return_value = Mock()
+
+        with patch.dict(os.environ, {"REDMINE_AGILE_ENABLED": "true"}):
+            await update_redmine_issue(1, {"story_points": None})
+
+        mock_redmine.engine.request.assert_called_once_with(
+            "put",
+            "http://localhost:3000/issues/1.json",
+            headers={"Content-Type": "application/json"},
+            data=json.dumps(
+                {"issue": {"agile_data_attributes": {"story_points": None}}}
+            ),
+        )
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_story_points_silently_dropped_when_disabled(self, mock_redmine):
+        mock_redmine.issue.update.return_value = True
+        mock_redmine.issue.get.return_value = _make_minimal_issue(1)
+
+        with patch.dict(os.environ, {"REDMINE_AGILE_ENABLED": "false"}):
+            result = await update_redmine_issue(1, {"subject": "X", "story_points": 5})
+
+        # story_points must NOT reach issue.update
+        mock_redmine.issue.update.assert_called_once_with(1, subject="X")
+        # No agile HTTP call
+        mock_redmine.engine.request.assert_not_called()
+        assert result["id"] == 1
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_no_agile_call_when_story_points_absent(self, mock_redmine):
+        mock_redmine.issue.update.return_value = True
+        mock_redmine.issue.get.return_value = _make_minimal_issue(1)
+
+        with patch.dict(os.environ, {"REDMINE_AGILE_ENABLED": "true"}):
+            result = await update_redmine_issue(1, {"subject": "Only subject"})
+
+        mock_redmine.engine.request.assert_not_called()
+        assert result["id"] == 1
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_returns_error_when_agile_call_fails_after_standard_update(
+        self, mock_redmine
+    ):
+        from redminelib.exceptions import ValidationError
+
+        mock_redmine.issue.update.return_value = True
+        mock_redmine.engine.request.side_effect = ValidationError("invalid")
+
+        with patch.dict(os.environ, {"REDMINE_AGILE_ENABLED": "true"}):
+            result = await update_redmine_issue(1, {"story_points": -1})
+
+        assert "error" in result
+        mock_redmine.issue.update.assert_called_once()
+        # Never reaches issue.get — error returned before that
+        mock_redmine.issue.get.assert_not_called()

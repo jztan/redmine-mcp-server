@@ -2187,6 +2187,18 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
 
     update_fields = dict(fields)
 
+    # Extract agile fields — not understood by python-redmine.
+    # Use explicit key presence check so story_points=None (clear) still triggers
+    # the agile endpoint (story_points is not None would skip it).
+    story_points = None
+    agile_update_needed = False
+    if _is_agile_enabled():
+        if "story_points" in update_fields:
+            story_points = update_fields.pop("story_points")
+            agile_update_needed = True
+    else:
+        update_fields.pop("story_points", None)
+
     # Convert status name to id if requested
     if "status_name" in update_fields and "status_id" not in update_fields:
         name = str(update_fields.pop("status_name")).lower()
@@ -2202,6 +2214,8 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
     try:
         update_fields = _map_named_custom_fields_for_update(issue_id, update_fields)
         _get_redmine_client().issue.update(issue_id, **update_fields)
+        if agile_update_needed:
+            _apply_agile_story_points(issue_id, story_points)
         updated_issue = _get_redmine_client().issue.get(issue_id)
         return _issue_to_dict(updated_issue, include_custom_fields=True)
     except ValidationError as e:
@@ -2250,6 +2264,8 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
                 missing_names,
             )
             _get_redmine_client().issue.update(issue_id, **retry_fields)
+            if agile_update_needed:
+                _apply_agile_story_points(issue_id, story_points)
             updated_issue = _get_redmine_client().issue.get(issue_id)
             return _issue_to_dict(updated_issue, include_custom_fields=True)
         except Exception as retry_error:
