@@ -552,8 +552,8 @@ def _fetch_agile_data(issue_id: int) -> Dict[str, Any]:
     """
     client = _get_redmine_client()
     url = f"{REDMINE_URL}/issues/{issue_id}/agile_data.json"
-    response = client.engine.request("get", url)
-    agile_data = response.json().get("agile_data", {}) or {}
+    payload = client.engine.request("get", url)
+    agile_data = payload.get("agile_data", {}) or {}
     return {
         "story_points": agile_data.get("story_points"),
         "agile_sprint_id": agile_data.get("agile_sprint_id"),
@@ -2218,8 +2218,9 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
             logger.warning(f"Error resolving status name '{name}': {e}")
 
     try:
-        update_fields = _map_named_custom_fields_for_update(issue_id, update_fields)
-        _get_redmine_client().issue.update(issue_id, **update_fields)
+        if update_fields:
+            update_fields = _map_named_custom_fields_for_update(issue_id, update_fields)
+            _get_redmine_client().issue.update(issue_id, **update_fields)
         if agile_update_needed:
             try:
                 _apply_agile_story_points(issue_id, story_points)

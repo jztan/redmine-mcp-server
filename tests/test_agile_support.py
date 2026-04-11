@@ -56,15 +56,13 @@ class TestFetchAgileData:
     @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
     @patch("redmine_mcp_server.redmine_handler.redmine")
     def test_returns_mapped_fields(self, mock_redmine):
-        mock_response = Mock()
-        mock_response.json.return_value = {
+        mock_redmine.engine.request.return_value = {
             "agile_data": {
                 "story_points": 8,
                 "agile_sprint_id": 3,
                 "position": 2,
             }
         }
-        mock_redmine.engine.request.return_value = mock_response
 
         result = _fetch_agile_data(42)
 
@@ -80,15 +78,13 @@ class TestFetchAgileData:
     @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
     @patch("redmine_mcp_server.redmine_handler.redmine")
     def test_handles_null_fields(self, mock_redmine):
-        mock_response = Mock()
-        mock_response.json.return_value = {
+        mock_redmine.engine.request.return_value = {
             "agile_data": {
                 "story_points": None,
                 "agile_sprint_id": None,
                 "position": None,
             }
         }
-        mock_redmine.engine.request.return_value = mock_response
 
         result = _fetch_agile_data(1)
 
@@ -140,15 +136,13 @@ class TestGetRedmineIssueAgile:
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_merges_agile_fields_when_enabled(self, mock_redmine):
         mock_redmine.issue.get.return_value = _make_minimal_issue(1)
-        mock_response = Mock()
-        mock_response.json.return_value = {
+        mock_redmine.engine.request.return_value = {
             "agile_data": {
                 "story_points": 5,
                 "agile_sprint_id": 2,
                 "position": 1,
             }
         }
-        mock_redmine.engine.request.return_value = mock_response
 
         with patch.dict(os.environ, {"REDMINE_AGILE_ENABLED": "true"}):
             result = await get_redmine_issue(1)
@@ -278,6 +272,7 @@ class TestUpdateRedmineIssueAgile:
             result = await update_redmine_issue(1, {"story_points": -1})
 
         assert "error" in result
-        mock_redmine.issue.update.assert_called_once()
+        # story_points is the only field — standard update is skipped entirely
+        mock_redmine.issue.update.assert_not_called()
         # Never reaches issue.get — error returned before that
         mock_redmine.issue.get.assert_not_called()

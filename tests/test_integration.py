@@ -1867,6 +1867,167 @@ class TestEnumerationsIntegration:
         assert isinstance(activity["name"], str)
 
 
+_AGILE_SKIP = pytest.mark.skipif(
+    not REDMINE_URL
+    or os.getenv("REDMINE_AGILE_ENABLED", "false").strip().lower()
+    not in {"1", "true", "yes", "on"},
+    reason="REDMINE_URL not configured or REDMINE_AGILE_ENABLED not true",
+)
+
+
+class TestAgilePluginIntegration:
+    """Integration tests for RedmineUP Agile plugin support.
+
+    Requires:
+    - REDMINE_URL configured
+    - REDMINE_AGILE_ENABLED=true
+    - RedmineUP Agile plugin installed on the Redmine server
+    - The 'agile' module enabled for the test project (Project Settings → Modules)
+    """
+
+    def _find_agile_issue_id(self, redmine):
+        """Find an issue in a project with the agile module enabled."""
+        project_id = os.getenv("REDMINE_AGILE_TEST_PROJECT_ID")
+        if project_id:
+            try:
+                issues = redmine.issue.filter(project_id=project_id, limit=1)
+                if issues:
+                    return list(issues)[0].id
+            except Exception:
+                pass
+            pytest.skip(
+                f"No issues found in REDMINE_AGILE_TEST_PROJECT_ID={project_id}"
+            )
+
+        # Fall back: try each project until one returns agile data without 403
+        try:
+            projects = list(redmine.project.all())
+        except Exception:
+            pytest.skip("Could not list projects")
+
+        for project in projects:
+            try:
+                issues = redmine.issue.filter(project_id=project.id, limit=1)
+                issue_list = list(issues)
+                if not issue_list:
+                    continue
+                issue_id = issue_list[0].id
+                # Probe agile endpoint — skip project on 403
+                from redminelib.exceptions import ForbiddenError
+
+                try:
+                    url = f"{REDMINE_URL}/issues/{issue_id}/agile_data.json"
+                    redmine.engine.request("get", url)
+                    return issue_id
+                except ForbiddenError:
+                    continue
+            except Exception:
+                continue
+
+        pytest.skip(
+            "No project with Agile module enabled found. "
+            "Enable the 'agile' module in at least one project."
+        )
+
+    @_AGILE_SKIP
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_get_issue_includes_agile_fields(self):
+        """get_redmine_issue returns agile fields when REDMINE_AGILE_ENABLED=true."""
+        redmine = _get_redmine_or_none()
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        issue_id = self._find_agile_issue_id(redmine)
+
+        from redmine_mcp_server.redmine_handler import get_redmine_issue
+
+        result = await get_redmine_issue(issue_id)
+
+        assert "error" not in result, f"get_redmine_issue failed: {result}"
+        assert "story_points" in result, "story_points missing from result"
+        assert "agile_sprint_id" in result, "agile_sprint_id missing from result"
+        assert "agile_position" in result, "agile_position missing from result"
+        # Values may be None (not yet set) — presence of keys is what matters
+        assert result.get("story_points") is None or isinstance(
+            result["story_points"], (int, float)
+        )
+
+    @_AGILE_SKIP
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_update_story_points_roundtrip(self):
+        """update_redmine_issue sets story_points and get_redmine_issue reads it back."""
+        redmine = _get_redmine_or_none()
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        issue_id = self._find_agile_issue_id(redmine)
+
+        from redmine_mcp_server.redmine_handler import (
+            get_redmine_issue,
+            update_redmine_issue,
+        )
+
+        # Set story points to a known value
+        update_result = await update_redmine_issue(issue_id, {"story_points": 5})
+        assert "error" not in update_result, f"update failed: {update_result}"
+
+        # Read back and confirm
+        get_result = await get_redmine_issue(issue_id)
+        assert "error" not in get_result, f"get failed: {get_result}"
+        assert get_result.get("story_points") == 5
+
+    @_AGILE_SKIP
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_clear_story_points(self):
+        """update_redmine_issue with story_points=None clears the field."""
+        redmine = _get_redmine_or_none()
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        issue_id = self._find_agile_issue_id(redmine)
+
+        from redmine_mcp_server.redmine_handler import (
+            get_redmine_issue,
+            update_redmine_issue,
+        )
+
+        # First set a value so there's something to clear
+        await update_redmine_issue(issue_id, {"story_points": 3})
+
+        # Now clear it
+        update_result = await update_redmine_issue(issue_id, {"story_points": None})
+        assert "error" not in update_result, f"clear failed: {update_result}"
+
+        # Read back and confirm cleared
+        get_result = await get_redmine_issue(issue_id)
+        assert "error" not in get_result
+        assert get_result.get("story_points") is None
+
+    @_AGILE_SKIP
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_story_points_not_leaked_to_standard_update(self):
+        """story_points in fields dict does not cause a standard update failure."""
+        redmine = _get_redmine_or_none()
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        issue_id = self._find_agile_issue_id(redmine)
+
+        from redmine_mcp_server.redmine_handler import update_redmine_issue
+
+        # Passing story_points together with a standard field must not error
+        result = await update_redmine_issue(
+            issue_id, {"story_points": 8, "notes": "agile integration test"}
+        )
+        assert "error" not in result, (
+            f"Combined story_points + notes update failed: {result}"
+        )
+
+
 if __name__ == "__main__":
     # Run integration tests
     pytest.main([__file__, "-v", "-m", "integration", "--tb=short"])
