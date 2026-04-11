@@ -4,6 +4,7 @@ import json
 import os
 import sys
 
+import pytest
 from unittest.mock import Mock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -12,6 +13,7 @@ from redmine_mcp_server.redmine_handler import (  # noqa: E402
     _is_agile_enabled,
     _fetch_agile_data,
     _apply_agile_story_points,
+    get_redmine_issue,
 )
 
 
@@ -109,3 +111,77 @@ class TestApplyAgileStoryPoints:
                 {"issue": {"agile_data_attributes": {"story_points": None}}}
             ),
         )
+
+
+def _make_minimal_issue(issue_id: int = 1) -> Mock:
+    """Create a minimal mock issue object accepted by _issue_to_dict."""
+    issue = Mock()
+    issue.id = issue_id
+    issue.subject = "Test Issue"
+    issue.description = "desc"
+    issue.project = None
+    issue.status = None
+    issue.priority = None
+    issue.author = None
+    issue.assigned_to = None
+    issue.created_on = None
+    issue.updated_on = None
+    # Prevent _journals_to_list / _attachments_to_list from crashing
+    issue.journals = []
+    issue.attachments = []
+    return issue
+
+
+class TestGetRedmineIssueAgile:
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_merges_agile_fields_when_enabled(self, mock_redmine):
+        mock_redmine.issue.get.return_value = _make_minimal_issue(1)
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "agile_data": {
+                "story_points": 5,
+                "agile_sprint_id": 2,
+                "position": 1,
+            }
+        }
+        mock_redmine.engine.request.return_value = mock_response
+
+        with patch.dict(os.environ, {"REDMINE_AGILE_ENABLED": "true"}):
+            result = await get_redmine_issue(1)
+
+        assert result["story_points"] == 5
+        assert result["agile_sprint_id"] == 2
+        assert result["agile_position"] == 1
+        mock_redmine.engine.request.assert_called_once_with(
+            "get", "http://localhost:3000/issues/1/agile_data.json"
+        )
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_no_agile_fields_when_disabled(self, mock_redmine):
+        mock_redmine.issue.get.return_value = _make_minimal_issue(1)
+
+        with patch.dict(os.environ, {"REDMINE_AGILE_ENABLED": "false"}):
+            result = await get_redmine_issue(1)
+
+        assert "story_points" not in result
+        assert "agile_sprint_id" not in result
+        assert "agile_position" not in result
+        mock_redmine.engine.request.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_silently_omits_agile_on_any_exception(self, mock_redmine):
+        mock_redmine.issue.get.return_value = _make_minimal_issue(1)
+        mock_redmine.engine.request.side_effect = Exception("plugin not installed")
+
+        with patch.dict(os.environ, {"REDMINE_AGILE_ENABLED": "true"}):
+            result = await get_redmine_issue(1)
+
+        assert "error" not in result
+        assert result["id"] == 1
+        assert "story_points" not in result

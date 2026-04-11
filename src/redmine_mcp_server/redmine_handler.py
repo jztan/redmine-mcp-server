@@ -1523,6 +1523,13 @@ async def get_redmine_issue(
                 for c in raw
             ]
 
+        if _is_agile_enabled():
+            try:
+                agile = _fetch_agile_data(issue_id)
+                result.update(agile)
+            except Exception:
+                pass  # Silently omit agile fields on any failure
+
         return result
     except Exception as e:
         return _handle_redmine_error(
