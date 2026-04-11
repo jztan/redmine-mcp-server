@@ -1449,6 +1449,10 @@ async def get_redmine_issue(
         key. If ``include_attachments`` is ``True`` and attachments exist they
         will be returned under the ``"attachments"`` key. On failure a dictionary
         with an ``"error"`` key is returned.
+        When ``REDMINE_AGILE_ENABLED=true``, the result also includes
+        ``story_points``, ``agile_sprint_id``, and ``agile_position``
+        fetched from the RedmineUP Agile plugin endpoint (omitted
+        silently on any failure).
     """
 
     # Ensure cleanup task is started (lazy initialization)

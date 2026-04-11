@@ -17,6 +17,25 @@ from redmine_mcp_server.redmine_handler import (  # noqa: E402
 )
 
 
+def _make_minimal_issue(issue_id: int = 1) -> Mock:
+    """Create a minimal mock issue object accepted by _issue_to_dict."""
+    issue = Mock()
+    issue.id = issue_id
+    issue.subject = "Test Issue"
+    issue.description = "desc"
+    issue.project = None
+    issue.status = None
+    issue.priority = None
+    issue.author = None
+    issue.assigned_to = None
+    issue.created_on = None
+    issue.updated_on = None
+    # Prevent _journals_to_list / _attachments_to_list from crashing
+    issue.journals = []
+    issue.attachments = []
+    return issue
+
+
 class TestIsAgileEnabled:
     def test_false_by_default(self):
         with patch.dict(os.environ, {}, clear=False):
@@ -111,25 +130,6 @@ class TestApplyAgileStoryPoints:
                 {"issue": {"agile_data_attributes": {"story_points": None}}}
             ),
         )
-
-
-def _make_minimal_issue(issue_id: int = 1) -> Mock:
-    """Create a minimal mock issue object accepted by _issue_to_dict."""
-    issue = Mock()
-    issue.id = issue_id
-    issue.subject = "Test Issue"
-    issue.description = "desc"
-    issue.project = None
-    issue.status = None
-    issue.priority = None
-    issue.author = None
-    issue.assigned_to = None
-    issue.created_on = None
-    issue.updated_on = None
-    # Prevent _journals_to_list / _attachments_to_list from crashing
-    issue.journals = []
-    issue.attachments = []
-    return issue
 
 
 class TestGetRedmineIssueAgile:
