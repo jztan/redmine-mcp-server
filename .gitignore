@@ -1,7 +1,7 @@
-# VsCode and IDE specific files
+# IDE / editor
 .vscode/settings.json
 
-# Python-generated files
+# Python artifacts
 __pycache__/
 *.py[oc]
 build/
@@ -9,20 +9,28 @@ dist/
 wheels/
 *.egg-info
 
-# Test and coverage files
-.coverage
-htmlcov/
-
 # Virtual environments
 .venv
+
+# Test and coverage
+.coverage
+htmlcov/
+coverage.xml
+
+# Local configuration and secrets
 .env
 .env.docker
+.mcpregistry_github_token
+.mcpregistry_registry_token
+
+# Local developer files (not part of the public repo)
 CLAUDE.md
 RELEASE_SOP.md
 .claude
-attachments
-plans
-.mcpregistry_github_token
-.mcpregistry_registry_token
-coverage.xml
 docs_internal/
+docs/superpowers/
+plans/
+docker/test-*/
+
+# Runtime data
+attachments/
