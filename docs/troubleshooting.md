@@ -476,12 +476,18 @@ This guide covers common issues and solutions for the Redmine MCP Server.
    REDMINE_AGILE_ENABLED=true
    ```
 
-2. **Enable the Agile module for the project**
+2. **Grant Agile permissions to the user's role**
+   - Go to **Administration → Roles and permissions**
+   - Click the role assigned to your API user
+   - Scroll to the **Agile** section and check the relevant permissions (e.g. `View board`)
+   - Save — without this, the agile endpoint returns 403 even if the module is enabled
+
+3. **Enable the Agile module for the project**
    - Go to Project Settings → Modules in Redmine
    - Check the **Agile** checkbox and save
    - Without this, the agile endpoint returns 403 and fields are silently omitted
 
-3. **Verify the RedmineUP Agile plugin is installed**
+4. **Verify the RedmineUP Agile plugin is installed**
    - Access your Redmine administration panel
    - Go to Administration → Plugins and confirm the Agile plugin is listed
 
