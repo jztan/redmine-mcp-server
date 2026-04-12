@@ -516,3 +516,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [Roadmap](roadmap.md) - Future development plans
 - [Blog: How I linked a legacy system to a modern AI agent with MCP](https://blog.jztan.com/how-i-linked-a-legacy-system-to-a-modern-ai-agent/) - The story behind this project
 - [Blog: Designing Reliable MCP Servers: 3 Hard Lessons in Agentic Architecture](https://blog.jztan.com/i-gave-my-ai-agent-full-api-access-it-was-a-mistak/) - Lessons learned building this server
+- [Blog: What It Actually Takes to Ship a Production MCP Server for Redmine](https://blog.jztan.com/what-it-actually-takes-to-ship-a-production-mcp-server-for-redmine/) - The full journey from prototype to production
