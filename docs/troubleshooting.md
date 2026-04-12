@@ -463,6 +463,70 @@ This guide covers common issues and solutions for the Redmine MCP Server.
    ATTACHMENT_EXPIRES_MINUTES=120  # Increase expiry time
    ```
 
+### Agile Fields Missing from Issue Results
+
+**Symptoms:**
+- `story_points`, `agile_sprint_id`, `agile_position` not present in `get_redmine_issue` response even though `REDMINE_AGILE_ENABLED=true`
+
+**Solutions:**
+
+1. **Verify `REDMINE_AGILE_ENABLED` is set correctly**
+   ```bash
+   # In .env file
+   REDMINE_AGILE_ENABLED=true
+   ```
+
+2. **Grant Agile permissions to the user's role**
+   - Go to **Administration → Roles and permissions**
+   - Click the role assigned to your API user
+   - Scroll to the **Agile** section and check the relevant permissions (e.g. `View board`)
+   - Save — without this, the agile endpoint returns 403 even if the module is enabled
+
+3. **Enable the Agile module for the project**
+   - Go to Project Settings → Modules in Redmine
+   - Check the **Agile** checkbox and save
+   - Without this, the agile endpoint returns 403 and fields are silently omitted
+
+4. **Verify the RedmineUP Agile plugin is installed**
+   - Access your Redmine administration panel
+   - Go to Administration → Plugins and confirm the Agile plugin is listed
+
+### Custom Field Named "story_points" Cannot Be Updated by Name
+
+**Symptoms:**
+- Passing `{"story_points": "value"}` in `update_redmine_issue` has no effect on the custom field
+- The update succeeds but the custom field value does not change
+
+**Cause:**
+The key `story_points` is reserved — it is intercepted before custom field resolution regardless of whether `REDMINE_AGILE_ENABLED` is set. When the plugin is disabled, the value is silently dropped; when enabled, it is routed to the Agile endpoint.
+
+**Solution:**
+Use the explicit `custom_fields` format with the field's numeric ID:
+```python
+update_redmine_issue(
+    issue_id=123,
+    fields={
+        "custom_fields": [{"id": 42, "value": "8"}]
+    }
+)
+```
+Find the field ID via `list_project_issue_custom_fields(project_id)`.
+
+### Agile Story Points Update Fails
+
+**Symptoms:**
+- `update_redmine_issue` with `story_points` returns an error
+- Error message mentions "Story points is invalid"
+
+**Solutions:**
+
+1. **Use a non-negative integer or `null`**
+   - Valid values: `0`, `1`, `5`, `8`, etc.
+   - Pass `null` to clear story points
+   - Negative values (e.g. `-1`) are rejected by Redmine with a 422 error
+
+2. **Check the Agile module is enabled for the project** (see above)
+
 ### Memory or Performance Issues
 
 **Symptoms:**
