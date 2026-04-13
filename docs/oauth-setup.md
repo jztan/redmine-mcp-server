@@ -50,6 +50,7 @@ MCP clients handle the OAuth flow automatically — when connecting to the serve
 | **VS Code** (1.102+) | Yes | Full OAuth 2.1 with PKCE and DCR |
 | **Claude Code** | Yes | Auto browser flow on 401. Use `--callback-port` for fixed port |
 | **Claude Desktop** | Yes | Via Settings → Connectors. Requires DCR |
+| **claude.ai** | Yes | Via Settings → Custom Connectors. |
 | **Codex CLI** | Yes | Use `codex mcp login`. Configurable callback port |
 | **Kiro** | Yes | Configurable `oauth.redirectUri`. Implementation is newer |
 
@@ -61,6 +62,7 @@ Set this in Redmine's OAuth app (Step 1) to match your client:
 |--------|-------------|
 | VS Code | `http://127.0.0.1:PORT/callback` |
 | Claude Code | `http://127.0.0.1:PORT/oauth/callback` |
+| claude.ai | `https://claude.com/api/mcp/auth_callback` |
 | Codex CLI | `http://127.0.0.1:PORT/callback` |
 | Kiro | Configurable via `oauth.redirectUri` |
 
