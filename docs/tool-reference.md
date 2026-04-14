@@ -355,6 +355,88 @@ devs = [m for m in members if any(r["name"] == "Developer" for r in m["roles"])]
 
 ---
 
+### `get_project_modules`
+
+Retrieve the list of enabled modules for a project (e.g., `issue_tracking`, `time_tracking`, `wiki`, `repository`).
+
+**Parameters:**
+- `project_id` (integer or string, required): Project identifier (numeric ID or string identifier).
+
+**Returns:** Dictionary with `project_id`, `project_name`, and `enabled_modules` (list of module name strings).
+
+**Example:**
+```json
+{
+  "project_id": 1,
+  "project_name": "My Project",
+  "enabled_modules": ["issue_tracking", "time_tracking", "wiki"]
+}
+```
+
+**Notes:**
+- Common module names: `issue_tracking`, `time_tracking`, `news`, `documents`, `files`, `wiki`, `repository`, `boards`, `calendar`, `gantt`.
+- Plugins (Agile, CRM, etc.) may register additional modules; any plugin-provided module names are returned as-is.
+
+---
+
+### `add_project_member`
+
+Add a user or group as a member of a project with assigned roles.
+
+**Parameters:**
+- `project_id` (integer or string, required): Project identifier.
+- `role_ids` (array of integers, required): List of role IDs to assign (at least one).
+- `user_id` (integer, optional): ID of the user to add.
+- `group_id` (integer, optional): ID of the group to add.
+
+Exactly one of `user_id` or `group_id` must be provided.
+
+**Returns:** Dictionary containing the created membership (with `id`, `user`/`group`, `project`, `roles`). On failure, a dict with an `"error"` key.
+
+**Example:**
+```python
+# Add a user as Developer
+add_project_member(project_id="my-project", role_ids=[3], user_id=5)
+
+# Add a group with multiple roles
+add_project_member(project_id=10, role_ids=[3, 4], group_id=20)
+```
+
+**Notes:**
+- Respects `REDMINE_MCP_READ_ONLY`.
+- Role IDs can be discovered from the Redmine web UI at Administration > Roles.
+
+---
+
+### `update_project_member`
+
+Update the roles assigned to an existing project membership. Replaces the entire role set.
+
+**Parameters:**
+- `membership_id` (integer, required): ID of the membership (from `list_project_members`).
+- `role_ids` (array of integers, required): New list of role IDs. Must contain at least one.
+
+**Returns:** Dictionary containing the updated membership.
+
+**Notes:**
+- Only role assignments can be updated. To change the user/group of a membership, remove it and add a new one.
+
+---
+
+### `remove_project_member`
+
+Remove a membership from a project.
+
+**Parameters:**
+- `membership_id` (integer, required): ID of the membership to remove.
+
+**Returns:** `{"success": true, "deleted_membership_id": <id>}`.
+
+**Notes:**
+- Inherited memberships (from a parent project) cannot be removed directly — Redmine will return a 422. Remove them from the parent project instead.
+
+---
+
 ## Issue Operations
 
 ### `get_redmine_issue`

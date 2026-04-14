@@ -3702,6 +3702,196 @@ async def list_project_members(
         ]
 
 
+# ---------------------------------------------------------------------------
+# Project tools: modules + membership management
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+async def get_project_modules(
+    project_id: Union[str, int],
+) -> Dict[str, Any]:
+    """Retrieve the enabled modules for a Redmine project.
+
+    Modules control which features are visible/usable in a project
+    (e.g., ``issue_tracking``, ``time_tracking``, ``wiki``, ``repository``).
+
+    Args:
+        project_id: Project identifier (numeric ID or string identifier).
+
+    Returns:
+        Dictionary with ``project_id``, ``project_name`` and
+        ``enabled_modules`` (list of module name strings). On failure a
+        dict with an ``"error"`` key is returned.
+
+    Example:
+        >>> await get_project_modules("my-project")
+        {
+            "project_id": 1,
+            "project_name": "My Project",
+            "enabled_modules": ["issue_tracking", "wiki", "time_tracking"]
+        }
+    """
+    try:
+        project = _get_redmine_client().project.get(
+            project_id, include="enabled_modules"
+        )
+        raw_modules = getattr(project, "enabled_modules", None) or []
+
+        module_names: List[str] = []
+        try:
+            iterator = iter(raw_modules)
+        except TypeError:
+            iterator = iter(())
+
+        for mod in iterator:
+            if isinstance(mod, dict):
+                name = mod.get("name")
+            else:
+                name = getattr(mod, "name", None)
+            if name:
+                module_names.append(str(name))
+
+        return {
+            "project_id": getattr(project, "id", None),
+            "project_name": getattr(project, "name", ""),
+            "enabled_modules": module_names,
+        }
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"getting modules for project {project_id}",
+            {"resource_type": "project", "resource_id": project_id},
+        )
+
+
+@mcp.tool()
+async def add_project_member(
+    project_id: Union[str, int],
+    role_ids: List[int],
+    user_id: Optional[int] = None,
+    group_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Add a user or group as a member of a project with assigned roles.
+
+    Exactly one of ``user_id`` or ``group_id`` must be provided.
+
+    Args:
+        project_id: Project identifier (numeric ID or string identifier).
+        role_ids: List of role IDs to assign (at least one required).
+            Use ``list_redmine_roles`` (Redmine web UI) to discover IDs.
+        user_id: ID of the user to add as a member.
+        group_id: ID of the group to add as a member.
+
+    Returns:
+        Dictionary containing the created membership. On failure a dict
+        with an ``"error"`` key is returned.
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    if (user_id is None and group_id is None) or (
+        user_id is not None and group_id is not None
+    ):
+        return {"error": "Exactly one of user_id or group_id must be provided."}
+
+    if not role_ids:
+        return {"error": "At least one role_id must be provided."}
+    if not isinstance(role_ids, list) or not all(isinstance(r, int) for r in role_ids):
+        return {"error": "role_ids must be a list of integers."}
+
+    try:
+        params: Dict[str, Any] = {
+            "project_id": project_id,
+            "role_ids": role_ids,
+        }
+        if user_id is not None:
+            params["user_id"] = user_id
+        else:
+            params["group_id"] = group_id
+
+        membership = _get_redmine_client().project_membership.create(**params)
+        return _membership_to_dict(membership)
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"adding member to project {project_id}",
+            {"resource_type": "project", "resource_id": project_id},
+        )
+
+
+@mcp.tool()
+async def update_project_member(
+    membership_id: int,
+    role_ids: List[int],
+) -> Dict[str, Any]:
+    """Update the roles assigned to an existing project membership.
+
+    Only role assignments can be updated via the API. To change the user
+    or group of a membership, delete and recreate it.
+
+    Args:
+        membership_id: ID of the membership to update (obtained from
+            ``list_project_members``).
+        role_ids: New list of role IDs to assign. Replaces the existing set.
+
+    Returns:
+        Dictionary containing the updated membership. On failure a dict
+        with an ``"error"`` key is returned.
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    if not role_ids:
+        return {"error": "At least one role_id must be provided."}
+    if not isinstance(role_ids, list) or not all(isinstance(r, int) for r in role_ids):
+        return {"error": "role_ids must be a list of integers."}
+
+    try:
+        client = _get_redmine_client()
+        client.project_membership.update(membership_id, role_ids=role_ids)
+        updated = client.project_membership.get(membership_id)
+        return _membership_to_dict(updated)
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"updating project membership {membership_id}",
+            {"resource_type": "membership", "resource_id": membership_id},
+        )
+
+
+@mcp.tool()
+async def remove_project_member(membership_id: int) -> Dict[str, Any]:
+    """Remove a membership from a project.
+
+    Note: Inherited memberships (from a parent project) cannot be removed
+    directly — Redmine will return a 422 error. Remove them from the
+    parent project instead.
+
+    Args:
+        membership_id: ID of the membership to remove.
+
+    Returns:
+        Dictionary with ``success: true`` on success. On failure a dict
+        with an ``"error"`` key is returned.
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    try:
+        _get_redmine_client().project_membership.delete(membership_id)
+        return {
+            "success": True,
+            "deleted_membership_id": membership_id,
+        }
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"removing project membership {membership_id}",
+            {"resource_type": "membership", "resource_id": membership_id},
+        )
+
+
 @mcp.tool()
 async def list_time_entries(
     project_id: Optional[Union[str, int]] = None,

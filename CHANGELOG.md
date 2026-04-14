@@ -30,6 +30,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `update_issue_category` — rename a category or change its default assignee
     - `delete_issue_category` — delete a category with optional `reassign_to_id` to move existing issues
 - **55 new unit tests** covering all Stage A tools (read-only mode enforcement, success paths, error paths, helper conversions)
+- **4 new MCP tools for Projects (Stage C):**
+  - `get_project_modules` — retrieve enabled modules for a project via `?include=enabled_modules`
+  - `add_project_member` — add a user or group to a project with assigned roles; validates that exactly one of `user_id` or `group_id` is provided
+  - `update_project_member` — update the roles of an existing membership
+  - `remove_project_member` — remove a membership (inherited memberships from parent projects surface as a 422 validation error)
+- **23 new unit tests** for project tools covering modules retrieval (including dict-format fallback for older Redmine versions), membership CRUD, validation errors, read-only mode enforcement, and error paths
 
 ### Security
 - Bump `fastmcp` from 3.1.1 to 3.2.0, patching CVE-2025-64340 and CVE-2026-27124
