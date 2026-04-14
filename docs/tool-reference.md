@@ -1555,6 +1555,87 @@ delete_redmine_wiki_page(
 
 ## File Operations
 
+### `list_files`
+
+List all files uploaded to a Redmine project's **Files** section (not issue attachments).
+
+**Parameters:**
+- `project_id` (integer or string, required): Project identifier.
+
+**Returns:** List of file metadata dictionaries (`id`, `filename`, `filesize`, `content_type`, `description`, `content_url`, `digest`, `downloads`, `author`, `version`, `created_on`).
+
+**Example:**
+```json
+[
+    {
+        "id": 42,
+        "filename": "spec.pdf",
+        "filesize": 125678,
+        "content_type": "application/pdf",
+        "description": "Design spec v2",
+        "content_url": "https://redmine.example.com/attachments/download/42/spec.pdf",
+        "author": {"id": 5, "name": "Alice"},
+        "version": {"id": 3, "name": "Release 1.0"},
+        "created_on": "2026-04-10T10:30:00"
+    }
+]
+```
+
+**Notes:**
+- Lists files from Redmine's core "Files" module (enabled per project via Settings > Modules > Files).
+- Does NOT list issue attachments — use `get_redmine_issue` with `include_attachments=True` for those.
+- Does NOT list DMSF documents (separate module, not covered by this tool).
+
+---
+
+### `upload_file`
+
+Upload a file to a Redmine project's Files section. Uses Redmine's standard two-step upload (`POST /uploads.json` for the token, then `POST /projects/{id}/files.json`).
+
+**Parameters:**
+- `project_id` (integer or string, required): Project identifier.
+- `filename` (string, required): Name the file should have in Redmine.
+- `content_base64` (string, required): File content encoded as a base64 string.
+- `description` (string, optional): Human-readable description.
+- `version_id` (integer, optional): Version/release ID to attach the file to (use `list_redmine_versions` to discover valid IDs).
+
+**Returns:** Dictionary containing the uploaded file's metadata, or `{"error": "..."}` on failure.
+
+**Size limit:** 50 MiB decoded. Larger files should be uploaded via Redmine's web UI.
+
+**Example:**
+```python
+import base64
+content = base64.b64encode(b"Hello world").decode("ascii")
+upload_file(
+    project_id="web",
+    filename="hello.txt",
+    content_base64=content,
+    description="Greeting file"
+)
+```
+
+**Notes:**
+- Base64 is required because MCP is a JSON protocol (binary payloads cannot be transmitted directly).
+- Respects `REDMINE_MCP_READ_ONLY`.
+
+---
+
+### `delete_file`
+
+Delete a file from a Redmine project. Uses `DELETE /attachments/{id}.json` since files are stored as attachments in Redmine.
+
+**Parameters:**
+- `file_id` (integer, required): ID of the file to delete (from `list_files`).
+
+**Returns:** `{"success": true, "deleted_file_id": <id>}` on success.
+
+**Notes:**
+- Same endpoint is used for issue attachments. If the user deletes an attachment linked to an issue, it will be removed from that issue's attachment list as well.
+- Respects `REDMINE_MCP_READ_ONLY`.
+
+---
+
 ### `get_redmine_attachment_download_url`
 
 Get an HTTP download URL for a Redmine attachment. The attachment is downloaded to server storage and a time-limited URL is returned for client access.

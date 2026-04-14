@@ -434,7 +434,7 @@ curl http://localhost:8000/health
 
 ## Available Tools
 
-This MCP server provides 42 tools for interacting with Redmine. For detailed documentation, see [Tool Reference](./docs/tool-reference.md).
+This MCP server provides 45 tools for interacting with Redmine. For detailed documentation, see [Tool Reference](./docs/tool-reference.md).
 
 - **Project Management** (10 tools)
   - [`list_redmine_projects`](docs/tool-reference.md#list_redmine_projects) - List all accessible projects
@@ -485,7 +485,10 @@ This MCP server provides 42 tools for interacting with Redmine. For detailed doc
   - [`update_redmine_wiki_page`](docs/tool-reference.md#update_redmine_wiki_page) - Update existing wiki pages
   - [`delete_redmine_wiki_page`](docs/tool-reference.md#delete_redmine_wiki_page) - Delete wiki pages
 
-- **File Operations** (2 tools)
+- **File Operations** (5 tools)
+  - [`list_files`](docs/tool-reference.md#list_files) - List files uploaded to a project's Files section
+  - [`upload_file`](docs/tool-reference.md#upload_file) - Upload a new file (base64 content) to a project, optionally tied to a version
+  - [`delete_file`](docs/tool-reference.md#delete_file) - Delete a file from a project
   - [`get_redmine_attachment_download_url`](docs/tool-reference.md#get_redmine_attachment_download_url) - Get secure download URLs for attachments
   - [`cleanup_attachment_files`](docs/tool-reference.md#cleanup_attachment_files) - Clean up expired attachment files
 

@@ -43,6 +43,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `import_time_entries` — bulk import multiple time entries via sequential API calls (Redmine has no native bulk endpoint); accepts a list of dicts or JSON array string, captures per-entry errors, and returns `{total, succeeded, failed, created, errors}` so partial imports still yield useful feedback; supports `stop_on_error` flag
 - Add missing `REDMINE_MCP_READ_ONLY` enforcement to existing `create_time_entry` tool
 - **23 new unit tests** for time tracking tools covering success paths, per-entry validation (missing hours, negative hours, missing target), JSON string input, partial failure handling, `stop_on_error`, field whitelisting, read-only mode, and Redmine-version permission quirks
+- **3 new MCP tools for Files (Stage B):**
+  - `list_files` — list files uploaded to a project's Files section (core Redmine "Files" module, distinct from issue attachments and DMSF documents); returns filename, filesize, content type, description, download URL, author, optional version/release
+  - `upload_file` — upload a new file via Redmine's two-step upload (`POST /uploads.json` for token, then `POST /projects/{id}/files.json`); accepts base64-encoded content (since MCP is JSON-only) with a 50 MiB decoded size cap
+  - `delete_file` — delete a project file via `DELETE /attachments/{id}.json`
+- **24 new unit tests** for file tools covering base64 encoding/decoding, size limits, read-only mode, missing fields, and Redmine error paths
 
 ### Security
 - Bump `fastmcp` from 3.1.1 to 3.2.0, patching CVE-2025-64340 and CVE-2026-27124

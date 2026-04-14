@@ -23,6 +23,9 @@ Dependencies:
     - fastmcp: FastMCP server implementation
 """
 
+import base64
+import binascii
+import io
 import os
 import uuid
 import json
@@ -3955,6 +3958,217 @@ async def remove_project_member(membership_id: int) -> Dict[str, Any]:
             e,
             f"removing project membership {membership_id}",
             {"resource_type": "membership", "resource_id": membership_id},
+        )
+
+
+# ---------------------------------------------------------------------------
+# Project files: list, upload, delete
+# ---------------------------------------------------------------------------
+
+
+# Cap a single base64 file upload at ~50 MiB decoded to protect the server
+# from resource exhaustion. Larger files should be uploaded via a different
+# mechanism (e.g., writing to disk first and passing a path).
+_FILE_UPLOAD_MAX_SIZE_BYTES = 50 * 1024 * 1024
+
+
+def _file_to_dict(file_obj: Any) -> Dict[str, Any]:
+    """Convert a python-redmine File/Attachment object to a serializable dict.
+
+    Returns standard metadata (id, filename, size, content_type, description,
+    download URL, author, dates). Used by list_files and upload_file.
+    """
+    author = getattr(file_obj, "author", None)
+    version = getattr(file_obj, "version", None)
+    return {
+        "id": getattr(file_obj, "id", None),
+        "filename": getattr(file_obj, "filename", ""),
+        "filesize": getattr(file_obj, "filesize", 0),
+        "content_type": getattr(file_obj, "content_type", ""),
+        "description": getattr(file_obj, "description", ""),
+        "content_url": getattr(file_obj, "content_url", ""),
+        "digest": getattr(file_obj, "digest", ""),
+        "downloads": getattr(file_obj, "downloads", 0),
+        "author": (
+            {"id": author.id, "name": getattr(author, "name", "")}
+            if author is not None
+            else None
+        ),
+        "version": (
+            {"id": version.id, "name": getattr(version, "name", "")}
+            if version is not None
+            else None
+        ),
+        "created_on": _safe_isoformat(getattr(file_obj, "created_on", None)),
+    }
+
+
+@mcp.tool()
+async def list_files(project_id: Union[str, int]) -> List[Dict[str, Any]]:
+    """List all files uploaded to a Redmine project.
+
+    Returns file metadata (id, filename, size, content type, description,
+    download URL, author, optional version/release) for every file
+    uploaded under Project > Files.
+
+    Note: This lists files from Redmine's core "Files" module (enabled per
+    project via Settings > Modules > Files). It does NOT list issue
+    attachments (use ``get_redmine_issue`` with ``include_attachments=True``
+    for those) and does NOT list DMSF documents (pending separate tools).
+
+    Args:
+        project_id: Project identifier (numeric ID or string identifier).
+
+    Returns:
+        A list of file metadata dictionaries. On failure, a list containing
+        a single dictionary with an ``"error"`` key.
+
+    Example:
+        >>> await list_files("web")
+        [
+            {
+                "id": 42,
+                "filename": "spec.pdf",
+                "filesize": 125678,
+                "content_type": "application/pdf",
+                "description": "Design spec v2",
+                "content_url": "https://example.com/attachments/download/42/spec.pdf",
+                "author": {"id": 5, "name": "Alice"},
+                "version": {"id": 3, "name": "Release 1.0"},
+                "created_on": "2026-04-10T10:30:00"
+            }
+        ]
+    """
+    try:
+        files = _get_redmine_client().file.filter(project_id=project_id)
+        return [_file_to_dict(f) for f in files]
+    except Exception as e:
+        return [
+            _handle_redmine_error(
+                e,
+                f"listing files for project {project_id}",
+                {"resource_type": "project", "resource_id": project_id},
+            )
+        ]
+
+
+@mcp.tool()
+async def upload_file(
+    project_id: Union[str, int],
+    filename: str,
+    content_base64: str,
+    description: Optional[str] = None,
+    version_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Upload a file to a Redmine project's Files section.
+
+    The file content must be provided as a base64-encoded string. Under the
+    hood this performs Redmine's standard two-step upload:
+    ``POST /uploads.json`` to get a token, then
+    ``POST /projects/{id}/files.json`` to attach it to the project.
+
+    Args:
+        project_id: Project identifier (numeric ID or string identifier).
+        filename: Name the file should have in Redmine (e.g., ``spec.pdf``).
+        content_base64: File content encoded as a base64 string.
+        description: Optional human-readable description.
+        version_id: Optional version/release ID to attach the file to
+            (use ``list_redmine_versions`` to discover valid IDs).
+
+    Returns:
+        Dictionary containing the uploaded file's metadata. On failure, a
+        dict with an ``"error"`` key is returned.
+
+    Size limit:
+        Uploads are capped at 50 MiB decoded to protect the server from
+        resource exhaustion. For larger files, upload via the Redmine web
+        UI directly.
+
+    Example:
+        >>> import base64
+        >>> content = base64.b64encode(b"Hello world").decode("ascii")
+        >>> await upload_file("web", "hello.txt", content, description="Greeting")
+        {"id": 100, "filename": "hello.txt", ...}
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    if not filename or not filename.strip():
+        return {"error": "filename is required."}
+    if not content_base64:
+        return {"error": "content_base64 is required."}
+
+    # Decode and validate size before any network call
+    try:
+        content_bytes = base64.b64decode(content_base64, validate=True)
+    except (binascii.Error, ValueError) as e:
+        return {"error": ("content_base64 is not valid base64. " f"Details: {e}")}
+
+    if len(content_bytes) == 0:
+        return {"error": "Decoded file content is empty."}
+
+    if len(content_bytes) > _FILE_UPLOAD_MAX_SIZE_BYTES:
+        size_mb = len(content_bytes) / (1024 * 1024)
+        limit_mb = _FILE_UPLOAD_MAX_SIZE_BYTES / (1024 * 1024)
+        return {
+            "error": (
+                f"File too large: {size_mb:.1f} MiB exceeds the "
+                f"{limit_mb:.0f} MiB upload limit."
+            )
+        }
+
+    client = _get_redmine_client()
+    try:
+        # Step 1: upload raw bytes to /uploads.json, get token
+        token = client.upload(io.BytesIO(content_bytes), filename=filename)["token"]
+
+        # Step 2: create the File resource using the token
+        create_params: Dict[str, Any] = {
+            "project_id": project_id,
+            "token": token,
+            "filename": filename,
+        }
+        if description is not None:
+            create_params["description"] = description
+        if version_id is not None:
+            create_params["version_id"] = version_id
+
+        uploaded = client.file.create(**create_params)
+        return _file_to_dict(uploaded)
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"uploading file '{filename}' to project {project_id}",
+            {"resource_type": "project", "resource_id": project_id},
+        )
+
+
+@mcp.tool()
+async def delete_file(file_id: int) -> Dict[str, Any]:
+    """Delete a file from a Redmine project.
+
+    Files are stored as attachments in Redmine, so this uses the standard
+    ``DELETE /attachments/{id}.json`` endpoint.
+
+    Args:
+        file_id: ID of the file to delete (the ``id`` field returned by
+            ``list_files``).
+
+    Returns:
+        Dictionary with ``success: true`` on success. On failure, a dict
+        with an ``"error"`` key is returned.
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    try:
+        _get_redmine_client().attachment.delete(file_id)
+        return {"success": True, "deleted_file_id": file_id}
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"deleting file {file_id}",
+            {"resource_type": "file", "resource_id": file_id},
         )
 
 
