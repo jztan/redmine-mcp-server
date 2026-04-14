@@ -1187,6 +1187,93 @@ Use this tool to discover valid `activity_id` values before calling `create_time
 
 ---
 
+### `log_time_for_user`
+
+Create a time entry on behalf of another user. Functionally equivalent to `create_time_entry` but with an explicit `user_id` parameter for PM-level workflows (logging time for a teammate).
+
+**Parameters:**
+- `user_id` (integer, required): ID of the user to log time for. Use `list_project_members` to discover valid user IDs for a project.
+- `hours` (number, required): Positive number of hours spent.
+- `project_id` (integer or string, optional): Project to log time against. Required if `issue_id` is not provided.
+- `issue_id` (integer, optional): Issue to log time against.
+- `activity_id` (integer, optional): Activity ID (use `list_time_entry_activities` to discover).
+- `comments` (string, optional): Description of work performed.
+- `spent_on` (string, optional): Date in YYYY-MM-DD format. Defaults to today.
+
+**Returns:** Dictionary containing the created time entry, or `{"error": "..."}` on failure.
+
+**Permission:** Requires `log_time_for_other_users` permission on the target project. The target user must also be a member of that project.
+
+**Example:**
+```python
+log_time_for_user(
+    user_id=7,
+    hours=2.5,
+    issue_id=123,
+    comments="Pair programming session",
+    spent_on="2026-04-15"
+)
+```
+
+**Known Redmine quirks:**
+- Some Redmine versions (defects #31587, #32774) reject `user_id` when the authenticated user is an admin but not a member of the target project. Workaround: add the admin as a project member.
+
+---
+
+### `import_time_entries`
+
+Bulk-import multiple time entries via sequential API calls. Redmine has no native bulk-import endpoint, so each entry is POSTed individually. Per-entry errors are captured so a partial import still yields useful feedback.
+
+**Parameters:**
+- `entries` (array of objects or JSON string, required): List of time entry dicts. Each entry accepts: `hours` (required), plus at least one of `project_id`/`issue_id`. Optional: `user_id` (log on behalf of a teammate), `activity_id`, `comments`, `spent_on`.
+- `stop_on_error` (boolean, optional): Abort on the first error. Default: `false` (continue past errors).
+
+**Returns:** Dictionary with:
+- `total` (integer): total entries attempted
+- `succeeded` (integer): count of successful entries
+- `failed` (integer): count of failed entries
+- `created` (array): successfully-created time entry dicts
+- `errors` (array): `{index, entry, error}` for each failed entry
+
+**Example:**
+```python
+import_time_entries([
+    {"hours": 2.0, "issue_id": 123, "comments": "Bug fix"},
+    {"hours": 1.5, "project_id": "web", "activity_id": 9, "user_id": 7},
+    {"hours": 3.0, "issue_id": 456},
+])
+# Returns:
+# {
+#   "total": 3,
+#   "succeeded": 3,
+#   "failed": 0,
+#   "created": [...],
+#   "errors": []
+# }
+```
+
+**Partial failure example:**
+```python
+# One entry has invalid activity_id -> continues past it
+import_time_entries([
+    {"hours": 1.0, "issue_id": 1},
+    {"hours": 2.0, "issue_id": 2, "activity_id": 999},  # bogus
+    {"hours": 3.0, "issue_id": 3},
+])
+# Returns:
+# {
+#   "total": 3, "succeeded": 2, "failed": 1,
+#   "created": [<entry 1>, <entry 3>],
+#   "errors": [{"index": 1, "entry": {...}, "error": "Activity is invalid"}]
+# }
+```
+
+**Notes:**
+- Unknown fields in each entry are silently filtered out (whitelist: `hours`, `user_id`, `project_id`, `issue_id`, `activity_id`, `comments`, `spent_on`).
+- Respects `REDMINE_MCP_READ_ONLY`.
+
+---
+
 ## Search & Wiki
 
 ### `search_entire_redmine`

@@ -434,7 +434,7 @@ curl http://localhost:8000/health
 
 ## Available Tools
 
-This MCP server provides 40 tools for interacting with Redmine. For detailed documentation, see [Tool Reference](./docs/tool-reference.md).
+This MCP server provides 42 tools for interacting with Redmine. For detailed documentation, see [Tool Reference](./docs/tool-reference.md).
 
 - **Project Management** (10 tools)
   - [`list_redmine_projects`](docs/tool-reference.md#list_redmine_projects) - List all accessible projects
@@ -470,11 +470,13 @@ This MCP server provides 40 tools for interacting with Redmine. For detailed doc
   - [`delete_issue_category`](docs/tool-reference.md#delete_issue_category) - Delete an issue category (with optional reassignment)
   - Note: `get_redmine_issue` can include `custom_fields` and `update_redmine_issue` can update custom fields by name (for example `{"size": "S"}`).
 
-- **Time Tracking** (4 tools)
+- **Time Tracking** (6 tools)
   - [`list_time_entries`](docs/tool-reference.md#list_time_entries) - List time entries with filtering by project, issue, user, and date range
   - [`create_time_entry`](docs/tool-reference.md#create_time_entry) - Log time against projects or issues
   - [`update_time_entry`](docs/tool-reference.md#update_time_entry) - Modify existing time entries
   - [`list_time_entry_activities`](docs/tool-reference.md#list_time_entry_activities) - Discover available activity types for time entries
+  - [`log_time_for_user`](docs/tool-reference.md#log_time_for_user) - Create a time entry on behalf of another user (requires `log_time_for_other_users` permission)
+  - [`import_time_entries`](docs/tool-reference.md#import_time_entries) - Bulk import time entries via sequential API calls with per-entry error reporting
 
 - **Search & Wiki** (5 tools)
   - [`search_entire_redmine`](docs/tool-reference.md#search_entire_redmine) - Global search across issues and wiki pages (Redmine 3.3.0+)

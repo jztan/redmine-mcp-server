@@ -38,6 +38,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `remove_project_member` — remove a membership (inherited memberships from parent projects surface as a 422 validation error)
 - `role_ids` validation errors in `add_project_member` / `update_project_member` now hint at `list_redmine_roles` to prevent AI agents from hallucinating role IDs
 - **33 new unit tests** for project tools covering modules retrieval (including dict-format fallback for older Redmine versions), role discovery, membership CRUD, validation errors, read-only mode enforcement, error paths, and error-message discoverability hints
+- **2 new MCP tools for Time Tracking (Stage D):**
+  - `log_time_for_user` — create a time entry on behalf of another user via the `user_id` parameter on `POST /time_entries.json`; requires `log_time_for_other_users` permission on the target project
+  - `import_time_entries` — bulk import multiple time entries via sequential API calls (Redmine has no native bulk endpoint); accepts a list of dicts or JSON array string, captures per-entry errors, and returns `{total, succeeded, failed, created, errors}` so partial imports still yield useful feedback; supports `stop_on_error` flag
+- Add missing `REDMINE_MCP_READ_ONLY` enforcement to existing `create_time_entry` tool
+- **23 new unit tests** for time tracking tools covering success paths, per-entry validation (missing hours, negative hours, missing target), JSON string input, partial failure handling, `stop_on_error`, field whitelisting, read-only mode, and Redmine-version permission quirks
 
 ### Security
 - Bump `fastmcp` from 3.1.1 to 3.2.0, patching CVE-2025-64340 and CVE-2026-27124

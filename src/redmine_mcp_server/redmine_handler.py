@@ -4062,6 +4062,9 @@ async def create_time_entry(
         ... )
         {"id": 2, "hours": 1.0, "project": {"id": 1, "name": "My Project"}, ...}
     """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
     if project_id is None and issue_id is None:
         return {"error": "Either project_id or issue_id must be provided."}
 
@@ -4196,6 +4199,249 @@ async def list_time_entry_activities() -> List[Dict[str, Any]]:
 
     except Exception as e:
         return [_handle_redmine_error(e, "listing time entry activities")]
+
+
+# ---------------------------------------------------------------------------
+# Time tracking: log time for another user + bulk import
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+async def log_time_for_user(
+    user_id: int,
+    hours: float,
+    project_id: Optional[Union[str, int]] = None,
+    issue_id: Optional[int] = None,
+    activity_id: Optional[int] = None,
+    comments: str = "",
+    spent_on: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Create a time entry on behalf of another user.
+
+    Logs time against a project or issue with the given ``user_id`` as
+    the owner instead of the authenticated user. The authenticated user
+    must have the ``log_time_for_other_users`` permission on the target
+    project, and the target user must be a member of that project.
+
+    Note: This is functionally ``create_time_entry`` with a ``user_id``
+    parameter. It is provided as a dedicated tool to make PM-level
+    workflows explicit (logging time on behalf of a teammate).
+
+    Args:
+        user_id: ID of the user to log time for. Use ``list_project_members``
+            to discover valid user IDs for a project.
+        hours: Number of hours spent (must be positive).
+        project_id: Project to log time against (ID or identifier).
+            Required if ``issue_id`` is not provided.
+        issue_id: Issue to log time against. If provided, ``project_id``
+            is optional.
+        activity_id: Time entry activity ID. Use ``list_time_entry_activities``
+            to discover valid IDs. Defaults to Redmine's default activity.
+        comments: Description of work performed.
+        spent_on: Date when time was spent (YYYY-MM-DD). Defaults to today.
+
+    Returns:
+        Dictionary containing the created time entry. On failure a dict
+        with an ``"error"`` key is returned.
+
+    Known Redmine quirks:
+        - Some Redmine versions reject the ``user_id`` parameter when the
+          authenticated user is an admin but NOT a member of the target
+          project (defects #31587, #32774). The workaround is to add the
+          admin as a project member.
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    if project_id is None and issue_id is None:
+        return {"error": "Either project_id or issue_id must be provided."}
+
+    if hours <= 0:
+        return {"error": "Hours must be a positive number."}
+
+    try:
+        params: Dict[str, Any] = {
+            "hours": hours,
+            "user_id": user_id,
+        }
+        if project_id is not None:
+            params["project_id"] = project_id
+        if issue_id is not None:
+            params["issue_id"] = issue_id
+        if activity_id is not None:
+            params["activity_id"] = activity_id
+        if comments:
+            params["comments"] = comments
+        if spent_on is not None:
+            params["spent_on"] = spent_on
+
+        time_entry = _get_redmine_client().time_entry.create(**params)
+        return _time_entry_to_dict(time_entry)
+    except Exception as e:
+        context = {}
+        if issue_id:
+            context = {"resource_type": "issue", "resource_id": issue_id}
+        elif project_id:
+            context = {"resource_type": "project", "resource_id": project_id}
+        return _handle_redmine_error(
+            e,
+            f"logging time for user {user_id}",
+            context,
+        )
+
+
+@mcp.tool()
+async def import_time_entries(
+    entries: Union[List[Dict[str, Any]], str],
+    stop_on_error: bool = False,
+) -> Dict[str, Any]:
+    """Bulk import multiple time entries via sequential API calls.
+
+    Redmine has no native bulk-import endpoint, so this tool creates each
+    entry individually via ``POST /time_entries.json``. Per-entry errors
+    are captured and returned alongside successes so a partial import
+    still yields useful feedback.
+
+    Each entry must be a dict (or JSON object) with the standard
+    ``create_time_entry`` fields: ``hours`` (required), plus at least one
+    of ``project_id``/``issue_id``. Optional fields: ``user_id`` (to log
+    on behalf of a teammate), ``activity_id``, ``comments``, ``spent_on``.
+
+    Args:
+        entries: List of time entry dicts, OR a JSON array string.
+            Example: ``[{"hours": 1.5, "issue_id": 123, "comments": "..."}]``
+        stop_on_error: When ``True``, abort the import on the first error.
+            When ``False`` (default), continue past errors and report all
+            successes/failures at the end.
+
+    Returns:
+        Dictionary with:
+            - ``total``: total number of entries attempted
+            - ``succeeded``: count of successfully created entries
+            - ``failed``: count of failed entries
+            - ``created``: list of created time entry dicts
+            - ``errors``: list of ``{"index": i, "entry": {...}, "error": "..."}``
+              for failed entries
+
+    Example:
+        >>> await import_time_entries([
+        ...     {"hours": 2.0, "issue_id": 123, "comments": "Bug fix"},
+        ...     {"hours": 1.0, "project_id": "web", "activity_id": 9},
+        ... ])
+        {"total": 2, "succeeded": 2, "failed": 0, "created": [...], "errors": []}
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    # Parse input: accept either a list or a JSON array string.
+    if isinstance(entries, str):
+        try:
+            parsed = json.loads(entries.strip())
+        except Exception as e:
+            return {
+                "error": (
+                    "Invalid entries payload. Expected a list of dicts or "
+                    "a JSON array string."
+                ),
+                "details": str(e),
+            }
+        entries_list = parsed
+    else:
+        entries_list = entries
+
+    if not isinstance(entries_list, list):
+        return {
+            "error": (
+                "entries must be a list of time entry dicts, not "
+                f"{type(entries_list).__name__}."
+            )
+        }
+
+    if not entries_list:
+        return {
+            "total": 0,
+            "succeeded": 0,
+            "failed": 0,
+            "created": [],
+            "errors": [],
+        }
+
+    created: List[Dict[str, Any]] = []
+    errors: List[Dict[str, Any]] = []
+    client = _get_redmine_client()
+
+    for index, entry in enumerate(entries_list):
+        if not isinstance(entry, dict):
+            errors.append(
+                {
+                    "index": index,
+                    "entry": entry,
+                    "error": f"Entry at index {index} is not a dict.",
+                }
+            )
+            if stop_on_error:
+                break
+            continue
+
+        # Per-entry validation
+        hours = entry.get("hours")
+        if hours is None or (isinstance(hours, (int, float)) and hours <= 0):
+            errors.append(
+                {
+                    "index": index,
+                    "entry": entry,
+                    "error": "hours is required and must be positive.",
+                }
+            )
+            if stop_on_error:
+                break
+            continue
+
+        if entry.get("project_id") is None and entry.get("issue_id") is None:
+            errors.append(
+                {
+                    "index": index,
+                    "entry": entry,
+                    "error": "Either project_id or issue_id is required.",
+                }
+            )
+            if stop_on_error:
+                break
+            continue
+
+        # Build create params — pass through only whitelisted keys
+        allowed_keys = {
+            "hours",
+            "user_id",
+            "project_id",
+            "issue_id",
+            "activity_id",
+            "comments",
+            "spent_on",
+        }
+        params = {k: v for k, v in entry.items() if k in allowed_keys and v is not None}
+
+        try:
+            time_entry = client.time_entry.create(**params)
+            created.append(_time_entry_to_dict(time_entry))
+        except Exception as e:
+            errors.append(
+                {
+                    "index": index,
+                    "entry": entry,
+                    "error": str(e),
+                }
+            )
+            if stop_on_error:
+                break
+
+    return {
+        "total": len(entries_list),
+        "succeeded": len(created),
+        "failed": len(errors),
+        "created": created,
+        "errors": errors,
+    }
 
 
 @mcp.tool()
