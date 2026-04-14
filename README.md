@@ -434,7 +434,7 @@ curl http://localhost:8000/health
 
 ## Available Tools
 
-This MCP server provides 21 tools for interacting with Redmine. For detailed documentation, see [Tool Reference](./docs/tool-reference.md).
+This MCP server provides 35 tools for interacting with Redmine. For detailed documentation, see [Tool Reference](./docs/tool-reference.md).
 
 - **Project Management** (5 tools)
   - [`list_redmine_projects`](docs/tool-reference.md#list_redmine_projects) - List all accessible projects
@@ -443,12 +443,26 @@ This MCP server provides 21 tools for interacting with Redmine. For detailed doc
   - [`list_project_members`](docs/tool-reference.md#list_project_members) - List members and roles of a project
   - [`summarize_project_status`](docs/tool-reference.md#summarize_project_status) - Get comprehensive project status summary
 
-- **Issue Operations** (5 tools)
+- **Issue Operations** (19 tools)
   - [`get_redmine_issue`](docs/tool-reference.md#get_redmine_issue) - Retrieve detailed issue information (supports journal pagination, watchers, relations, children)
   - [`list_redmine_issues`](docs/tool-reference.md#list_redmine_issues) - List issues with flexible filtering (project, status, assignee, etc.)
   - [`search_redmine_issues`](docs/tool-reference.md#search_redmine_issues) - Search issues by text query
   - [`create_redmine_issue`](docs/tool-reference.md#create_redmine_issue) - Create new issues
   - [`update_redmine_issue`](docs/tool-reference.md#update_redmine_issue) - Update existing issues
+  - [`copy_issue`](docs/tool-reference.md#copy_issue) - Duplicate an existing issue with optional field overrides
+  - [`list_issue_relations`](docs/tool-reference.md#list_issue_relations) - List all relations for an issue
+  - [`create_issue_relation`](docs/tool-reference.md#create_issue_relation) - Create a relation between two issues (blocks, duplicates, relates, etc.)
+  - [`delete_issue_relation`](docs/tool-reference.md#delete_issue_relation) - Delete an existing issue relation
+  - [`list_subtasks`](docs/tool-reference.md#list_subtasks) - List subtasks (child issues) of a given parent
+  - [`add_watcher`](docs/tool-reference.md#add_watcher) - Add a user to the watcher list of an issue
+  - [`remove_watcher`](docs/tool-reference.md#remove_watcher) - Remove a user from the watcher list
+  - [`edit_note`](docs/tool-reference.md#edit_note) - Edit an existing journal note's text and/or privacy
+  - [`get_private_notes`](docs/tool-reference.md#get_private_notes) - Retrieve private notes on an issue
+  - [`set_note_private`](docs/tool-reference.md#set_note_private) - Toggle the private/public state of a journal note
+  - [`list_issue_categories`](docs/tool-reference.md#list_issue_categories) - List issue categories for a project
+  - [`create_issue_category`](docs/tool-reference.md#create_issue_category) - Create a new issue category
+  - [`update_issue_category`](docs/tool-reference.md#update_issue_category) - Update an existing issue category
+  - [`delete_issue_category`](docs/tool-reference.md#delete_issue_category) - Delete an issue category (with optional reassignment)
   - Note: `get_redmine_issue` can include `custom_fields` and `update_redmine_issue` can update custom fields by name (for example `{"size": "S"}`).
 
 - **Time Tracking** (4 tools)

@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - `REDMINE_AGILE_ENABLED=true` opt-in support for RedmineUP Agile plugin: `get_redmine_issue` auto-includes `story_points`, `agile_sprint_id`, and `agile_position`; `update_redmine_issue` accepts `story_points` in the `fields` dict
+- **14 new MCP tools for Issue Tracking (Stage A):**
+  - **Copying & hierarchy:**
+    - `copy_issue` — duplicate an existing issue via Redmine's native `copy_from` mechanism, with optional field overrides and support for copying subtasks/attachments
+    - `list_subtasks` — list child issues of a given parent (subtasks are created via existing `create_redmine_issue` with `parent_issue_id`)
+  - **Issue relations (blocks, duplicates, precedes, etc.):**
+    - `list_issue_relations` — list all relations for an issue
+    - `create_issue_relation` — create a relation between two issues; validates `relation_type` against Redmine's taxonomy
+    - `delete_issue_relation` — delete a relation by ID
+  - **Watchers:**
+    - `add_watcher` — add a user to an issue's watcher list (Redmine 2.3.0+)
+    - `remove_watcher` — remove a user from an issue's watcher list
+  - **Journal/note management:**
+    - `edit_note` — update an existing journal note's text and/or `private_notes` flag via `PUT /journals/{id}.json`
+    - `get_private_notes` — retrieve only the private notes on an issue (requires "View private notes" permission)
+    - `set_note_private` — toggle the private/public state of an existing journal note
+  - **Issue categories:**
+    - `list_issue_categories` — list all categories for a project
+    - `create_issue_category` — create a new category (optionally with a default assignee)
+    - `update_issue_category` — rename a category or change its default assignee
+    - `delete_issue_category` — delete a category with optional `reassign_to_id` to move existing issues
+- **55 new unit tests** covering all Stage A tools (read-only mode enforcement, success paths, error paths, helper conversions)
 
 ### Security
 - Bump `fastmcp` from 3.1.1 to 3.2.0, patching CVE-2025-64340 and CVE-2026-27124

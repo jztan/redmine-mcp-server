@@ -2303,6 +2303,646 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
         )
 
 
+# ---------------------------------------------------------------------------
+# Issue tracking helpers (relations, categories, journals)
+# ---------------------------------------------------------------------------
+
+
+_VALID_ISSUE_RELATION_TYPES: Set[str] = {
+    "relates",
+    "duplicates",
+    "duplicated",
+    "blocks",
+    "blocked",
+    "precedes",
+    "follows",
+    "copied_to",
+    "copied_from",
+}
+
+
+def _issue_relation_to_dict(relation: Any) -> Dict[str, Any]:
+    """Convert a python-redmine IssueRelation object to a serializable dict."""
+    return {
+        "id": getattr(relation, "id", None),
+        "issue_id": getattr(relation, "issue_id", None),
+        "issue_to_id": getattr(relation, "issue_to_id", None),
+        "relation_type": getattr(relation, "relation_type", None),
+        "delay": getattr(relation, "delay", None),
+    }
+
+
+def _issue_category_to_dict(category: Any) -> Dict[str, Any]:
+    """Convert a python-redmine IssueCategory object to a serializable dict."""
+    project = getattr(category, "project", None)
+    assigned_to = getattr(category, "assigned_to", None)
+    return {
+        "id": getattr(category, "id", None),
+        "name": getattr(category, "name", ""),
+        "project": (
+            {"id": project.id, "name": getattr(project, "name", "")}
+            if project is not None
+            else None
+        ),
+        "assigned_to": (
+            {"id": assigned_to.id, "name": getattr(assigned_to, "name", "")}
+            if assigned_to is not None
+            else None
+        ),
+    }
+
+
+def _journal_to_dict(journal: Any, include_private_flag: bool = True) -> Dict[str, Any]:
+    """Convert a python-redmine IssueJournal to a serializable dict.
+
+    Unlike `_journals_to_list`, this helper preserves empty-notes entries
+    (since they can still carry field-change details) and optionally exposes
+    the ``private_notes`` flag.
+    """
+    user = getattr(journal, "user", None)
+    notes = getattr(journal, "notes", "") or ""
+    entry: Dict[str, Any] = {
+        "id": getattr(journal, "id", None),
+        "user": (
+            {"id": user.id, "name": getattr(user, "name", "")}
+            if user is not None
+            else None
+        ),
+        "notes": wrap_insecure_content(notes) if notes else "",
+        "created_on": _safe_isoformat(getattr(journal, "created_on", None)),
+    }
+    if include_private_flag:
+        entry["private_notes"] = bool(getattr(journal, "private_notes", False))
+    return entry
+
+
+# ---------------------------------------------------------------------------
+# Issue tracking tools (copy, relations, subtasks, notes, watchers, categories)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+async def copy_issue(
+    issue_id: int,
+    project_id: Optional[Union[str, int]] = None,
+    subject: Optional[str] = None,
+    link_original: bool = True,
+    copy_subtasks: bool = True,
+    copy_attachments: bool = True,
+    field_overrides: Optional[Union[Dict[str, Any], str]] = None,
+) -> Dict[str, Any]:
+    """Duplicate an existing Redmine issue with optional field overrides.
+
+    Uses Redmine's native copy mechanism (``copy_from`` parameter) which
+    preserves the original issue's fields while allowing selected overrides.
+
+    Args:
+        issue_id: ID of the source issue to copy.
+        project_id: Target project for the new issue (ID or identifier).
+            Defaults to the source issue's project when omitted.
+        subject: Optional new subject for the copy. Defaults to the source
+            issue's subject when omitted.
+        link_original: When True (default), creates a ``copied_to``/
+            ``copied_from`` relation between the original and the copy.
+        copy_subtasks: When True (default), the source issue's subtasks are
+            recursively copied.
+        copy_attachments: When True (default), attachments are copied to
+            the new issue.
+        field_overrides: Optional dict (or JSON object string) of field
+            values to override on the copy (e.g.,
+            ``{"assigned_to_id": 5, "description": "..."}``).
+
+    Returns:
+        Dictionary containing the newly created issue. On failure a dict
+        with an ``"error"`` key is returned.
+    """
+
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    try:
+        overrides = _parse_optional_object_payload(field_overrides, "field_overrides")
+    except ValueError as e:
+        return {"error": str(e)}
+
+    # Prevent accidental overwrite of resolved positional-like params.
+    overrides.pop("issue_id", None)
+    overrides.pop("copy_from", None)
+
+    if project_id is not None:
+        overrides["project_id"] = project_id
+    if subject is not None:
+        overrides["subject"] = subject
+
+    # python-redmine's copy() signature: include=None means use library
+    # defaults (subtasks + attachments). We translate our booleans to an
+    # explicit include tuple to give callers precise control.
+    include_parts: List[str] = []
+    if copy_subtasks:
+        include_parts.append("subtasks")
+    if copy_attachments:
+        include_parts.append("attachments")
+    include_tuple = tuple(include_parts)
+
+    try:
+        new_issue = _get_redmine_client().issue.copy(
+            issue_id,
+            link_original=link_original,
+            include=include_tuple,
+            **overrides,
+        )
+        return _issue_to_dict(new_issue, include_custom_fields=True)
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"copying issue {issue_id}",
+            {"resource_type": "issue", "resource_id": issue_id},
+        )
+
+
+@mcp.tool()
+async def list_issue_relations(issue_id: int) -> List[Dict[str, Any]]:
+    """List all relations for a given Redmine issue.
+
+    Args:
+        issue_id: ID of the issue whose relations should be listed.
+
+    Returns:
+        List of relation dictionaries. On failure, a list containing a
+        single dictionary with an ``"error"`` key is returned.
+    """
+    try:
+        relations = _get_redmine_client().issue_relation.filter(issue_id=issue_id)
+        return [_issue_relation_to_dict(r) for r in relations]
+    except Exception as e:
+        return [
+            _handle_redmine_error(
+                e,
+                f"listing relations for issue {issue_id}",
+                {"resource_type": "issue", "resource_id": issue_id},
+            )
+        ]
+
+
+@mcp.tool()
+async def create_issue_relation(
+    issue_id: int,
+    issue_to_id: int,
+    relation_type: str = "relates",
+    delay: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Create a relation between two Redmine issues.
+
+    Args:
+        issue_id: ID of the source issue.
+        issue_to_id: ID of the target issue to relate to.
+        relation_type: Type of relation. Must be one of: ``relates``,
+            ``duplicates``, ``duplicated``, ``blocks``, ``blocked``,
+            ``precedes``, ``follows``, ``copied_to``, ``copied_from``.
+            Defaults to ``relates``.
+        delay: Optional delay in days (only meaningful for ``precedes``
+            and ``follows`` relation types).
+
+    Returns:
+        Dictionary containing the newly created relation. On failure a
+        dict with an ``"error"`` key is returned.
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    if relation_type not in _VALID_ISSUE_RELATION_TYPES:
+        return {
+            "error": (
+                f"Invalid relation_type '{relation_type}'. Must be one of: "
+                f"{', '.join(sorted(_VALID_ISSUE_RELATION_TYPES))}."
+            )
+        }
+
+    try:
+        params: Dict[str, Any] = {
+            "issue_id": issue_id,
+            "issue_to_id": issue_to_id,
+            "relation_type": relation_type,
+        }
+        if delay is not None:
+            params["delay"] = delay
+
+        relation = _get_redmine_client().issue_relation.create(**params)
+        return _issue_relation_to_dict(relation)
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"creating relation from issue {issue_id} to {issue_to_id}",
+            {"resource_type": "issue", "resource_id": issue_id},
+        )
+
+
+@mcp.tool()
+async def delete_issue_relation(relation_id: int) -> Dict[str, Any]:
+    """Delete a Redmine issue relation by its ID.
+
+    Args:
+        relation_id: ID of the relation to delete (the ``id`` field returned
+            by ``list_issue_relations`` or ``create_issue_relation``).
+
+    Returns:
+        Dictionary with ``success: true`` on success. On failure a dict
+        with an ``"error"`` key is returned.
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    try:
+        _get_redmine_client().issue_relation.delete(relation_id)
+        return {"success": True, "deleted_relation_id": relation_id}
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"deleting relation {relation_id}",
+            {"resource_type": "relation", "resource_id": relation_id},
+        )
+
+
+@mcp.tool()
+async def list_subtasks(issue_id: int) -> List[Dict[str, Any]]:
+    """List subtasks (child issues) of a given Redmine issue.
+
+    Retrieves all issues whose ``parent_issue_id`` equals the given
+    ``issue_id``. To create a new subtask, use ``create_redmine_issue``
+    with the ``parent_issue_id`` field set.
+
+    Args:
+        issue_id: ID of the parent issue.
+
+    Returns:
+        List of child issue dictionaries. On failure a list containing a
+        single dictionary with an ``"error"`` key is returned.
+    """
+    try:
+        # Include closed subtasks as well (status_id=*) to match Redmine's
+        # parent/child display.
+        children = _get_redmine_client().issue.filter(
+            parent_id=issue_id,
+            status_id="*",
+        )
+        return [_issue_to_dict(c) for c in children]
+    except Exception as e:
+        return [
+            _handle_redmine_error(
+                e,
+                f"listing subtasks for issue {issue_id}",
+                {"resource_type": "issue", "resource_id": issue_id},
+            )
+        ]
+
+
+@mcp.tool()
+async def add_watcher(issue_id: int, user_id: int) -> Dict[str, Any]:
+    """Add a user to the watcher list of a Redmine issue.
+
+    Requires Redmine 2.3.0+.
+
+    Args:
+        issue_id: ID of the issue.
+        user_id: ID of the user to add as a watcher.
+
+    Returns:
+        Dictionary with ``success: true`` on success. On failure a dict
+        with an ``"error"`` key is returned.
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    try:
+        issue = _get_redmine_client().issue.get(issue_id)
+        issue.watcher.add(user_id)
+        return {
+            "success": True,
+            "issue_id": issue_id,
+            "user_id": user_id,
+        }
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"adding watcher {user_id} to issue {issue_id}",
+            {"resource_type": "issue", "resource_id": issue_id},
+        )
+
+
+@mcp.tool()
+async def remove_watcher(issue_id: int, user_id: int) -> Dict[str, Any]:
+    """Remove a user from the watcher list of a Redmine issue.
+
+    Args:
+        issue_id: ID of the issue.
+        user_id: ID of the user to remove from watchers.
+
+    Returns:
+        Dictionary with ``success: true`` on success. On failure a dict
+        with an ``"error"`` key is returned.
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    try:
+        issue = _get_redmine_client().issue.get(issue_id)
+        issue.watcher.remove(user_id)
+        return {
+            "success": True,
+            "issue_id": issue_id,
+            "user_id": user_id,
+        }
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"removing watcher {user_id} from issue {issue_id}",
+            {"resource_type": "issue", "resource_id": issue_id},
+        )
+
+
+@mcp.tool()
+async def edit_note(
+    journal_id: int,
+    notes: str,
+    private_notes: Optional[bool] = None,
+) -> Dict[str, Any]:
+    """Update the text (and optionally privacy) of an existing journal note.
+
+    Redmine exposes ``PUT /journals/{id}.json`` for editing journal notes.
+    Only the ``notes`` text and the ``private_notes`` flag can be edited;
+    journal ``details`` (field-change history) are immutable.
+
+    Note: If a journal has no details attached and its notes are cleared,
+    Redmine will delete the journal record.
+
+    Args:
+        journal_id: ID of the journal entry to update.
+        notes: New notes text (may be empty to clear notes).
+        private_notes: Optionally toggle the private flag on this journal
+            entry. When omitted, the existing flag is preserved.
+
+    Returns:
+        Dictionary confirming the update. On failure a dict with an
+        ``"error"`` key is returned.
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    try:
+        params: Dict[str, Any] = {"notes": notes}
+        if private_notes is not None:
+            params["private_notes"] = bool(private_notes)
+
+        client = _get_redmine_client()
+        # python-redmine's IssueJournal supports update via
+        # PUT /journals/{id}.json with a {"journal": {...}} envelope.
+        client.issue_journal.update(journal_id, **params)
+        return {
+            "success": True,
+            "journal_id": journal_id,
+            "notes": notes,
+            "private_notes": (
+                bool(private_notes) if private_notes is not None else None
+            ),
+        }
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"editing journal {journal_id}",
+            {"resource_type": "journal", "resource_id": journal_id},
+        )
+
+
+@mcp.tool()
+async def get_private_notes(issue_id: int) -> List[Dict[str, Any]]:
+    """Retrieve only the private notes/journals of a Redmine issue.
+
+    Fetches the issue's journals and filters for entries where
+    ``private_notes`` is true. The authenticated user must have the
+    "View private notes" permission for non-empty results.
+
+    Args:
+        issue_id: ID of the issue.
+
+    Returns:
+        List of private journal dictionaries, each containing ``id``,
+        ``user``, ``notes``, ``created_on``, and ``private_notes: true``.
+        On failure a list with a single ``"error"`` dict is returned.
+    """
+    try:
+        issue = _get_redmine_client().issue.get(issue_id, include="journals")
+        raw_journals = getattr(issue, "journals", None) or []
+
+        private: List[Dict[str, Any]] = []
+        try:
+            iterator = iter(raw_journals)
+        except TypeError:
+            return []
+
+        for journal in iterator:
+            if not bool(getattr(journal, "private_notes", False)):
+                continue
+            # Skip entries with no notes body (private detail-only records).
+            if not getattr(journal, "notes", ""):
+                continue
+            private.append(_journal_to_dict(journal, include_private_flag=True))
+        return private
+    except Exception as e:
+        return [
+            _handle_redmine_error(
+                e,
+                f"fetching private notes for issue {issue_id}",
+                {"resource_type": "issue", "resource_id": issue_id},
+            )
+        ]
+
+
+@mcp.tool()
+async def set_note_private(
+    journal_id: int,
+    is_private: bool,
+) -> Dict[str, Any]:
+    """Toggle the private/public state of an existing journal note.
+
+    Args:
+        journal_id: ID of the journal entry to update.
+        is_private: True to mark the note private, False to make it public.
+
+    Returns:
+        Dictionary confirming the change. On failure a dict with an
+        ``"error"`` key is returned.
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    try:
+        client = _get_redmine_client()
+        client.issue_journal.update(journal_id, private_notes=bool(is_private))
+        return {
+            "success": True,
+            "journal_id": journal_id,
+            "private_notes": bool(is_private),
+        }
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"updating privacy of journal {journal_id}",
+            {"resource_type": "journal", "resource_id": journal_id},
+        )
+
+
+@mcp.tool()
+async def list_issue_categories(
+    project_id: Union[str, int],
+) -> List[Dict[str, Any]]:
+    """List all issue categories for a given Redmine project.
+
+    Args:
+        project_id: Project identifier (numeric ID or string identifier).
+
+    Returns:
+        List of issue category dictionaries. On failure a list with a
+        single ``"error"`` dict is returned.
+    """
+    try:
+        categories = _get_redmine_client().issue_category.filter(project_id=project_id)
+        return [_issue_category_to_dict(c) for c in categories]
+    except Exception as e:
+        return [
+            _handle_redmine_error(
+                e,
+                f"listing issue categories for project {project_id}",
+                {"resource_type": "project", "resource_id": project_id},
+            )
+        ]
+
+
+@mcp.tool()
+async def create_issue_category(
+    project_id: Union[str, int],
+    name: str,
+    assigned_to_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Create a new issue category in a Redmine project.
+
+    Args:
+        project_id: Project identifier (numeric ID or string identifier).
+        name: Category name (required).
+        assigned_to_id: Optional default assignee user ID for issues in
+            this category.
+
+    Returns:
+        Dictionary containing the created issue category. On failure a
+        dict with an ``"error"`` key is returned.
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    if not name or not name.strip():
+        return {"error": "Category 'name' is required."}
+
+    try:
+        params: Dict[str, Any] = {
+            "project_id": project_id,
+            "name": name.strip(),
+        }
+        if assigned_to_id is not None:
+            params["assigned_to_id"] = assigned_to_id
+
+        category = _get_redmine_client().issue_category.create(**params)
+        return _issue_category_to_dict(category)
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"creating issue category in project {project_id}",
+            {"resource_type": "project", "resource_id": project_id},
+        )
+
+
+@mcp.tool()
+async def update_issue_category(
+    category_id: int,
+    name: Optional[str] = None,
+    assigned_to_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Update an existing Redmine issue category.
+
+    Args:
+        category_id: ID of the issue category to update.
+        name: New category name (optional).
+        assigned_to_id: New default assignee user ID (optional).
+
+    Returns:
+        Dictionary containing the updated issue category. On failure a
+        dict with an ``"error"`` key is returned.
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    params: Dict[str, Any] = {}
+    if name is not None:
+        stripped = name.strip()
+        if not stripped:
+            return {"error": "Category 'name' cannot be empty."}
+        params["name"] = stripped
+    if assigned_to_id is not None:
+        params["assigned_to_id"] = assigned_to_id
+
+    if not params:
+        return {"error": "No fields provided for update."}
+
+    try:
+        client = _get_redmine_client()
+        client.issue_category.update(category_id, **params)
+        updated = client.issue_category.get(category_id)
+        return _issue_category_to_dict(updated)
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"updating issue category {category_id}",
+            {"resource_type": "issue_category", "resource_id": category_id},
+        )
+
+
+@mcp.tool()
+async def delete_issue_category(
+    category_id: int,
+    reassign_to_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Delete a Redmine issue category.
+
+    Args:
+        category_id: ID of the issue category to delete.
+        reassign_to_id: Optional ID of another category to reassign existing
+            issues to. When omitted, issues in this category become
+            uncategorised.
+
+    Returns:
+        Dictionary with ``success: true`` on success. On failure a dict
+        with an ``"error"`` key is returned.
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    try:
+        params: Dict[str, Any] = {}
+        if reassign_to_id is not None:
+            params["reassign_to_id"] = reassign_to_id
+
+        _get_redmine_client().issue_category.delete(category_id, **params)
+        return {
+            "success": True,
+            "deleted_category_id": category_id,
+            "reassigned_to_id": reassign_to_id,
+        }
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"deleting issue category {category_id}",
+            {"resource_type": "issue_category", "resource_id": category_id},
+        )
+
+
 @mcp.tool()
 async def get_redmine_attachment_download_url(
     attachment_id: int,

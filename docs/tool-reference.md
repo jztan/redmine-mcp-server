@@ -704,6 +704,224 @@ update_redmine_issue(
 
 ---
 
+### `copy_issue`
+
+Duplicate an existing issue using Redmine's native copy mechanism. Optionally overrides selected fields, recursively copies subtasks, and copies attachments.
+
+**Parameters:**
+- `issue_id` (integer, required): ID of the source issue to copy.
+- `project_id` (integer or string, optional): Target project for the copy. Defaults to the source issue's project.
+- `subject` (string, optional): New subject for the copy. Defaults to the source subject.
+- `link_original` (boolean, optional): Create a `copied_to`/`copied_from` relation between the original and the copy. Default: `true`.
+- `copy_subtasks` (boolean, optional): Recursively copy the source's subtasks. Default: `true`.
+- `copy_attachments` (boolean, optional): Copy attachments to the new issue. Default: `true`.
+- `field_overrides` (object or JSON string, optional): Field values to override on the copy (e.g., `{"assigned_to_id": 5, "description": "..."}`).
+
+**Returns:** Dictionary containing the newly created issue. On failure, a dict with an `"error"` key.
+
+**Example:**
+```python
+copy_issue(
+    issue_id=123,
+    subject="Copy of login bug",
+    field_overrides={"assigned_to_id": 7}
+)
+```
+
+**Notes:**
+- Respects `REDMINE_MCP_READ_ONLY` — returns an error in read-only mode.
+- The target user must have permission to create issues in the destination project.
+
+---
+
+### `list_issue_relations`
+
+List all relations for a given issue.
+
+**Parameters:**
+- `issue_id` (integer, required): ID of the issue whose relations should be listed.
+
+**Returns:** List of relation dictionaries with `id`, `issue_id`, `issue_to_id`, `relation_type`, and `delay`.
+
+**Example:**
+```python
+list_issue_relations(issue_id=123)
+# [{"id": 5, "issue_id": 123, "issue_to_id": 456, "relation_type": "blocks", "delay": null}]
+```
+
+---
+
+### `create_issue_relation`
+
+Create a relation between two issues.
+
+**Parameters:**
+- `issue_id` (integer, required): ID of the source issue.
+- `issue_to_id` (integer, required): ID of the target issue.
+- `relation_type` (string, optional): One of `relates`, `duplicates`, `duplicated`, `blocks`, `blocked`, `precedes`, `follows`, `copied_to`, `copied_from`. Default: `relates`.
+- `delay` (integer, optional): Delay in days. Only meaningful for `precedes` / `follows`.
+
+**Returns:** Dictionary containing the newly created relation, or `{"error": "..."}` on failure.
+
+**Example:**
+```python
+create_issue_relation(
+    issue_id=123,
+    issue_to_id=456,
+    relation_type="blocks"
+)
+```
+
+---
+
+### `delete_issue_relation`
+
+Delete a relation by its ID (obtained from `list_issue_relations` or `create_issue_relation`).
+
+**Parameters:**
+- `relation_id` (integer, required): ID of the relation to delete.
+
+**Returns:** `{"success": true, "deleted_relation_id": <id>}` on success.
+
+---
+
+### `list_subtasks`
+
+List subtasks (child issues) of a given issue. Includes closed subtasks.
+
+**Parameters:**
+- `issue_id` (integer, required): ID of the parent issue.
+
+**Returns:** List of child issue dictionaries.
+
+**Notes:**
+- To create a new subtask, use `create_redmine_issue` with the `parent_issue_id` field set:
+  ```python
+  create_redmine_issue(
+      project_id=1,
+      subject="Subtask",
+      fields={"parent_issue_id": 123}
+  )
+  ```
+
+---
+
+### `add_watcher`
+
+Add a user to the watcher list of an issue. Requires Redmine 2.3.0+.
+
+**Parameters:**
+- `issue_id` (integer, required): ID of the issue.
+- `user_id` (integer, required): ID of the user to add as a watcher.
+
+**Returns:** `{"success": true, "issue_id": ..., "user_id": ...}` on success.
+
+---
+
+### `remove_watcher`
+
+Remove a user from the watcher list of an issue.
+
+**Parameters:**
+- `issue_id` (integer, required): ID of the issue.
+- `user_id` (integer, required): ID of the user to remove.
+
+**Returns:** `{"success": true, "issue_id": ..., "user_id": ...}` on success.
+
+---
+
+### `edit_note`
+
+Update the text (and optionally the privacy flag) of an existing journal note.
+
+**Parameters:**
+- `journal_id` (integer, required): ID of the journal entry (from `get_redmine_issue` with `include_journals=true`).
+- `notes` (string, required): New notes text. May be empty.
+- `private_notes` (boolean, optional): Optionally toggle the private flag on this journal entry.
+
+**Returns:** Confirmation dictionary with `success`, `journal_id`, `notes`, and `private_notes`.
+
+**Notes:**
+- Only the `notes` text and `private_notes` flag can be edited. Journal `details` (field-change history) are immutable.
+- If a journal has no `details` and its notes are cleared, Redmine will delete the journal record.
+- Requires `edit_issue_notes` / `edit_own_issue_notes` permission (server-enforced).
+
+---
+
+### `get_private_notes`
+
+Retrieve only the private notes (journals with `private_notes=true`) of an issue. Requires the "View private notes" permission.
+
+**Parameters:**
+- `issue_id` (integer, required): ID of the issue.
+
+**Returns:** List of journal dictionaries where `private_notes` is `true`. Journals with empty note bodies are omitted.
+
+---
+
+### `set_note_private`
+
+Toggle the private/public state of an existing journal note.
+
+**Parameters:**
+- `journal_id` (integer, required): ID of the journal entry.
+- `is_private` (boolean, required): `true` to mark the note private, `false` to make it public.
+
+**Returns:** `{"success": true, "journal_id": ..., "private_notes": <bool>}`.
+
+---
+
+### `list_issue_categories`
+
+List all issue categories for a given project.
+
+**Parameters:**
+- `project_id` (integer or string, required): Project identifier (numeric ID or string identifier).
+
+**Returns:** List of category dictionaries with `id`, `name`, `project`, and `assigned_to`.
+
+---
+
+### `create_issue_category`
+
+Create a new issue category in a project.
+
+**Parameters:**
+- `project_id` (integer or string, required): Project identifier.
+- `name` (string, required): Category name.
+- `assigned_to_id` (integer, optional): Default assignee user ID for issues in this category.
+
+**Returns:** Dictionary containing the created issue category.
+
+---
+
+### `update_issue_category`
+
+Update an existing issue category.
+
+**Parameters:**
+- `category_id` (integer, required): ID of the issue category.
+- `name` (string, optional): New category name.
+- `assigned_to_id` (integer, optional): New default assignee user ID.
+
+**Returns:** Dictionary containing the updated issue category.
+
+**Notes:** At least one of `name` or `assigned_to_id` must be provided.
+
+---
+
+### `delete_issue_category`
+
+Delete an issue category.
+
+**Parameters:**
+- `category_id` (integer, required): ID of the issue category.
+- `reassign_to_id` (integer, optional): ID of another category to reassign existing issues to. If omitted, issues in this category become uncategorised.
+
+**Returns:** `{"success": true, "deleted_category_id": ..., "reassigned_to_id": ...}`.
+
+---
+
 ## Time Tracking
 
 ### `list_time_entries`
