@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-04-14
+### Added
+- `REDMINE_AGILE_ENABLED=true` opt-in support for RedmineUP Agile plugin: `get_redmine_issue` auto-includes `story_points`, `agile_sprint_id`, and `agile_position`; `update_redmine_issue` accepts `story_points` in the `fields` dict
+
+### Security
+- Bump `fastmcp` from 3.1.1 to 3.2.0, patching CVE-2025-64340 and CVE-2026-27124
+
+### CI
+- Fix `pip-audit` failing on packages not published to PyPI by adding `--no-emit-project` to `uv export` in `dependency-audit.yml`
+
 ## [1.1.2] - 2026-04-08
 ### Fixed
 - Fix `AttributeError: 'str' object has no attribute 'isoformat'` crash when Redmine server returns date fields as pre-formatted strings instead of datetime objects (affects non-UTC timezone configurations and certain Redmine versions)

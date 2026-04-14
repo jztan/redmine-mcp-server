@@ -41,7 +41,7 @@ jobs:
         uses: astral-sh/setup-uv@v4
       - name: Audit dependencies
         run: |
-          uv export --no-hashes > /tmp/requirements-audit.txt
+          uv export --no-hashes --no-emit-project > /tmp/requirements-audit.txt
           pip-audit -r /tmp/requirements-audit.txt --strict
 
   lockfile-diff:
