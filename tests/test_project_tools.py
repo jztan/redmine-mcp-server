@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from redmine_mcp_server.redmine_handler import (  # noqa: E402
     add_project_member,
     get_project_modules,
+    list_redmine_roles,
     remove_project_member,
     update_project_member,
 )
@@ -343,3 +344,96 @@ class TestRemoveProjectMember:
         )
         result = await remove_project_member(membership_id=42)
         assert "error" in result
+
+
+# ---------------------------------------------------------------------------
+# list_redmine_roles
+# ---------------------------------------------------------------------------
+
+
+class TestListRedmineRoles:
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_returns_roles(self, mock_redmine):
+        role1 = _mock_with_name(3, "Manager")
+        role2 = _mock_with_name(4, "Developer")
+        role3 = _mock_with_name(5, "Reporter")
+        mock_redmine.role.all.return_value = [role1, role2, role3]
+
+        result = await list_redmine_roles()
+
+        assert result == [
+            {"id": 3, "name": "Manager"},
+            {"id": 4, "name": "Developer"},
+            {"id": 5, "name": "Reporter"},
+        ]
+        mock_redmine.role.all.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_empty_roles(self, mock_redmine):
+        mock_redmine.role.all.return_value = []
+        result = await list_redmine_roles()
+        assert result == []
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_auth_error(self, mock_redmine):
+        from redminelib.exceptions import AuthError
+
+        mock_redmine.role.all.side_effect = AuthError()
+        result = await list_redmine_roles()
+        assert len(result) == 1
+        assert "error" in result[0]
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_forbidden(self, mock_redmine):
+        from redminelib.exceptions import ForbiddenError
+
+        mock_redmine.role.all.side_effect = ForbiddenError()
+        result = await list_redmine_roles()
+        assert len(result) == 1
+        assert "error" in result[0]
+        assert "Access denied" in result[0]["error"]
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_role_missing_attributes(self, mock_redmine):
+        """Handle role objects missing some attributes gracefully."""
+        role = Mock(spec=["id"])
+        role.id = 7
+        mock_redmine.role.all.return_value = [role]
+
+        result = await list_redmine_roles()
+        assert result == [{"id": 7, "name": ""}]
+
+
+# ---------------------------------------------------------------------------
+# Error hints point to list_redmine_roles (regression test)
+# ---------------------------------------------------------------------------
+
+
+class TestRoleIdErrorHints:
+    """Verify that role_id validation errors direct callers to
+    list_redmine_roles so AI agents don't hallucinate role IDs."""
+
+    @pytest.mark.asyncio
+    async def test_add_member_empty_role_ids_hints_list_roles(self):
+        result = await add_project_member(project_id=10, role_ids=[], user_id=5)
+        assert "list_redmine_roles" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_add_member_invalid_role_ids_hints_list_roles(self):
+        result = await add_project_member(project_id=10, role_ids=["admin"], user_id=5)
+        assert "list_redmine_roles" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_update_member_empty_role_ids_hints_list_roles(self):
+        result = await update_project_member(membership_id=42, role_ids=[])
+        assert "list_redmine_roles" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_update_member_invalid_role_ids_hints_list_roles(self):
+        result = await update_project_member(membership_id=42, role_ids=["admin"])
+        assert "list_redmine_roles" in result["error"]

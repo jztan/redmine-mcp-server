@@ -3708,6 +3708,42 @@ async def list_project_members(
 
 
 @mcp.tool()
+async def list_redmine_roles() -> List[Dict[str, Any]]:
+    """List all roles defined in the Redmine instance.
+
+    Returns basic role metadata (``id`` and ``name``) for every role
+    configured in Redmine. Use this tool BEFORE calling
+    ``add_project_member`` or ``update_project_member`` to discover the
+    correct ``role_ids`` — role IDs vary between Redmine instances and
+    must not be guessed.
+
+    Returns:
+        A list of role dictionaries, each with ``id`` and ``name``.
+        On failure, a list containing a single dictionary with an
+        ``"error"`` key.
+
+    Example:
+        >>> await list_redmine_roles()
+        [
+            {"id": 3, "name": "Manager"},
+            {"id": 4, "name": "Developer"},
+            {"id": 5, "name": "Reporter"}
+        ]
+    """
+    try:
+        roles = _get_redmine_client().role.all()
+        return [
+            {
+                "id": getattr(r, "id", None),
+                "name": getattr(r, "name", ""),
+            }
+            for r in roles
+        ]
+    except Exception as e:
+        return [_handle_redmine_error(e, "listing roles")]
+
+
+@mcp.tool()
 async def get_project_modules(
     project_id: Union[str, int],
 ) -> Dict[str, Any]:
@@ -3784,7 +3820,9 @@ async def add_project_member(
     Args:
         project_id: Project identifier (numeric ID or string identifier).
         role_ids: List of role IDs to assign (at least one required).
-            Use ``list_redmine_roles`` (Redmine web UI) to discover IDs.
+            Use the ``list_redmine_roles`` tool to discover valid role IDs
+            before calling this tool — role IDs vary between Redmine
+            instances and must not be guessed.
         user_id: ID of the user to add as a member.
         group_id: ID of the group to add as a member.
 
@@ -3801,9 +3839,19 @@ async def add_project_member(
         return {"error": "Exactly one of user_id or group_id must be provided."}
 
     if not role_ids:
-        return {"error": "At least one role_id must be provided."}
+        return {
+            "error": (
+                "At least one role_id must be provided. "
+                "Use `list_redmine_roles` to discover valid role IDs."
+            )
+        }
     if not isinstance(role_ids, list) or not all(isinstance(r, int) for r in role_ids):
-        return {"error": "role_ids must be a list of integers."}
+        return {
+            "error": (
+                "role_ids must be a list of integers. "
+                "Use `list_redmine_roles` to discover valid role IDs."
+            )
+        }
 
     # Redmine's POST /projects/{id}/memberships endpoint uses `user_id` for
     # BOTH users and groups — they share the same principal ID namespace.
@@ -3840,6 +3888,8 @@ async def update_project_member(
         membership_id: ID of the membership to update (obtained from
             ``list_project_members``).
         role_ids: New list of role IDs to assign. Replaces the existing set.
+            Use the ``list_redmine_roles`` tool to discover valid role IDs
+            before calling this tool.
 
     Returns:
         Dictionary containing the updated membership. On failure a dict
@@ -3849,9 +3899,19 @@ async def update_project_member(
         return dict(_READ_ONLY_ERROR)
 
     if not role_ids:
-        return {"error": "At least one role_id must be provided."}
+        return {
+            "error": (
+                "At least one role_id must be provided. "
+                "Use `list_redmine_roles` to discover valid role IDs."
+            )
+        }
     if not isinstance(role_ids, list) or not all(isinstance(r, int) for r in role_ids):
-        return {"error": "role_ids must be a list of integers."}
+        return {
+            "error": (
+                "role_ids must be a list of integers. "
+                "Use `list_redmine_roles` to discover valid role IDs."
+            )
+        }
 
     try:
         client = _get_redmine_client()

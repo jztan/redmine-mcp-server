@@ -355,6 +355,27 @@ devs = [m for m in members if any(r["name"] == "Developer" for r in m["roles"])]
 
 ---
 
+### `list_redmine_roles`
+
+List all roles defined in the Redmine instance. Returns basic metadata (`id` and `name`) for each role.
+
+**Parameters:** None.
+
+**Returns:** List of role dictionaries with `id` and `name`.
+
+**Example:**
+```json
+[
+  {"id": 3, "name": "Manager"},
+  {"id": 4, "name": "Developer"},
+  {"id": 5, "name": "Reporter"}
+]
+```
+
+**When to use:** Call this **before** `add_project_member` or `update_project_member` to discover the correct `role_ids`. Role IDs vary between Redmine instances and must not be guessed — calling `add_project_member` with a non-existent role ID returns a validation error from Redmine.
+
+---
+
 ### `get_project_modules`
 
 Retrieve the list of enabled modules for a project (e.g., `issue_tracking`, `time_tracking`, `wiki`, `repository`).
