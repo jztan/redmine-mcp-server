@@ -107,9 +107,7 @@ class TestApplyAgileStoryPoints:
             "put",
             "http://localhost:3000/issues/42.json",
             headers={"Content-Type": "application/json"},
-            data=json.dumps(
-                {"issue": {"agile_data_attributes": {"story_points": 8}}}
-            ),
+            data=json.dumps({"issue": {"agile_data_attributes": {"story_points": 8}}}),
         )
 
     @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
@@ -204,9 +202,7 @@ class TestUpdateRedmineIssueAgile:
             "put",
             "http://localhost:3000/issues/1.json",
             headers={"Content-Type": "application/json"},
-            data=json.dumps(
-                {"issue": {"agile_data_attributes": {"story_points": 8}}}
-            ),
+            data=json.dumps({"issue": {"agile_data_attributes": {"story_points": 8}}}),
         )
         assert result["id"] == 1
 

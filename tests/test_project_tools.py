@@ -172,12 +172,15 @@ class TestAddProjectMember:
         assert result["id"] == 100
         assert result["user"] == {"id": 5, "name": "Alice"}
         mock_redmine.project_membership.create.assert_called_once_with(
-            project_id="my-project", role_ids=[3], user_id=5
+            project_id="my-project", user_id=5, role_ids=[3]
         )
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_add_group(self, mock_redmine):
+        """Redmine's membership API uses user_id for both users and groups
+        (principal ID namespace is shared). The tool forwards group_id via
+        the user_id field."""
         m = Mock()
         m.id = 101
         m.user = None
@@ -190,8 +193,9 @@ class TestAddProjectMember:
 
         assert result["group"] == {"id": 20, "name": "Dev Team"}
         assert result["user"] is None
+        # Verify group_id was forwarded as user_id (Redmine API convention)
         mock_redmine.project_membership.create.assert_called_once_with(
-            project_id=10, role_ids=[3], group_id=20
+            project_id=10, user_id=20, role_ids=[3]
         )
 
     @pytest.mark.asyncio

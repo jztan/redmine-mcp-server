@@ -3805,17 +3805,18 @@ async def add_project_member(
     if not isinstance(role_ids, list) or not all(isinstance(r, int) for r in role_ids):
         return {"error": "role_ids must be a list of integers."}
 
-    try:
-        params: Dict[str, Any] = {
-            "project_id": project_id,
-            "role_ids": role_ids,
-        }
-        if user_id is not None:
-            params["user_id"] = user_id
-        else:
-            params["group_id"] = group_id
+    # Redmine's POST /projects/{id}/memberships endpoint uses `user_id` for
+    # BOTH users and groups — they share the same principal ID namespace.
+    # There is no separate `group_id` parameter in the API, so we always
+    # forward group_id via the `user_id` field.
+    principal_id = user_id if user_id is not None else group_id
 
-        membership = _get_redmine_client().project_membership.create(**params)
+    try:
+        membership = _get_redmine_client().project_membership.create(
+            project_id=project_id,
+            user_id=principal_id,
+            role_ids=role_ids,
+        )
         return _membership_to_dict(membership)
     except Exception as e:
         return _handle_redmine_error(

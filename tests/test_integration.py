@@ -1276,9 +1276,7 @@ class TestTimeEntriesIntegration:
         if not projects:
             pytest.skip("No projects available for testing")
 
-        result = await list_time_entries(
-            project_id=projects[0].identifier, limit=5
-        )
+        result = await list_time_entries(project_id=projects[0].identifier, limit=5)
 
         assert isinstance(result, list)
         for entry in result:
@@ -1612,9 +1610,7 @@ class TestSearchRedmineIssuesIntegration:
 
         from redmine_mcp_server.redmine_handler import search_redmine_issues
 
-        result = await search_redmine_issues(
-            "zzz_nonexistent_xyzzy_999", limit=5
-        )
+        result = await search_redmine_issues("zzz_nonexistent_xyzzy_999", limit=5)
 
         assert isinstance(result, list)
         assert len(result) == 0
@@ -1637,9 +1633,7 @@ class TestSummarizeProjectStatusIntegration:
         projects = list(redmine.project.all())
         assert projects, "No projects available"
 
-        result = await summarize_project_status(
-            project_id=projects[0].id, days=30
-        )
+        result = await summarize_project_status(project_id=projects[0].id, days=30)
 
         assert isinstance(result, dict)
         if "error" in result:
@@ -1662,9 +1656,7 @@ class TestSummarizeProjectStatusIntegration:
         projects = list(redmine.project.all())
         assert projects, "No projects available"
 
-        result = await summarize_project_status(
-            project_id=projects[0].id, days=7
-        )
+        result = await summarize_project_status(project_id=projects[0].id, days=7)
 
         assert isinstance(result, dict)
         if "error" in result:
@@ -1774,9 +1766,7 @@ class TestSearchEntireRedmineIntegration:
 
         from redmine_mcp_server.redmine_handler import search_entire_redmine
 
-        result = await search_entire_redmine(
-            query="zzz_nonexistent_xyzzy_999", limit=5
-        )
+        result = await search_entire_redmine(query="zzz_nonexistent_xyzzy_999", limit=5)
 
         assert isinstance(result, dict)
         if "error" in result:
@@ -2023,9 +2013,9 @@ class TestAgilePluginIntegration:
         result = await update_redmine_issue(
             issue_id, {"story_points": 8, "notes": "agile integration test"}
         )
-        assert "error" not in result, (
-            f"Combined story_points + notes update failed: {result}"
-        )
+        assert (
+            "error" not in result
+        ), f"Combined story_points + notes update failed: {result}"
 
 
 if __name__ == "__main__":
