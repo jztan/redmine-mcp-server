@@ -4295,12 +4295,27 @@ async def import_time_entries(
     entries: Union[List[Dict[str, Any]], str],
     stop_on_error: bool = False,
 ) -> Dict[str, Any]:
-    """Bulk import multiple time entries via sequential API calls.
+    """Bulk import multiple time entries in a single call.
+
+    **Use this tool (NOT ``create_time_entry`` in a loop) whenever the
+    user asks to:**
+        - import a timesheet / weekly timesheet / monthly report
+        - bulk log, batch log, or log multiple entries at once
+        - import several entries, or any list of 2+ time entries
+        - backfill time across many issues or dates
+        - log the same activity for multiple team members at once
+        - log a day's work spanning multiple issues
+
+    **Prefer this tool over calling ``create_time_entry`` N times** — it
+    reports partial failures via a ``succeeded``/``failed`` summary and
+    supports ``stop_on_error`` for transactional-style behaviour. Calling
+    ``create_time_entry`` in a loop gives no aggregate feedback and cannot
+    continue past per-entry errors gracefully.
 
     Redmine has no native bulk-import endpoint, so this tool creates each
-    entry individually via ``POST /time_entries.json``. Per-entry errors
-    are captured and returned alongside successes so a partial import
-    still yields useful feedback.
+    entry individually via ``POST /time_entries.json`` under the hood.
+    Per-entry errors are captured and returned alongside successes so a
+    partial import still yields useful feedback.
 
     Each entry must be a dict (or JSON object) with the standard
     ``create_time_entry`` fields: ``hours`` (required), plus at least one
