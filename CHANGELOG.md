@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [1.2.0] - 2026-04-14
 ### Added
 - `REDMINE_AGILE_ENABLED=true` opt-in support for RedmineUP Agile plugin: `get_redmine_issue` auto-includes `story_points`, `agile_sprint_id`, and `agile_position`; `update_redmine_issue` accepts `story_points` in the `fields` dict
 
