@@ -3745,7 +3745,12 @@ async def get_project_modules(
             iterator = iter(())
 
         for mod in iterator:
-            if isinstance(mod, dict):
+            # python-redmine's Project.encode() converts enabled_modules
+            # to a plain list of strings. Older versions / raw HTTP
+            # responses may return dicts or resource-like objects.
+            if isinstance(mod, str):
+                name = mod
+            elif isinstance(mod, dict):
                 name = mod.get("name")
             else:
                 name = getattr(mod, "name", None)

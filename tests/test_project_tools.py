@@ -56,16 +56,12 @@ class TestGetProjectModules:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_returns_module_names(self, mock_redmine):
+        """Standard path: python-redmine returns enabled_modules as a
+        list of strings (after its Project.encode() transformation)."""
         project = Mock()
         project.id = 1
         project.name = "My Project"
-        mod1 = Mock()
-        mod1.name = "issue_tracking"
-        mod2 = Mock()
-        mod2.name = "wiki"
-        mod3 = Mock()
-        mod3.name = "time_tracking"
-        project.enabled_modules = [mod1, mod2, mod3]
+        project.enabled_modules = ["issue_tracking", "wiki", "time_tracking"]
         mock_redmine.project.get.return_value = project
 
         result = await get_project_modules(project_id="my-project")
@@ -80,6 +76,31 @@ class TestGetProjectModules:
         mock_redmine.project.get.assert_called_once_with(
             "my-project", include="enabled_modules"
         )
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_handles_string_modules(self, mock_redmine):
+        """python-redmine's Project.encode() transforms enabled_modules
+        to a plain list of strings."""
+        project = Mock()
+        project.id = 2
+        project.name = "Web App"
+        project.enabled_modules = [
+            "issue_tracking",
+            "time_tracking",
+            "wiki",
+            "repository",
+        ]
+        mock_redmine.project.get.return_value = project
+
+        result = await get_project_modules(project_id=2)
+
+        assert result["enabled_modules"] == [
+            "issue_tracking",
+            "time_tracking",
+            "wiki",
+            "repository",
+        ]
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
