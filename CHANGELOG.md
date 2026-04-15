@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- Bump `cryptography` from 46.0.6 to 46.0.7, patching CVE-2026-39892 (out-of-bounds read via non-contiguous buffers)
+
 ## [1.2.0] - 2026-04-14
 ### Added
 - `REDMINE_AGILE_ENABLED=true` opt-in support for RedmineUP Agile plugin: `get_redmine_issue` auto-includes `story_points`, `agile_sprint_id`, and `agile_position`; `update_redmine_issue` accepts `story_points` in the `fields` dict
