@@ -101,7 +101,7 @@ def calculate_new_version(current: str, bump_type: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def preflight_checks() -> None:
+def preflight_checks(config: ReleaseConfig) -> None:
     """Verify prerequisites for release."""
     print("\n=== Pre-flight Checks ===\n")
 
@@ -114,22 +114,37 @@ def preflight_checks() -> None:
         sys.exit(1)
     print("  ✓ Working directory is clean")
 
-    # Check we're on develop branch
+    # Check we're on the correct branch
     print("Checking current branch...")
     result = run_command(["git", "rev-parse", "--abbrev-ref", "HEAD"])
     branch = result.stdout.strip()
-    if branch != "develop":
-        print(
-            f"Error: Must be on 'develop' branch to start release, "
-            f"currently on '{branch}'"
-        )
-        sys.exit(1)
-    print("  ✓ On develop branch")
 
-    # Pull latest changes
-    print("Pulling latest changes...")
-    run_command(["git", "pull", "origin", "develop"])
-    print("  ✓ Up to date with origin/develop")
+    if config.hotfix:
+        if not branch.startswith("hotfix/"):
+            print(
+                f"Error: --hotfix requires a hotfix/* branch, "
+                f"currently on '{branch}'"
+            )
+            sys.exit(1)
+        print(f"  ✓ On hotfix branch: {branch}")
+
+        # Pull latest master
+        print("Pulling latest changes from master...")
+        run_command(["git", "pull", "origin", "master"])
+        print("  ✓ Up to date with origin/master")
+    else:
+        if branch != "develop":
+            print(
+                f"Error: Must be on 'develop' branch to start release, "
+                f"currently on '{branch}'"
+            )
+            sys.exit(1)
+        print("  ✓ On develop branch")
+
+        # Pull latest changes
+        print("Pulling latest changes...")
+        run_command(["git", "pull", "origin", "develop"])
+        print("  ✓ Up to date with origin/develop")
 
     # Check code formatting
     print("Checking code formatting...")
@@ -655,7 +670,7 @@ Gitflow:
         print("\n  ⚠️  DRY-RUN MODE - No changes will be made\n")
 
     # Step 1: Pre-flight checks
-    preflight_checks()
+    preflight_checks(config)
 
     # Step 2: Calculate new version
     current_version = get_current_version(config.project_root)
