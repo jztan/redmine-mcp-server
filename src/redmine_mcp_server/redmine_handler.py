@@ -4134,7 +4134,28 @@ async def upload_file(
             create_params["version_id"] = version_id
 
         uploaded = client.file.create(**create_params)
-        return _file_to_dict(uploaded)
+
+        # Redmine returns HTTP 204 (empty body) on successful file creation,
+        # so python-redmine's FileManager synthesizes a minimal response that
+        # only contains the ID. Re-fetch the full attachment metadata so the
+        # caller gets filename, size, content type, author, etc.
+        uploaded_id = getattr(uploaded, "id", None)
+        if uploaded_id is not None:
+            try:
+                full = client.attachment.get(uploaded_id)
+                return _file_to_dict(full)
+            except Exception:
+                # If re-fetch fails for any reason, fall back to the minimal
+                # response + the known fields we already have.
+                pass
+        result = _file_to_dict(uploaded)
+        # Fallback enrichment when the re-fetch failed: ensure the caller at
+        # least sees the filename and description they just uploaded.
+        if not result.get("filename"):
+            result["filename"] = filename
+        if description is not None and not result.get("description"):
+            result["description"] = description
+        return result
     except Exception as e:
         return _handle_redmine_error(
             e,

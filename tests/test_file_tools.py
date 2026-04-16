@@ -170,7 +170,13 @@ class TestUploadFile:
         b64 = base64.b64encode(content).decode("ascii")
 
         mock_redmine.upload.return_value = {"token": "tok123.abc"}
-        mock_redmine.file.create.return_value = _mock_file(
+        # python-redmine's FileManager synthesizes a minimal response with
+        # only the id (since Redmine returns HTTP 204 on create).
+        minimal_upload = Mock(spec=["id"])
+        minimal_upload.id = 100
+        mock_redmine.file.create.return_value = minimal_upload
+        # The tool re-fetches the full metadata via attachment.get().
+        mock_redmine.attachment.get.return_value = _mock_file(
             file_id=100, filename="hello.txt"
         )
 
@@ -180,7 +186,12 @@ class TestUploadFile:
             content_base64=b64,
         )
 
+        # Full metadata should be returned, not just {"id": 100, ...blanks}.
         assert result["id"] == 100
+        assert result["filename"] == "hello.txt"
+        assert result["filesize"] == 1024
+        assert result["author"] == {"id": 5, "name": "Alice"}
+
         # Verify upload was called with a BytesIO containing the decoded bytes
         mock_redmine.upload.assert_called_once()
         upload_args = mock_redmine.upload.call_args
@@ -195,13 +206,19 @@ class TestUploadFile:
             filename="hello.txt",
         )
 
+        # Verify the enrichment re-fetch happened
+        mock_redmine.attachment.get.assert_called_once_with(100)
+
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_upload_with_description_and_version(self, mock_redmine):
         b64 = base64.b64encode(b"x").decode("ascii")
 
         mock_redmine.upload.return_value = {"token": "tok"}
-        mock_redmine.file.create.return_value = _mock_file()
+        minimal = Mock(spec=["id"])
+        minimal.id = 7
+        mock_redmine.file.create.return_value = minimal
+        mock_redmine.attachment.get.return_value = _mock_file(file_id=7)
 
         await upload_file(
             project_id=10,
@@ -214,6 +231,33 @@ class TestUploadFile:
         _, kwargs = mock_redmine.file.create.call_args
         assert kwargs["description"] == "Release notes"
         assert kwargs["version_id"] == 3
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_upload_falls_back_when_refetch_fails(self, mock_redmine):
+        """If attachment.get() fails after upload, we return the minimal
+        response enriched with the filename and description we know."""
+        from redminelib.exceptions import ResourceNotFoundError
+
+        b64 = base64.b64encode(b"x").decode("ascii")
+        mock_redmine.upload.return_value = {"token": "tok"}
+        minimal = Mock(spec=["id"])
+        minimal.id = 55
+        mock_redmine.file.create.return_value = minimal
+        mock_redmine.attachment.get.side_effect = ResourceNotFoundError()
+
+        result = await upload_file(
+            project_id=10,
+            filename="fallback.txt",
+            content_base64=b64,
+            description="Fallback test",
+        )
+
+        # Upload itself succeeded — caller still gets a useful response
+        assert "error" not in result
+        assert result["id"] == 55
+        assert result["filename"] == "fallback.txt"
+        assert result["description"] == "Fallback test"
 
     @pytest.mark.asyncio
     async def test_missing_filename(self):
