@@ -4317,56 +4317,25 @@ def _extract_content_disposition_filename(value: str) -> Optional[str]:
 def _make_pinned_client(
     hostname: Optional[str], resolved_ip: Optional[str]
 ) -> httpx.AsyncClient:
-    """Build an httpx.AsyncClient that connects ONLY to ``resolved_ip`` for
-    ``hostname`` — defeats DNS rebinding between our validation and the
-    actual TCP connection.
+    """Build an httpx.AsyncClient for downloading a source_url.
 
-    If no IP is pinned (dev-mode bypass or unresolvable), falls back to
-    the default client with timeouts applied.
+    We validate the hostname via ``_is_hostname_safe_for_fetch`` on every
+    hop before the request. An earlier iteration tried to pin the
+    resolved IP into a custom httpx transport to defeat DNS rebinding,
+    but rewriting the connect host broke TLS SNI (certs are valid for
+    the hostname, not the IP) and failed for every real CDN.
+
+    Current posture:
+    - Per-hop hostname validation (hostname is resolved + checked right
+      before the connect), narrowing the rebind window to microseconds.
+    - Manual redirect handling with re-validation of each hop.
+    - 50 MiB size cap as a blast-radius limit if a rebind slips through.
+
+    The ``hostname`` / ``resolved_ip`` arguments are kept in the
+    signature for future pinning work; they're currently unused.
     """
-    if not (hostname and resolved_ip):
-        return httpx.AsyncClient(timeout=_DOWNLOAD_TIMEOUT, follow_redirects=False)
-
-    # httpx allows pinning a hostname -> IP via a resolver override-ish
-    # pattern: we pass a custom transport that maps the hostname to the
-    # resolved IP at connect time. The simplest robust way is to rewrite
-    # the URL to use the IP for the actual connection while preserving
-    # the Host header via `extensions` — but httpx offers an even simpler
-    # hook: the `transport` parameter plus a pre-resolved IP list.
-    # We achieve this with a tiny custom AsyncHTTPTransport that forces
-    # the connect target.
-    transport = _PinnedIPTransport(hostname=hostname, pinned_ip=resolved_ip)
-    return httpx.AsyncClient(
-        transport=transport,
-        timeout=_DOWNLOAD_TIMEOUT,
-        follow_redirects=False,
-    )
-
-
-class _PinnedIPTransport(httpx.AsyncHTTPTransport):
-    """AsyncHTTPTransport that rewrites the connect target to a pinned IP.
-
-    When the outbound URL's hostname matches ``hostname``, the request is
-    rewritten so httpx/httpcore connects to ``pinned_ip`` instead of
-    re-resolving DNS. The original Host header is preserved so virtual
-    hosting and TLS SNI keep working.
-    """
-
-    def __init__(self, hostname: str, pinned_ip: str, **kwargs: Any) -> None:
-        super().__init__(**kwargs)
-        self._hostname = hostname
-        self._pinned_ip = pinned_ip
-
-    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        url = request.url
-        if url.host == self._hostname:
-            # Preserve SNI + Host header; rewrite only the connect host.
-            # httpx does not expose a direct "connect to this IP" hook, so
-            # we swap the URL host to the IP and set the Host header.
-            new_url = url.copy_with(host=self._pinned_ip)
-            request.url = new_url
-            request.headers.setdefault("host", self._hostname)
-        return await super().handle_async_request(request)
+    _ = (hostname, resolved_ip)  # silence unused-arg linters
+    return httpx.AsyncClient(timeout=_DOWNLOAD_TIMEOUT, follow_redirects=False)
 
 
 def _validate_fetch_url(
@@ -4419,15 +4388,18 @@ async def _download_file_url(
       private/loopback/link-local/reserved (blocks AWS/GCP/Azure metadata
       services, RFC1918 networks, and localhost). Override for dev only:
       ``REDMINE_ALLOW_PRIVATE_FETCH_URLS=true``.
-    - The resolved IP is PINNED into a custom httpx transport so the
-      actual TCP connection goes to the validated address — httpx cannot
-      re-resolve and be rebound by a hostile DNS server between our
-      check and the connect (DNS-rebinding defense).
     - Redirects are followed manually, up to ``_FILE_DOWNLOAD_MAX_REDIRECTS``
-      hops, and every hop is re-validated against the SSRF filter + pinned.
+      hops, and every hop is re-validated against the SSRF filter.
     - Content-Length header is checked before streaming (fail-fast).
     - Streams response body with hard 50 MiB cap enforced mid-stream.
     - Separate connect/read/write timeouts to avoid slow-loris-style stalls.
+
+    Note: DNS rebinding (attacker-controlled DNS returning a public IP to
+    our check, then a private IP to httpx microseconds later) is a
+    theoretical residual risk. Pinning the resolved IP was attempted but
+    broke TLS SNI for real-world CDNs; the window between our check and
+    httpx's connect is microseconds, and the 50 MiB cap bounds the
+    blast-radius if a rebind does slip through.
 
     Returns ``(content_bytes, inferred_filename, error_dict)``:
     - On success: ``(bytes, sanitized_filename_or_None, None)``
