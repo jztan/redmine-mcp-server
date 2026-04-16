@@ -29,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `REDMINE_AGILE_ENABLED=true` opt-in support for RedmineUP Agile plugin: `get_redmine_issue` auto-includes `story_points`, `agile_sprint_id`, and `agile_position`; `update_redmine_issue` accepts `story_points` in the `fields` dict
-- **14 new MCP tools for Issue Tracking (Stage A):**
+- **14 new MCP tools for Issue Tracking:**
   - **Copying & hierarchy:**
     - `copy_issue` — duplicate an existing issue via Redmine's native `copy_from` mechanism, with optional field overrides and support for copying subtasks/attachments
     - `list_subtasks` — list child issues of a given parent (subtasks are created via existing `create_redmine_issue` with `parent_issue_id`)
@@ -49,8 +49,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `create_issue_category` — create a new category (optionally with a default assignee)
     - `update_issue_category` — rename a category or change its default assignee
     - `delete_issue_category` — delete a category with optional `reassign_to_id` to move existing issues
-- **55 new unit tests** covering all Stage A tools (read-only mode enforcement, success paths, error paths, helper conversions)
-- **5 new MCP tools for Projects (Stage C):**
+- **55 new unit tests** covering all new tools (read-only mode enforcement, success paths, error paths, helper conversions)
+- **5 new MCP tools for Projects:**
   - `list_redmine_roles` — list all roles defined in the Redmine instance; use before `add_project_member`/`update_project_member` to discover valid `role_ids` (role IDs vary between Redmine instances)
   - `get_project_modules` — retrieve enabled modules for a project via `?include=enabled_modules`
   - `add_project_member` — add a user or group to a project with assigned roles; validates that exactly one of `user_id` or `group_id` is provided
@@ -58,12 +58,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `remove_project_member` — remove a membership (inherited memberships from parent projects surface as a 422 validation error)
 - `role_ids` validation errors in `add_project_member` / `update_project_member` now hint at `list_redmine_roles` to prevent AI agents from hallucinating role IDs
 - **33 new unit tests** for project tools covering modules retrieval (including dict-format fallback for older Redmine versions), role discovery, membership CRUD, validation errors, read-only mode enforcement, error paths, and error-message discoverability hints
-- **2 new MCP tools for Time Tracking (Stage D):**
+- **2 new MCP tools for Time Tracking:**
   - `log_time_for_user` — create a time entry on behalf of another user via the `user_id` parameter on `POST /time_entries.json`; requires `log_time_for_other_users` permission on the target project
   - `import_time_entries` — bulk import multiple time entries via sequential API calls (Redmine has no native bulk endpoint); accepts a list of dicts or JSON array string, captures per-entry errors, and returns `{total, succeeded, failed, created, errors}` so partial imports still yield useful feedback; supports `stop_on_error` flag
 - Add missing `REDMINE_MCP_READ_ONLY` enforcement to existing `create_time_entry` tool
 - **23 new unit tests** for time tracking tools covering success paths, per-entry validation (missing hours, negative hours, missing target), JSON string input, partial failure handling, `stop_on_error`, field whitelisting, read-only mode, and Redmine-version permission quirks
-- **3 new MCP tools for Files (Stage B):**
+- **3 new MCP tools for Files:**
   - `list_files` — list files uploaded to a project's Files section (core Redmine "Files" module, distinct from issue attachments and DMSF documents); returns filename, filesize, content type, description, download URL, author, optional version/release
   - `upload_file` — upload a new file via Redmine's two-step upload (`POST /uploads.json` for token, then `POST /projects/{id}/files.json`). Accepts either `source_url` (HTTP/HTTPS URL the server downloads from) or `content_base64` (raw bytes encoded as base64); the URL path enables chaining with other MCP tools that return download URLs (e.g., Google Drive MCP). Streaming download with 30s timeout, follows redirects, infers filename from URL path or `Content-Disposition` header. 50 MiB size cap
   - `delete_file` — delete a project file via `DELETE /attachments/{id}.json`
