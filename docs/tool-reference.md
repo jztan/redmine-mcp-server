@@ -1187,6 +1187,132 @@ Use this tool to discover valid `activity_id` values before calling `create_time
 
 ---
 
+## Discovery / Enumeration Tools
+
+These tools help LLMs discover valid IDs (trackers, statuses, priorities, users, saved queries) without guessing. Call these **before** create/update tools that require the corresponding ID.
+
+### `list_redmine_trackers`
+
+List all trackers (issue types like Bug, Feature, Support). Use to discover valid `tracker_id` values.
+
+**Parameters:** None.
+
+**Returns:** List of `{id, name, description}` dicts.
+
+**Example:**
+```json
+[
+  {"id": 1, "name": "Bug", "description": ""},
+  {"id": 2, "name": "Feature", "description": "New feature requests"},
+  {"id": 3, "name": "Support", "description": ""}
+]
+```
+
+---
+
+### `list_redmine_issue_statuses`
+
+List all issue statuses. Use to discover valid `status_id` values. `update_redmine_issue` also accepts a `status_name` field that internally resolves the ID.
+
+**Parameters:** None.
+
+**Returns:** List of `{id, name, is_closed}` dicts — `is_closed` flags statuses that count as "closed" for reporting purposes.
+
+**Example:**
+```json
+[
+  {"id": 1, "name": "New", "is_closed": false},
+  {"id": 2, "name": "In Progress", "is_closed": false},
+  {"id": 5, "name": "Closed", "is_closed": true}
+]
+```
+
+---
+
+### `list_redmine_issue_priorities`
+
+List all priority levels. Use to discover valid `priority_id` values.
+
+**Parameters:** None.
+
+**Returns:** List of `{id, name, active, is_default}` dicts.
+
+**Example:**
+```json
+[
+  {"id": 1, "name": "Low", "active": true, "is_default": false},
+  {"id": 2, "name": "Normal", "active": true, "is_default": true},
+  {"id": 3, "name": "High", "active": true, "is_default": false}
+]
+```
+
+---
+
+### `list_redmine_users`
+
+List Redmine users with optional filtering. **Requires admin permission** — non-admin users receive a 403 error. Use to discover user IDs for assignment, watchers, or time-entry authoring.
+
+**Parameters:**
+- `name` (string, optional): Case-insensitive substring filter (matches login, firstname, lastname, email).
+- `group_id` (integer, optional): Filter users who belong to a specific group.
+- `limit` (integer, optional): Maximum users to return (default 25, clamped to 1–100).
+- `offset` (integer, optional): Pagination offset. Default 0.
+
+**Returns:** List of `{id, login, firstname, lastname, mail, created_on}` dicts.
+
+**Example:**
+```python
+list_redmine_users(name="alice")
+# [{"id": 5, "login": "alice", "firstname": "Alice", "lastname": "A", ...}]
+```
+
+---
+
+### `get_current_user`
+
+Retrieve the currently authenticated user's profile. Resolves to `GET /my/account.json`, so works for any authenticated user (not admin-only). Useful when a user asks the LLM to do something "for me" — the LLM can call this to resolve the current user's ID.
+
+**Parameters:** None.
+
+**Returns:** Dict with `id, login, firstname, lastname, mail, admin, created_on, last_login_on`.
+
+**Example:**
+```json
+{
+  "id": 5,
+  "login": "alice",
+  "firstname": "Alice",
+  "lastname": "A",
+  "mail": "alice@example.com",
+  "admin": false,
+  "created_on": "2025-01-15T10:00:00",
+  "last_login_on": "2026-04-16T09:30:00"
+}
+```
+
+---
+
+### `list_redmine_queries`
+
+List all saved custom queries (saved issue filters) visible to the current user. Once discovered, the `id` can be passed as a `query_id` filter to `list_redmine_issues` to run the saved query.
+
+**Parameters:** None.
+
+**Returns:** List of `{id, name, is_public, project_id}` dicts. `project_id` is `null` for cross-project queries.
+
+**Example:**
+```json
+[
+  {"id": 1, "name": "Open bugs", "is_public": true, "project_id": 10},
+  {"id": 2, "name": "My tasks", "is_public": false, "project_id": null}
+]
+```
+
+**Notes:**
+- **Read-only tool.** Redmine's REST API does not support creating, updating, or deleting saved queries — they can only be managed via the web UI.
+
+---
+
 ### `log_time_for_user`
 
 Create a time entry on behalf of another user. Functionally equivalent to `create_time_entry` but with an explicit `user_id` parameter for PM-level workflows (logging time for a teammate).

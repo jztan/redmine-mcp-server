@@ -48,6 +48,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `upload_file` — upload a new file via Redmine's two-step upload (`POST /uploads.json` for token, then `POST /projects/{id}/files.json`). Accepts either `source_url` (HTTP/HTTPS URL the server downloads from) or `content_base64` (raw bytes encoded as base64); the URL path enables chaining with other MCP tools that return download URLs (e.g., Google Drive MCP). Streaming download with 30s timeout, follows redirects, infers filename from URL path or `Content-Disposition` header. 50 MiB size cap
   - `delete_file` — delete a project file via `DELETE /attachments/{id}.json`
 - **36 new unit tests** for file tools covering base64 encoding/decoding, URL-based download (success, invalid schemes, HTTP errors, timeouts, empty body, Content-Disposition filename fallback), size limits, read-only mode, missing/conflicting content sources, and Redmine error paths
+- **6 new MCP Discovery / Enumeration tools** — help LLMs find valid IDs without guessing:
+  - `list_redmine_trackers` — list all trackers (issue types like Bug, Feature, Support) for discovering valid `tracker_id` values
+  - `list_redmine_issue_statuses` — list all issue statuses with their `is_closed` flag for discovering valid `status_id` values
+  - `list_redmine_issue_priorities` — list all priority levels via `enumeration.filter(resource="issue_priorities")`
+  - `list_redmine_users` — filter/list users with optional `name` and `group_id` filters (admin-only, limit clamped to 1–100)
+  - `get_current_user` — retrieve the authenticated user's profile via `GET /my/account.json` (works for non-admins; useful when a user says "do X for me")
+  - `list_redmine_queries` — list all saved custom queries visible to the current user (read-only; Redmine's API does not support CRUD on queries)
+- **20 new unit tests** for discovery tools covering success paths, empty results, limit clamping, filter parameters, and permission-denied error paths
 
 ### Security
 - Bump `fastmcp` from 3.1.1 to 3.2.0, patching CVE-2025-64340 and CVE-2026-27124
