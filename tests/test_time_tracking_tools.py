@@ -311,16 +311,20 @@ class TestImportTimeEntries:
         assert "project_id or issue_id" in result["errors"][0]["error"]
 
     @pytest.mark.asyncio
-    async def test_non_dict_entry(self):
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_non_dict_entry(self, mock_redmine):
+        mock_redmine.time_entry.create.return_value = _mock_time_entry()
+
         result = await import_time_entries(
             [
                 "not a dict",
                 {"hours": 1.0, "issue_id": 1},
             ]
         )
-        # First entry fails validation, second is mocked-less so we check
-        # only the dict-type validation error
-        assert result["failed"] >= 1
+
+        assert result["total"] == 2
+        assert result["succeeded"] == 1
+        assert result["failed"] == 1
         assert "not a dict" in result["errors"][0]["error"]
 
     @pytest.mark.asyncio
