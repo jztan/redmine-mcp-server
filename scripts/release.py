@@ -43,6 +43,7 @@ class ReleaseConfig:
     bump_type: str
     dry_run: bool
     project_root: Path
+    hotfix: bool = False
 
 
 def run_command(
@@ -611,23 +612,39 @@ Gitflow:
     parser.add_argument(
         "bump_type",
         choices=["patch", "minor", "major"],
-        help="Version bump type",
+        nargs="?",
+        default=None,
+        help="Version bump type (required unless --hotfix is set)",
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Preview changes without executing",
     )
+    parser.add_argument(
+        "--hotfix",
+        action="store_true",
+        help="Finish the current hotfix/* branch (patch bump implied)",
+    )
 
     args = parser.parse_args()
+
+    # Validate: bump_type required unless --hotfix
+    if args.hotfix:
+        bump_type = "patch"
+    elif args.bump_type is None:
+        parser.error("bump_type is required unless --hotfix is set")
+    else:
+        bump_type = args.bump_type
 
     # Determine project root (parent of scripts directory)
     project_root = Path(__file__).parent.parent.resolve()
 
     config = ReleaseConfig(
-        bump_type=args.bump_type,
+        bump_type=bump_type,
         dry_run=args.dry_run,
         project_root=project_root,
+        hotfix=args.hotfix,
     )
 
     print("=" * 60)
