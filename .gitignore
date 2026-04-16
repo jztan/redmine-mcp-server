@@ -34,3 +34,4 @@ docker/test-*/
 
 # Runtime data
 attachments/
+.worktrees/
