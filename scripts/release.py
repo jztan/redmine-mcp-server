@@ -603,6 +603,24 @@ def merge_back_to_develop(config: ReleaseConfig, release_branch: str) -> None:
         print(f"  ✓ Deleted branch: {release_branch}")
 
 
+def _check_hotfix_version_sanity(branch: str, new_version: str) -> None:
+    """Warn if hotfix branch name version doesn't match calculated bump."""
+    # Extract version from branch name e.g. hotfix/v1.2.1 -> 1.2.1
+    parts = branch.split("/")
+    if len(parts) < 2:
+        return
+    branch_version = parts[-1].lstrip("v")
+    if branch_version != new_version:
+        print(
+            f"  ⚠ Warning: branch name suggests v{branch_version} "
+            f"but version bump produces v{new_version}."
+        )
+        print(
+            "    Verify pyproject.toml is correct. "
+            "Use --dry-run to inspect before proceeding."
+        )
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -676,13 +694,22 @@ Gitflow:
     current_version = get_current_version(config.project_root)
     new_version = calculate_new_version(current_version, config.bump_type)
 
-    # Step 3: Create release branch
-    release_branch = create_release_branch(new_version, config.dry_run)
+    # Step 3: Create release branch (skipped in hotfix mode)
+    if config.hotfix:
+        result = run_command(["git", "rev-parse", "--abbrev-ref", "HEAD"])
+        release_branch = result.stdout.strip()
+        print(f"\n=== Hotfix Branch: {release_branch} ===\n")
+    else:
+        release_branch = create_release_branch(new_version, config.dry_run)
 
     # Step 4: Bump version in files
     print("\n=== Version Bump ===\n")
     print(f"Version: {current_version} -> {new_version}")
     print()
+
+    # Hotfix sanity check: warn if branch name doesn't match calculated version
+    if config.hotfix:
+        _check_hotfix_version_sanity(release_branch, new_version)
     update_pyproject_toml(config.project_root, new_version, config.dry_run)
     update_server_json(config.project_root, new_version, config.dry_run)
     update_changelog(config.project_root, new_version, config.dry_run)
