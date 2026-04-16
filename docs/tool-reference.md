@@ -847,21 +847,36 @@ update_time_entry(
 
 ### `list_time_entry_activities`
 
-List all available time entry activity types from Redmine.
+List available time entry activity types from Redmine.
 
 Use this tool to discover valid `activity_id` values before calling `create_time_entry` or `update_time_entry`.
 
-**Parameters:** None
+When logging time against a specific project, always call with `project_id` first — project-specific activity IDs differ from global ones and using the wrong ID causes `"Activity is not included in the list"` errors.
 
-**Returns:** List of activity dictionaries
+**Parameters:**
+- `project_id` (string or integer, optional): Project identifier. When provided, returns project-specific activities via `GET /projects/:id.json?include=time_entry_activities` (Redmine 3.4.0+).
 
-**Example:**
+**Returns:**
+- Without `project_id`: list of activity dicts with `id`, `name`, `active`, `is_default`
+- With `project_id`: dict with `project_id` and `activities` (same structure). If the project has no custom activities, `activities` is empty and a `note` field advises falling back to the global list.
+
+**Example (global):**
 ```json
 [
   {"id": 4, "name": "Development", "active": true, "is_default": false},
   {"id": 5, "name": "Design", "active": true, "is_default": false},
   {"id": 6, "name": "Testing", "active": true, "is_default": false}
 ]
+```
+
+**Example (project-scoped):**
+```json
+{
+  "project_id": "my-project",
+  "activities": [
+    {"id": 9, "name": "Development", "active": true, "is_default": false}
+  ]
+}
 ```
 
 ---
