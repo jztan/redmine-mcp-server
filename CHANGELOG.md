@@ -27,6 +27,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **List tools now cap results at 500 items** (configurable via `_DEFAULT_LIST_RESULT_CAP` constant) via the new `_iter_capped` helper. Previously unbounded iteration could OOM on projects with tens of thousands of subtasks/relations/files.
 - **Module-level constants consolidated:** `_FILE_UPLOAD_MAX_SIZE_BYTES`, `_MAX_FILENAME_LEN`, `_IMPORT_TIME_ENTRIES_MAX_BATCH`, `_DEFAULT_LIST_RESULT_CAP`, `_DOWNLOAD_TIMEOUT`, and `_FILE_DOWNLOAD_MAX_REDIRECTS` are all declared once at the top of the module instead of scattered across different sections. Top-level `import httpx` + `from urllib.parse import unquote, urlparse` hoisted out of function-local imports.
 
+
+### Security
+- Bump `cryptography` from 46.0.6 to 46.0.7, patching CVE-2026-39892 (out-of-bounds read via non-contiguous buffers)
+
+## [1.2.0] - 2026-04-14
 ### Added
 - `REDMINE_AGILE_ENABLED=true` opt-in support for RedmineUP Agile plugin: `get_redmine_issue` auto-includes `story_points`, `agile_sprint_id`, and `agile_position`; `update_redmine_issue` accepts `story_points` in the `fields` dict
 - **14 new MCP tools for Issue Tracking:**
