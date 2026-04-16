@@ -383,8 +383,8 @@ class TestListRedmineRoles:
 
         mock_redmine.role.all.side_effect = AuthError()
         result = await list_redmine_roles()
-        assert len(result) == 1
-        assert "error" in result[0]
+        assert isinstance(result, dict)
+        assert "error" in result
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
@@ -393,9 +393,9 @@ class TestListRedmineRoles:
 
         mock_redmine.role.all.side_effect = ForbiddenError()
         result = await list_redmine_roles()
-        assert len(result) == 1
-        assert "error" in result[0]
-        assert "Access denied" in result[0]["error"]
+        assert isinstance(result, dict)
+        assert "error" in result
+        assert "Access denied" in result["error"]
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")

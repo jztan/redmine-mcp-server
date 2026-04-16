@@ -1773,12 +1773,14 @@ upload_file(
 Delete a file from a Redmine project. Uses `DELETE /attachments/{id}.json` since files are stored as attachments in Redmine.
 
 **Parameters:**
-- `file_id` (integer, required): ID of the file to delete (from `list_files`).
+- `file_id` (integer, required): ID of the attachment to delete (from `list_files`).
+- `confirm_delete_any_attachment` (boolean, optional): Bypass the project-scope check to delete issue/wiki/news attachments. Default: `false`.
 
 **Returns:** `{"success": true, "deleted_file_id": <id>}` on success.
 
 **Notes:**
-- Same endpoint is used for issue attachments. If the user deletes an attachment linked to an issue, it will be removed from that issue's attachment list as well.
+- Redmine's `DELETE /attachments/{id}.json` removes ANY attachment, not just project files. To prevent accidental deletion of issue attachments, `delete_file` first fetches the target and checks its `container_type`. If it's not `Project` (e.g., it's an `Issue` or `WikiPage` attachment), the tool refuses and tells the caller how to bypass.
+- To intentionally delete an issue/wiki/news attachment via this tool, pass `confirm_delete_any_attachment=True`.
 - Respects `REDMINE_MCP_READ_ONLY`.
 
 ---

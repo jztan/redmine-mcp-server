@@ -73,8 +73,8 @@ class TestListRedmineTrackers:
 
         mock_redmine.tracker.all.side_effect = AuthError()
         result = await list_redmine_trackers()
-        assert len(result) == 1
-        assert "error" in result[0]
+        assert isinstance(result, dict)
+        assert "error" in result
 
 
 # ---------------------------------------------------------------------------
@@ -118,8 +118,8 @@ class TestListRedmineIssueStatuses:
 
         mock_redmine.issue_status.all.side_effect = ForbiddenError()
         result = await list_redmine_issue_statuses()
-        assert len(result) == 1
-        assert "error" in result[0]
+        assert isinstance(result, dict)
+        assert "error" in result
 
 
 # ---------------------------------------------------------------------------
@@ -231,9 +231,9 @@ class TestListRedmineUsers:
 
         mock_redmine.user.filter.side_effect = ForbiddenError()
         result = await list_redmine_users()
-        assert len(result) == 1
-        assert "error" in result[0]
-        assert "Access denied" in result[0]["error"]
+        assert isinstance(result, dict)
+        assert "error" in result
+        assert "Access denied" in result["error"]
 
 
 # ---------------------------------------------------------------------------
@@ -334,5 +334,5 @@ class TestListRedmineQueries:
 
         mock_redmine.query.all.side_effect = ForbiddenError()
         result = await list_redmine_queries()
-        assert len(result) == 1
-        assert "error" in result[0]
+        assert isinstance(result, dict)
+        assert "error" in result

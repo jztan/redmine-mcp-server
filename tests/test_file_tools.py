@@ -102,12 +102,20 @@ class TestFileToDict:
         )
         result = _file_to_dict(f)
         assert result["id"] == 42
-        assert result["filename"] == "spec.pdf"
+        # filename and description are wrapped in <insecure-content> to
+        # neutralise prompt-injection payloads embedded by uploaders.
+        assert "spec.pdf" in result["filename"]
+        assert result["filename"].startswith("<insecure-content-")
         assert result["filesize"] == 125678
         assert result["content_type"] == "application/pdf"
-        assert result["description"] == "Design spec"
-        assert result["author"] == {"id": 5, "name": "Alice"}
-        assert result["version"] == {"id": 3, "name": "Release 1.0"}
+        assert "Design spec" in result["description"]
+        assert result["description"].startswith("<insecure-content-")
+        # author.name and version.name are also wrapped (display names
+        # are user-controlled).
+        assert result["author"]["id"] == 5
+        assert "Alice" in result["author"]["name"]
+        assert result["version"]["id"] == 3
+        assert "Release 1.0" in result["version"]["name"]
 
     def test_no_version(self):
         f = _mock_file(with_version=False)
@@ -146,8 +154,9 @@ class TestListFiles:
         result = await list_files(project_id="web")
 
         assert len(result) == 2
-        assert result[0]["filename"] == "a.pdf"
-        assert result[1]["filename"] == "b.png"
+        # Filenames are wrapped in <insecure-content> — assert substring match.
+        assert "a.pdf" in result[0]["filename"]
+        assert "b.png" in result[1]["filename"]
         mock_redmine.file.filter.assert_called_once_with(project_id="web")
 
     @pytest.mark.asyncio
@@ -171,8 +180,8 @@ class TestListFiles:
 
         mock_redmine.file.filter.side_effect = ResourceNotFoundError()
         result = await list_files(project_id=9999)
-        assert len(result) == 1
-        assert "error" in result[0]
+        assert isinstance(result, dict)
+        assert "error" in result
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
@@ -181,9 +190,9 @@ class TestListFiles:
 
         mock_redmine.file.filter.side_effect = ForbiddenError()
         result = await list_files(project_id=10)
-        assert len(result) == 1
-        assert "error" in result[0]
-        assert "Access denied" in result[0]["error"]
+        assert isinstance(result, dict)
+        assert "error" in result
+        assert "Access denied" in result["error"]
 
 
 # ---------------------------------------------------------------------------
@@ -217,9 +226,11 @@ class TestUploadFile:
 
         # Full metadata should be returned, not just {"id": 100, ...blanks}.
         assert result["id"] == 100
-        assert result["filename"] == "hello.txt"
+        # Filename is wrapped in <insecure-content> boundary tags.
+        assert "hello.txt" in result["filename"]
         assert result["filesize"] == 1024
-        assert result["author"] == {"id": 5, "name": "Alice"}
+        assert result["author"]["id"] == 5
+        assert "Alice" in result["author"]["name"]
 
         # Verify upload was called with a BytesIO containing the decoded bytes
         mock_redmine.upload.assert_called_once()
@@ -352,7 +363,8 @@ class TestUploadFile:
 
         assert "error" not in result
         assert result["id"] == 200
-        assert result["filename"] == "hello.txt"
+        # Filename is wrapped in <insecure-content> boundary tags.
+        assert "hello.txt" in result["filename"]
 
         # Verify the bytes that got uploaded match what we streamed
         stream = mock_redmine.upload.call_args.args[0]
@@ -553,14 +565,56 @@ class TestUploadFile:
 
 
 class TestDeleteFile:
+    def _mock_project_attachment(self, attachment_id=42):
+        """Attachment whose container_type is Project (a real project file)."""
+        att = Mock()
+        att.id = attachment_id
+        att.container_type = "Project"
+        return att
+
+    def _mock_issue_attachment(self, attachment_id=42):
+        """Attachment whose container_type is Issue (NOT a project file)."""
+        att = Mock()
+        att.id = attachment_id
+        att.container_type = "Issue"
+        return att
+
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_delete_success(self, mock_redmine):
+    async def test_delete_success_project_file(self, mock_redmine):
+        mock_redmine.attachment.get.return_value = self._mock_project_attachment(42)
         mock_redmine.attachment.delete.return_value = True
 
         result = await delete_file(file_id=42)
 
         assert result == {"success": True, "deleted_file_id": 42}
+        mock_redmine.attachment.get.assert_called_once_with(42)
+        mock_redmine.attachment.delete.assert_called_once_with(42)
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_delete_refuses_issue_attachment(self, mock_redmine):
+        """Without the bypass flag, we refuse to delete issue attachments."""
+        mock_redmine.attachment.get.return_value = self._mock_issue_attachment(42)
+
+        result = await delete_file(file_id=42)
+
+        assert "error" in result
+        assert "Issue" in result["error"]
+        assert "confirm_delete_any_attachment" in result["error"]
+        mock_redmine.attachment.delete.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_delete_issue_attachment_with_confirm(self, mock_redmine):
+        """Explicit bypass skips the scope check and deletes anyway."""
+        mock_redmine.attachment.delete.return_value = True
+
+        result = await delete_file(file_id=42, confirm_delete_any_attachment=True)
+
+        assert result == {"success": True, "deleted_file_id": 42}
+        # Verification skipped
+        mock_redmine.attachment.get.assert_not_called()
         mock_redmine.attachment.delete.assert_called_once_with(42)
 
     @pytest.mark.asyncio
@@ -572,11 +626,24 @@ class TestDeleteFile:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_delete_not_found(self, mock_redmine):
+    async def test_delete_not_found_on_verify(self, mock_redmine):
+        """Verification GET returns 404 before we even try to delete."""
         from redminelib.exceptions import ResourceNotFoundError
 
-        mock_redmine.attachment.delete.side_effect = ResourceNotFoundError()
+        mock_redmine.attachment.get.side_effect = ResourceNotFoundError()
         result = await delete_file(file_id=9999)
+        assert "error" in result
+        mock_redmine.attachment.delete.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_delete_not_found_on_delete(self, mock_redmine):
+        """Verification succeeds, but the attachment vanishes before delete."""
+        from redminelib.exceptions import ResourceNotFoundError
+
+        mock_redmine.attachment.get.return_value = self._mock_project_attachment(42)
+        mock_redmine.attachment.delete.side_effect = ResourceNotFoundError()
+        result = await delete_file(file_id=42)
         assert "error" in result
 
     @pytest.mark.asyncio
@@ -584,6 +651,7 @@ class TestDeleteFile:
     async def test_delete_forbidden(self, mock_redmine):
         from redminelib.exceptions import ForbiddenError
 
+        mock_redmine.attachment.get.return_value = self._mock_project_attachment(42)
         mock_redmine.attachment.delete.side_effect = ForbiddenError()
         result = await delete_file(file_id=42)
         assert "error" in result

@@ -187,7 +187,13 @@ class TestCopyIssue:
         assert result["id"] == 201
         _, kwargs = mock_redmine.issue.copy.call_args
         assert kwargs["link_original"] is False
-        assert kwargs["include"] == ()
+        # When both copy_* flags are False, we pass a sentinel tuple to
+        # prevent python-redmine's `include or (...)` fallback from
+        # silently copying subtasks+attachments. The sentinel MUST be
+        # truthy and MUST not contain "subtasks" or "attachments".
+        assert kwargs["include"]  # truthy
+        assert "subtasks" not in kwargs["include"]
+        assert "attachments" not in kwargs["include"]
         assert kwargs["project_id"] == "other-proj"
         assert kwargs["subject"] == "New Subject"
 
@@ -282,8 +288,8 @@ class TestListIssueRelations:
 
         mock_redmine.issue_relation.filter.side_effect = ForbiddenError()
         result = await list_issue_relations(issue_id=1)
-        assert len(result) == 1
-        assert "error" in result[0]
+        assert isinstance(result, dict)
+        assert "error" in result
 
 
 class TestCreateIssueRelation:
@@ -403,8 +409,8 @@ class TestListSubtasks:
 
         mock_redmine.issue.filter.side_effect = ResourceNotFoundError()
         result = await list_subtasks(issue_id=999)
-        assert len(result) == 1
-        assert "error" in result[0]
+        assert isinstance(result, dict)
+        assert "error" in result
 
 
 # ---------------------------------------------------------------------------
