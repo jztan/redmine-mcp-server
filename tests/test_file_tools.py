@@ -12,7 +12,7 @@ import os
 import sys
 
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -22,6 +22,35 @@ from redmine_mcp_server.redmine_handler import (  # noqa: E402
     list_files,
     upload_file,
 )
+
+
+def _make_streaming_response(status_code=200, body=b"hello", headers=None):
+    """Build a MagicMock that emulates httpx.AsyncClient().stream() as an
+    async context manager yielding a response with `aiter_bytes`."""
+
+    async def aiter_bytes():
+        yield body
+
+    response = MagicMock()
+    response.status_code = status_code
+    response.reason_phrase = "OK" if status_code < 400 else "Error"
+    response.headers = headers or {}
+    response.aiter_bytes = aiter_bytes
+
+    stream_cm = MagicMock()
+    stream_cm.__aenter__ = AsyncMock(return_value=response)
+    stream_cm.__aexit__ = AsyncMock(return_value=None)
+    return stream_cm
+
+
+def _patch_httpx_stream(stream_cm):
+    """Patch httpx.AsyncClient to yield our mocked stream context manager."""
+    client = MagicMock()
+    client.stream = MagicMock(return_value=stream_cm)
+    client_cm = MagicMock()
+    client_cm.__aenter__ = AsyncMock(return_value=client)
+    client_cm.__aexit__ = AsyncMock(return_value=None)
+    return patch("httpx.AsyncClient", return_value=client_cm)
 
 
 def _mock_with_name(id_val, name_val):
@@ -279,6 +308,171 @@ class TestUploadFile:
         )
         assert "error" in result
         assert "content_base64" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_missing_both_content_sources(self):
+        result = await upload_file(project_id=10, filename="test.txt")
+        assert "error" in result
+        assert "content_base64 or source_url" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_both_content_sources_provided(self):
+        b64 = base64.b64encode(b"x").decode("ascii")
+        result = await upload_file(
+            project_id=10,
+            filename="test.txt",
+            content_base64=b64,
+            source_url="https://example.com/file",
+        )
+        assert "error" in result
+        assert "exactly ONE" in result["error"]
+
+    # -- source_url tests --
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_upload_from_url_basic(self, mock_redmine):
+        body = b"Hello from URL!"
+        stream_cm = _make_streaming_response(status_code=200, body=body)
+
+        mock_redmine.upload.return_value = {"token": "tok-url"}
+        minimal = Mock(spec=["id"])
+        minimal.id = 200
+        mock_redmine.file.create.return_value = minimal
+        mock_redmine.attachment.get.return_value = _mock_file(
+            file_id=200, filename="hello.txt", filesize=len(body)
+        )
+
+        with _patch_httpx_stream(stream_cm):
+            result = await upload_file(
+                project_id="web",
+                source_url="https://example.com/downloads/hello.txt",
+                description="From URL",
+            )
+
+        assert "error" not in result
+        assert result["id"] == 200
+        assert result["filename"] == "hello.txt"
+
+        # Verify the bytes that got uploaded match what we streamed
+        stream = mock_redmine.upload.call_args.args[0]
+        assert stream.getvalue() == body
+        # Filename was inferred from URL path
+        assert mock_redmine.upload.call_args.kwargs == {"filename": "hello.txt"}
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_upload_from_url_explicit_filename_wins(self, mock_redmine):
+        """Caller-supplied filename overrides the URL-inferred one."""
+        stream_cm = _make_streaming_response(body=b"x")
+        mock_redmine.upload.return_value = {"token": "tok"}
+        minimal = Mock(spec=["id"])
+        minimal.id = 201
+        mock_redmine.file.create.return_value = minimal
+        mock_redmine.attachment.get.return_value = _mock_file(file_id=201)
+
+        with _patch_httpx_stream(stream_cm):
+            await upload_file(
+                project_id="web",
+                source_url="https://example.com/downloads/original.bin",
+                filename="renamed.bin",
+            )
+
+        assert mock_redmine.upload.call_args.kwargs["filename"] == "renamed.bin"
+
+    @pytest.mark.asyncio
+    async def test_upload_from_url_invalid_scheme(self):
+        result = await upload_file(
+            project_id="web",
+            source_url="ftp://example.com/file.txt",
+        )
+        assert "error" in result
+        assert "scheme" in result["error"].lower()
+
+    @pytest.mark.asyncio
+    async def test_upload_from_url_http_error(self):
+        stream_cm = _make_streaming_response(status_code=404, body=b"")
+        with _patch_httpx_stream(stream_cm):
+            result = await upload_file(
+                project_id="web",
+                source_url="https://example.com/missing.pdf",
+            )
+        assert "error" in result
+        assert "404" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_upload_from_url_content_disposition_filename(self):
+        """When URL path has no filename, fall back to Content-Disposition."""
+        stream_cm = _make_streaming_response(
+            body=b"body",
+            headers={"content-disposition": 'attachment; filename="server-named.pdf"'},
+        )
+        with (
+            _patch_httpx_stream(stream_cm),
+            patch("redmine_mcp_server.redmine_handler.redmine") as mock_redmine,
+        ):
+            mock_redmine.upload.return_value = {"token": "tok"}
+            minimal = Mock(spec=["id"])
+            minimal.id = 77
+            mock_redmine.file.create.return_value = minimal
+            mock_redmine.attachment.get.return_value = _mock_file(file_id=77)
+
+            result = await upload_file(
+                project_id="web",
+                # Path ends in "/" so urlpath-derived filename will be empty.
+                source_url="https://example.com/download/",
+            )
+
+        assert "error" not in result
+        assert mock_redmine.upload.call_args.kwargs["filename"] == "server-named.pdf"
+
+    @pytest.mark.asyncio
+    async def test_upload_from_url_empty_body(self):
+        stream_cm = _make_streaming_response(body=b"")
+        with _patch_httpx_stream(stream_cm):
+            result = await upload_file(
+                project_id="web",
+                source_url="https://example.com/empty.txt",
+            )
+        assert "error" in result
+        assert "empty" in result["error"].lower()
+
+    @pytest.mark.asyncio
+    async def test_upload_from_url_unresolvable_filename(self):
+        """URL path has no filename, no Content-Disposition, and caller
+        didn't pass filename — we bail out."""
+        stream_cm = _make_streaming_response(body=b"x")
+        with _patch_httpx_stream(stream_cm):
+            result = await upload_file(
+                project_id="web",
+                source_url="https://example.com/download/",
+            )
+        assert "error" in result
+        assert "filename" in result["error"].lower()
+
+    @pytest.mark.asyncio
+    async def test_upload_from_url_timeout(self):
+        import httpx
+
+        with patch("httpx.AsyncClient") as mock_client_ctor:
+            mock_client_ctor.side_effect = httpx.TimeoutException("slow")
+            result = await upload_file(
+                project_id="web",
+                source_url="https://example.com/slow.bin",
+                filename="slow.bin",
+            )
+        assert "error" in result
+        assert "timed out" in result["error"].lower()
+
+    @pytest.mark.asyncio
+    async def test_upload_from_url_read_only_mode(self, monkeypatch):
+        monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "true")
+        result = await upload_file(
+            project_id="web",
+            source_url="https://example.com/file.txt",
+        )
+        assert "error" in result
+        assert "read-only" in result["error"].lower()
 
     @pytest.mark.asyncio
     async def test_invalid_base64(self):

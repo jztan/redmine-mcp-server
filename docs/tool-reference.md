@@ -1592,32 +1592,53 @@ List all files uploaded to a Redmine project's **Files** section (not issue atta
 
 Upload a file to a Redmine project's Files section. Uses Redmine's standard two-step upload (`POST /uploads.json` for the token, then `POST /projects/{id}/files.json`).
 
+**Provide exactly ONE of `source_url` or `content_base64`:**
+- `source_url` (string) — the server downloads from an HTTP(S) URL. Use this when chaining from another MCP tool that returns a download URL (e.g., Google Drive MCP's `get_drive_file_download_url`), or when the file is served by a local MCP on `localhost`. **Preferred when a URL is available** — no need for the caller to download and re-encode.
+- `content_base64` (string) — raw file bytes encoded as base64. Use this only when the caller already has the bytes in memory.
+
 **Parameters:**
 - `project_id` (integer or string, required): Project identifier.
-- `filename` (string, required): Name the file should have in Redmine.
-- `content_base64` (string, required): File content encoded as a base64 string.
+- `filename` (string, optional): Name the file should have in Redmine.
+  - Required when using `content_base64`.
+  - Optional with `source_url` — inferred from the URL path or server's `Content-Disposition` header if omitted, but always prefer passing an explicit filename.
+- `source_url` (string, conditional): HTTP(S) URL to download from.
+- `content_base64` (string, conditional): File content as base64.
 - `description` (string, optional): Human-readable description.
 - `version_id` (integer, optional): Version/release ID to attach the file to (use `list_redmine_versions` to discover valid IDs).
 
 **Returns:** Dictionary containing the uploaded file's metadata, or `{"error": "..."}` on failure.
 
-**Size limit:** 50 MiB decoded. Larger files should be uploaded via Redmine's web UI.
+**Size limit:** 50 MiB. Larger files should be uploaded via Redmine's web UI.
 
-**Example:**
+**Examples:**
 ```python
+# From a URL (chained from another MCP tool)
+upload_file(
+    project_id="web",
+    source_url="http://localhost:3012/attachments/abc-123",
+    filename="report.pdf",
+    description="Q2 report"
+)
+
+# From base64 content
 import base64
 content = base64.b64encode(b"Hello world").decode("ascii")
 upload_file(
     project_id="web",
     filename="hello.txt",
-    content_base64=content,
-    description="Greeting file"
+    content_base64=content
 )
 ```
 
+**URL fetch details:**
+- Only `http://` and `https://` schemes are supported.
+- Follows redirects automatically.
+- 30-second timeout on the download.
+- Streams the response and aborts early if the size exceeds 50 MiB.
+
 **Notes:**
-- Base64 is required because MCP is a JSON protocol (binary payloads cannot be transmitted directly).
 - Respects `REDMINE_MCP_READ_ONLY`.
+- After successful upload, the tool re-fetches full metadata (filename, size, author, etc.) via `GET /attachments/{id}.json`, since Redmine returns HTTP 204 on create with no body.
 
 ---
 

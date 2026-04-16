@@ -4052,25 +4052,146 @@ async def list_files(project_id: Union[str, int]) -> List[Dict[str, Any]]:
         ]
 
 
+async def _download_file_url(
+    source_url: str,
+) -> tuple[bytes, Optional[str], Optional[Dict[str, Any]]]:
+    """Download a file from an HTTP(S) URL with size cap + timeout.
+
+    Returns a tuple ``(content_bytes, inferred_filename, error_dict)``:
+    - On success: ``(bytes, filename_or_None, None)``
+    - On failure: ``(b"", None, {"error": "..."})``
+
+    Callers should check ``error_dict`` first and return it to the user
+    when it is not ``None``.
+    """
+    import httpx
+    from urllib.parse import urlparse, unquote
+
+    parsed = urlparse(source_url)
+    if parsed.scheme not in ("http", "https"):
+        return (
+            b"",
+            None,
+            {
+                "error": (
+                    f"Unsupported URL scheme '{parsed.scheme}'. "
+                    "Only http:// and https:// are supported."
+                )
+            },
+        )
+
+    # Try to infer filename from the URL path
+    inferred: Optional[str] = None
+    if parsed.path:
+        candidate = os.path.basename(unquote(parsed.path))
+        if candidate:
+            inferred = candidate
+
+    try:
+        buffer = io.BytesIO()
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as hc:
+            async with hc.stream("GET", source_url) as response:
+                if response.status_code >= 400:
+                    return (
+                        b"",
+                        None,
+                        {
+                            "error": (
+                                f"Failed to fetch source_url: HTTP "
+                                f"{response.status_code} "
+                                f"{response.reason_phrase}"
+                            )
+                        },
+                    )
+
+                # Prefer the server's Content-Disposition filename if the
+                # URL didn't give us one.
+                if not inferred:
+                    disp = response.headers.get("content-disposition", "")
+                    match = re.search(r'filename="?([^"]+)"?', disp)
+                    if match:
+                        inferred = match.group(1)
+
+                total = 0
+                async for chunk in response.aiter_bytes():
+                    total += len(chunk)
+                    if total > _FILE_UPLOAD_MAX_SIZE_BYTES:
+                        size_mb = total / (1024 * 1024)
+                        limit_mb = _FILE_UPLOAD_MAX_SIZE_BYTES / (1024 * 1024)
+                        return (
+                            b"",
+                            None,
+                            {
+                                "error": (
+                                    f"Downloaded file too large: exceeds "
+                                    f"{limit_mb:.0f} MiB limit "
+                                    f"(received {size_mb:.1f} MiB so far)."
+                                )
+                            },
+                        )
+                    buffer.write(chunk)
+        content_bytes = buffer.getvalue()
+    except httpx.TimeoutException:
+        return (
+            b"",
+            None,
+            {
+                "error": (
+                    "Timed out fetching source_url (30s). "
+                    "Check the URL or try a smaller file."
+                )
+            },
+        )
+    except httpx.RequestError as e:
+        return b"", None, {"error": f"Failed to fetch source_url: {e}"}
+
+    if len(content_bytes) == 0:
+        return (
+            b"",
+            None,
+            {"error": "Downloaded content is empty. Check the source_url."},
+        )
+
+    return content_bytes, inferred, None
+
+
 @mcp.tool()
 async def upload_file(
     project_id: Union[str, int],
-    filename: str,
-    content_base64: str,
+    filename: Optional[str] = None,
+    content_base64: Optional[str] = None,
+    source_url: Optional[str] = None,
     description: Optional[str] = None,
     version_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Upload a file to a Redmine project's Files section.
 
-    The file content must be provided as a base64-encoded string. Under the
-    hood this performs Redmine's standard two-step upload:
+    **Content sources — provide exactly ONE of:**
+
+    - ``source_url``: an HTTP(S) URL the server will download from.
+      Use this when chaining with another MCP tool that returns a
+      download URL (e.g., a Google Drive MCP's
+      ``get_drive_file_download_url``), when the file is hosted on the
+      public web, or when the file is served by another local MCP
+      server over localhost. **Prefer this over content_base64** when a
+      URL is available — no need to download-then-re-encode.
+    - ``content_base64``: raw file bytes encoded as base64. Use this
+      only when the caller already has the file content in memory.
+
+    Under the hood this performs Redmine's standard two-step upload:
     ``POST /uploads.json`` to get a token, then
     ``POST /projects/{id}/files.json`` to attach it to the project.
 
     Args:
         project_id: Project identifier (numeric ID or string identifier).
         filename: Name the file should have in Redmine (e.g., ``spec.pdf``).
-        content_base64: File content encoded as a base64 string.
+            Required when using ``content_base64``. Optional with
+            ``source_url`` — if omitted, inferred from the URL path.
+            Always prefer passing an explicit filename.
+        content_base64: File content encoded as a base64 string. Mutually
+            exclusive with ``source_url``.
+        source_url: HTTP(S) URL to download the file from. Mutually
+            exclusive with ``content_base64``.
         description: Optional human-readable description.
         version_id: Optional version/release ID to attach the file to
             (use ``list_redmine_versions`` to discover valid IDs).
@@ -4080,42 +4201,80 @@ async def upload_file(
         dict with an ``"error"`` key is returned.
 
     Size limit:
-        Uploads are capped at 50 MiB decoded to protect the server from
-        resource exhaustion. For larger files, upload via the Redmine web
-        UI directly.
+        Uploads are capped at 50 MiB. For larger files, upload via the
+        Redmine web UI.
 
-    Example:
+    Examples:
+        >>> # From a URL (chained from another MCP tool)
+        >>> await upload_file(
+        ...     project_id="web",
+        ...     source_url="http://localhost:3012/attachments/abc-123",
+        ...     filename="report.pdf",
+        ...     description="Q2 report",
+        ... )
+
+        >>> # From base64 content
         >>> import base64
         >>> content = base64.b64encode(b"Hello world").decode("ascii")
-        >>> await upload_file("web", "hello.txt", content, description="Greeting")
-        {"id": 100, "filename": "hello.txt", ...}
+        >>> await upload_file(
+        ...     project_id="web",
+        ...     filename="hello.txt",
+        ...     content_base64=content,
+        ... )
     """
     if _is_read_only_mode():
         return dict(_READ_ONLY_ERROR)
 
-    if not filename or not filename.strip():
-        return {"error": "filename is required."}
-    if not content_base64:
-        return {"error": "content_base64 is required."}
-
-    # Decode and validate size before any network call
-    try:
-        content_bytes = base64.b64decode(content_base64, validate=True)
-    except (binascii.Error, ValueError) as e:
-        return {"error": ("content_base64 is not valid base64. " f"Details: {e}")}
-
-    if len(content_bytes) == 0:
-        return {"error": "Decoded file content is empty."}
-
-    if len(content_bytes) > _FILE_UPLOAD_MAX_SIZE_BYTES:
-        size_mb = len(content_bytes) / (1024 * 1024)
-        limit_mb = _FILE_UPLOAD_MAX_SIZE_BYTES / (1024 * 1024)
+    # Exactly one of content_base64 / source_url must be provided.
+    has_b64 = bool(content_base64)
+    has_url = bool(source_url)
+    if not has_b64 and not has_url:
+        return {"error": "Either content_base64 or source_url must be provided."}
+    if has_b64 and has_url:
         return {
-            "error": (
-                f"File too large: {size_mb:.1f} MiB exceeds the "
-                f"{limit_mb:.0f} MiB upload limit."
-            )
+            "error": ("Provide exactly ONE of content_base64 or source_url, not both.")
         }
+
+    content_bytes: bytes
+
+    if has_url:
+        content_bytes, inferred_filename, fetch_error = await _download_file_url(
+            source_url
+        )
+        if fetch_error is not None:
+            return fetch_error
+        # If caller didn't pass a filename, fall back to the URL-inferred one.
+        if not filename or not filename.strip():
+            filename = inferred_filename
+        if not filename:
+            return {
+                "error": (
+                    "Could not infer filename from source_url. "
+                    "Please pass a filename argument."
+                )
+            }
+    else:
+        if not filename or not filename.strip():
+            return {"error": "filename is required when using content_base64."}
+
+        # Decode and validate size before any network call
+        try:
+            content_bytes = base64.b64decode(content_base64, validate=True)
+        except (binascii.Error, ValueError) as e:
+            return {"error": ("content_base64 is not valid base64. " f"Details: {e}")}
+
+        if len(content_bytes) == 0:
+            return {"error": "Decoded file content is empty."}
+
+        if len(content_bytes) > _FILE_UPLOAD_MAX_SIZE_BYTES:
+            size_mb = len(content_bytes) / (1024 * 1024)
+            limit_mb = _FILE_UPLOAD_MAX_SIZE_BYTES / (1024 * 1024)
+            return {
+                "error": (
+                    f"File too large: {size_mb:.1f} MiB exceeds the "
+                    f"{limit_mb:.0f} MiB upload limit."
+                )
+            }
 
     client = _get_redmine_client()
     try:

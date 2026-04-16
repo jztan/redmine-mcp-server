@@ -45,9 +45,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **23 new unit tests** for time tracking tools covering success paths, per-entry validation (missing hours, negative hours, missing target), JSON string input, partial failure handling, `stop_on_error`, field whitelisting, read-only mode, and Redmine-version permission quirks
 - **3 new MCP tools for Files (Stage B):**
   - `list_files` — list files uploaded to a project's Files section (core Redmine "Files" module, distinct from issue attachments and DMSF documents); returns filename, filesize, content type, description, download URL, author, optional version/release
-  - `upload_file` — upload a new file via Redmine's two-step upload (`POST /uploads.json` for token, then `POST /projects/{id}/files.json`); accepts base64-encoded content (since MCP is JSON-only) with a 50 MiB decoded size cap
+  - `upload_file` — upload a new file via Redmine's two-step upload (`POST /uploads.json` for token, then `POST /projects/{id}/files.json`). Accepts either `source_url` (HTTP/HTTPS URL the server downloads from) or `content_base64` (raw bytes encoded as base64); the URL path enables chaining with other MCP tools that return download URLs (e.g., Google Drive MCP). Streaming download with 30s timeout, follows redirects, infers filename from URL path or `Content-Disposition` header. 50 MiB size cap
   - `delete_file` — delete a project file via `DELETE /attachments/{id}.json`
-- **24 new unit tests** for file tools covering base64 encoding/decoding, size limits, read-only mode, missing fields, and Redmine error paths
+- **36 new unit tests** for file tools covering base64 encoding/decoding, URL-based download (success, invalid schemes, HTTP errors, timeouts, empty body, Content-Disposition filename fallback), size limits, read-only mode, missing/conflicting content sources, and Redmine error paths
 
 ### Security
 - Bump `fastmcp` from 3.1.1 to 3.2.0, patching CVE-2025-64340 and CVE-2026-27124
