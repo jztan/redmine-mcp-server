@@ -547,8 +547,14 @@ class TestImportTimeEntriesBatchCap:
 
 
 class TestHoursValidationIntegration:
+    # import_time_entries builds the Redmine client before iterating
+    # entries, so these tests must mock the client even though validation
+    # rejects the bad hours before any HTTP call would happen. In CI the
+    # real client build raises because no REDMINE_* env vars are set.
+
     @pytest.mark.asyncio
-    async def test_import_rejects_nan_hours(self):
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_import_rejects_nan_hours(self, mock_redmine):
         result = await import_time_entries([{"hours": float("nan"), "issue_id": 1}])
         assert result["failed"] == 1
         assert (
@@ -557,12 +563,14 @@ class TestHoursValidationIntegration:
         )
 
     @pytest.mark.asyncio
-    async def test_import_rejects_boolean_hours(self):
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_import_rejects_boolean_hours(self, mock_redmine):
         result = await import_time_entries([{"hours": True, "issue_id": 1}])
         assert result["failed"] == 1
 
     @pytest.mark.asyncio
-    async def test_import_rejects_infinity_hours(self):
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_import_rejects_infinity_hours(self, mock_redmine):
         result = await import_time_entries([{"hours": float("inf"), "issue_id": 1}])
         assert result["failed"] == 1
 
