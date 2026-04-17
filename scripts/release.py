@@ -589,7 +589,19 @@ def merge_back_to_develop(config: ReleaseConfig, release_branch: str) -> None:
         run_command(["git", "pull", "origin", "develop"])
         print("  ✓ Checked out develop")
 
-        run_command(["git", "merge", release_branch, "--no-edit"])
+        result = run_command(
+            ["git", "merge", release_branch, "--no-edit"],
+            check=False,
+        )
+        if result.returncode != 0:
+            print(f"\n  ✗ Merge conflict when merging {release_branch} into develop.")
+            print("\n  Resolve conflicts manually:")
+            print("    git status                        # see conflicting files")
+            print("    # edit files to resolve")
+            print("    git add <resolved-files>")
+            print("    git commit                        # complete the merge")
+            print(f"    git branch -d {release_branch}   # cleanup branch when done")
+            sys.exit(1)
         print(f"  ✓ Merged {release_branch}")
 
         run_command(["git", "push", "origin", "develop"])
