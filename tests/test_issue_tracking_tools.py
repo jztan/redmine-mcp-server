@@ -109,9 +109,11 @@ class TestIssueCategoryToDict:
         cat.assigned_to = _mock_with_name(10, "Alice")
         result = _issue_category_to_dict(cat)
         assert result["id"] == 5
-        assert result["name"] == "Bugs"
-        assert result["project"] == {"id": 1, "name": "MyProj"}
-        assert result["assigned_to"] == {"id": 10, "name": "Alice"}
+        assert "Bugs" in result["name"]
+        assert result["project"]["id"] == 1
+        assert "MyProj" in result["project"]["name"]
+        assert result["assigned_to"]["id"] == 10
+        assert "Alice" in result["assigned_to"]["name"]
 
     def test_no_assignee(self):
         cat = Mock()
@@ -608,7 +610,7 @@ class TestListIssueCategories:
         result = await list_issue_categories(project_id=10)
 
         assert len(result) == 1
-        assert result[0]["name"] == "Bugs"
+        assert "Bugs" in result[0]["name"]
         mock_redmine.issue_category.filter.assert_called_once_with(project_id=10)
 
     @pytest.mark.asyncio
@@ -654,7 +656,8 @@ class TestCreateIssueCategory:
             project_id=10, name="Support", assigned_to_id=3
         )
 
-        assert result["assigned_to"] == {"id": 3, "name": "Bob"}
+        assert result["assigned_to"]["id"] == 3
+        assert "Bob" in result["assigned_to"]["name"]
         mock_redmine.issue_category.create.assert_called_once_with(
             project_id=10, name="Support", assigned_to_id=3
         )
@@ -684,7 +687,7 @@ class TestUpdateIssueCategory:
 
         result = await update_issue_category(category_id=1, name="Renamed")
 
-        assert result["name"] == "Renamed"
+        assert "Renamed" in result["name"]
         mock_redmine.issue_category.update.assert_called_once_with(1, name="Renamed")
 
     @pytest.mark.asyncio
@@ -699,7 +702,8 @@ class TestUpdateIssueCategory:
 
         result = await update_issue_category(category_id=1, assigned_to_id=9)
 
-        assert result["assigned_to"] == {"id": 9, "name": "Carol"}
+        assert result["assigned_to"]["id"] == 9
+        assert "Carol" in result["assigned_to"]["name"]
         mock_redmine.issue_category.update.assert_called_once_with(1, assigned_to_id=9)
 
     @pytest.mark.asyncio
