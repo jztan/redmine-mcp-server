@@ -5,7 +5,7 @@
 [![Python Version](https://img.shields.io/pypi/pyversions/redmine-mcp-server.svg)](https://pypi.org/project/redmine-mcp-server/)
 [![GitHub Issues](https://img.shields.io/github/issues/jztan/redmine-mcp-server.svg)](https://github.com/jztan/redmine-mcp-server/issues)
 [![CI](https://github.com/jztan/redmine-mcp-server/actions/workflows/pr-tests.yml/badge.svg)](https://github.com/jztan/redmine-mcp-server/actions/workflows/pr-tests.yml)
-[![Coverage](https://codecov.io/gh/jztan/redmine-mcp-server/branch/master/graph/badge.svg)](https://codecov.io/gh/jztan/redmine-mcp-server)
+[![Coverage](https://codecov.io/gh/jztan/redmine-mcp-server/branch/develop/graph/badge.svg)](https://codecov.io/gh/jztan/redmine-mcp-server)
 [![Downloads](https://pepy.tech/badge/redmine-mcp-server)](https://pepy.tech/project/redmine-mcp-server)
 
 A Model Context Protocol (MCP) server that integrates with Redmine project management systems. This server provides seamless access to Redmine data through MCP tools, enabling AI assistants to interact with your Redmine instance.
@@ -16,15 +16,14 @@ A Model Context Protocol (MCP) server that integrates with Redmine project manag
 
 ## Features
 
-- **Redmine Integration**: List projects, view/create/update issues, download attachments
-- **HTTP File Serving**: Secure file access via UUID-based URLs with automatic expiry
-- **MCP Compliant**: Full Model Context Protocol support with FastMCP and HTTP transport
+- **51 MCP Tools**: Issues, projects, time tracking, wiki, file operations, membership management, and more
 - **Flexible Authentication**: API key, username/password, or OAuth2 per-user tokens
-- **File Management**: Automatic cleanup of expired files with storage statistics
-- **Docker Ready**: Complete containerization support
-- **Pagination Support**: Efficiently handle large issue lists with configurable limits
-- **Read-Only Mode**: Restrict to read-only operations via `REDMINE_MCP_READ_ONLY` environment variable
 - **Prompt Injection Protection**: User-controlled content wrapped in boundary tags for safe LLM consumption
+- **Read-Only Mode**: Restrict to read-only operations via `REDMINE_MCP_READ_ONLY` environment variable
+- **HTTP File Serving**: Secure attachment access via UUID-based URLs with automatic expiry
+- **Pagination Support**: Efficiently handle large result sets with configurable limits
+- **MCP Compliant**: Full Model Context Protocol support with FastMCP and HTTP transport
+- **Docker Ready**: Complete containerization support
 
 ## Quick Start
 
@@ -120,6 +119,7 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `REDMINE_AGILE_ENABLED` | No | `false` | Enable RedmineUP Agile plugin support: `get_redmine_issue` returns `story_points`, `agile_sprint_id`, `agile_position`; `update_redmine_issue` accepts `story_points` |
 | `REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS` | No | `false` | Enable one retry for issue creation by filling missing required custom fields |
 | `REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS` | No | `{}` | JSON object mapping required custom field names to fallback values used when creating issues |
+| `REDMINE_ALLOW_PRIVATE_FETCH_URLS` | No | `false` | **Warning:** disables all SSRF protection for attachment fetching. Never set to `true` in production. |
 
 *† Required when `REDMINE_AUTH_MODE=legacy`. Either `REDMINE_API_KEY` or `REDMINE_USERNAME`+`REDMINE_PASSWORD` must be set. API key is recommended.*
 *‡ Required when `REDMINE_AUTH_MODE=oauth`.*
@@ -478,7 +478,7 @@ This MCP server provides 51 tools for interacting with Redmine. For detailed doc
   - [`log_time_for_user`](docs/tool-reference.md#log_time_for_user) - Create a time entry on behalf of another user (requires `log_time_for_other_users` permission)
   - [`import_time_entries`](docs/tool-reference.md#import_time_entries) - Bulk import time entries via sequential API calls with per-entry error reporting
 
-- **Discovery / Enumeration** (6 tools) — help LLMs find valid IDs before calling create/update tools
+- **Discovery / Enumeration** (6 tools): help LLMs find valid IDs before calling create/update tools
   - [`list_redmine_trackers`](docs/tool-reference.md#list_redmine_trackers) - List all trackers (Bug, Feature, Support, etc.)
   - [`list_redmine_issue_statuses`](docs/tool-reference.md#list_redmine_issue_statuses) - List all issue statuses with their `is_closed` flag
   - [`list_redmine_issue_priorities`](docs/tool-reference.md#list_redmine_issue_priorities) - List all priority levels
@@ -541,10 +541,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Additional Resources
 
-- [Tool Reference](./docs/tool-reference.md) - Complete tool documentation
-- [Troubleshooting Guide](./docs/troubleshooting.md) - Common issues and solutions
-- [Contributing Guide](./docs/contributing.md) - Development setup and guidelines
-- [Changelog](./CHANGELOG.md) - Detailed version history
 - [Roadmap](roadmap.md) - Future development plans
 - [Blog: How I linked a legacy system to a modern AI agent with MCP](https://blog.jztan.com/how-i-linked-a-legacy-system-to-a-modern-ai-agent/?utm_source=github&utm_medium=readme&utm_campaign=redmine-mcp-server) - The story behind this project
 - [Blog: Designing Reliable MCP Servers: 3 Hard Lessons in Agentic Architecture](https://blog.jztan.com/i-gave-my-ai-agent-full-api-access-it-was-a-mistak/?utm_source=github&utm_medium=readme&utm_campaign=redmine-mcp-server) - Lessons learned building this server
