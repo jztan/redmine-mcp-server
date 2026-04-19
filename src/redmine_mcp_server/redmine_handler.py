@@ -4215,7 +4215,8 @@ def _is_hostname_safe_for_fetch(
         # In dev mode, still resolve so we can pin the IP (consistency).
         try:
             addrinfo = socket.getaddrinfo(hostname, None)
-            ip_str = addrinfo[0][4][0] if addrinfo else None
+            raw = addrinfo[0][4][0] if addrinfo else None
+            ip_str = raw.split("%")[0] if raw and "%" in raw else raw
         except socket.gaierror:
             ip_str = None
         return True, None, ip_str
@@ -4234,6 +4235,8 @@ def _is_hostname_safe_for_fetch(
     first_public_ip: Optional[str] = None
     for _family, _, _, _, sockaddr in addrinfo:
         ip_str = sockaddr[0]
+        if "%" in ip_str:  # strip IPv6 scope ID (e.g. fe80::1%eth0)
+            ip_str = ip_str.split("%")[0]
         try:
             ip = ipaddress.ip_address(ip_str)
         except ValueError:
