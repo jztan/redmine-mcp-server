@@ -45,7 +45,11 @@ class TestTimeEntryToDict:
 
         assert result["id"] == 1
         assert result["hours"] == 2.5
-        assert result["comments"] == "Bug fix work"
+        # Comments are wrapped in <insecure-content> boundary tags to
+        # defuse prompt-injection payloads embedded in user text.
+        assert "Bug fix work" in result["comments"]
+        assert result["comments"].startswith("<insecure-content-")
+        assert result["comments"].endswith(">")
         assert result["spent_on"] == "2024-03-15"
         assert result["user"] == {"id": 5, "name": "John Doe"}
         assert result["project"] == {"id": 10, "name": "Test Project"}

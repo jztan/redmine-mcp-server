@@ -434,28 +434,57 @@ curl http://localhost:8000/health
 
 ## Available Tools
 
-This MCP server provides 21 tools for interacting with Redmine. For detailed documentation, see [Tool Reference](./docs/tool-reference.md).
+This MCP server provides 51 tools for interacting with Redmine. For detailed documentation, see [Tool Reference](./docs/tool-reference.md).
 
-- **Project Management** (5 tools)
+- **Project Management** (10 tools)
   - [`list_redmine_projects`](docs/tool-reference.md#list_redmine_projects) - List all accessible projects
   - [`list_project_issue_custom_fields`](docs/tool-reference.md#list_project_issue_custom_fields) - List issue custom fields configured for a project
   - [`list_redmine_versions`](docs/tool-reference.md#list_redmine_versions) - List versions/milestones for a project
   - [`list_project_members`](docs/tool-reference.md#list_project_members) - List members and roles of a project
   - [`summarize_project_status`](docs/tool-reference.md#summarize_project_status) - Get comprehensive project status summary
+  - [`list_redmine_roles`](docs/tool-reference.md#list_redmine_roles) - List all roles defined in the Redmine instance (for discovering valid `role_ids`)
+  - [`get_project_modules`](docs/tool-reference.md#get_project_modules) - Retrieve the enabled modules for a project
+  - [`add_project_member`](docs/tool-reference.md#add_project_member) - Add a user or group as a member with roles
+  - [`update_project_member`](docs/tool-reference.md#update_project_member) - Update the roles of an existing membership
+  - [`remove_project_member`](docs/tool-reference.md#remove_project_member) - Remove a membership from a project
 
-- **Issue Operations** (5 tools)
+- **Issue Operations** (19 tools)
   - [`get_redmine_issue`](docs/tool-reference.md#get_redmine_issue) - Retrieve detailed issue information (supports journal pagination, watchers, relations, children)
   - [`list_redmine_issues`](docs/tool-reference.md#list_redmine_issues) - List issues with flexible filtering (project, status, assignee, etc.)
   - [`search_redmine_issues`](docs/tool-reference.md#search_redmine_issues) - Search issues by text query
   - [`create_redmine_issue`](docs/tool-reference.md#create_redmine_issue) - Create new issues
   - [`update_redmine_issue`](docs/tool-reference.md#update_redmine_issue) - Update existing issues
+  - [`copy_issue`](docs/tool-reference.md#copy_issue) - Duplicate an existing issue with optional field overrides
+  - [`list_issue_relations`](docs/tool-reference.md#list_issue_relations) - List all relations for an issue
+  - [`create_issue_relation`](docs/tool-reference.md#create_issue_relation) - Create a relation between two issues (blocks, duplicates, relates, etc.)
+  - [`delete_issue_relation`](docs/tool-reference.md#delete_issue_relation) - Delete an existing issue relation
+  - [`list_subtasks`](docs/tool-reference.md#list_subtasks) - List subtasks (child issues) of a given parent
+  - [`add_watcher`](docs/tool-reference.md#add_watcher) - Add a user to the watcher list of an issue
+  - [`remove_watcher`](docs/tool-reference.md#remove_watcher) - Remove a user from the watcher list
+  - [`edit_note`](docs/tool-reference.md#edit_note) - Edit an existing journal note's text and/or privacy
+  - [`get_private_notes`](docs/tool-reference.md#get_private_notes) - Retrieve private notes on an issue
+  - [`set_note_private`](docs/tool-reference.md#set_note_private) - Toggle the private/public state of a journal note
+  - [`list_issue_categories`](docs/tool-reference.md#list_issue_categories) - List issue categories for a project
+  - [`create_issue_category`](docs/tool-reference.md#create_issue_category) - Create a new issue category
+  - [`update_issue_category`](docs/tool-reference.md#update_issue_category) - Update an existing issue category
+  - [`delete_issue_category`](docs/tool-reference.md#delete_issue_category) - Delete an issue category (with optional reassignment)
   - Note: `get_redmine_issue` can include `custom_fields` and `update_redmine_issue` can update custom fields by name (for example `{"size": "S"}`).
 
-- **Time Tracking** (4 tools)
+- **Time Tracking** (6 tools)
   - [`list_time_entries`](docs/tool-reference.md#list_time_entries) - List time entries with filtering by project, issue, user, and date range
   - [`create_time_entry`](docs/tool-reference.md#create_time_entry) - Log time against projects or issues
   - [`update_time_entry`](docs/tool-reference.md#update_time_entry) - Modify existing time entries
   - [`list_time_entry_activities`](docs/tool-reference.md#list_time_entry_activities) - Discover available activity types for time entries
+  - [`log_time_for_user`](docs/tool-reference.md#log_time_for_user) - Create a time entry on behalf of another user (requires `log_time_for_other_users` permission)
+  - [`import_time_entries`](docs/tool-reference.md#import_time_entries) - Bulk import time entries via sequential API calls with per-entry error reporting
+
+- **Discovery / Enumeration** (6 tools) — help LLMs find valid IDs before calling create/update tools
+  - [`list_redmine_trackers`](docs/tool-reference.md#list_redmine_trackers) - List all trackers (Bug, Feature, Support, etc.)
+  - [`list_redmine_issue_statuses`](docs/tool-reference.md#list_redmine_issue_statuses) - List all issue statuses with their `is_closed` flag
+  - [`list_redmine_issue_priorities`](docs/tool-reference.md#list_redmine_issue_priorities) - List all priority levels
+  - [`list_redmine_users`](docs/tool-reference.md#list_redmine_users) - Filter/list users (admin-only; supports name and group filters)
+  - [`get_current_user`](docs/tool-reference.md#get_current_user) - Get the authenticated user's profile (works for non-admins)
+  - [`list_redmine_queries`](docs/tool-reference.md#list_redmine_queries) - List saved custom queries (read-only)
 
 - **Search & Wiki** (5 tools)
   - [`search_entire_redmine`](docs/tool-reference.md#search_entire_redmine) - Global search across issues and wiki pages (Redmine 3.3.0+)
@@ -464,7 +493,10 @@ This MCP server provides 21 tools for interacting with Redmine. For detailed doc
   - [`update_redmine_wiki_page`](docs/tool-reference.md#update_redmine_wiki_page) - Update existing wiki pages
   - [`delete_redmine_wiki_page`](docs/tool-reference.md#delete_redmine_wiki_page) - Delete wiki pages
 
-- **File Operations** (2 tools)
+- **File Operations** (5 tools)
+  - [`list_files`](docs/tool-reference.md#list_files) - List files uploaded to a project's Files section
+  - [`upload_file`](docs/tool-reference.md#upload_file) - Upload a new file (base64 content) to a project, optionally tied to a version
+  - [`delete_file`](docs/tool-reference.md#delete_file) - Delete a file from a project
   - [`get_redmine_attachment_download_url`](docs/tool-reference.md#get_redmine_attachment_download_url) - Get secure download URLs for attachments
   - [`cleanup_attachment_files`](docs/tool-reference.md#cleanup_attachment_files) - Clean up expired attachment files
 

@@ -269,9 +269,7 @@ class TestSearchFieldSelection:
         mock_issue = self.create_mock_issue()
         mock_redmine.issue.search.return_value = [mock_issue]
 
-        result = await search_redmine_issues(
-            "bug", fields=["id", "subject"], limit=10
-        )
+        result = await search_redmine_issues("bug", fields=["id", "subject"], limit=10)
 
         assert len(result[0]) == 2
         assert "id" in result[0]

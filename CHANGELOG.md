@@ -7,6 +7,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Security
+- **SSRF protection for `upload_file(source_url=...)`:** The server now resolves every URL hop and rejects non-public destinations (loopback, RFC1918, link-local including cloud metadata services like `169.254.169.254`, reserved, multicast). Redirects are followed manually with per-hop revalidation to defeat public-→-private 302 bypasses. Capped at 5 redirect hops. URLs with embedded credentials (`http://user:pass@host`) are refused up front to prevent credential leakage across redirects. SSRF error messages no longer include the resolved IP (logged at WARNING level instead) to avoid leaking internal network topology. Opt-in dev override: `REDMINE_ALLOW_PRIVATE_FETCH_URLS=true`. (Note: DNS rebinding between our check and httpx's connect is a theoretical residual risk; IP pinning was evaluated but broke TLS SNI for real CDNs — the microseconds-long rebind window plus the 50 MiB size cap bound the residual blast radius.)
+- **`delete_file` is now fail-closed on ambiguous `container_type`:** Previously, if Redmine (or an older python-redmine version) returned `None` or an empty string for `container_type`, the project-scope guard was skipped and the attachment was deleted. Now any non-`"Project"` value refuses the delete, with an explicit `confirm_delete_any_attachment=True` flag for bypass.
+- **Int-ID validators reject booleans and non-positive values:** Python treats `True`/`False` as `int`, so `role_ids=[True]` would silently assign role ID 1 (often an elevated role). New `_is_positive_int` helper is applied to `role_ids`, `user_id`, and `group_id` parameters in `add_project_member`, `update_project_member`, `add_watcher`, `remove_watcher`, and `log_time_for_user`.
+- **Attacker-controlled display names wrapped:** New `_named_ref()` helper wraps `user.name`, `author.name`, and `version.name` fields (all user-controlled) in `<insecure-content>` boundary tags. Applied via `_named_ref` to `_file_to_dict` and `_attachments_to_list` (previously, attachment filenames/descriptions were only wrapped in the new `list_files` output but NOT in `get_redmine_issue(include_attachments=True)` — now consistent across both).
+- **Prompt-injection hardening:** `filename`, `description`, and time-entry `comments` returned from `list_files`/`upload_file`/`log_time_for_user`/`import_time_entries` are now wrapped in `<insecure-content>` boundary tags (matching existing issue/journal/description handling). Prevents attacker-controllable Redmine metadata from being treated as trusted instructions by downstream LLMs.
+- **Error-message secret scrubbing:** `_handle_redmine_error` now redacts API keys (`?key=`, `X-Redmine-API-Key`), Bearer tokens, HTTP basic-auth credentials, and the configured `REDMINE_API_KEY` before returning errors to MCP callers. Logs still see the raw message.
+- **Content-Disposition filename sanitization:** URL-inferred and header-derived filenames are URL-decoded, stripped of path components (defeats `../../../etc/passwd` traversal on both POSIX and Windows), rejected if they contain null bytes or control characters, and capped at 255 chars.
+- **`delete_file` container-type check:** Since Redmine's `DELETE /attachments/{id}.json` removes any attachment by ID (including issue/wiki attachments), `delete_file` now verifies the target is a project file before deleting. Callers can bypass with `confirm_delete_any_attachment=True`.
+
+### Fixed
+- **`copy_issue` data-integrity bug:** When both `copy_subtasks=False` and `copy_attachments=False` were passed, python-redmine's `include or (...)` fallback silently copied both anyway. Now passes a non-empty sentinel so the fallback doesn't trigger.
+- **`log_time_for_user` / `import_time_entries` hours validation:** Now rejects NaN, Infinity, booleans (which Python treats as `int`), and non-numeric types before hitting the API.
+- **`import_time_entries` bulk safeguards:** Added a 500-entry batch cap (returns a clear error instead of pinning the event loop for minutes on a massive request). Yields the event loop between entries via `asyncio.sleep(0)` so concurrent MCP requests aren't starved. Split the create/serialize try blocks so a post-create serialization failure doesn't flip a successful create into a reported failure (which would tempt callers to retry and create duplicates).
+
+### Changed
+- **List tools now return `Union[List, Dict]` on error** instead of `[{"error": "..."}]`. Affects `list_issue_relations`, `list_subtasks`, `list_issue_categories`, `list_files`, `list_redmine_roles`, `list_redmine_trackers`, `list_redmine_issue_statuses`, `list_redmine_issue_priorities`, `list_redmine_users`, `list_redmine_queries`. Callers should check `isinstance(result, dict)` or `"error" in result` to distinguish failure from an empty list. Matches the pre-existing convention of `list_time_entries`, `list_redmine_issues`, and `search_redmine_issues`.
+- **List tools now cap results at 500 items** (configurable via `_DEFAULT_LIST_RESULT_CAP` constant) via the new `_iter_capped` helper. Previously unbounded iteration could OOM on projects with tens of thousands of subtasks/relations/files.
+- **Module-level constants consolidated:** `_FILE_UPLOAD_MAX_SIZE_BYTES`, `_MAX_FILENAME_LEN`, `_IMPORT_TIME_ENTRIES_MAX_BATCH`, `_DEFAULT_LIST_RESULT_CAP`, `_DOWNLOAD_TIMEOUT`, and `_FILE_DOWNLOAD_MAX_REDIRECTS` are all declared once at the top of the module instead of scattered across different sections. Top-level `import httpx` + `from urllib.parse import unquote, urlparse` hoisted out of function-local imports.
+
 
 ### Security
 - Bump `cryptography` from 46.0.6 to 46.0.7, patching CVE-2026-39892 (out-of-bounds read via non-contiguous buffers)
@@ -14,6 +34,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.2.0] - 2026-04-14
 ### Added
 - `REDMINE_AGILE_ENABLED=true` opt-in support for RedmineUP Agile plugin: `get_redmine_issue` auto-includes `story_points`, `agile_sprint_id`, and `agile_position`; `update_redmine_issue` accepts `story_points` in the `fields` dict
+- **14 new MCP tools for Issue Tracking:**
+  - **Copying & hierarchy:**
+    - `copy_issue` — duplicate an existing issue via Redmine's native `copy_from` mechanism, with optional field overrides and support for copying subtasks/attachments
+    - `list_subtasks` — list child issues of a given parent (subtasks are created via existing `create_redmine_issue` with `parent_issue_id`)
+  - **Issue relations (blocks, duplicates, precedes, etc.):**
+    - `list_issue_relations` — list all relations for an issue
+    - `create_issue_relation` — create a relation between two issues; validates `relation_type` against Redmine's taxonomy
+    - `delete_issue_relation` — delete a relation by ID
+  - **Watchers:**
+    - `add_watcher` — add a user to an issue's watcher list (Redmine 2.3.0+)
+    - `remove_watcher` — remove a user from an issue's watcher list
+  - **Journal/note management:**
+    - `edit_note` — update an existing journal note's text and/or `private_notes` flag via `PUT /journals/{id}.json`
+    - `get_private_notes` — retrieve only the private notes on an issue (requires "View private notes" permission)
+    - `set_note_private` — toggle the private/public state of an existing journal note
+  - **Issue categories:**
+    - `list_issue_categories` — list all categories for a project
+    - `create_issue_category` — create a new category (optionally with a default assignee)
+    - `update_issue_category` — rename a category or change its default assignee
+    - `delete_issue_category` — delete a category with optional `reassign_to_id` to move existing issues
+- **55 new unit tests** covering all new tools (read-only mode enforcement, success paths, error paths, helper conversions)
+- **5 new MCP tools for Projects:**
+  - `list_redmine_roles` — list all roles defined in the Redmine instance; use before `add_project_member`/`update_project_member` to discover valid `role_ids` (role IDs vary between Redmine instances)
+  - `get_project_modules` — retrieve enabled modules for a project via `?include=enabled_modules`
+  - `add_project_member` — add a user or group to a project with assigned roles; validates that exactly one of `user_id` or `group_id` is provided
+  - `update_project_member` — update the roles of an existing membership
+  - `remove_project_member` — remove a membership (inherited memberships from parent projects surface as a 422 validation error)
+- `role_ids` validation errors in `add_project_member` / `update_project_member` now hint at `list_redmine_roles` to prevent AI agents from hallucinating role IDs
+- **33 new unit tests** for project tools covering modules retrieval (including dict-format fallback for older Redmine versions), role discovery, membership CRUD, validation errors, read-only mode enforcement, error paths, and error-message discoverability hints
+- **2 new MCP tools for Time Tracking:**
+  - `log_time_for_user` — create a time entry on behalf of another user via the `user_id` parameter on `POST /time_entries.json`; requires `log_time_for_other_users` permission on the target project
+  - `import_time_entries` — bulk import multiple time entries via sequential API calls (Redmine has no native bulk endpoint); accepts a list of dicts or JSON array string, captures per-entry errors, and returns `{total, succeeded, failed, created, errors}` so partial imports still yield useful feedback; supports `stop_on_error` flag
+- Add missing `REDMINE_MCP_READ_ONLY` enforcement to existing `create_time_entry` tool
+- **23 new unit tests** for time tracking tools covering success paths, per-entry validation (missing hours, negative hours, missing target), JSON string input, partial failure handling, `stop_on_error`, field whitelisting, read-only mode, and Redmine-version permission quirks
+- **3 new MCP tools for Files:**
+  - `list_files` — list files uploaded to a project's Files section (core Redmine "Files" module, distinct from issue attachments and DMSF documents); returns filename, filesize, content type, description, download URL, author, optional version/release
+  - `upload_file` — upload a new file via Redmine's two-step upload (`POST /uploads.json` for token, then `POST /projects/{id}/files.json`). Accepts either `source_url` (HTTP/HTTPS URL the server downloads from) or `content_base64` (raw bytes encoded as base64); the URL path enables chaining with other MCP tools that return download URLs (e.g., Google Drive MCP). Streaming download with 30s timeout, follows redirects, infers filename from URL path or `Content-Disposition` header. 50 MiB size cap
+  - `delete_file` — delete a project file via `DELETE /attachments/{id}.json`
+- **36 new unit tests** for file tools covering base64 encoding/decoding, URL-based download (success, invalid schemes, HTTP errors, timeouts, empty body, Content-Disposition filename fallback), size limits, read-only mode, missing/conflicting content sources, and Redmine error paths
+- **6 new MCP Discovery / Enumeration tools** — help LLMs find valid IDs without guessing:
+  - `list_redmine_trackers` — list all trackers (issue types like Bug, Feature, Support) for discovering valid `tracker_id` values
+  - `list_redmine_issue_statuses` — list all issue statuses with their `is_closed` flag for discovering valid `status_id` values
+  - `list_redmine_issue_priorities` — list all priority levels via `enumeration.filter(resource="issue_priorities")`
+  - `list_redmine_users` — filter/list users with optional `name` and `group_id` filters (admin-only, limit clamped to 1–100)
+  - `get_current_user` — retrieve the authenticated user's profile via `GET /my/account.json` (works for non-admins; useful when a user says "do X for me")
+  - `list_redmine_queries` — list all saved custom queries visible to the current user (read-only; Redmine's API does not support CRUD on queries)
+- **20 new unit tests** for discovery tools covering success paths, empty results, limit clamping, filter parameters, and permission-denied error paths
 
 ### Security
 - Bump `fastmcp` from 3.1.1 to 3.2.0, patching CVE-2025-64340 and CVE-2026-27124

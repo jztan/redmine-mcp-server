@@ -23,7 +23,13 @@ Dependencies:
     - fastmcp: FastMCP server implementation
 """
 
+import base64
+import binascii
+import io
+import ipaddress
+import math
 import os
+import socket
 import uuid
 import json
 import re
@@ -31,8 +37,10 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from urllib.parse import unquote, urlparse
 
+import httpx
 from dotenv import load_dotenv
 from redminelib import Redmine
 from redminelib.exceptions import (
@@ -401,6 +409,38 @@ async def cleanup_status(request):
     return JSONResponse(cleanup_manager.get_status())
 
 
+# Patterns for secrets that must never appear in returned error messages.
+# Logs still see the raw message, but API responses get the redacted version.
+_SECRET_SCRUB_PATTERNS = [
+    # Redmine REST API key in URL query string: ?key=..., &key=...
+    (re.compile(r"([?&]key=)[^&\s\"']+", re.IGNORECASE), r"\1[redacted]"),
+    # X-Redmine-API-Key header values
+    (re.compile(r"(X-Redmine-API-Key:\s*)\S+", re.IGNORECASE), r"\1[redacted]"),
+    # Bearer tokens in Authorization headers or anywhere else
+    (re.compile(r"(Bearer\s+)\S+", re.IGNORECASE), r"\1[redacted]"),
+    # HTTP basic auth embedded in URL: https://user:pass@host
+    (re.compile(r"(https?://)[^/@\s]+:[^/@\s]+@"), r"\1[redacted]@"),
+]
+
+
+def _scrub_error_message(message: str) -> str:
+    """Redact common secret patterns from an error message.
+
+    Removes API keys, Bearer tokens, and basic-auth credentials that may
+    appear when an exception stringifies a URL. Used before any error
+    detail is returned to an MCP caller.
+    """
+    if not message:
+        return message
+    scrubbed = message
+    for pattern, replacement in _SECRET_SCRUB_PATTERNS:
+        scrubbed = pattern.sub(replacement, scrubbed)
+    # Also redact the configured API key if it happens to appear verbatim.
+    if REDMINE_API_KEY and REDMINE_API_KEY in scrubbed:
+        scrubbed = scrubbed.replace(REDMINE_API_KEY, "[redacted]")
+    return scrubbed
+
+
 def _handle_redmine_error(
     e: Exception, operation: str, context: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
@@ -479,10 +519,10 @@ def _handle_redmine_error(
 
     if isinstance(e, ValidationError):
         logger.warning(f"Validation error during {operation}: {e}")
-        return {"error": f"Validation failed: {str(e)}"}
+        return {"error": f"Validation failed: {_scrub_error_message(str(e))}"}
 
     if isinstance(e, VersionMismatchError):
-        return {"error": str(e)}
+        return {"error": _scrub_error_message(str(e))}
 
     if isinstance(e, HTTPProtocolError):
         logger.error(f"HTTP protocol error during {operation}: {e}")
@@ -497,9 +537,14 @@ def _handle_redmine_error(
         logger.error(f"Unknown HTTP error during {operation}: status={e.status_code}")
         return {"error": f"Redmine returned HTTP {e.status_code}. Check server logs."}
 
-    # Fallback
+    # Fallback — scrub the raw message before returning it to the caller.
     logger.error(f"Unexpected error during {operation}: {type(e).__name__}: {e}")
-    return {"error": f"An unexpected error occurred while {operation}: {str(e)}"}
+    return {
+        "error": (
+            f"An unexpected error occurred while {operation}: "
+            f"{_scrub_error_message(str(e))}"
+        )
+    }
 
 
 _DEFAULT_REQUIRED_CUSTOM_FIELD_VALUES: Dict[str, Any] = {}
@@ -583,6 +628,38 @@ _READ_ONLY_ERROR = {
     "error": "This server is in read-only mode (REDMINE_MCP_READ_ONLY=true). "
     "Write operations are disabled."
 }
+
+
+# ---------------------------------------------------------------------------
+# Module-level limits and timeouts.
+# ---------------------------------------------------------------------------
+
+# Cap a single base64 file upload at ~50 MiB decoded to protect the server
+# from resource exhaustion. Larger files should be uploaded via a different
+# mechanism (e.g., writing to disk first and passing a path).
+_FILE_UPLOAD_MAX_SIZE_BYTES = 50 * 1024 * 1024
+
+# Maximum filename length — typical POSIX limit for a single path component.
+_MAX_FILENAME_LEN = 255
+
+# Maximum entries in a single `import_time_entries` call. Redmine has no
+# native bulk endpoint, so each entry is a sequential synchronous HTTP
+# call; capping the batch prevents a single tool invocation from pinning
+# the event loop for minutes.
+_IMPORT_TIME_ENTRIES_MAX_BATCH = 500
+
+# Default cap on list_* tool results. Unbounded iteration over resource
+# sets can OOM the server on large projects. Applies when the tool has
+# no explicit limit parameter.
+_DEFAULT_LIST_RESULT_CAP = 500
+
+# Per-phase timeouts for source_url downloads. Separated so a slow-loris
+# style server can't stall us indefinitely on a single phase.
+_DOWNLOAD_TIMEOUT = httpx.Timeout(connect=5.0, read=15.0, write=10.0, pool=5.0)
+
+# Max redirects we follow when downloading via source_url. Each hop is
+# SSRF-revalidated independently to defeat redirect-based bypasses.
+_FILE_DOWNLOAD_MAX_REDIRECTS = 5
 
 
 def _normalize_field_label(label: str) -> str:
@@ -745,6 +822,44 @@ def wrap_insecure_content(content: Any) -> Any:
     return (
         f"<insecure-content-{boundary}>\n{content}\n" f"</insecure-content-{boundary}>"
     )
+
+
+def _iter_capped(resources: Any, cap: int = _DEFAULT_LIST_RESULT_CAP) -> List[Any]:
+    """Materialize up to ``cap`` items from a python-redmine lazy resource set.
+
+    python-redmine's resource sets are lazy and iterate fresh on demand,
+    so `list(resource_set)` can OOM on very large projects. This helper
+    draws at most ``cap`` items and returns a plain list.
+    """
+    out: List[Any] = []
+    try:
+        iterator = iter(resources)
+    except TypeError:
+        return out
+    for i, item in enumerate(iterator):
+        if i >= cap:
+            break
+        out.append(item)
+    return out
+
+
+def _named_ref(obj: Any) -> Optional[Dict[str, Any]]:
+    """Serialize a Redmine object with `id` + `name` to a dict.
+
+    Used for author/user/group/version/project refs that appear inside
+    larger tool-output dicts. The ``name`` field is wrapped in
+    ``<insecure-content>`` boundary tags because display names are user-
+    controlled (a malicious user can set their name to a prompt-injection
+    payload).
+
+    Returns ``None`` when ``obj`` is ``None``.
+    """
+    if obj is None:
+        return None
+    return {
+        "id": getattr(obj, "id", None),
+        "name": wrap_insecure_content(getattr(obj, "name", "")),
+    }
 
 
 def _is_allowed_custom_field_value(value: Any, possible_values: List[str]) -> bool:
@@ -1303,19 +1418,18 @@ def _attachments_to_list(issue: Any) -> List[Dict[str, Any]]:
         attachments.append(
             {
                 "id": attachment.id,
-                "filename": getattr(attachment, "filename", ""),
+                # filename and description are attacker-controllable
+                # (anyone who can attach to an issue sets them). Wrap
+                # them in <insecure-content> boundary tags — matches the
+                # treatment in _file_to_dict for project files.
+                "filename": wrap_insecure_content(getattr(attachment, "filename", "")),
                 "filesize": getattr(attachment, "filesize", 0),
                 "content_type": getattr(attachment, "content_type", ""),
-                "description": getattr(attachment, "description", ""),
-                "content_url": getattr(attachment, "content_url", ""),
-                "author": (
-                    {
-                        "id": attachment.author.id,
-                        "name": attachment.author.name,
-                    }
-                    if getattr(attachment, "author", None) is not None
-                    else None
+                "description": wrap_insecure_content(
+                    getattr(attachment, "description", "")
                 ),
+                "content_url": getattr(attachment, "content_url", ""),
+                "author": _named_ref(getattr(attachment, "author", None)),
                 "created_on": _safe_isoformat(getattr(attachment, "created_on", None)),
             }
         )
@@ -2303,6 +2417,662 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
         )
 
 
+# ---------------------------------------------------------------------------
+# Issue tracking helpers (relations, categories, journals)
+# ---------------------------------------------------------------------------
+
+
+_VALID_ISSUE_RELATION_TYPES: Set[str] = {
+    "relates",
+    "duplicates",
+    "duplicated",
+    "blocks",
+    "blocked",
+    "precedes",
+    "follows",
+    "copied_to",
+    "copied_from",
+}
+
+
+def _issue_relation_to_dict(relation: Any) -> Dict[str, Any]:
+    """Convert a python-redmine IssueRelation object to a serializable dict."""
+    return {
+        "id": getattr(relation, "id", None),
+        "issue_id": getattr(relation, "issue_id", None),
+        "issue_to_id": getattr(relation, "issue_to_id", None),
+        "relation_type": getattr(relation, "relation_type", None),
+        "delay": getattr(relation, "delay", None),
+    }
+
+
+def _issue_category_to_dict(category: Any) -> Dict[str, Any]:
+    """Convert a python-redmine IssueCategory object to a serializable dict."""
+    project = getattr(category, "project", None)
+    assigned_to = getattr(category, "assigned_to", None)
+    return {
+        "id": getattr(category, "id", None),
+        "name": getattr(category, "name", ""),
+        "project": (
+            {"id": project.id, "name": getattr(project, "name", "")}
+            if project is not None
+            else None
+        ),
+        "assigned_to": (
+            {"id": assigned_to.id, "name": getattr(assigned_to, "name", "")}
+            if assigned_to is not None
+            else None
+        ),
+    }
+
+
+def _journal_to_dict(journal: Any, include_private_flag: bool = True) -> Dict[str, Any]:
+    """Convert a python-redmine IssueJournal to a serializable dict.
+
+    Unlike `_journals_to_list`, this helper preserves empty-notes entries
+    (since they can still carry field-change details) and optionally exposes
+    the ``private_notes`` flag.
+    """
+    user = getattr(journal, "user", None)
+    notes = getattr(journal, "notes", "") or ""
+    entry: Dict[str, Any] = {
+        "id": getattr(journal, "id", None),
+        "user": (
+            {"id": user.id, "name": getattr(user, "name", "")}
+            if user is not None
+            else None
+        ),
+        "notes": wrap_insecure_content(notes) if notes else "",
+        "created_on": _safe_isoformat(getattr(journal, "created_on", None)),
+    }
+    if include_private_flag:
+        entry["private_notes"] = bool(getattr(journal, "private_notes", False))
+    return entry
+
+
+# ---------------------------------------------------------------------------
+# Issue tracking tools (copy, relations, subtasks, notes, watchers, categories)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+async def copy_issue(
+    issue_id: int,
+    project_id: Optional[Union[str, int]] = None,
+    subject: Optional[str] = None,
+    link_original: bool = True,
+    copy_subtasks: bool = True,
+    copy_attachments: bool = True,
+    field_overrides: Optional[Union[Dict[str, Any], str]] = None,
+) -> Dict[str, Any]:
+    """Duplicate an existing Redmine issue with optional field overrides.
+
+    Uses Redmine's native copy mechanism (``copy_from`` parameter) which
+    preserves the original issue's fields while allowing selected overrides.
+
+    Args:
+        issue_id: ID of the source issue to copy.
+        project_id: Target project for the new issue (ID or identifier).
+            Defaults to the source issue's project when omitted.
+        subject: Optional new subject for the copy. Defaults to the source
+            issue's subject when omitted.
+        link_original: When True (default), creates a ``copied_to``/
+            ``copied_from`` relation between the original and the copy.
+        copy_subtasks: When True (default), the source issue's subtasks are
+            recursively copied.
+        copy_attachments: When True (default), attachments are copied to
+            the new issue.
+        field_overrides: Optional dict (or JSON object string) of field
+            values to override on the copy (e.g.,
+            ``{"assigned_to_id": 5, "description": "..."}``).
+
+    Returns:
+        Dictionary containing the newly created issue. On failure a dict
+        with an ``"error"`` key is returned.
+    """
+
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    try:
+        overrides = _parse_optional_object_payload(field_overrides, "field_overrides")
+    except ValueError as e:
+        return {"error": str(e)}
+
+    # Prevent accidental overwrite of resolved positional-like params.
+    overrides.pop("issue_id", None)
+    overrides.pop("copy_from", None)
+
+    if project_id is not None:
+        overrides["project_id"] = project_id
+    if subject is not None:
+        overrides["subject"] = subject
+
+    # python-redmine's copy() does `include or ('subtasks', 'attachments')`
+    # (managers/standard.py:22-32) — meaning an EMPTY tuple is falsy and
+    # silently falls back to copying both. We must pass a sentinel list
+    # ['none'] when both flags are False so the library sees truthy input
+    # without actually including subtasks or attachments.
+    # Any other non-empty input (e.g. ['none']) produces no matching
+    # copy_* parameter and therefore copies nothing.
+    include_parts: List[str] = []
+    if copy_subtasks:
+        include_parts.append("subtasks")
+    if copy_attachments:
+        include_parts.append("attachments")
+    if not include_parts:
+        # Sentinel prevents the library's default-fallback. "none" is not a
+        # recognized include, so no copy_none=1 is added to the request.
+        include_parts = ["none"]
+    include_tuple = tuple(include_parts)
+
+    try:
+        new_issue = _get_redmine_client().issue.copy(
+            issue_id,
+            link_original=link_original,
+            include=include_tuple,
+            **overrides,
+        )
+        return _issue_to_dict(new_issue, include_custom_fields=True)
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"copying issue {issue_id}",
+            {"resource_type": "issue", "resource_id": issue_id},
+        )
+
+
+@mcp.tool()
+async def list_issue_relations(
+    issue_id: int,
+) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    """List all relations for a given Redmine issue.
+
+    Args:
+        issue_id: ID of the issue whose relations should be listed.
+
+    Returns:
+        List of relation dictionaries. On failure, a dict with an
+        ``"error"`` key is returned.
+    """
+    try:
+        relations = _get_redmine_client().issue_relation.filter(issue_id=issue_id)
+        return [_issue_relation_to_dict(r) for r in _iter_capped(relations)]
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"listing relations for issue {issue_id}",
+            {"resource_type": "issue", "resource_id": issue_id},
+        )
+
+
+@mcp.tool()
+async def create_issue_relation(
+    issue_id: int,
+    issue_to_id: int,
+    relation_type: str = "relates",
+    delay: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Create a relation between two Redmine issues.
+
+    Args:
+        issue_id: ID of the source issue.
+        issue_to_id: ID of the target issue to relate to.
+        relation_type: Type of relation. Must be one of: ``relates``,
+            ``duplicates``, ``duplicated``, ``blocks``, ``blocked``,
+            ``precedes``, ``follows``, ``copied_to``, ``copied_from``.
+            Defaults to ``relates``.
+        delay: Optional delay in days (only meaningful for ``precedes``
+            and ``follows`` relation types).
+
+    Returns:
+        Dictionary containing the newly created relation. On failure a
+        dict with an ``"error"`` key is returned.
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    if relation_type not in _VALID_ISSUE_RELATION_TYPES:
+        return {
+            "error": (
+                f"Invalid relation_type '{relation_type}'. Must be one of: "
+                f"{', '.join(sorted(_VALID_ISSUE_RELATION_TYPES))}."
+            )
+        }
+
+    try:
+        params: Dict[str, Any] = {
+            "issue_id": issue_id,
+            "issue_to_id": issue_to_id,
+            "relation_type": relation_type,
+        }
+        if delay is not None:
+            params["delay"] = delay
+
+        relation = _get_redmine_client().issue_relation.create(**params)
+        return _issue_relation_to_dict(relation)
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"creating relation from issue {issue_id} to {issue_to_id}",
+            {"resource_type": "issue", "resource_id": issue_id},
+        )
+
+
+@mcp.tool()
+async def delete_issue_relation(relation_id: int) -> Dict[str, Any]:
+    """Delete a Redmine issue relation by its ID.
+
+    Args:
+        relation_id: ID of the relation to delete (the ``id`` field returned
+            by ``list_issue_relations`` or ``create_issue_relation``).
+
+    Returns:
+        Dictionary with ``success: true`` on success. On failure a dict
+        with an ``"error"`` key is returned.
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    try:
+        _get_redmine_client().issue_relation.delete(relation_id)
+        return {"success": True, "deleted_relation_id": relation_id}
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"deleting relation {relation_id}",
+            {"resource_type": "relation", "resource_id": relation_id},
+        )
+
+
+@mcp.tool()
+async def list_subtasks(
+    issue_id: int,
+) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    """List subtasks (child issues) of a given Redmine issue.
+
+    Retrieves all issues whose ``parent_issue_id`` equals the given
+    ``issue_id``. To create a new subtask, use ``create_redmine_issue``
+    with the ``parent_issue_id`` field set.
+
+    Args:
+        issue_id: ID of the parent issue.
+
+    Returns:
+        List of child issue dictionaries. On failure a list containing a
+        single dictionary with an ``"error"`` key is returned.
+    """
+    try:
+        # Include closed subtasks as well (status_id=*) to match Redmine's
+        # parent/child display.
+        children = _get_redmine_client().issue.filter(
+            parent_id=issue_id,
+            status_id="*",
+        )
+        return [_issue_to_dict(c) for c in _iter_capped(children)]
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"listing subtasks for issue {issue_id}",
+            {"resource_type": "issue", "resource_id": issue_id},
+        )
+
+
+@mcp.tool()
+async def add_watcher(issue_id: int, user_id: int) -> Dict[str, Any]:
+    """Add a user to the watcher list of a Redmine issue.
+
+    Requires Redmine 2.3.0+.
+
+    Args:
+        issue_id: ID of the issue.
+        user_id: ID of the user to add as a watcher.
+
+    Returns:
+        Dictionary with ``success: true`` on success. On failure a dict
+        with an ``"error"`` key is returned.
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    if not _is_positive_int(issue_id):
+        return {"error": "issue_id must be a positive integer."}
+    if not _is_positive_int(user_id):
+        return {"error": "user_id must be a positive integer."}
+
+    try:
+        issue = _get_redmine_client().issue.get(issue_id)
+        issue.watcher.add(user_id)
+        return {
+            "success": True,
+            "issue_id": issue_id,
+            "user_id": user_id,
+        }
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"adding watcher {user_id} to issue {issue_id}",
+            {"resource_type": "issue", "resource_id": issue_id},
+        )
+
+
+@mcp.tool()
+async def remove_watcher(issue_id: int, user_id: int) -> Dict[str, Any]:
+    """Remove a user from the watcher list of a Redmine issue.
+
+    Args:
+        issue_id: ID of the issue.
+        user_id: ID of the user to remove from watchers.
+
+    Returns:
+        Dictionary with ``success: true`` on success. On failure a dict
+        with an ``"error"`` key is returned.
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    if not _is_positive_int(issue_id):
+        return {"error": "issue_id must be a positive integer."}
+    if not _is_positive_int(user_id):
+        return {"error": "user_id must be a positive integer."}
+
+    try:
+        issue = _get_redmine_client().issue.get(issue_id)
+        issue.watcher.remove(user_id)
+        return {
+            "success": True,
+            "issue_id": issue_id,
+            "user_id": user_id,
+        }
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"removing watcher {user_id} from issue {issue_id}",
+            {"resource_type": "issue", "resource_id": issue_id},
+        )
+
+
+@mcp.tool()
+async def edit_note(
+    journal_id: int,
+    notes: str,
+    private_notes: Optional[bool] = None,
+) -> Dict[str, Any]:
+    """Update the text (and optionally privacy) of an existing journal note.
+
+    Redmine exposes ``PUT /journals/{id}.json`` for editing journal notes.
+    Only the ``notes`` text and the ``private_notes`` flag can be edited;
+    journal ``details`` (field-change history) are immutable.
+
+    Note: If a journal has no details attached and its notes are cleared,
+    Redmine will delete the journal record.
+
+    Args:
+        journal_id: ID of the journal entry to update.
+        notes: New notes text (may be empty to clear notes).
+        private_notes: Optionally toggle the private flag on this journal
+            entry. When omitted, the existing flag is preserved.
+
+    Returns:
+        Dictionary confirming the update. On failure a dict with an
+        ``"error"`` key is returned.
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    try:
+        params: Dict[str, Any] = {"notes": notes}
+        if private_notes is not None:
+            params["private_notes"] = bool(private_notes)
+
+        client = _get_redmine_client()
+        # python-redmine's IssueJournal supports update via
+        # PUT /journals/{id}.json with a {"journal": {...}} envelope.
+        client.issue_journal.update(journal_id, **params)
+        return {
+            "success": True,
+            "journal_id": journal_id,
+            "notes": notes,
+            "private_notes": (
+                bool(private_notes) if private_notes is not None else None
+            ),
+        }
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"editing journal {journal_id}",
+            {"resource_type": "journal", "resource_id": journal_id},
+        )
+
+
+@mcp.tool()
+async def get_private_notes(issue_id: int) -> List[Dict[str, Any]]:
+    """Retrieve only the private notes/journals of a Redmine issue.
+
+    Fetches the issue's journals and filters for entries where
+    ``private_notes`` is true. The authenticated user must have the
+    "View private notes" permission for non-empty results.
+
+    Args:
+        issue_id: ID of the issue.
+
+    Returns:
+        List of private journal dictionaries, each containing ``id``,
+        ``user``, ``notes``, ``created_on``, and ``private_notes: true``.
+        On failure a list with a single ``"error"`` dict is returned.
+    """
+    try:
+        issue = _get_redmine_client().issue.get(issue_id, include="journals")
+        raw_journals = getattr(issue, "journals", None) or []
+
+        private: List[Dict[str, Any]] = []
+        try:
+            iterator = iter(raw_journals)
+        except TypeError:
+            return []
+
+        for journal in iterator:
+            if not bool(getattr(journal, "private_notes", False)):
+                continue
+            # Skip entries with no notes body (private detail-only records).
+            if not getattr(journal, "notes", ""):
+                continue
+            private.append(_journal_to_dict(journal, include_private_flag=True))
+        return private
+    except Exception as e:
+        return [
+            _handle_redmine_error(
+                e,
+                f"fetching private notes for issue {issue_id}",
+                {"resource_type": "issue", "resource_id": issue_id},
+            )
+        ]
+
+
+@mcp.tool()
+async def set_note_private(
+    journal_id: int,
+    is_private: bool,
+) -> Dict[str, Any]:
+    """Toggle the private/public state of an existing journal note.
+
+    Args:
+        journal_id: ID of the journal entry to update.
+        is_private: True to mark the note private, False to make it public.
+
+    Returns:
+        Dictionary confirming the change. On failure a dict with an
+        ``"error"`` key is returned.
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    try:
+        client = _get_redmine_client()
+        client.issue_journal.update(journal_id, private_notes=bool(is_private))
+        return {
+            "success": True,
+            "journal_id": journal_id,
+            "private_notes": bool(is_private),
+        }
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"updating privacy of journal {journal_id}",
+            {"resource_type": "journal", "resource_id": journal_id},
+        )
+
+
+@mcp.tool()
+async def list_issue_categories(
+    project_id: Union[str, int],
+) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    """List all issue categories for a given Redmine project.
+
+    Args:
+        project_id: Project identifier (numeric ID or string identifier).
+
+    Returns:
+        List of issue category dictionaries. On failure a dict with an
+        ``"error"`` key is returned.
+    """
+    try:
+        categories = _get_redmine_client().issue_category.filter(project_id=project_id)
+        return [_issue_category_to_dict(c) for c in _iter_capped(categories)]
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"listing issue categories for project {project_id}",
+            {"resource_type": "project", "resource_id": project_id},
+        )
+
+
+@mcp.tool()
+async def create_issue_category(
+    project_id: Union[str, int],
+    name: str,
+    assigned_to_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Create a new issue category in a Redmine project.
+
+    Args:
+        project_id: Project identifier (numeric ID or string identifier).
+        name: Category name (required).
+        assigned_to_id: Optional default assignee user ID for issues in
+            this category.
+
+    Returns:
+        Dictionary containing the created issue category. On failure a
+        dict with an ``"error"`` key is returned.
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    if not name or not name.strip():
+        return {"error": "Category 'name' is required."}
+
+    try:
+        params: Dict[str, Any] = {
+            "project_id": project_id,
+            "name": name.strip(),
+        }
+        if assigned_to_id is not None:
+            params["assigned_to_id"] = assigned_to_id
+
+        category = _get_redmine_client().issue_category.create(**params)
+        return _issue_category_to_dict(category)
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"creating issue category in project {project_id}",
+            {"resource_type": "project", "resource_id": project_id},
+        )
+
+
+@mcp.tool()
+async def update_issue_category(
+    category_id: int,
+    name: Optional[str] = None,
+    assigned_to_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Update an existing Redmine issue category.
+
+    Args:
+        category_id: ID of the issue category to update.
+        name: New category name (optional).
+        assigned_to_id: New default assignee user ID (optional).
+
+    Returns:
+        Dictionary containing the updated issue category. On failure a
+        dict with an ``"error"`` key is returned.
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    params: Dict[str, Any] = {}
+    if name is not None:
+        stripped = name.strip()
+        if not stripped:
+            return {"error": "Category 'name' cannot be empty."}
+        params["name"] = stripped
+    if assigned_to_id is not None:
+        params["assigned_to_id"] = assigned_to_id
+
+    if not params:
+        return {"error": "No fields provided for update."}
+
+    try:
+        client = _get_redmine_client()
+        client.issue_category.update(category_id, **params)
+        updated = client.issue_category.get(category_id)
+        return _issue_category_to_dict(updated)
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"updating issue category {category_id}",
+            {"resource_type": "issue_category", "resource_id": category_id},
+        )
+
+
+@mcp.tool()
+async def delete_issue_category(
+    category_id: int,
+    reassign_to_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Delete a Redmine issue category.
+
+    Args:
+        category_id: ID of the issue category to delete.
+        reassign_to_id: Optional ID of another category to reassign existing
+            issues to. When omitted, issues in this category become
+            uncategorised.
+
+    Returns:
+        Dictionary with ``success: true`` on success. On failure a dict
+        with an ``"error"`` key is returned.
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    try:
+        params: Dict[str, Any] = {}
+        if reassign_to_id is not None:
+            params["reassign_to_id"] = reassign_to_id
+
+        _get_redmine_client().issue_category.delete(category_id, **params)
+        return {
+            "success": True,
+            "deleted_category_id": category_id,
+            "reassigned_to_id": reassign_to_id,
+        }
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"deleting issue category {category_id}",
+            {"resource_type": "issue_category", "resource_id": category_id},
+        )
+
+
 @mcp.tool()
 async def get_redmine_attachment_download_url(
     attachment_id: int,
@@ -2736,10 +3506,13 @@ def _time_entry_to_dict(time_entry: Any) -> Dict[str, Any]:
     issue = getattr(time_entry, "issue", None)
     activity = getattr(time_entry, "activity", None)
 
+    # `comments` is user-controlled free-form text. Wrap it in
+    # <insecure-content> boundary tags so downstream LLMs treat it as
+    # untrusted data rather than instructions.
     return {
         "id": getattr(time_entry, "id", None),
         "hours": getattr(time_entry, "hours", 0),
-        "comments": getattr(time_entry, "comments", ""),
+        "comments": wrap_insecure_content(getattr(time_entry, "comments", "")),
         "spent_on": (
             str(time_entry.spent_on)
             if getattr(time_entry, "spent_on", None) is not None
@@ -3062,6 +3835,925 @@ async def list_project_members(
         ]
 
 
+# ---------------------------------------------------------------------------
+# Project tools: modules + membership management
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+async def list_redmine_roles() -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    """List all roles defined in the Redmine instance.
+
+    Returns basic role metadata (``id`` and ``name``) for every role
+    configured in Redmine. Use this tool BEFORE calling
+    ``add_project_member`` or ``update_project_member`` to discover the
+    correct ``role_ids`` — role IDs vary between Redmine instances and
+    must not be guessed.
+
+    Returns:
+        A list of role dictionaries, each with ``id`` and ``name``.
+        On failure, a dict with an ``"error"`` key.
+
+    Example:
+        >>> await list_redmine_roles()
+        [
+            {"id": 3, "name": "Manager"},
+            {"id": 4, "name": "Developer"},
+            {"id": 5, "name": "Reporter"}
+        ]
+    """
+    try:
+        roles = _get_redmine_client().role.all()
+        return [
+            {
+                "id": getattr(r, "id", None),
+                "name": getattr(r, "name", ""),
+            }
+            for r in roles
+        ]
+    except Exception as e:
+        return _handle_redmine_error(e, "listing roles")
+
+
+@mcp.tool()
+async def get_project_modules(
+    project_id: Union[str, int],
+) -> Dict[str, Any]:
+    """Retrieve the enabled modules for a Redmine project.
+
+    Modules control which features are visible/usable in a project
+    (e.g., ``issue_tracking``, ``time_tracking``, ``wiki``, ``repository``).
+
+    Args:
+        project_id: Project identifier (numeric ID or string identifier).
+
+    Returns:
+        Dictionary with ``project_id``, ``project_name`` and
+        ``enabled_modules`` (list of module name strings). On failure a
+        dict with an ``"error"`` key is returned.
+
+    Example:
+        >>> await get_project_modules("my-project")
+        {
+            "project_id": 1,
+            "project_name": "My Project",
+            "enabled_modules": ["issue_tracking", "wiki", "time_tracking"]
+        }
+    """
+    try:
+        project = _get_redmine_client().project.get(
+            project_id, include="enabled_modules"
+        )
+        raw_modules = getattr(project, "enabled_modules", None) or []
+
+        module_names: List[str] = []
+        try:
+            iterator = iter(raw_modules)
+        except TypeError:
+            iterator = iter(())
+
+        for mod in iterator:
+            # python-redmine's Project.encode() converts enabled_modules
+            # to a plain list of strings. Older versions / raw HTTP
+            # responses may return dicts or resource-like objects.
+            if isinstance(mod, str):
+                name = mod
+            elif isinstance(mod, dict):
+                name = mod.get("name")
+            else:
+                name = getattr(mod, "name", None)
+            if name:
+                module_names.append(str(name))
+
+        return {
+            "project_id": getattr(project, "id", None),
+            "project_name": getattr(project, "name", ""),
+            "enabled_modules": module_names,
+        }
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"getting modules for project {project_id}",
+            {"resource_type": "project", "resource_id": project_id},
+        )
+
+
+@mcp.tool()
+async def add_project_member(
+    project_id: Union[str, int],
+    role_ids: List[int],
+    user_id: Optional[int] = None,
+    group_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Add a user or group as a member of a project with assigned roles.
+
+    Exactly one of ``user_id`` or ``group_id`` must be provided.
+
+    Args:
+        project_id: Project identifier (numeric ID or string identifier).
+        role_ids: List of role IDs to assign (at least one required).
+            Use the ``list_redmine_roles`` tool to discover valid role IDs
+            before calling this tool — role IDs vary between Redmine
+            instances and must not be guessed.
+        user_id: ID of the user to add as a member.
+        group_id: ID of the group to add as a member.
+
+    Returns:
+        Dictionary containing the created membership. On failure a dict
+        with an ``"error"`` key is returned.
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    if (user_id is None) == (group_id is None):
+        return {"error": "Exactly one of user_id or group_id must be provided."}
+
+    principal_candidate = user_id if user_id is not None else group_id
+    if not _is_positive_int(principal_candidate):
+        return {"error": ("user_id / group_id must be a positive integer.")}
+
+    if not role_ids:
+        return {
+            "error": (
+                "At least one role_id must be provided. "
+                "Use `list_redmine_roles` to discover valid role IDs."
+            )
+        }
+    if not isinstance(role_ids, list) or not all(_is_positive_int(r) for r in role_ids):
+        return {
+            "error": (
+                "role_ids must be a list of positive integers. "
+                "Use `list_redmine_roles` to discover valid role IDs."
+            )
+        }
+
+    # Redmine's POST /projects/{id}/memberships endpoint uses `user_id` for
+    # BOTH users and groups — they share the same principal ID namespace.
+    # There is no separate `group_id` parameter in the API, so we always
+    # forward group_id via the `user_id` field.
+    principal_id = user_id if user_id is not None else group_id
+
+    try:
+        membership = _get_redmine_client().project_membership.create(
+            project_id=project_id,
+            user_id=principal_id,
+            role_ids=role_ids,
+        )
+        return _membership_to_dict(membership)
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"adding member to project {project_id}",
+            {"resource_type": "project", "resource_id": project_id},
+        )
+
+
+@mcp.tool()
+async def update_project_member(
+    membership_id: int,
+    role_ids: List[int],
+) -> Dict[str, Any]:
+    """Update the roles assigned to an existing project membership.
+
+    Only role assignments can be updated via the API. To change the user
+    or group of a membership, delete and recreate it.
+
+    Args:
+        membership_id: ID of the membership to update (obtained from
+            ``list_project_members``).
+        role_ids: New list of role IDs to assign. Replaces the existing set.
+            Use the ``list_redmine_roles`` tool to discover valid role IDs
+            before calling this tool.
+
+    Returns:
+        Dictionary containing the updated membership. On failure a dict
+        with an ``"error"`` key is returned.
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    if not role_ids:
+        return {
+            "error": (
+                "At least one role_id must be provided. "
+                "Use `list_redmine_roles` to discover valid role IDs."
+            )
+        }
+    if not isinstance(role_ids, list) or not all(_is_positive_int(r) for r in role_ids):
+        return {
+            "error": (
+                "role_ids must be a list of positive integers. "
+                "Use `list_redmine_roles` to discover valid role IDs."
+            )
+        }
+
+    try:
+        client = _get_redmine_client()
+        client.project_membership.update(membership_id, role_ids=role_ids)
+        updated = client.project_membership.get(membership_id)
+        return _membership_to_dict(updated)
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"updating project membership {membership_id}",
+            {"resource_type": "membership", "resource_id": membership_id},
+        )
+
+
+@mcp.tool()
+async def remove_project_member(membership_id: int) -> Dict[str, Any]:
+    """Remove a membership from a project.
+
+    Note: Inherited memberships (from a parent project) cannot be removed
+    directly — Redmine will return a 422 error. Remove them from the
+    parent project instead.
+
+    Args:
+        membership_id: ID of the membership to remove.
+
+    Returns:
+        Dictionary with ``success: true`` on success. On failure a dict
+        with an ``"error"`` key is returned.
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    try:
+        _get_redmine_client().project_membership.delete(membership_id)
+        return {
+            "success": True,
+            "deleted_membership_id": membership_id,
+        }
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"removing project membership {membership_id}",
+            {"resource_type": "membership", "resource_id": membership_id},
+        )
+
+
+# ---------------------------------------------------------------------------
+# Project files: list, upload, delete
+# ---------------------------------------------------------------------------
+
+
+def _file_to_dict(file_obj: Any) -> Dict[str, Any]:
+    """Convert a python-redmine File/Attachment object to a serializable dict.
+
+    Returns standard metadata (id, filename, size, content_type, description,
+    download URL, author, dates). Used by list_files and upload_file.
+
+    ``filename`` and ``description`` are attacker-controllable (anyone who
+    can upload to a project can set them). They are wrapped in
+    ``<insecure-content>`` boundary tags so downstream LLMs treat them as
+    untrusted data rather than instructions.
+    """
+    return {
+        "id": getattr(file_obj, "id", None),
+        "filename": wrap_insecure_content(getattr(file_obj, "filename", "")),
+        "filesize": getattr(file_obj, "filesize", 0),
+        "content_type": getattr(file_obj, "content_type", ""),
+        "description": wrap_insecure_content(getattr(file_obj, "description", "")),
+        "content_url": getattr(file_obj, "content_url", ""),
+        "digest": getattr(file_obj, "digest", ""),
+        "downloads": getattr(file_obj, "downloads", 0),
+        "author": _named_ref(getattr(file_obj, "author", None)),
+        "version": _named_ref(getattr(file_obj, "version", None)),
+        "created_on": _safe_isoformat(getattr(file_obj, "created_on", None)),
+    }
+
+
+@mcp.tool()
+async def list_files(
+    project_id: Union[str, int],
+) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    """List all files uploaded to a Redmine project.
+
+    Returns file metadata (id, filename, size, content type, description,
+    download URL, author, optional version/release) for every file
+    uploaded under Project > Files.
+
+    Note: This lists files from Redmine's core "Files" module (enabled per
+    project via Settings > Modules > Files). It does NOT list issue
+    attachments (use ``get_redmine_issue`` with ``include_attachments=True``
+    for those) and does NOT list DMSF documents (pending separate tools).
+
+    Args:
+        project_id: Project identifier (numeric ID or string identifier).
+
+    Returns:
+        A list of file metadata dictionaries. On failure, a dict with an
+        ``"error"`` key.
+
+    Example:
+        >>> await list_files("web")
+        [
+            {
+                "id": 42,
+                "filename": "spec.pdf",
+                "filesize": 125678,
+                "content_type": "application/pdf",
+                "description": "Design spec v2",
+                "content_url": "https://example.com/attachments/download/42/spec.pdf",
+                "author": {"id": 5, "name": "Alice"},
+                "version": {"id": 3, "name": "Release 1.0"},
+                "created_on": "2026-04-10T10:30:00"
+            }
+        ]
+    """
+    try:
+        files = _get_redmine_client().file.filter(project_id=project_id)
+        return [_file_to_dict(f) for f in _iter_capped(files)]
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"listing files for project {project_id}",
+            {"resource_type": "project", "resource_id": project_id},
+        )
+
+
+def _allow_private_fetch_urls() -> bool:
+    """Opt-in env flag that disables SSRF protection for `source_url`.
+
+    Intended ONLY for development against a localhost Redmine instance or
+    a localhost MCP gateway. Must never be set in production.
+    """
+    return _is_true_env("REDMINE_ALLOW_PRIVATE_FETCH_URLS", "false")
+
+
+def _is_ip_publicly_routable(ip: ipaddress._BaseAddress) -> bool:
+    """Return True if ``ip`` is publicly routable (not private/special)."""
+    return not (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified
+    )
+
+
+def _is_hostname_safe_for_fetch(
+    hostname: str,
+) -> Tuple[bool, Optional[str], Optional[str]]:
+    """Resolve a hostname and return the first publicly routable IP.
+
+    Rejects loopback, private, link-local (including 169.254.169.254 cloud
+    metadata), reserved, multicast, and unspecified addresses to prevent SSRF.
+
+    Returns ``(is_safe, error_message, resolved_ip)``. If safe, the caller
+    SHOULD pin ``resolved_ip`` for the actual HTTP request to defeat DNS
+    rebinding between our validation and httpx's own resolution.
+
+    Error messages returned to callers are generic ("resolves to non-public
+    address") and do not reveal the internal IP. The IP is logged instead
+    (WARNING level) so operators can diagnose while attackers can't probe.
+
+    Bypass for development only: ``REDMINE_ALLOW_PRIVATE_FETCH_URLS=true``.
+    """
+    if _allow_private_fetch_urls():
+        # In dev mode, still resolve so we can pin the IP (consistency).
+        try:
+            addrinfo = socket.getaddrinfo(hostname, None)
+            ip_str = addrinfo[0][4][0] if addrinfo else None
+        except socket.gaierror:
+            ip_str = None
+        return True, None, ip_str
+
+    if not hostname:
+        return False, "Empty hostname in source_url.", None
+
+    try:
+        addrinfo = socket.getaddrinfo(hostname, None)
+    except socket.gaierror:
+        return False, f"Cannot resolve hostname '{hostname}'.", None
+
+    if not addrinfo:
+        return False, f"No addresses for hostname '{hostname}'.", None
+
+    first_public_ip: Optional[str] = None
+    for _family, _, _, _, sockaddr in addrinfo:
+        ip_str = sockaddr[0]
+        try:
+            ip = ipaddress.ip_address(ip_str)
+        except ValueError:
+            # Skip malformed addresses — still require at least one valid one.
+            continue
+        if not _is_ip_publicly_routable(ip):
+            logger.warning(
+                "Rejected SSRF target: %s resolved to non-public %s",
+                hostname,
+                ip_str,
+            )
+            # Fail on the first non-public hit — all resolutions must be safe
+            # to avoid the attacker picking which IP httpx connects to.
+            return (
+                False,
+                (
+                    f"Refused to fetch from '{hostname}' (resolves to a "
+                    "non-public address). Set "
+                    "REDMINE_ALLOW_PRIVATE_FETCH_URLS=true for development only."
+                ),
+                None,
+            )
+        if first_public_ip is None:
+            first_public_ip = ip_str
+
+    if first_public_ip is None:
+        return False, f"No usable public address for '{hostname}'.", None
+
+    return True, None, first_public_ip
+
+
+_CONTROL_CHAR_RE = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _sanitize_filename(raw: str) -> Optional[str]:
+    """Sanitize an untrusted filename from a URL path or HTTP header.
+
+    - URL-decodes percent-encoded sequences
+    - Strips any directory components (defeats `../../etc/passwd` and
+      `C:\\windows\\system32\\cmd.exe` style traversal)
+    - Rejects null bytes and other control characters
+    - Caps length at ``_MAX_FILENAME_LEN`` (typical filesystem limit)
+
+    Returns a safe basename, or ``None`` if the input cannot be salvaged.
+    """
+    if not raw:
+        return None
+
+    decoded = unquote(raw).strip().strip('"').strip("'")
+    if not decoded:
+        return None
+
+    if _CONTROL_CHAR_RE.search(decoded):
+        return None
+
+    # Both os.path.basename and a manual split — different OS conventions.
+    basename = os.path.basename(decoded.replace("\\", "/"))
+    basename = basename.strip()
+    if not basename or basename in (".", ".."):
+        return None
+
+    if len(basename) > _MAX_FILENAME_LEN:
+        basename = basename[:_MAX_FILENAME_LEN]
+
+    return basename
+
+
+def _extract_content_disposition_filename(value: str) -> Optional[str]:
+    """Extract a filename from a Content-Disposition header, sanitized."""
+    if not value:
+        return None
+    # Prefer RFC 5987 filename* (e.g., filename*=UTF-8''hello.pdf)
+    m = re.search(r"filename\*\s*=\s*[^']*'[^']*'([^;]+)", value, re.IGNORECASE)
+    if not m:
+        m = re.search(r'filename\s*=\s*"?([^";]+)"?', value, re.IGNORECASE)
+    if not m:
+        return None
+    return _sanitize_filename(m.group(1))
+
+
+def _make_pinned_client(
+    hostname: Optional[str], resolved_ip: Optional[str]
+) -> httpx.AsyncClient:
+    """Build an httpx.AsyncClient for downloading a source_url.
+
+    We validate the hostname via ``_is_hostname_safe_for_fetch`` on every
+    hop before the request. An earlier iteration tried to pin the
+    resolved IP into a custom httpx transport to defeat DNS rebinding,
+    but rewriting the connect host broke TLS SNI (certs are valid for
+    the hostname, not the IP) and failed for every real CDN.
+
+    Current posture:
+    - Per-hop hostname validation (hostname is resolved + checked right
+      before the connect), narrowing the rebind window to microseconds.
+    - Manual redirect handling with re-validation of each hop.
+    - 50 MiB size cap as a blast-radius limit if a rebind slips through.
+
+    The ``hostname`` / ``resolved_ip`` arguments are kept in the
+    signature for future pinning work; they're currently unused.
+    """
+    _ = (hostname, resolved_ip)  # silence unused-arg linters
+    return httpx.AsyncClient(timeout=_DOWNLOAD_TIMEOUT, follow_redirects=False)
+
+
+def _validate_fetch_url(
+    current_url: str,
+) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[str]]:
+    """Validate a URL for a single download hop.
+
+    Checks scheme, rejects embedded credentials (which would leak on
+    redirect), resolves the hostname, and refuses non-public IPs.
+
+    Returns ``(error_dict_or_None, hostname, resolved_ip)``.
+    """
+    parsed = urlparse(current_url)
+    if parsed.scheme not in ("http", "https"):
+        return (
+            {"error": (f"Refused URL with unsupported scheme " f"'{parsed.scheme}'.")},
+            None,
+            None,
+        )
+
+    # Embedded credentials (http://user:pass@host) would leak to any
+    # redirect target. Reject up front.
+    if parsed.username or parsed.password:
+        return (
+            {"error": ("URLs with embedded credentials are not permitted.")},
+            None,
+            None,
+        )
+
+    hostname = parsed.hostname or ""
+    safe, ssrf_err, resolved_ip = _is_hostname_safe_for_fetch(hostname)
+    if not safe:
+        return (
+            {"error": ssrf_err or "Refused to fetch from this host."},
+            None,
+            None,
+        )
+    return None, hostname, resolved_ip
+
+
+async def _download_file_url(
+    source_url: str,
+) -> Tuple[bytes, Optional[str], Optional[Dict[str, Any]]]:
+    """Download a file from an HTTP(S) URL with SSRF + size protections.
+
+    Defenses (in order):
+    - Only http/https schemes accepted.
+    - URLs with embedded credentials are refused (would leak on redirect).
+    - Each URL hop is DNS-resolved and rejected if any resolved IP is
+      private/loopback/link-local/reserved (blocks AWS/GCP/Azure metadata
+      services, RFC1918 networks, and localhost). Override for dev only:
+      ``REDMINE_ALLOW_PRIVATE_FETCH_URLS=true``.
+    - Redirects are followed manually, up to ``_FILE_DOWNLOAD_MAX_REDIRECTS``
+      hops, and every hop is re-validated against the SSRF filter.
+    - Content-Length header is checked before streaming (fail-fast).
+    - Streams response body with hard 50 MiB cap enforced mid-stream.
+    - Separate connect/read/write timeouts to avoid slow-loris-style stalls.
+
+    Note: DNS rebinding (attacker-controlled DNS returning a public IP to
+    our check, then a private IP to httpx microseconds later) is a
+    theoretical residual risk. Pinning the resolved IP was attempted but
+    broke TLS SNI for real-world CDNs; the window between our check and
+    httpx's connect is microseconds, and the 50 MiB cap bounds the
+    blast-radius if a rebind does slip through.
+
+    Returns ``(content_bytes, inferred_filename, error_dict)``:
+    - On success: ``(bytes, sanitized_filename_or_None, None)``
+    - On failure: ``(b"", None, {"error": "..."})``
+    """
+
+    def _err(msg: str) -> Tuple[bytes, Optional[str], Dict[str, Any]]:
+        return b"", None, {"error": msg}
+
+    current_url = source_url
+    # Initial scheme + credentials check before even attempting DNS.
+    parsed = urlparse(current_url)
+    if parsed.scheme not in ("http", "https"):
+        return _err(
+            f"Unsupported URL scheme '{parsed.scheme}'. "
+            "Only http:// and https:// are supported."
+        )
+    if parsed.username or parsed.password:
+        return _err("URLs with embedded credentials are not permitted.")
+
+    inferred: Optional[str] = None
+    if parsed.path:
+        inferred = _sanitize_filename(os.path.basename(parsed.path))
+
+    redirects_followed = 0
+    content_bytes = b""
+    try:
+        while True:
+            err_dict, hostname, resolved_ip = _validate_fetch_url(current_url)
+            if err_dict is not None:
+                return b"", None, err_dict
+
+            async with _make_pinned_client(
+                hostname=hostname, resolved_ip=resolved_ip
+            ) as hc:
+                async with hc.stream("GET", current_url) as response:
+                    # Follow redirects ourselves so every hop is revalidated.
+                    if response.status_code in (301, 302, 303, 307, 308):
+                        redirects_followed += 1
+                        if redirects_followed > _FILE_DOWNLOAD_MAX_REDIRECTS:
+                            return _err(
+                                f"Too many redirects "
+                                f"(> {_FILE_DOWNLOAD_MAX_REDIRECTS})."
+                            )
+                        location = response.headers.get("location", "")
+                        if not location:
+                            return _err(
+                                f"Got redirect status {response.status_code} "
+                                "with no Location header."
+                            )
+                        # Resolve the Location header relative to current URL.
+                        current_url = str(httpx.URL(current_url).join(location))
+                        continue
+
+                    if response.status_code >= 400:
+                        return _err(
+                            f"Failed to fetch source_url: HTTP "
+                            f"{response.status_code} {response.reason_phrase}"
+                        )
+
+                    # Fail-fast on an honest Content-Length that exceeds
+                    # the cap (still enforced mid-stream if the server lies).
+                    cl_header = response.headers.get("content-length")
+                    if cl_header and cl_header.isdigit():
+                        declared = int(cl_header)
+                        if declared > _FILE_UPLOAD_MAX_SIZE_BYTES:
+                            size_mb = declared / (1024 * 1024)
+                            limit_mb = _FILE_UPLOAD_MAX_SIZE_BYTES / (1024 * 1024)
+                            return _err(
+                                f"Server declares file size {size_mb:.1f} MiB, "
+                                f"exceeds {limit_mb:.0f} MiB limit."
+                            )
+
+                    # Use the server's filename only if the original URL
+                    # didn't give us a usable one. Sanitize aggressively.
+                    if not inferred:
+                        inferred = _extract_content_disposition_filename(
+                            response.headers.get("content-disposition", "")
+                        )
+
+                    buffer = io.BytesIO()
+                    total = 0
+                    async for chunk in response.aiter_bytes():
+                        total += len(chunk)
+                        if total > _FILE_UPLOAD_MAX_SIZE_BYTES:
+                            size_mb = total / (1024 * 1024)
+                            limit_mb = _FILE_UPLOAD_MAX_SIZE_BYTES / (1024 * 1024)
+                            return _err(
+                                f"Downloaded file too large: exceeds "
+                                f"{limit_mb:.0f} MiB limit "
+                                f"(received {size_mb:.1f} MiB so far)."
+                            )
+                        buffer.write(chunk)
+                    content_bytes = buffer.getvalue()
+                    break  # exits the redirect loop
+    except httpx.TimeoutException:
+        return _err(
+            "Timed out fetching source_url. Check the URL or try a smaller file."
+        )
+    except httpx.RequestError as e:
+        # Scrub the exception message — httpx can embed URLs with creds.
+        safe_msg = _scrub_error_message(str(e))
+        return _err(f"Failed to fetch source_url: {safe_msg}")
+
+    if len(content_bytes) == 0:
+        return _err("Downloaded content is empty. Check the source_url.")
+
+    return content_bytes, inferred, None
+
+
+@mcp.tool()
+async def upload_file(
+    project_id: Union[str, int],
+    filename: Optional[str] = None,
+    content_base64: Optional[str] = None,
+    source_url: Optional[str] = None,
+    description: Optional[str] = None,
+    version_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Upload a file to a Redmine project's Files section.
+
+    **Content sources — provide exactly ONE of:**
+
+    - ``source_url``: an HTTP(S) URL the server will download from.
+      Use this when chaining with another MCP tool that returns a
+      download URL (e.g., a Google Drive MCP's
+      ``get_drive_file_download_url``), when the file is hosted on the
+      public web, or when the file is served by another local MCP
+      server over localhost. **Prefer this over content_base64** when a
+      URL is available — no need to download-then-re-encode.
+    - ``content_base64``: raw file bytes encoded as base64. Use this
+      only when the caller already has the file content in memory.
+
+    Under the hood this performs Redmine's standard two-step upload:
+    ``POST /uploads.json`` to get a token, then
+    ``POST /projects/{id}/files.json`` to attach it to the project.
+
+    Args:
+        project_id: Project identifier (numeric ID or string identifier).
+        filename: Name the file should have in Redmine (e.g., ``spec.pdf``).
+            Required when using ``content_base64``. Optional with
+            ``source_url`` — if omitted, inferred from the URL path.
+            Always prefer passing an explicit filename.
+        content_base64: File content encoded as a base64 string. Mutually
+            exclusive with ``source_url``.
+        source_url: HTTP(S) URL to download the file from. Mutually
+            exclusive with ``content_base64``.
+        description: Optional human-readable description.
+        version_id: Optional version/release ID to attach the file to
+            (use ``list_redmine_versions`` to discover valid IDs).
+
+    Returns:
+        Dictionary containing the uploaded file's metadata. On failure, a
+        dict with an ``"error"`` key is returned.
+
+    Size limit:
+        Uploads are capped at 50 MiB. For larger files, upload via the
+        Redmine web UI.
+
+    Examples:
+        >>> # From a URL (chained from another MCP tool)
+        >>> await upload_file(
+        ...     project_id="web",
+        ...     source_url="http://localhost:3012/attachments/abc-123",
+        ...     filename="report.pdf",
+        ...     description="Q2 report",
+        ... )
+
+        >>> # From base64 content
+        >>> import base64
+        >>> content = base64.b64encode(b"Hello world").decode("ascii")
+        >>> await upload_file(
+        ...     project_id="web",
+        ...     filename="hello.txt",
+        ...     content_base64=content,
+        ... )
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    # Exactly one of content_base64 / source_url must be provided.
+    has_b64 = bool(content_base64)
+    has_url = bool(source_url)
+    if not has_b64 and not has_url:
+        return {"error": "Either content_base64 or source_url must be provided."}
+    if has_b64 and has_url:
+        return {
+            "error": ("Provide exactly ONE of content_base64 or source_url, not both.")
+        }
+
+    content_bytes: bytes
+
+    if has_url:
+        content_bytes, inferred_filename, fetch_error = await _download_file_url(
+            source_url
+        )
+        if fetch_error is not None:
+            return fetch_error
+        # If caller didn't pass a filename, fall back to the URL-inferred one.
+        if not filename or not filename.strip():
+            filename = inferred_filename
+        if not filename:
+            return {
+                "error": (
+                    "Could not infer filename from source_url. "
+                    "Please pass a filename argument."
+                )
+            }
+    else:
+        if not filename or not filename.strip():
+            return {"error": "filename is required when using content_base64."}
+
+        # Decode and validate size before any network call
+        try:
+            content_bytes = base64.b64decode(content_base64, validate=True)
+        except (binascii.Error, ValueError) as e:
+            return {"error": ("content_base64 is not valid base64. " f"Details: {e}")}
+
+        if len(content_bytes) == 0:
+            return {"error": "Decoded file content is empty."}
+
+        if len(content_bytes) > _FILE_UPLOAD_MAX_SIZE_BYTES:
+            size_mb = len(content_bytes) / (1024 * 1024)
+            limit_mb = _FILE_UPLOAD_MAX_SIZE_BYTES / (1024 * 1024)
+            return {
+                "error": (
+                    f"File too large: {size_mb:.1f} MiB exceeds the "
+                    f"{limit_mb:.0f} MiB upload limit."
+                )
+            }
+
+    client = _get_redmine_client()
+    try:
+        # Step 1: upload raw bytes to /uploads.json, get token
+        token = client.upload(io.BytesIO(content_bytes), filename=filename)["token"]
+
+        # Step 2: create the File resource using the token
+        create_params: Dict[str, Any] = {
+            "project_id": project_id,
+            "token": token,
+            "filename": filename,
+        }
+        if description is not None:
+            create_params["description"] = description
+        if version_id is not None:
+            create_params["version_id"] = version_id
+
+        uploaded = client.file.create(**create_params)
+
+        # Redmine returns HTTP 204 (empty body) on successful file creation,
+        # so python-redmine's FileManager synthesizes a minimal response that
+        # only contains the ID. Re-fetch the full attachment metadata so the
+        # caller gets filename, size, content type, author, etc.
+        uploaded_id = getattr(uploaded, "id", None)
+        if uploaded_id is not None:
+            try:
+                full = client.attachment.get(uploaded_id)
+                return _file_to_dict(full)
+            except Exception:
+                # If re-fetch fails for any reason, fall back to the minimal
+                # response + the known fields we already have.
+                pass
+        result = _file_to_dict(uploaded)
+        # Fallback enrichment when the re-fetch failed: ensure the caller at
+        # least sees the filename and description they just uploaded.
+        if not result.get("filename"):
+            result["filename"] = filename
+        if description is not None and not result.get("description"):
+            result["description"] = description
+        return result
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"uploading file '{filename}' to project {project_id}",
+            {"resource_type": "project", "resource_id": project_id},
+        )
+
+
+@mcp.tool()
+async def delete_file(
+    file_id: int,
+    confirm_delete_any_attachment: bool = False,
+) -> Dict[str, Any]:
+    """Delete a file from a Redmine project.
+
+    **Important:** Redmine's ``DELETE /attachments/{id}.json`` endpoint
+    removes ANY attachment by ID, not just project files. If ``file_id``
+    refers to an issue/wiki attachment (e.g., from
+    ``get_redmine_issue(include_attachments=True)``), that attachment
+    will be deleted from its issue.
+
+    To avoid accidentally removing issue attachments when you meant to
+    remove a project file, the tool verifies the target attachment is
+    project-scoped (its ``container_type`` is ``Project``) before
+    deleting. Pass ``confirm_delete_any_attachment=True`` to bypass this
+    check when you explicitly want to delete an issue/wiki attachment.
+
+    Args:
+        file_id: ID of the attachment to delete (the ``id`` field returned
+            by ``list_files`` or attachment-include responses).
+        confirm_delete_any_attachment: When ``True``, skip the
+            project-scope check and delete the attachment regardless of
+            container type. Use only when you intentionally want to
+            remove an issue/wiki/news attachment via this tool.
+
+    Returns:
+        Dictionary with ``success: true`` on success. On failure, a dict
+        with an ``"error"`` key is returned.
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    client = _get_redmine_client()
+
+    if not confirm_delete_any_attachment:
+        # Verify the target is a project file before deleting. Fetch the
+        # attachment and check its container_type. This adds one GET but
+        # prevents accidental deletion of issue attachments.
+        try:
+            attachment = client.attachment.get(file_id)
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"verifying attachment {file_id} before delete",
+                {"resource_type": "file", "resource_id": file_id},
+            )
+
+        container_type = getattr(attachment, "container_type", None)
+        # Fail-closed: if container_type is missing, None, or empty (which
+        # can happen on older Redmine versions), refuse the delete. The
+        # caller can explicitly bypass via confirm_delete_any_attachment.
+        if container_type != "Project":
+            return {
+                "error": (
+                    f"Refusing to delete attachment {file_id}: "
+                    f"container_type is {container_type!r}, not 'Project'. "
+                    "If you intended to delete this attachment anyway, "
+                    "re-invoke with confirm_delete_any_attachment=True."
+                ),
+                "attachment_id": file_id,
+                "container_type": container_type,
+            }
+
+    try:
+        client.attachment.delete(file_id)
+        return {"success": True, "deleted_file_id": file_id}
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"deleting file {file_id}",
+            {"resource_type": "file", "resource_id": file_id},
+        )
+
+
 @mcp.tool()
 async def list_time_entries(
     project_id: Optional[Union[str, int]] = None,
@@ -3166,11 +4858,15 @@ async def create_time_entry(
         ... )
         {"id": 2, "hours": 1.0, "project": {"id": 1, "name": "My Project"}, ...}
     """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
     if project_id is None and issue_id is None:
         return {"error": "Either project_id or issue_id must be provided."}
 
-    if hours <= 0:
-        return {"error": "Hours must be a positive number."}
+    hours_error = _validate_hours(hours)
+    if hours_error is not None:
+        return {"error": hours_error}
 
     try:
         # Build create parameters
@@ -3300,6 +4996,586 @@ async def list_time_entry_activities() -> List[Dict[str, Any]]:
 
     except Exception as e:
         return [_handle_redmine_error(e, "listing time entry activities")]
+
+
+# ---------------------------------------------------------------------------
+# Discovery / enumeration tools
+#
+# These help LLMs find valid IDs (trackers, statuses, priorities, users,
+# saved queries) without guessing. Call these BEFORE create/update tools
+# that require the corresponding ID.
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+async def list_redmine_trackers() -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    """List all trackers (issue types) defined in the Redmine instance.
+
+    Trackers classify issues (e.g., Bug, Feature, Support). Use this tool
+    to discover valid ``tracker_id`` values before calling
+    ``create_redmine_issue`` or ``update_redmine_issue``.
+
+    Returns:
+        A list of tracker dictionaries with ``id``, ``name``, and
+        ``description``. On failure, a dict with an ``"error"`` key.
+
+    Example:
+        >>> await list_redmine_trackers()
+        [
+            {"id": 1, "name": "Bug", "description": ""},
+            {"id": 2, "name": "Feature", "description": ""},
+            {"id": 3, "name": "Support", "description": ""}
+        ]
+    """
+    try:
+        trackers = _get_redmine_client().tracker.all()
+        return [
+            {
+                "id": getattr(t, "id", None),
+                "name": getattr(t, "name", ""),
+                "description": getattr(t, "description", ""),
+            }
+            for t in trackers
+        ]
+    except Exception as e:
+        return _handle_redmine_error(e, "listing trackers")
+
+
+@mcp.tool()
+async def list_redmine_issue_statuses() -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    """List all issue statuses defined in the Redmine instance.
+
+    Use this tool to discover valid ``status_id`` values before calling
+    ``update_redmine_issue``. You can also pass a status name via the
+    ``status_name`` field in ``update_redmine_issue``, which internally
+    resolves the ID.
+
+    Returns:
+        A list of status dictionaries with ``id``, ``name``, and
+        ``is_closed`` (whether this status counts as "closed"). On
+        failure, a dict with an ``"error"`` key.
+
+    Example:
+        >>> await list_redmine_issue_statuses()
+        [
+            {"id": 1, "name": "New", "is_closed": False},
+            {"id": 2, "name": "In Progress", "is_closed": False},
+            {"id": 5, "name": "Closed", "is_closed": True}
+        ]
+    """
+    try:
+        statuses = _get_redmine_client().issue_status.all()
+        return [
+            {
+                "id": getattr(s, "id", None),
+                "name": getattr(s, "name", ""),
+                "is_closed": bool(getattr(s, "is_closed", False)),
+            }
+            for s in statuses
+        ]
+    except Exception as e:
+        return _handle_redmine_error(e, "listing issue statuses")
+
+
+@mcp.tool()
+async def list_redmine_issue_priorities() -> (
+    Union[List[Dict[str, Any]], Dict[str, Any]]
+):
+    """List all issue priority levels defined in the Redmine instance.
+
+    Use this tool to discover valid ``priority_id`` values before calling
+    ``create_redmine_issue`` or ``update_redmine_issue``.
+
+    Returns:
+        A list of priority dictionaries with ``id``, ``name``,
+        ``active``, and ``is_default``. On failure, a dict with an
+        ``"error"`` key.
+
+    Example:
+        >>> await list_redmine_issue_priorities()
+        [
+            {"id": 1, "name": "Low", "active": True, "is_default": False},
+            {"id": 2, "name": "Normal", "active": True, "is_default": True},
+            {"id": 3, "name": "High", "active": True, "is_default": False}
+        ]
+    """
+    try:
+        priorities = _get_redmine_client().enumeration.filter(
+            resource="issue_priorities"
+        )
+        return [
+            {
+                "id": getattr(p, "id", None),
+                "name": getattr(p, "name", ""),
+                "active": getattr(p, "active", None),
+                "is_default": getattr(p, "is_default", None),
+            }
+            for p in priorities
+        ]
+    except Exception as e:
+        return _handle_redmine_error(e, "listing issue priorities")
+
+
+@mcp.tool()
+async def list_redmine_users(
+    name: Optional[str] = None,
+    group_id: Optional[int] = None,
+    limit: int = 25,
+    offset: int = 0,
+) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    """List Redmine users with optional filtering.
+
+    Admin permission is required to list all users. Non-admin users may
+    receive a 403. Use this tool to discover valid user IDs (e.g., for
+    assignment, watchers, or time-entry authoring).
+
+    Args:
+        name: Optional case-insensitive substring to filter by (matches
+            against login, firstname, lastname, and email).
+        group_id: Optional group ID to filter users who belong to a
+            specific group.
+        limit: Maximum users to return (default 25, max 100).
+        offset: Pagination offset. Default 0.
+
+    Returns:
+        A list of user dictionaries with ``id``, ``login``, ``firstname``,
+        ``lastname``, ``mail`` (if visible), and ``created_on``. On
+        failure, a dict with an ``"error"`` key.
+
+    Example:
+        >>> await list_redmine_users(name="alice")
+        [{"id": 5, "login": "alice", "firstname": "Alice", ...}]
+    """
+    try:
+        params: Dict[str, Any] = {"limit": max(1, min(limit, 100)), "offset": offset}
+        if name:
+            params["name"] = name
+        if group_id is not None:
+            params["group_id"] = group_id
+
+        users = _get_redmine_client().user.filter(**params)
+        return [
+            {
+                "id": getattr(u, "id", None),
+                "login": getattr(u, "login", ""),
+                "firstname": getattr(u, "firstname", ""),
+                "lastname": getattr(u, "lastname", ""),
+                "mail": getattr(u, "mail", ""),
+                "created_on": _safe_isoformat(getattr(u, "created_on", None)),
+            }
+            for u in users
+        ]
+    except Exception as e:
+        return _handle_redmine_error(e, "listing users")
+
+
+@mcp.tool()
+async def get_current_user() -> Dict[str, Any]:
+    """Retrieve the currently authenticated user's profile.
+
+    Resolves to ``GET /my/account.json`` under the hood. Works for any
+    authenticated user (not admin-only). Useful when an LLM needs to
+    identify "me" — for example, when a user says "log 2h on this issue
+    for me", the LLM can call this tool to get the current user's ID.
+
+    Returns:
+        A dictionary with ``id``, ``login``, ``firstname``, ``lastname``,
+        ``mail``, ``admin`` (bool), ``created_on``, and ``last_login_on``.
+        On failure, a dict with an ``"error"`` key.
+
+    Example:
+        >>> await get_current_user()
+        {"id": 5, "login": "alice", "firstname": "Alice", ..., "admin": False}
+    """
+    try:
+        user = _get_redmine_client().user.get("current")
+        return {
+            "id": getattr(user, "id", None),
+            "login": getattr(user, "login", ""),
+            "firstname": getattr(user, "firstname", ""),
+            "lastname": getattr(user, "lastname", ""),
+            "mail": getattr(user, "mail", ""),
+            "admin": bool(getattr(user, "admin", False)),
+            "created_on": _safe_isoformat(getattr(user, "created_on", None)),
+            "last_login_on": _safe_isoformat(getattr(user, "last_login_on", None)),
+        }
+    except Exception as e:
+        return _handle_redmine_error(e, "fetching current user")
+
+
+@mcp.tool()
+async def list_redmine_queries() -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    """List all saved custom queries visible to the current user.
+
+    Custom queries are saved issue filters (defined via the Redmine web
+    UI). Once discovered, the ``id`` can be passed to
+    ``list_redmine_issues`` via a ``query_id`` filter to run the query.
+
+    Note: This tool only READS queries. Redmine's REST API does not
+    support creating, updating, or deleting saved queries.
+
+    Returns:
+        A list of query dictionaries with ``id``, ``name``,
+        ``is_public``, and ``project_id`` (may be ``None`` for
+        cross-project queries). On failure, a dict with an ``"error"``
+        key.
+
+    Example:
+        >>> await list_redmine_queries()
+        [
+            {"id": 1, "name": "Open bugs", "is_public": True, "project_id": 10},
+            {"id": 2, "name": "My tasks", "is_public": False, "project_id": None}
+        ]
+    """
+    try:
+        queries = _get_redmine_client().query.all()
+        return [
+            {
+                "id": getattr(q, "id", None),
+                "name": getattr(q, "name", ""),
+                "is_public": bool(getattr(q, "is_public", False)),
+                "project_id": getattr(q, "project_id", None),
+            }
+            for q in _iter_capped(queries)
+        ]
+    except Exception as e:
+        return _handle_redmine_error(e, "listing saved queries")
+
+
+# ---------------------------------------------------------------------------
+# Time tracking: log time for another user + bulk import
+# ---------------------------------------------------------------------------
+
+
+def _is_positive_int(value: Any) -> bool:
+    """Return True if ``value`` is a positive integer.
+
+    Rejects booleans (``True`` is a subclass of ``int`` in Python, so a
+    plain ``isinstance(x, int)`` would accept ``True`` as ``1`` — which
+    lets an attacker silently pass role ID 1 or user ID 1). Rejects
+    floats, strings, and non-positive integers.
+    """
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+def _validate_hours(value: Any) -> Optional[str]:
+    """Validate a time-entry ``hours`` value.
+
+    Returns None if the value is acceptable (a finite positive number),
+    otherwise an error message suitable for returning to the caller.
+
+    Rejects:
+    - None, strings, and other non-numeric types
+    - Booleans (True is a subclass of int and would otherwise pass)
+    - NaN and +/-Infinity
+    - Zero and negative values
+    """
+    # Booleans are instances of int in Python — reject explicitly.
+    if isinstance(value, bool):
+        return "Hours must be a positive, finite number (got boolean)."
+    if not isinstance(value, (int, float)):
+        return "Hours must be a positive, finite number."
+    if math.isnan(value) or math.isinf(value):
+        return "Hours must be a positive, finite number (got NaN or Infinity)."
+    if value <= 0:
+        return "Hours must be a positive number."
+    return None
+
+
+@mcp.tool()
+async def log_time_for_user(
+    user_id: int,
+    hours: float,
+    project_id: Optional[Union[str, int]] = None,
+    issue_id: Optional[int] = None,
+    activity_id: Optional[int] = None,
+    comments: str = "",
+    spent_on: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Create a time entry on behalf of another user.
+
+    Logs time against a project or issue with the given ``user_id`` as
+    the owner instead of the authenticated user. The authenticated user
+    must have the ``log_time_for_other_users`` permission on the target
+    project, and the target user must be a member of that project.
+
+    Note: This is functionally ``create_time_entry`` with a ``user_id``
+    parameter. It is provided as a dedicated tool to make PM-level
+    workflows explicit (logging time on behalf of a teammate).
+
+    Args:
+        user_id: ID of the user to log time for. Use ``list_project_members``
+            to discover valid user IDs for a project.
+        hours: Number of hours spent (must be positive).
+        project_id: Project to log time against (ID or identifier).
+            Required if ``issue_id`` is not provided.
+        issue_id: Issue to log time against. If provided, ``project_id``
+            is optional.
+        activity_id: Time entry activity ID. Use ``list_time_entry_activities``
+            to discover valid IDs. Defaults to Redmine's default activity.
+        comments: Description of work performed.
+        spent_on: Date when time was spent (YYYY-MM-DD). Defaults to today.
+
+    Returns:
+        Dictionary containing the created time entry. On failure a dict
+        with an ``"error"`` key is returned.
+
+    Known Redmine quirks:
+        - Some Redmine versions reject the ``user_id`` parameter when the
+          authenticated user is an admin but NOT a member of the target
+          project (defects #31587, #32774). The workaround is to add the
+          admin as a project member.
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    if not _is_positive_int(user_id):
+        return {"error": "user_id must be a positive integer."}
+
+    if project_id is None and issue_id is None:
+        return {"error": "Either project_id or issue_id must be provided."}
+
+    hours_error = _validate_hours(hours)
+    if hours_error is not None:
+        return {"error": hours_error}
+
+    try:
+        params: Dict[str, Any] = {
+            "hours": hours,
+            "user_id": user_id,
+        }
+        if project_id is not None:
+            params["project_id"] = project_id
+        if issue_id is not None:
+            params["issue_id"] = issue_id
+        if activity_id is not None:
+            params["activity_id"] = activity_id
+        if comments:
+            params["comments"] = comments
+        if spent_on is not None:
+            params["spent_on"] = spent_on
+
+        time_entry = _get_redmine_client().time_entry.create(**params)
+        return _time_entry_to_dict(time_entry)
+    except Exception as e:
+        context = {}
+        if issue_id:
+            context = {"resource_type": "issue", "resource_id": issue_id}
+        elif project_id:
+            context = {"resource_type": "project", "resource_id": project_id}
+        return _handle_redmine_error(
+            e,
+            f"logging time for user {user_id}",
+            context,
+        )
+
+
+@mcp.tool()
+async def import_time_entries(
+    entries: Union[List[Dict[str, Any]], str],
+    stop_on_error: bool = False,
+) -> Dict[str, Any]:
+    """Bulk import multiple time entries in a single call.
+
+    **Use this tool (NOT ``create_time_entry`` in a loop) whenever the
+    user asks to:**
+        - import a timesheet / weekly timesheet / monthly report
+        - bulk log, batch log, or log multiple entries at once
+        - import several entries, or any list of 2+ time entries
+        - backfill time across many issues or dates
+        - log the same activity for multiple team members at once
+        - log a day's work spanning multiple issues
+
+    **Prefer this tool over calling ``create_time_entry`` N times** — it
+    reports partial failures via a ``succeeded``/``failed`` summary and
+    supports ``stop_on_error`` for transactional-style behaviour. Calling
+    ``create_time_entry`` in a loop gives no aggregate feedback and cannot
+    continue past per-entry errors gracefully.
+
+    Redmine has no native bulk-import endpoint, so this tool creates each
+    entry individually via ``POST /time_entries.json`` under the hood.
+    Per-entry errors are captured and returned alongside successes so a
+    partial import still yields useful feedback.
+
+    Each entry must be a dict (or JSON object) with the standard
+    ``create_time_entry`` fields: ``hours`` (required), plus at least one
+    of ``project_id``/``issue_id``. Optional fields: ``user_id`` (to log
+    on behalf of a teammate), ``activity_id``, ``comments``, ``spent_on``.
+
+    Args:
+        entries: List of time entry dicts, OR a JSON array string. Capped
+            at 500 entries per call — split larger imports into multiple
+            invocations.
+            Example: ``[{"hours": 1.5, "issue_id": 123, "comments": "..."}]``
+        stop_on_error: When ``True``, abort the import on the first error.
+            When ``False`` (default), continue past errors and report all
+            successes/failures at the end.
+
+    Returns:
+        Dictionary with:
+            - ``total``: total number of entries attempted
+            - ``succeeded``: count of successfully created entries
+            - ``failed``: count of failed entries
+            - ``created``: list of created time entry dicts
+            - ``errors``: list of ``{"index": i, "entry": {...}, "error": "..."}``
+              for failed entries
+
+    Example:
+        >>> await import_time_entries([
+        ...     {"hours": 2.0, "issue_id": 123, "comments": "Bug fix"},
+        ...     {"hours": 1.0, "project_id": "web", "activity_id": 9},
+        ... ])
+        {"total": 2, "succeeded": 2, "failed": 0, "created": [...], "errors": []}
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    # Parse input: accept either a list or a JSON array string.
+    if isinstance(entries, str):
+        try:
+            parsed = json.loads(entries.strip())
+        except Exception as e:
+            return {
+                "error": (
+                    "Invalid entries payload. Expected a list of dicts or "
+                    "a JSON array string."
+                ),
+                "details": str(e),
+            }
+        entries_list = parsed
+    else:
+        entries_list = entries
+
+    if not isinstance(entries_list, list):
+        return {
+            "error": (
+                "entries must be a list of time entry dicts, not "
+                f"{type(entries_list).__name__}."
+            )
+        }
+
+    if len(entries_list) > _IMPORT_TIME_ENTRIES_MAX_BATCH:
+        return {
+            "error": (
+                f"Too many entries: {len(entries_list)} exceeds the "
+                f"{_IMPORT_TIME_ENTRIES_MAX_BATCH}-per-call batch cap. "
+                "Split the import into multiple calls."
+            )
+        }
+
+    if not entries_list:
+        return {
+            "total": 0,
+            "succeeded": 0,
+            "failed": 0,
+            "created": [],
+            "errors": [],
+        }
+
+    created: List[Dict[str, Any]] = []
+    errors: List[Dict[str, Any]] = []
+    client = _get_redmine_client()
+
+    for index, entry in enumerate(entries_list):
+        # Yield to the event loop between synchronous HTTP calls so other
+        # MCP requests (e.g., a status check) aren't starved during a
+        # large import.
+        if index > 0:
+            await asyncio.sleep(0)
+        if not isinstance(entry, dict):
+            errors.append(
+                {
+                    "index": index,
+                    "entry": entry,
+                    "error": f"Entry at index {index} is not a dict.",
+                }
+            )
+            if stop_on_error:
+                break
+            continue
+
+        # Per-entry validation
+        hours = entry.get("hours")
+        hours_error = (
+            _validate_hours(hours) if hours is not None else "hours is required."
+        )
+        if hours_error is not None:
+            errors.append(
+                {
+                    "index": index,
+                    "entry": entry,
+                    "error": hours_error,
+                }
+            )
+            if stop_on_error:
+                break
+            continue
+
+        if entry.get("project_id") is None and entry.get("issue_id") is None:
+            errors.append(
+                {
+                    "index": index,
+                    "entry": entry,
+                    "error": "Either project_id or issue_id is required.",
+                }
+            )
+            if stop_on_error:
+                break
+            continue
+
+        # Build create params — pass through only whitelisted keys
+        allowed_keys = {
+            "hours",
+            "user_id",
+            "project_id",
+            "issue_id",
+            "activity_id",
+            "comments",
+            "spent_on",
+        }
+        params = {k: v for k, v in entry.items() if k in allowed_keys and v is not None}
+
+        # Separate the create from the serialization so a serialization
+        # bug doesn't flip a successful create into a reported failure
+        # (which would tempt callers to retry and create a duplicate).
+        try:
+            time_entry = client.time_entry.create(**params)
+        except Exception as e:
+            errors.append(
+                {
+                    "index": index,
+                    "entry": entry,
+                    "error": _scrub_error_message(str(e)),
+                }
+            )
+            if stop_on_error:
+                break
+            continue
+
+        try:
+            created.append(_time_entry_to_dict(time_entry))
+        except Exception as ser_err:
+            logger.warning(
+                "Serialization failed for time_entry at index %s: %s",
+                index,
+                ser_err,
+            )
+            # Record a minimal success marker so the caller knows the
+            # entry exists, without marking it as failed.
+            created.append(
+                {
+                    "id": getattr(time_entry, "id", None),
+                    "warning": "serialization failed; entry was created",
+                }
+            )
+
+    return {
+        "total": len(entries_list),
+        "succeeded": len(created),
+        "failed": len(errors),
+        "created": created,
+        "errors": errors,
+    }
 
 
 @mcp.tool()
