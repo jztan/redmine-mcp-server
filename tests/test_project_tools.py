@@ -171,7 +171,8 @@ class TestAddProjectMember:
         )
 
         assert result["id"] == 100
-        assert result["user"] == {"id": 5, "name": "Alice"}
+        assert result["user"]["id"] == 5
+        assert "Alice" in result["user"]["name"]
         mock_redmine.project_membership.create.assert_called_once_with(
             project_id="my-project", user_id=5, role_ids=[3]
         )
@@ -192,7 +193,8 @@ class TestAddProjectMember:
 
         result = await add_project_member(project_id=10, role_ids=[3], group_id=20)
 
-        assert result["group"] == {"id": 20, "name": "Dev Team"}
+        assert result["group"]["id"] == 20
+        assert "Dev Team" in result["group"]["name"]
         assert result["user"] is None
         # Verify group_id was forwarded as user_id (Redmine API convention)
         mock_redmine.project_membership.create.assert_called_once_with(

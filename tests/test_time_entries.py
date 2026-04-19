@@ -51,10 +51,13 @@ class TestTimeEntryToDict:
         assert result["comments"].startswith("<insecure-content-")
         assert result["comments"].endswith(">")
         assert result["spent_on"] == "2024-03-15"
-        assert result["user"] == {"id": 5, "name": "John Doe"}
-        assert result["project"] == {"id": 10, "name": "Test Project"}
+        assert result["user"]["id"] == 5
+        assert "John Doe" in result["user"]["name"]
+        assert result["project"]["id"] == 10
+        assert "Test Project" in result["project"]["name"]
         assert result["issue"] == {"id": 123}
-        assert result["activity"] == {"id": 9, "name": "Development"}
+        assert result["activity"]["id"] == 9
+        assert "Development" in result["activity"]["name"]
         assert result["created_on"] is not None
         assert result["updated_on"] is not None
 
@@ -76,7 +79,8 @@ class TestTimeEntryToDict:
 
         assert result["id"] == 2
         assert result["issue"] is None
-        assert result["project"] == {"id": 10, "name": "Test Project"}
+        assert result["project"]["id"] == 10
+        assert "Test Project" in result["project"]["name"]
 
     def test_time_entry_minimal(self):
         """Test time entry with minimal data."""

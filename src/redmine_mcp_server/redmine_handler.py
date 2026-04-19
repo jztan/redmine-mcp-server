@@ -420,6 +420,11 @@ _SECRET_SCRUB_PATTERNS = [
     (re.compile(r"(Bearer\s+)\S+", re.IGNORECASE), r"\1[redacted]"),
     # HTTP basic auth embedded in URL: https://user:pass@host
     (re.compile(r"(https?://)[^/@\s]+:[^/@\s]+@"), r"\1[redacted]@"),
+    # Authorization: Basic <base64> header (username/password auth mode)
+    (
+        re.compile(r"(Authorization:\s*Basic\s+)[A-Za-z0-9+/=]+", re.IGNORECASE),
+        r"\1[redacted]",
+    ),
 ]
 
 
@@ -2452,17 +2457,9 @@ def _issue_category_to_dict(category: Any) -> Dict[str, Any]:
     assigned_to = getattr(category, "assigned_to", None)
     return {
         "id": getattr(category, "id", None),
-        "name": getattr(category, "name", ""),
-        "project": (
-            {"id": project.id, "name": getattr(project, "name", "")}
-            if project is not None
-            else None
-        ),
-        "assigned_to": (
-            {"id": assigned_to.id, "name": getattr(assigned_to, "name", "")}
-            if assigned_to is not None
-            else None
-        ),
+        "name": wrap_insecure_content(getattr(category, "name", "")),
+        "project": _named_ref(project),
+        "assigned_to": _named_ref(assigned_to),
     }
 
 
@@ -3451,29 +3448,17 @@ def _membership_to_dict(membership: Any) -> Dict[str, Any]:
 
     # User or group (memberships can be for either)
     if user is not None:
-        result["user"] = {
-            "id": getattr(user, "id", None),
-            "name": getattr(user, "name", ""),
-        }
+        result["user"] = _named_ref(user)
         result["group"] = None
     elif group is not None:
         result["user"] = None
-        result["group"] = {
-            "id": getattr(group, "id", None),
-            "name": getattr(group, "name", ""),
-        }
+        result["group"] = _named_ref(group)
     else:
         result["user"] = None
         result["group"] = None
 
     # Project info
-    if project is not None:
-        result["project"] = {
-            "id": getattr(project, "id", None),
-            "name": getattr(project, "name", ""),
-        }
-    else:
-        result["project"] = None
+    result["project"] = _named_ref(project)
 
     # Roles
     result["roles"] = []
@@ -3483,14 +3468,14 @@ def _membership_to_dict(membership: Any) -> Dict[str, Any]:
                 result["roles"].append(
                     {
                         "id": role.get("id"),
-                        "name": role.get("name", ""),
+                        "name": wrap_insecure_content(role.get("name", "")),
                     }
                 )
             else:
                 result["roles"].append(
                     {
                         "id": getattr(role, "id", None),
-                        "name": getattr(role, "name", ""),
+                        "name": wrap_insecure_content(getattr(role, "name", "")),
                     }
                 )
     except TypeError:
@@ -3518,25 +3503,11 @@ def _time_entry_to_dict(time_entry: Any) -> Dict[str, Any]:
             if getattr(time_entry, "spent_on", None) is not None
             else None
         ),
-        "user": (
-            {"id": getattr(user, "id", None), "name": getattr(user, "name", "")}
-            if user is not None
-            else None
-        ),
-        "project": (
-            {
-                "id": getattr(project, "id", None),
-                "name": getattr(project, "name", ""),
-            }
-            if project is not None
-            else None
-        ),
+        "user": _named_ref(user),
+        "project": _named_ref(project),
         "issue": ({"id": getattr(issue, "id", None)} if issue is not None else None),
         "activity": (
-            {
-                "id": getattr(activity, "id", None),
-                "name": getattr(activity, "name", ""),
-            }
+            _named_ref(activity)
             if activity is not None
             else None
         ),
@@ -4215,7 +4186,8 @@ def _is_hostname_safe_for_fetch(
         # In dev mode, still resolve so we can pin the IP (consistency).
         try:
             addrinfo = socket.getaddrinfo(hostname, None)
-            ip_str = addrinfo[0][4][0] if addrinfo else None
+            raw = addrinfo[0][4][0] if addrinfo else None
+            ip_str = raw.split("%")[0] if raw and "%" in raw else raw
         except socket.gaierror:
             ip_str = None
         return True, None, ip_str
@@ -4234,6 +4206,8 @@ def _is_hostname_safe_for_fetch(
     first_public_ip: Optional[str] = None
     for _family, _, _, _, sockaddr in addrinfo:
         ip_str = sockaddr[0]
+        if "%" in ip_str:  # strip IPv6 scope ID (e.g. fe80::1%eth0)
+            ip_str = ip_str.split("%")[0]
         try:
             ip = ipaddress.ip_address(ip_str)
         except ValueError:
