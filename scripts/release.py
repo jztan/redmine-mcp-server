@@ -274,7 +274,7 @@ def update_changelog(project_root: Path, new_version: str, dry_run: bool) -> Non
             flags=re.IGNORECASE,
         )
     else:
-        # No Unreleased section — add new version after header
+        # No Unreleased section -- add new version after header
         first_version_match = re.search(
             r"^## \[\d+\.\d+\.\d+\]", content, re.MULTILINE
         )
@@ -289,6 +289,20 @@ def update_changelog(project_root: Path, new_version: str, dry_run: bool) -> Non
         else:
             print("Error: Could not find where to insert new version in CHANGELOG.md")
             sys.exit(1)
+
+    # Append reference link at the bottom if not already present
+    ref_link = (
+        f"[{new_version}]: "
+        f"https://github.com/{GITHUB_REPO}/releases/tag/v{new_version}"
+    )
+    if ref_link not in new_content:
+        # Insert before the first existing reference link line
+        first_ref_match = re.search(r"^\[[\d.]+\]: https://", new_content, re.MULTILINE)
+        if first_ref_match:
+            insert_pos = first_ref_match.start()
+            new_content = new_content[:insert_pos] + ref_link + "\n" + new_content[insert_pos:]
+        else:
+            new_content = new_content.rstrip() + "\n" + ref_link + "\n"
 
     if dry_run:
         print(f"  [DRY-RUN] Would update CHANGELOG.md with version {new_version}")

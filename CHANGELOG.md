@@ -7,35 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-### Security
-- **SSRF protection for `upload_file(source_url=...)`:** The server now resolves every URL hop and rejects non-public destinations (loopback, RFC1918, link-local including cloud metadata services like `169.254.169.254`, reserved, multicast). Redirects are followed manually with per-hop revalidation to defeat public-→-private 302 bypasses. Capped at 5 redirect hops. URLs with embedded credentials (`http://user:pass@host`) are refused up front to prevent credential leakage across redirects. SSRF error messages no longer include the resolved IP (logged at WARNING level instead) to avoid leaking internal network topology. Opt-in dev override: `REDMINE_ALLOW_PRIVATE_FETCH_URLS=true`. (Note: DNS rebinding between our check and httpx's connect is a theoretical residual risk; IP pinning was evaluated but broke TLS SNI for real CDNs — the microseconds-long rebind window plus the 50 MiB size cap bound the residual blast radius.)
-- **`delete_file` is now fail-closed on ambiguous `container_type`:** Previously, if Redmine (or an older python-redmine version) returned `None` or an empty string for `container_type`, the project-scope guard was skipped and the attachment was deleted. Now any non-`"Project"` value refuses the delete, with an explicit `confirm_delete_any_attachment=True` flag for bypass.
-- **Int-ID validators reject booleans and non-positive values:** Python treats `True`/`False` as `int`, so `role_ids=[True]` would silently assign role ID 1 (often an elevated role). New `_is_positive_int` helper is applied to `role_ids`, `user_id`, and `group_id` parameters in `add_project_member`, `update_project_member`, `add_watcher`, `remove_watcher`, and `log_time_for_user`.
-- **Attacker-controlled display names wrapped:** New `_named_ref()` helper wraps `user.name`, `author.name`, and `version.name` fields (all user-controlled) in `<insecure-content>` boundary tags. Applied via `_named_ref` to `_file_to_dict` and `_attachments_to_list` (previously, attachment filenames/descriptions were only wrapped in the new `list_files` output but NOT in `get_redmine_issue(include_attachments=True)` — now consistent across both).
-- **Prompt-injection hardening:** `filename`, `description`, and time-entry `comments` returned from `list_files`/`upload_file`/`log_time_for_user`/`import_time_entries` are now wrapped in `<insecure-content>` boundary tags (matching existing issue/journal/description handling). Prevents attacker-controllable Redmine metadata from being treated as trusted instructions by downstream LLMs.
-- **Error-message secret scrubbing:** `_handle_redmine_error` now redacts API keys (`?key=`, `X-Redmine-API-Key`), Bearer tokens, HTTP basic-auth credentials, and the configured `REDMINE_API_KEY` before returning errors to MCP callers. Logs still see the raw message.
-- **Content-Disposition filename sanitization:** URL-inferred and header-derived filenames are URL-decoded, stripped of path components (defeats `../../../etc/passwd` traversal on both POSIX and Windows), rejected if they contain null bytes or control characters, and capped at 255 chars.
-- **`delete_file` container-type check:** Since Redmine's `DELETE /attachments/{id}.json` removes any attachment by ID (including issue/wiki attachments), `delete_file` now verifies the target is a project file before deleting. Callers can bypass with `confirm_delete_any_attachment=True`.
-
-### Fixed
-- **`copy_issue` data-integrity bug:** When both `copy_subtasks=False` and `copy_attachments=False` were passed, python-redmine's `include or (...)` fallback silently copied both anyway. Now passes a non-empty sentinel so the fallback doesn't trigger.
-- **`log_time_for_user` / `import_time_entries` hours validation:** Now rejects NaN, Infinity, booleans (which Python treats as `int`), and non-numeric types before hitting the API.
-- **`import_time_entries` bulk safeguards:** Added a 500-entry batch cap (returns a clear error instead of pinning the event loop for minutes on a massive request). Yields the event loop between entries via `asyncio.sleep(0)` so concurrent MCP requests aren't starved. Split the create/serialize try blocks so a post-create serialization failure doesn't flip a successful create into a reported failure (which would tempt callers to retry and create duplicates).
-
-### Changed
-- **List tools now return `Union[List, Dict]` on error** instead of `[{"error": "..."}]`. Affects `list_issue_relations`, `list_subtasks`, `list_issue_categories`, `list_files`, `list_redmine_roles`, `list_redmine_trackers`, `list_redmine_issue_statuses`, `list_redmine_issue_priorities`, `list_redmine_users`, `list_redmine_queries`. Callers should check `isinstance(result, dict)` or `"error" in result` to distinguish failure from an empty list. Matches the pre-existing convention of `list_time_entries`, `list_redmine_issues`, and `search_redmine_issues`.
-- **List tools now cap results at 500 items** (configurable via `_DEFAULT_LIST_RESULT_CAP` constant) via the new `_iter_capped` helper. Previously unbounded iteration could OOM on projects with tens of thousands of subtasks/relations/files.
-- **Module-level constants consolidated:** `_FILE_UPLOAD_MAX_SIZE_BYTES`, `_MAX_FILENAME_LEN`, `_IMPORT_TIME_ENTRIES_MAX_BATCH`, `_DEFAULT_LIST_RESULT_CAP`, `_DOWNLOAD_TIMEOUT`, and `_FILE_DOWNLOAD_MAX_REDIRECTS` are all declared once at the top of the module instead of scattered across different sections. Top-level `import httpx` + `from urllib.parse import unquote, urlparse` hoisted out of function-local imports.
-
-
-### Security
-- Bump `cryptography` from 46.0.6 to 46.0.7, patching CVE-2026-39892 (out-of-bounds read via non-contiguous buffers)
-
-## [1.2.0] - 2026-04-14
 ### Added
 - `REDMINE_AGILE_ENABLED=true` opt-in support for RedmineUP Agile plugin: `get_redmine_issue` auto-includes `story_points`, `agile_sprint_id`, and `agile_position`; `update_redmine_issue` accepts `story_points` in the `fields` dict
 - **14 new MCP tools for Issue Tracking:**
-  - **Copying & hierarchy:**
+  - **Copying and hierarchy:**
     - `copy_issue` — duplicate an existing issue via Redmine's native `copy_from` mechanism, with optional field overrides and support for copying subtasks/attachments
     - `list_subtasks` — list child issues of a given parent (subtasks are created via existing `create_redmine_issue` with `parent_issue_id`)
   - **Issue relations (blocks, duplicates, precedes, etc.):**
@@ -73,14 +48,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `upload_file` — upload a new file via Redmine's two-step upload (`POST /uploads.json` for token, then `POST /projects/{id}/files.json`). Accepts either `source_url` (HTTP/HTTPS URL the server downloads from) or `content_base64` (raw bytes encoded as base64); the URL path enables chaining with other MCP tools that return download URLs (e.g., Google Drive MCP). Streaming download with 30s timeout, follows redirects, infers filename from URL path or `Content-Disposition` header. 50 MiB size cap
   - `delete_file` — delete a project file via `DELETE /attachments/{id}.json`
 - **36 new unit tests** for file tools covering base64 encoding/decoding, URL-based download (success, invalid schemes, HTTP errors, timeouts, empty body, Content-Disposition filename fallback), size limits, read-only mode, missing/conflicting content sources, and Redmine error paths
-- **6 new MCP Discovery / Enumeration tools** — help LLMs find valid IDs without guessing:
+- **6 new MCP Discovery / Enumeration tools** to help LLMs find valid IDs without guessing:
   - `list_redmine_trackers` — list all trackers (issue types like Bug, Feature, Support) for discovering valid `tracker_id` values
   - `list_redmine_issue_statuses` — list all issue statuses with their `is_closed` flag for discovering valid `status_id` values
   - `list_redmine_issue_priorities` — list all priority levels via `enumeration.filter(resource="issue_priorities")`
-  - `list_redmine_users` — filter/list users with optional `name` and `group_id` filters (admin-only, limit clamped to 1–100)
+  - `list_redmine_users` — filter/list users with optional `name` and `group_id` filters (admin-only, limit clamped to 1-100)
   - `get_current_user` — retrieve the authenticated user's profile via `GET /my/account.json` (works for non-admins; useful when a user says "do X for me")
   - `list_redmine_queries` — list all saved custom queries visible to the current user (read-only; Redmine's API does not support CRUD on queries)
 - **20 new unit tests** for discovery tools covering success paths, empty results, limit clamping, filter parameters, and permission-denied error paths
+
+### Security
+- **SSRF protection for `upload_file(source_url=...)`:** The server now resolves every URL hop and rejects non-public destinations (loopback, RFC1918, link-local including cloud metadata services like `169.254.169.254`, reserved, multicast). Redirects are followed manually with per-hop revalidation to defeat public-to-private 302 bypasses. Capped at 5 redirect hops. URLs with embedded credentials (`http://user:pass@host`) are refused up front to prevent credential leakage across redirects. SSRF error messages no longer include the resolved IP (logged at WARNING level instead) to avoid leaking internal network topology. Opt-in dev override: `REDMINE_ALLOW_PRIVATE_FETCH_URLS=true`. (Note: DNS rebinding between our check and httpx's connect is a theoretical residual risk; IP pinning was evaluated but broke TLS SNI for real CDNs.)
+- **`delete_file` is now fail-closed on ambiguous `container_type`:** Previously, if Redmine (or an older python-redmine version) returned `None` or an empty string for `container_type`, the project-scope guard was skipped and the attachment was deleted. Now any non-`"Project"` value refuses the delete, with an explicit `confirm_delete_any_attachment=True` flag for bypass.
+- **Int-ID validators reject booleans and non-positive values:** Python treats `True`/`False` as `int`, so `role_ids=[True]` would silently assign role ID 1 (often an elevated role). New `_is_positive_int` helper is applied to `role_ids`, `user_id`, and `group_id` parameters in `add_project_member`, `update_project_member`, `add_watcher`, `remove_watcher`, and `log_time_for_user`.
+- **Attacker-controlled display names wrapped:** New `_named_ref()` helper wraps `user.name`, `author.name`, and `version.name` fields (all user-controlled) in `<insecure-content>` boundary tags. Applied via `_named_ref` to `_file_to_dict` and `_attachments_to_list` (previously, attachment filenames/descriptions were only wrapped in the new `list_files` output but NOT in `get_redmine_issue(include_attachments=True)` -- now consistent across both).
+- **Prompt-injection hardening:** `filename`, `description`, and time-entry `comments` returned from `list_files`/`upload_file`/`log_time_for_user`/`import_time_entries` are now wrapped in `<insecure-content>` boundary tags (matching existing issue/journal/description handling). Prevents attacker-controllable Redmine metadata from being treated as trusted instructions by downstream LLMs.
+- **Error-message secret scrubbing:** `_handle_redmine_error` now redacts API keys (`?key=`, `X-Redmine-API-Key`), Bearer tokens, HTTP basic-auth credentials, and the configured `REDMINE_API_KEY` before returning errors to MCP callers. Logs still see the raw message.
+- **Content-Disposition filename sanitization:** URL-inferred and header-derived filenames are URL-decoded, stripped of path components (defeats `../../../etc/passwd` traversal on both POSIX and Windows), rejected if they contain null bytes or control characters, and capped at 255 chars.
+- **`delete_file` container-type check:** Since Redmine's `DELETE /attachments/{id}.json` removes any attachment by ID (including issue/wiki attachments), `delete_file` now verifies the target is a project file before deleting. Callers can bypass with `confirm_delete_any_attachment=True`.
+- Bump `cryptography` from 46.0.6 to 46.0.7, patching CVE-2026-39892 (out-of-bounds read via non-contiguous buffers)
+
+### Fixed
+- **`copy_issue` data-integrity bug:** When both `copy_subtasks=False` and `copy_attachments=False` were passed, python-redmine's `include or (...)` fallback silently copied both anyway. Now passes a non-empty sentinel so the fallback does not trigger.
+- **`log_time_for_user` / `import_time_entries` hours validation:** Now rejects NaN, Infinity, booleans (which Python treats as `int`), and non-numeric types before hitting the API.
+- **`import_time_entries` bulk safeguards:** Added a 500-entry batch cap (returns a clear error instead of pinning the event loop for minutes on a massive request). Yields the event loop between entries via `asyncio.sleep(0)` so concurrent MCP requests are not starved. Split the create/serialize try blocks so a post-create serialization failure does not flip a successful create into a reported failure (which would tempt callers to retry and create duplicates).
+
+### Changed
+- **List tools now return `Union[List, Dict]` on error** instead of `[{"error": "..."}]`. Affects `list_issue_relations`, `list_subtasks`, `list_issue_categories`, `list_files`, `list_redmine_roles`, `list_redmine_trackers`, `list_redmine_issue_statuses`, `list_redmine_issue_priorities`, `list_redmine_users`, `list_redmine_queries`. Callers should check `isinstance(result, dict)` or `"error" in result` to distinguish failure from an empty list. Matches the pre-existing convention of `list_time_entries`, `list_redmine_issues`, and `search_redmine_issues`.
+- **List tools now cap results at 500 items** (configurable via `_DEFAULT_LIST_RESULT_CAP` constant) via the new `_iter_capped` helper. Previously unbounded iteration could OOM on projects with tens of thousands of subtasks/relations/files.
+- **Module-level constants consolidated:** `_FILE_UPLOAD_MAX_SIZE_BYTES`, `_MAX_FILENAME_LEN`, `_IMPORT_TIME_ENTRIES_MAX_BATCH`, `_DEFAULT_LIST_RESULT_CAP`, `_DOWNLOAD_TIMEOUT`, and `_FILE_DOWNLOAD_MAX_REDIRECTS` are all declared once at the top of the module instead of scattered across different sections. Top-level `import httpx` and `from urllib.parse import unquote, urlparse` hoisted out of function-local imports.
+
+### CI
+- Fix `pip-audit` failing on packages not published to PyPI by adding `--no-emit-project` to `uv export` in `dependency-audit.yml`
+
+### Contributors
+- @mihajlovicjj — 30 new MCP tools, security hardening, and 82+ new tests ([#89](https://github.com/jztan/redmine-mcp-server/pull/89))
+
+## [1.2.0] - 2026-04-14
+### Added
+- `REDMINE_AGILE_ENABLED=true` opt-in support for RedmineUP Agile plugin: `get_redmine_issue` auto-includes `story_points`, `agile_sprint_id`, and `agile_position`; `update_redmine_issue` accepts `story_points` in the `fields` dict
 
 ### Security
 - Bump `fastmcp` from 3.1.1 to 3.2.0, patching CVE-2025-64340 and CVE-2026-27124
@@ -93,14 +99,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix `AttributeError: 'str' object has no attribute 'isoformat'` crash when Redmine server returns date fields as pre-formatted strings instead of datetime objects (affects non-UTC timezone configurations and certain Redmine versions)
 
 ### Tests
-- Expand `test_safe_isoformat.py` with coverage for `_issue_to_dict_selective` and `list_redmine_projects` — the two paths omitted from the original PR
+- Expand `test_safe_isoformat.py` with coverage for `_issue_to_dict_selective` and `list_redmine_projects` -- the two paths omitted from the original PR
 
 ### Contributors
-- @mihajlovicjj — reported and fixed the `isoformat` crash on non-UTC Redmine configurations ([#82](https://github.com/jztan/redmine-mcp-server/pull/82))
+- @mihajlovicjj -- reported and fixed the `isoformat` crash on non-UTC Redmine configurations ([#82](https://github.com/jztan/redmine-mcp-server/pull/82))
 
 ## [1.1.1] - 2026-03-31
 ### Security
-- Patch 14 CVEs across 7 transitive dependencies: pyjwt→2.12.1 (CVE-2026-32597), cryptography→46.0.6 (CVE-2026-26007, CVE-2026-34073), starlette→1.0.0 / fastapi→0.135.2 (CVE-2025-54121, CVE-2025-62727), urllib3→2.6.3 (CVE-2025-50181/82, CVE-2025-66418/71, CVE-2026-21441), requests→2.33.1 (CVE-2024-47081, CVE-2026-25645), python-multipart→0.0.22 (CVE-2026-24486), pygments→2.20.0 (CVE-2026-4539)
+- Patch 14 CVEs across 7 transitive dependencies: pyjwt 2.12.1 (CVE-2026-32597), cryptography 46.0.6 (CVE-2026-26007, CVE-2026-34073), starlette 1.0.0 / fastapi 0.135.2 (CVE-2025-54121, CVE-2025-62727), urllib3 2.6.3 (CVE-2025-50181/82, CVE-2025-66418/71, CVE-2026-21441), requests 2.33.1 (CVE-2024-47081, CVE-2026-25645), python-multipart 0.0.22 (CVE-2026-24486), pygments 2.20.0 (CVE-2026-4539)
 
 ### CI
 - Add `dependency-audit.yml` workflow: lockfile integrity check (`uv lock --check`), CVE scanning via `pip-audit`, and PR step summary flagging lockfile changes for supply-chain review
@@ -124,7 +130,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated import from `mcp.server.fastmcp` to `fastmcp`
 - Replaced `mcp.streamable_http_app()` with `mcp.http_app(stateless_http=True)` (v3 API)
 - Removed `mcp.settings.stateless_http` runtime mutation (`stateless_http` is now passed to `http_app()`)
-- Removed `host=` parameter from `FastMCP()` constructor (not a valid v3 parameter; DNS rebinding protection removed from FastMCP v3 entirely — no behaviour change for Docker deployments)
+- Removed `host=` parameter from `FastMCP()` constructor (not a valid v3 parameter; DNS rebinding protection removed from FastMCP v3 entirely -- no behaviour change for Docker deployments)
 - Converted `list_redmine_issues` and `search_redmine_issues` from `**kwargs` to explicit parameters (FastMCP v3 no longer supports `**kwargs` tool functions); additional arbitrary filters still available via `filters={}` / `options={}` dict parameters
 
 ## [1.0.0] - 2026-03-14
@@ -139,18 +145,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `list_time_entry_activities` - Discover available activity types (Development, Design, etc.) for time entry creation
   - All tools support pagination and use `_get_redmine_client()` for OAuth compatibility
 - **50 new unit tests** for project members and time tracking tools (`test_project_members.py`, `test_time_entries.py`)
-- **26 new integration tests** covering all 21 MCP tools with zero skips — includes project members (4), time entries (7), custom fields (3), search issues (3), summarize project (3), global search (4), and cleanup (2)
+- **26 new integration tests** covering all 21 MCP tools with zero skips -- includes project members (4), time entries (7), custom fields (3), search issues (3), summarize project (3), global search (4), and cleanup (2)
 - **OAuth2 per-user authentication mode** (`REDMINE_AUTH_MODE=oauth`)
   - New `oauth_middleware.py`: Starlette middleware that validates `Authorization: Bearer <token>` headers against Redmine's `/users/current.json` before forwarding MCP requests
-  - Per-request token isolation via `contextvars.ContextVar` — safe under async concurrent load
-  - `GET /.well-known/oauth-protected-resource` endpoint (RFC 8707) — points MCP clients to the authorization server
-  - `GET /.well-known/oauth-authorization-server` endpoint (RFC 8414) — advertises Redmine's Doorkeeper OAuth endpoints (`/oauth/authorize`, `/oauth/token`, `/oauth/revoke`) since Redmine does not serve this document itself
-  - `POST /revoke` endpoint (RFC 7009) — proxies token revocation to Redmine's `/oauth/revoke`, enabling proper disconnect flow from MCP clients
+  - Per-request token isolation via `contextvars.ContextVar` -- safe under async concurrent load
+  - `GET /.well-known/oauth-protected-resource` endpoint (RFC 8707) -- points MCP clients to the authorization server
+  - `GET /.well-known/oauth-authorization-server` endpoint (RFC 8414) -- advertises Redmine's Doorkeeper OAuth endpoints (`/oauth/authorize`, `/oauth/token`, `/oauth/revoke`) since Redmine does not serve this document itself
+  - `POST /revoke` endpoint (RFC 7009) -- proxies token revocation to Redmine's `/oauth/revoke`, enabling proper disconnect flow from MCP clients
   - PKCE (`S256`) and both `client_secret_post` / `client_secret_basic` token endpoint auth methods advertised
   - Requires Redmine 6.1+ (Doorkeeper OAuth2 support)
-- **`REDMINE_AUTH_MODE` environment variable** — selects `legacy` (default) or `oauth` mode; legacy mode is unchanged so existing deployments require no changes
-- **`REDMINE_MCP_BASE_URL` environment variable** — public base URL of this server, used in OAuth discovery documents (only required in oauth mode)
-- **`_get_redmine_client()` factory function** in `redmine_handler.py` — creates a per-request Redmine client using OAuth token → API key → username/password priority; replaces the module-level shared client
+- **`REDMINE_AUTH_MODE` environment variable** -- selects `legacy` (default) or `oauth` mode; legacy mode is unchanged so existing deployments require no changes
+- **`REDMINE_MCP_BASE_URL` environment variable** -- public base URL of this server, used in OAuth discovery documents (only required in oauth mode)
+- **`_get_redmine_client()` factory function** in `redmine_handler.py` -- creates a per-request Redmine client using OAuth token -> API key -> username/password priority; replaces the module-level shared client
 - **33 new unit tests** for OAuth middleware, discovery endpoints, token revocation, and auth selection logic (`tests/test_oauth_middleware.py`)
 - **Prompt Injection Protection** - User-controlled content from Redmine is now wrapped in unique boundary tags to prevent prompt injection attacks against LLM consumers
   - New `wrap_insecure_content()` function wraps non-empty strings in `<insecure-content-{boundary}>` tags with a random 16-character hex boundary per call
@@ -179,10 +185,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - All references in docstrings updated to point to `list_redmine_issues()`
 
 ### Fixed
-- **Custom routes (well-known endpoints) not served at runtime** — `mcp.run()` created a fresh internal app discarding route registrations; switched to `uvicorn.run(app, ...)` so the decorated app instance is always what serves requests
-- **`REDMINE_URL` KeyError at import time** — `oauth_middleware.py` now uses `os.environ.get()` instead of `os.environ[]`, so the server starts cleanly even if `REDMINE_URL` is not set before import
-- **Legacy client recreated on every tool call** — `_get_redmine_client()` now caches a singleton `_legacy_client` in legacy mode instead of building a new `Redmine()` instance per request
-- **OAuth routes exposed in legacy mode** — well-known endpoints and `/revoke` are now only registered when `REDMINE_AUTH_MODE=oauth`
+- **Custom routes (well-known endpoints) not served at runtime** -- `mcp.run()` created a fresh internal app discarding route registrations; switched to `uvicorn.run(app, ...)` so the decorated app instance is always what serves requests
+- **`REDMINE_URL` KeyError at import time** -- `oauth_middleware.py` now uses `os.environ.get()` instead of `os.environ[]`, so the server starts cleanly even if `REDMINE_URL` is not set before import
+- **Legacy client recreated on every tool call** -- `_get_redmine_client()` now caches a singleton `_legacy_client` in legacy mode instead of building a new `Redmine()` instance per request
+- **OAuth routes exposed in legacy mode** -- well-known endpoints and `/revoke` are now only registered when `REDMINE_AUTH_MODE=oauth`
 
 ### Changed
 - `main()` now runs via `uvicorn.run(app, ...)` directly instead of `mcp.run(transport="streamable-http")` to ensure custom route registrations are preserved
@@ -191,8 +197,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Code Quality** - Added `.flake8` config for Black compatibility (E203 ignore)
 
 ### Contributors
-- @mihajlovicjj — OAuth2 per-user authentication, `/revoke` endpoint, discovery endpoints, and 33 new tests ([#71](https://github.com/jztan/redmine-mcp-server/pull/71))
-- @mihajlovicjj — Project members and time tracking tools with 50 new tests ([#72](https://github.com/jztan/redmine-mcp-server/pull/72))
+- @mihajlovicjj -- OAuth2 per-user authentication, `/revoke` endpoint, discovery endpoints, and 33 new tests ([#71](https://github.com/jztan/redmine-mcp-server/pull/71))
+- @mihajlovicjj -- Project members and time tracking tools with 50 new tests ([#72](https://github.com/jztan/redmine-mcp-server/pull/72))
 
 ## [0.12.1] - 2026-03-05
 
@@ -230,7 +236,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Updated `.env.example` and `.env.docker` with new environment variables
 
 ### Breaking
-- **`create_redmine_issue` `extra_fields` parameter** — Previously, passing `extra_fields` as a plain string would forward it directly to Redmine as an attribute. Now it is parsed as a JSON object (or dict) and merged into the issue payload. Callers who relied on the old behaviour of sending a raw `extra_fields` string attribute should migrate to `fields` or provide a JSON object string instead.
+- **`create_redmine_issue` `extra_fields` parameter** -- Previously, passing `extra_fields` as a plain string would forward it directly to Redmine as an attribute. Now it is parsed as a JSON object (or dict) and merged into the issue payload. Callers who relied on the old behaviour of sending a raw `extra_fields` string attribute should migrate to `fields` or provide a JSON object string instead.
 
 ### Changed
 - **Dependency Updates**
@@ -238,7 +244,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved issue update validation for named custom fields with clear errors when values are not allowed for the target custom field.
 
 ### Contributors
-- @sebastianelsner — custom field discovery tool, required custom field handling, and custom field update support ([#65](https://github.com/jztan/redmine-mcp-server/pull/65), [#66](https://github.com/jztan/redmine-mcp-server/pull/66))
+- @sebastianelsner -- custom field discovery tool, required custom field handling, and custom field update support ([#65](https://github.com/jztan/redmine-mcp-server/pull/65), [#66](https://github.com/jztan/redmine-mcp-server/pull/66))
 
 ### Improved
 - **Test Coverage** - 44 new unit tests for custom field helper functions (`redmine_handler.py` lines 474-640)
@@ -432,24 +438,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Tests were failing in GitHub Actions due to missing test certificates
   - Certificate generation now runs before tests in all CI workflows
 
-### Technical Details
-- **Test Coverage** - Added 29 comprehensive tests (20 unit + 9 integration)
-  - Unit tests for environment variable parsing and SSL configuration logic
-  - Integration tests with real certificate files
-  - Error handling tests for missing/invalid certificates
-- **Certificate Validation** - Robust path validation with clear error messages
-  - `Path.resolve()` for symlink resolution
-  - File existence and type checks
-  - Original and resolved paths in error messages
-- **Client Certificate Support** - Flexible format handling
-  - Split comma-separated paths with `maxsplit=1`
-  - Strip whitespace from paths
-  - Support both tuple and single file formats
-- **Code Quality** - All changes PEP 8 compliant and formatted with Black
-- **Backward Compatibility** - Fully compatible with existing deployments
-  - SSL verification enabled by default (same as before)
-  - No changes required for users without custom SSL needs
-  - Optional SSL configuration for advanced scenarios
 ## [0.7.1] - 2025-12-02
 
 ### Fixed
@@ -500,22 +488,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Documented Search API limitations and filtering capabilities
   - Added performance tips and best practices
 
-### Technical Details
-- **Search API Limitations** - Documented that Search API supports text search with scope/open_issues filters only
-  - For advanced filtering by project_id, status_id, priority_id, etc., use `list_my_redmine_issues()`
-  - Search API does not provide total_count (pagination uses conservative estimation)
-- **Test Coverage** - Added 81 comprehensive unit tests:
-  - 29 tests for field selection helper
-  - 22 tests for pagination support  - 15 tests for field selection integration
-  - 15 tests for native filters
-- **Code Quality** - All changes are PEP 8 compliant and formatted with Black
-
-### Migration Notes
-- **Fully Backward Compatible** - No breaking changes for existing code
-- **New Default Limit** - If you need more than 25 results, explicitly set `limit` parameter
-- **Field Selection** - `fields=None` (default) returns all fields for backward compatibility
-- **Pagination** - Use `include_pagination_info=True` for structured responses with metadata
-
 ## [0.6.0] - 2025-10-25
 
 ### Changed
@@ -527,25 +499,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **MCP Security Fix** - Includes security patch from MCP v1.19.0 (CVE-2025-62518)
 
 ### Improved
-- **FastAPI Enhancements** - Benefits from latest bug fixes and improvements:
-  - Mixed Pydantic v2/v1 mode for gradual migration support
-  - Fixed `StreamingResponse` behavior with `yield` dependencies
-  - Enhanced OpenAPI schema support (array values, external_docs parameter)
-  - Improved Pydantic 2.12.0+ compatibility
-  - Better validation error handling for Form and File parameters
-- **MCP Protocol Improvements** - Enhanced capabilities from latest updates:
-  - Tool metadata support in FastMCP decorators
-  - OAuth scope selection and step-up authorization
-  - Paginated list decorators for prompts, resources, and tools
-  - Improved Unicode support for HTTP transport
-  - Enhanced documentation structure and testing guidance
-  - Better OAuth protected resource metadata handling per RFC 9728
-
-### Notes
-- Pydantic v1 support is deprecated in FastAPI v0.119.0 and will be removed in a future version
-- All existing functionality remains backward compatible
-- No breaking changes for current users
-- Python 3.10-3.13 support maintained (Python 3.14 support available in dependencies but not yet tested in this project)
+- **FastAPI Enhancements** - Benefits from latest bug fixes and improvements
+- **MCP Protocol Improvements** - Enhanced capabilities from latest updates
 
 ## [0.5.2] - 2025-10-09
 
@@ -557,25 +512,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `docs/contributing.md` - Complete developer guide with setup, testing, and contribution guidelines
   - Refactored MCP client configurations with collapsible `<details>` sections
   - Removed development-focused content from README (moved to contributing guide)
-  - Streamlined README structure:
-    - Cleaner Quick Start with proper navigation
-    - Focused Features section (replaced "Comprehensive Testing" with "Pagination Support")
-    - Removed redundant sections (Usage, Python Version Compatibility, development notes)
-    - Added proper Troubleshooting and Contributing sections
-    - Enhanced Additional Resources with all documentation links
-
-### Improved
-- **Professional documentation structure** - README now focuses purely on end-user usage
-- **Better information architecture** - Clear separation between user docs and developer docs
-- **Enhanced discoverability** - All documentation easily accessible with proper linking
-- **Cleaner presentation** - Collapsible sections and categorized lists reduce visual clutter
-- **Industry-standard pattern** - Documentation structure matches professional open-source projects
-
-### Fixed
-- Quick Start .env reference now properly links to Installation section
-- Contributing link in quick navigation now points to correct location
-- Removed duplicate and redundant information across README
-- All internal documentation links verified and corrected
 
 ## [0.5.1] - 2025-10-08
 
@@ -585,138 +521,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Codex CLI: New section with CLI command and TOML configuration format
   - Kiro: Updated to use mcp-client-http bridge for HTTP transport compatibility
   - Generic clients: Expanded with both HTTP and command-based configuration formats
-  - Removed Continue extension section (replaced by VS Code native support)
-- All configurations verified against official documentation and real-world examples
-
-### Improved
-- Enhanced README MCP client configuration section for better user experience
-- Clearer installation instructions for various MCP-compatible clients
-- More accurate configuration examples reflecting current client capabilities
 
 ## [0.5.0] - 2025-09-25
 
 ### Added
 - **Python 3.10+ support** - Expanded compatibility from Python 3.13+ to Python 3.10+
 - CI/CD matrix testing across Python 3.10, 3.11, 3.12, and 3.13 versions
-- Python version compatibility matrix in documentation
-- GitHub Actions workflows for multi-version testing before PyPI publication
 
 ### Changed
 - **BREAKING**: Minimum Python requirement lowered from 3.13+ to 3.10+
 - Updated project classifiers to include Python 3.10, 3.11, and 3.12
-- Enhanced CI/CD pipeline with comprehensive multi-version testing
-- Version bumped to 0.5.0 for major compatibility expansion
-
-### Improved
-- **10x larger potential user base** with Python 3.10+ support
-- Full backward compatibility maintained across all Python versions
-- Zero source code changes required for compatibility expansion
-- Enhanced documentation with deployment-specific Python version guidance
-- Updated all metadata files (server.json, roadmap.md) for version consistency
-
-### Fixed
-- Docker deployment script now correctly uses `.env.docker` instead of `.env`
-- Maintains proper deployment compatibility (local uses `.env`, Docker uses `.env.docker`)
-
-### Technical
-- Configuration-only implementation approach for maximum safety
-- Ultra-minimal development setup (Python 3.13.1 local, CI handles multi-version)
-- All 71 tests validated across Python 3.10-3.13 via GitHub Actions
-- Maintained Docker deployment with Python 3.13 for optimal performance
 
 ## [0.4.5] - 2025-09-24
 
 ### Improved
 - Enhanced PyPI installation documentation with step-by-step instructions
-- Simplified installation process with clearer configuration examples
-- Updated development documentation with improved setup guidance
-- Streamlined package management and dependency handling
-
-### Documentation
-- Added comprehensive PyPI installation guide as primary installation method
-- Improved environment configuration examples with practical defaults
-- Enhanced README structure for better user onboarding experience
-- Updated development workflow documentation
 
 ## [0.4.4] - 2025-09-23
 
 ### Fixed
 - PyPI badges and links in README now point to correct package name `redmine-mcp-server`
-- Previously pointed to old package name `mcp-redmine`
 
 ## [0.4.3] - 2025-09-23
 
 ### Added
 - MCP Registry support with server.json configuration
-- MCP server name identifier in README for registry validation
-
-### Changed
-- Updated README with registry identification metadata
-- Version bump for PyPI republication with registry validation support
 
 ## [0.4.2] - 2025-09-23
 
 ### Added
 - PyPI package publishing support as `redmine-mcp-server`
 - Console script entry point: `redmine-mcp-server` command
-- Comprehensive package metadata for PyPI distribution
-- GitHub Actions workflow for automated PyPI publishing
-
-### Changed
-- Updated package name from `mcp-redmine` to `redmine-mcp-server` for PyPI
-- Enhanced pyproject.toml with full package metadata and classifiers
-- Added main() function for console script execution
-
-### Improved
-- Better package discoverability with keywords and classifications
-- Professional package structure following PyPI best practices
-- Automated release workflow for seamless publishing
 
 ## [0.4.1] - 2025-09-23
 
 ### Fixed
 - GitHub Actions CI test failure in security validation tests
-- Updated test assertions to handle Redmine client initialization state properly
-- Security validation tests now pass consistently in CI environments
-
-### Improved
-- Enhanced GitHub Actions workflow with manual dispatch trigger
-- Added verbose test output for better CI debugging
-- Improved test reliability across different environments
 
 ## [0.4.0] - 2025-09-22
 
 ### Added
 - `get_redmine_attachment_download_url()` - Secure replacement for attachment downloads
 - Comprehensive security validation test suite
-- Server-controlled storage and expiry policies for enhanced security
-
-### Changed
-- Updated MCP library to v1.14.1
-- Integration tests now create their own test attachments for reliability
-- Attachment files always use UUID-based directory structure
 
 ### Deprecated
 - `download_redmine_attachment()` - Use `get_redmine_attachment_download_url()` instead
-  - ⚠️ SECURITY: `save_dir` parameter vulnerable to path traversal (CWE-22, CVSS 7.5)
-  - `expires_hours` parameter exposes server policies to clients
+  - SECURITY: `save_dir` parameter vulnerable to path traversal (CWE-22, CVSS 7.5)
   - Will be removed in v0.5.0
-
-### Fixed
-- Path traversal vulnerability in attachment downloads eliminated
-- Integration test no longer skipped due to missing attachments
 
 ### Security
 - **CRITICAL**: Fixed path traversal vulnerability in attachment downloads (CVSS 7.5)
-- Removed client control over server storage configuration
-- Enhanced logging for security events and deprecated function usage
 
 ## [0.3.1] - 2025-09-21
 
 ### Fixed
 - Integration test compatibility with new attachment download API format
-- Test validation now properly checks HTTP download URLs instead of file paths
-- Comprehensive validation of all attachment response fields (download_url, filename, content_type, size, expires_at, attachment_id)
 
 ## [0.3.0] - 2025-09-21
 
@@ -726,22 +585,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `CLEANUP_INTERVAL_MINUTES` environment variable for cleanup frequency (default: 10 minutes)
 - `ATTACHMENT_EXPIRES_MINUTES` environment variable for default attachment expiry (default: 60 minutes)
 - Background cleanup task with lazy initialization via MCP tool calls
-- Cleanup status endpoint (`/cleanup/status`) for monitoring background task
-- `CleanupTaskManager` class for managing cleanup task lifecycle
-- Enhanced health check endpoint with cleanup task initialization
-- Comprehensive file management configuration documentation in README
 
 ### Changed
 - **BREAKING**: `CLEANUP_INTERVAL_HOURS` replaced with `CLEANUP_INTERVAL_MINUTES` for finer control
-- Default attachment expiry configurable via environment variable instead of hardcoded 24 hours
-- Cleanup task now starts automatically when first MCP tool is called (lazy initialization)
-- Updated `.env.example` with new minute-based configuration options
-
-### Improved
-- More granular control over cleanup timing with minute-based intervals
-- Better resource management with automatic cleanup task lifecycle
-- Enhanced monitoring capabilities with cleanup status endpoint
-- Clearer documentation with practical configuration examples for development and production
 
 ## [0.2.1] - 2025-09-20
 
@@ -749,50 +595,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - HTTP file serving endpoint (`/files/{file_id}`) for downloaded attachments
 - Secure UUID-based file URLs with automatic expiry (24 hours default)
 - New `file_manager.py` module for attachment storage and cleanup management
-- `cleanup_attachment_files` MCP tool for expired file management
-- PUBLIC_HOST/PUBLIC_PORT environment variables for external URL generation
-- PEP 8 compliance standards and development tools (flake8, black)
-- Storage statistics tracking for attachment management
 
 ### Changed
 - **BREAKING**: `download_redmine_attachment` now returns `download_url` instead of `file_path`
-- Attachment downloads now provide HTTP URLs for external access
-- Docker URL generation fixed (uses localhost instead of 0.0.0.0)
-- Dependencies optimized (httpx moved to dev/test dependencies)
-
-### Fixed
-- Docker container URL accessibility issues for downloaded attachments
-- URL generation for external clients in containerized environments
-
-### Improved
-- Code quality with full PEP 8 compliance across all Python modules
-- Test coverage for new HTTP URL return format
-- Documentation updated with file serving details
 
 ## [0.2.0] - 2025-09-20
 
 ### Changed
 - **BREAKING**: Migrated from FastAPI/SSE to FastMCP streamable HTTP transport
 - **BREAKING**: MCP endpoint changed from `/sse` to `/mcp`
-- Updated server architecture to use FastMCP's native HTTP capabilities
-- Simplified initialization and removed FastAPI dependency layer
-
-### Added
-- Native FastMCP streamable HTTP transport support
-- Claude Code CLI setup command documentation
-- Stateless HTTP mode for better scalability
-- Smart issue summarization tool with comprehensive project analytics
-
-### Improved
-- Better MCP protocol compliance with native FastMCP implementation
-- Reduced complexity by removing custom FastAPI/SSE layer
-- Updated all documentation to reflect new transport method
-- Enhanced health check endpoint with service identification
-
-### Migration Notes
-- Existing MCP clients need to update endpoint from `/sse` to `/mcp`
-- Claude Code users can now use: `claude mcp add --transport http redmine http://127.0.0.1:8000/mcp`
-- Server initialization simplified with `mcp.run(transport="streamable-http")`
 
 ## [0.1.6] - 2025-06-19
 ### Added
@@ -800,45 +611,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.5] - 2025-06-18
 ### Added
-- `get_redmine_issue` can now return attachment metadata via a new
-  `include_attachments` parameter.
+- `get_redmine_issue` can now return attachment metadata via a new `include_attachments` parameter.
 - New MCP tool `download_redmine_attachment` for downloading attachments.
 
 ## [0.1.4] - 2025-05-28
 
 ### Removed
-- Deprecated `get_redmine_issue_comments` tool. Use `get_redmine_issue` with
-  `include_journals=True` to retrieve comments.
+- Deprecated `get_redmine_issue_comments` tool. Use `get_redmine_issue` with `include_journals=True` to retrieve comments.
 
 ### Changed
-- `get_redmine_issue` now includes issue journals by default. A new
-  `include_journals` parameter allows opting out of comment retrieval.
+- `get_redmine_issue` now includes issue journals by default.
 
 ## [0.1.3] - 2025-05-27
 
 ### Added
 - New MCP tool `list_my_redmine_issues` for retrieving issues assigned to the current user
 - New MCP tool `get_redmine_issue_comments` for retrieving issue comments
+
 ## [0.1.2] - 2025-05-26
 
 ### Changed
-- Roadmap moved to its own document with updated plans
-- Improved README badges and links
+- Roadmap moved to its own document
 
 ### Added
 - New MCP tools `create_redmine_issue` and `update_redmine_issue` for managing issues
-- Documentation updates describing the new tools
-- Integration tests for issue creation and update
-- Integration test for Redmine issue management
 
 ## [0.1.1] - 2025-05-25
 
 ### Changed
 - Updated project documentation with correct repository URLs
 - Updated LICENSE with proper copyright (2025 Kevin Tan and contributors)
-- Enhanced VS Code integration documentation
-- Improved .gitignore to include test coverage files
-
 
 ## [0.1.0] - 2025-05-25
 
@@ -850,47 +652,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `get_redmine_issue(issue_id)` - Retrieve detailed issue information
   - `list_redmine_projects()` - List all accessible Redmine projects
 - Comprehensive authentication support (username/password and API key)
-- Modern Python project structure with uv package manager
-- Complete testing framework with 20 tests:
-  - 10 unit tests for core functionality
-  - 7 integration tests for end-to-end workflows
-  - 3 connection validation tests
-- Docker containerization support:
-  - Multi-stage Dockerfile with security hardening
-  - Docker Compose configuration with health checks
-  - Automated deployment script with comprehensive management
-  - Production-ready container setup with non-root user
-- Comprehensive documentation:
-  - Detailed README.md with installation and usage instructions
-  - Complete API documentation with examples
-  - Docker deployment guide
-  - Testing framework documentation
-- Git Flow workflow implementation with standard branching strategy
-- Environment configuration templates and examples
-- Advanced test runner with coverage reporting and flexible execution
+- Docker containerization support
 
-### Technical Features
-- **Architecture**: FastAPI application with Server-Sent Events (SSE) transport
-- **Security**: Authentication with Redmine instances, non-root Docker containers
-- **Testing**: pytest framework with mocks, fixtures, and comprehensive coverage
-- **Deployment**: Docker support with automated scripts and health monitoring
-- **Documentation**: Complete module docstrings and user guides
-- **Development**: Modern Python toolchain with uv, Git Flow, and automated testing
-
-### Dependencies
-- Python 3.13+
-- FastAPI with standard extensions
-- MCP CLI tools
-- python-redmine for Redmine API integration
-- Docker for containerization
-- pytest ecosystem for testing
-
-### Compatibility
-- Compatible with Redmine 3.x and 4.x instances
-- Supports both username/password and API key authentication
-- Works with Docker and docker-compose
-- Tested on macOS and Linux environments
-
+[1.2.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v1.2.0
+[1.1.2]: https://github.com/jztan/redmine-mcp-server/releases/tag/v1.1.2
+[1.1.1]: https://github.com/jztan/redmine-mcp-server/releases/tag/v1.1.1
+[1.1.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v1.1.0
+[1.0.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v1.0.0
 [0.12.1]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.12.1
 [0.12.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.12.0
 [0.11.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v0.11.0
