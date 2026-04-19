@@ -420,6 +420,11 @@ _SECRET_SCRUB_PATTERNS = [
     (re.compile(r"(Bearer\s+)\S+", re.IGNORECASE), r"\1[redacted]"),
     # HTTP basic auth embedded in URL: https://user:pass@host
     (re.compile(r"(https?://)[^/@\s]+:[^/@\s]+@"), r"\1[redacted]@"),
+    # Authorization: Basic <base64> header (username/password auth mode)
+    (
+        re.compile(r"(Authorization:\s*Basic\s+)[A-Za-z0-9+/=]+", re.IGNORECASE),
+        r"\1[redacted]",
+    ),
 ]
 
 
