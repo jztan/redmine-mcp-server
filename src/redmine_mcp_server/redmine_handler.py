@@ -3506,11 +3506,7 @@ def _time_entry_to_dict(time_entry: Any) -> Dict[str, Any]:
         "user": _named_ref(user),
         "project": _named_ref(project),
         "issue": ({"id": getattr(issue, "id", None)} if issue is not None else None),
-        "activity": (
-            _named_ref(activity)
-            if activity is not None
-            else None
-        ),
+        "activity": (_named_ref(activity) if activity is not None else None),
         "created_on": _safe_isoformat(getattr(time_entry, "created_on", None)),
         "updated_on": _safe_isoformat(getattr(time_entry, "updated_on", None)),
     }
