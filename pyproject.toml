@@ -58,6 +58,7 @@ dev = [
     "httpx>=0.28.1,<1",
     "flake8>=6.0.0,<8",
     "black>=23.0.0,<27",
+    "pre-commit>=3.0.0,<5",
 ]
 
 [build-system]

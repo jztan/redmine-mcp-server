@@ -70,7 +70,7 @@ class TestSSLConfigurationIntegration:
             assert redmine_handler.REDMINE_SSL_VERIFY is True
 
     def test_module_handles_missing_cert_gracefully(self):
-        """Test that _get_redmine_client() raises FileNotFoundError for a missing cert."""
+        """Test that _get_redmine_client() raises FileNotFoundError for a missing cert."""  # noqa: E501
         with patch.dict(
             os.environ,
             {
@@ -90,7 +90,7 @@ class TestSSLConfigurationIntegration:
                 redmine_handler._get_redmine_client()
 
     def test_module_handles_directory_as_cert_gracefully(self, ssl_cert_path):
-        """Test that _get_redmine_client() raises ValueError when cert path is a directory."""
+        """Test that _get_redmine_client() raises ValueError when cert path is a directory."""  # noqa: E501
         cert_dir = str(Path(ssl_cert_path).parent)
 
         with patch.dict(

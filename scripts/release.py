@@ -219,9 +219,7 @@ def preflight_checks() -> None:
 # ---------------------------------------------------------------------------
 
 
-def update_pyproject_toml(
-    project_root: Path, new_version: str, dry_run: bool
-) -> None:
+def update_pyproject_toml(project_root: Path, new_version: str, dry_run: bool) -> None:
     """Update version in pyproject.toml."""
     pyproject = project_root / "pyproject.toml"
     content = pyproject.read_text()
@@ -239,9 +237,7 @@ def update_pyproject_toml(
         print("  ✓ Updated pyproject.toml")
 
 
-def update_server_json(
-    project_root: Path, new_version: str, dry_run: bool
-) -> None:
+def update_server_json(project_root: Path, new_version: str, dry_run: bool) -> None:
     """Update version in server.json (both occurrences)."""
     server_json = project_root / "server.json"
     content = json.loads(server_json.read_text())
@@ -275,9 +271,7 @@ def update_changelog(project_root: Path, new_version: str, dry_run: bool) -> Non
         )
     else:
         # No Unreleased section -- add new version after header
-        first_version_match = re.search(
-            r"^## \[\d+\.\d+\.\d+\]", content, re.MULTILINE
-        )
+        first_version_match = re.search(r"^## \[\d+\.\d+\.\d+\]", content, re.MULTILINE)
         if first_version_match:
             insert_pos = first_version_match.start()
             new_section = (
@@ -300,7 +294,9 @@ def update_changelog(project_root: Path, new_version: str, dry_run: bool) -> Non
         first_ref_match = re.search(r"^\[[\d.]+\]: https://", new_content, re.MULTILINE)
         if first_ref_match:
             insert_pos = first_ref_match.start()
-            new_content = new_content[:insert_pos] + ref_link + "\n" + new_content[insert_pos:]
+            new_content = (
+                new_content[:insert_pos] + ref_link + "\n" + new_content[insert_pos:]
+            )
         else:
             new_content = new_content.rstrip() + "\n" + ref_link + "\n"
 
@@ -367,9 +363,7 @@ def extract_changelog_section(project_root: Path, version: str) -> str:
         if not line.startswith("- "):
             continue
         # Format: "- @username — description ([#PR](url))"
-        author_match = re.match(
-            r"-\s+(@\S+)\s*[—–-]\s*(.*)", line
-        )
+        author_match = re.match(r"-\s+(@\S+)\s*[—–-]\s*(.*)", line)
         if author_match:
             author = author_match.group(1)
             desc = author_match.group(2).strip()
@@ -488,11 +482,11 @@ def create_github_release(config: ReleaseConfig, new_version: str) -> None:
     print("\n=== GitHub Release ===\n")
 
     tag = f"v{new_version}"
-    body, acknowledgements = extract_changelog_section(
-        config.project_root, new_version
-    )
+    body, acknowledgements = extract_changelog_section(config.project_root, new_version)
 
-    ack_block = f"\n\n## Acknowledgements\n\n{acknowledgements}" if acknowledgements else ""
+    ack_block = (
+        f"\n\n## Acknowledgements\n\n{acknowledgements}" if acknowledgements else ""
+    )
 
     notes = f"""## What's New in {tag}
 
@@ -595,9 +589,7 @@ def merge_back_to_develop(config: ReleaseConfig, release_branch: str) -> None:
 
         # Delete release branch locally and remotely
         run_command(["git", "branch", "-d", release_branch])
-        run_command(
-            ["git", "push", "origin", "--delete", release_branch], check=False
-        )
+        run_command(["git", "push", "origin", "--delete", release_branch], check=False)
         print(f"  ✓ Deleted branch: {release_branch}")
 
 
@@ -707,9 +699,7 @@ Gitflow:
         print(f"    - PyPI: {pypi_url}")
         gh_url = f"https://github.com/{GITHUB_REPO}/releases/tag/v{new_version}"
         print(f"    - GitHub: {gh_url}")
-        mcp_url = (
-            "https://registry.modelcontextprotocol.io/v0/servers?search=redmine"
-        )
+        mcp_url = "https://registry.modelcontextprotocol.io/v0/servers?search=redmine"
         print(f"    - MCP Registry: {mcp_url}")
     print("=" * 60)
 

@@ -1947,7 +1947,7 @@ class TestAgilePluginIntegration:
     @pytest.mark.integration
     @pytest.mark.asyncio
     async def test_update_story_points_roundtrip(self):
-        """update_redmine_issue sets story_points and get_redmine_issue reads it back."""
+        """update_redmine_issue sets story_points and get_redmine_issue reads it back."""  # noqa: E501
         redmine = _get_redmine_or_none()
         if redmine is None:
             pytest.skip("Redmine client not initialized")

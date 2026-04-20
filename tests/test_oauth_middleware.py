@@ -14,9 +14,9 @@ import os
 os.environ.setdefault("REDMINE_URL", "https://test-redmine.example.com")
 os.environ.setdefault("REDMINE_MCP_BASE_URL", "http://localhost:3040")
 
-import pytest
-from unittest.mock import patch, AsyncMock, MagicMock
-from httpx import ASGITransport, AsyncClient
+import pytest  # noqa: E402
+from unittest.mock import patch, AsyncMock, MagicMock  # noqa: E402
+from httpx import ASGITransport, AsyncClient  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -420,9 +420,8 @@ class TestWellKnownEndpoints:
 
     @pytest.mark.asyncio
     async def test_well_known_accessible_without_auth_in_oauth_mode(self):
-        """Discovery endpoints must be reachable without a Bearer token even in oauth mode."""
+        """Discovery endpoints must be reachable without a Bearer token even in oauth mode."""  # noqa: E501
         import os
-        from starlette.testclient import TestClient
 
         with patch.dict(os.environ, {"REDMINE_AUTH_MODE": "oauth"}):
             # Import fresh app state isn't possible after module load, so test
