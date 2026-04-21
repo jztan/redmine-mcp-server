@@ -290,6 +290,7 @@ class TestRedmineIntegration:
             pytest.skip("Redmine client not initialized")
 
         from redmine_mcp_server.redmine_handler import (
+            get_redmine_attachment_content,
             get_redmine_attachment_download_url,
             create_redmine_issue,
         )
@@ -395,21 +396,31 @@ class TestRedmineIntegration:
                 if os.path.exists(test_file_path):
                     os.unlink(test_file_path)
 
-            # Now test downloading the attachment
-            result = await get_redmine_attachment_download_url(attachment_id)
+            # Now test both attachment retrieval paths
+            url_result = await get_redmine_attachment_download_url(attachment_id)
+            inline_result = await get_redmine_attachment_content(attachment_id)
 
-            # Test the API format (HTTP download URLs)
-            assert "download_url" in result
-            assert "filename" in result
-            assert "content_type" in result
-            assert "size" in result
-            assert "expires_at" in result
-            assert "attachment_id" in result
-            assert result["attachment_id"] == attachment_id
+            # Test the HTTP download URL format
+            assert "download_url" in url_result
+            assert "filename" in url_result
+            assert "content_type" in url_result
+            assert "size" in url_result
+            assert "expires_at" in url_result
+            assert "attachment_id" in url_result
+            assert url_result["attachment_id"] == attachment_id
 
             # Verify the download URL is properly formatted
-            assert result["download_url"].startswith("http")
-            assert "/files/" in result["download_url"]
+            assert url_result["download_url"].startswith("http")
+            assert "/files/" in url_result["download_url"]
+
+            # Test the stdio-safe inline content format
+            sc = inline_result.structured_content
+            assert sc["attachment_id"] == attachment_id
+            assert sc["filename"] == os.path.basename(test_file_path)
+            assert sc["content_type"] == "application/octet-stream"
+            assert sc["size"] > 0
+            assert "representation" in sc
+            assert inline_result.content
 
             # Verify file was actually downloaded to the attachments directory
             attachments_dir = "attachments"

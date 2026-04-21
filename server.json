@@ -87,6 +87,18 @@
           "format": "number",
           "default": "60",
           "name": "ATTACHMENT_EXPIRES_MINUTES"
+        },
+        {
+          "description": "Maximum attachment size returned inline by get_redmine_attachment_content (default: 1048576)",
+          "format": "number",
+          "default": "1048576",
+          "name": "ATTACHMENT_INLINE_MAX_BYTES"
+        },
+        {
+          "description": "Which attachment tools to register: inline, url, or both (default: both)",
+          "format": "string",
+          "default": "both",
+          "name": "ATTACHMENT_TOOL_MODE"
         }
       ]
     }

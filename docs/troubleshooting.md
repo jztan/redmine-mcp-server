@@ -682,8 +682,9 @@ docker logs -f <container-id>
 **Cause:** Attachment file was cleaned up or URL expired
 
 **Solution:**
-1. Generate new download URL using `get_redmine_attachment_download_url`
-2. Increase `ATTACHMENT_EXPIRES_MINUTES` in `.env`
+1. For stdio clients, use `get_redmine_attachment_content`
+2. For HTTP deployments, generate a new download URL using `get_redmine_attachment_download_url`
+3. Increase `ATTACHMENT_EXPIRES_MINUTES` in `.env`
 
 #### "Token limit exceeded"
 
