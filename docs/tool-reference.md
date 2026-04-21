@@ -993,7 +993,7 @@ get_redmine_wiki_page(
 ```
 
 **Notes:**
-- Use `get_redmine_attachment_download_url()` to download wiki attachments
+- Use `get_redmine_attachment_content()` for stdio-safe attachment retrieval, or `get_redmine_attachment_download_url()` in HTTP deployments
 - Supports both string identifiers (e.g., "my-project") and numeric IDs
 
 ---
@@ -1147,9 +1147,73 @@ delete_redmine_wiki_page(
 
 ## File Operations
 
+### `get_redmine_attachment_content`
+
+Get attachment content inline for stdio-compatible MCP clients. The attachment is downloaded to temporary server storage and returned as MCP-native content blocks instead of a raw Base64 string in JSON.
+
+**Parameters:**
+- `attachment_id` (integer, required): The ID of the attachment to download
+
+**Returns:**
+- `image/*` attachments return an MCP `ImageContent` block
+- `audio/*` attachments return an MCP `AudioContent` block
+- text-like attachments return an MCP `TextContent` block with decoded text
+- other binary attachments return an MCP `EmbeddedResource` blob
+
+Structured metadata is still included alongside the content block:
+```json
+{
+    "attachment_id": 123,
+    "filename": "document.pdf",
+    "content_type": "application/pdf",
+    "size": 1024,
+    "representation": "blob"
+}
+```
+
+Oversized attachments return metadata plus an error instead of content:
+```json
+{
+    "error": "Attachment exceeds inline size limit: 2048 bytes > 1024 bytes.",
+    "attachment_id": 123,
+    "filename": "document.pdf",
+    "content_type": "application/pdf",
+    "size": 2048,
+    "max_inline_size": 1024
+}
+```
+
+**Security Features:**
+- Works in stdio-only clients without requiring a localhost HTTP side channel
+- Server-controlled inline size cap via `ATTACHMENT_INLINE_MAX_BYTES`
+- Streaming download aborts as soon as the cap is exceeded, so attachments whose
+  `filesize` metadata is missing cannot exhaust disk or memory
+- User-supplied filenames are reduced to a basename before being written to disk
+- Temporary files are cleaned up after the response is generated
+- Can be published exclusively via `ATTACHMENT_TOOL_MODE=inline`
+- Avoids pushing image attachments through the model as a giant JSON Base64 field
+
+**Operator note — cost of raising `ATTACHMENT_INLINE_MAX_BYTES`:**
+Inline content is Base64-encoded into the JSON-RPC frame, which inflates the
+byte count by ~33% and is counted against the model's context window. The
+default (1 MiB) already produces ~1.37 MiB of text per response; raising the
+limit has a non-linear cost in both client transcript size and token budget.
+Prefer the URL-based tool for large binaries on HTTP deployments.
+
+**Example:**
+```python
+result = get_redmine_attachment_content(attachment_id=456)
+if "error" in result:
+    print(result["error"])
+else:
+    print("Attachment returned as MCP-native content blocks")
+```
+
+---
+
 ### `get_redmine_attachment_download_url`
 
-Get an HTTP download URL for a Redmine attachment. The attachment is downloaded to server storage and a time-limited URL is returned for client access.
+Get an HTTP download URL for a Redmine attachment. This is primarily for HTTP deployments where the `/files/{id}` route is reachable by the client.
 
 **Parameters:**
 - `attachment_id` (integer, required): The ID of the attachment to download
@@ -1171,6 +1235,7 @@ Get an HTTP download URL for a Redmine attachment. The attachment is downloaded 
 - UUID-based filenames prevent path traversal attacks
 - No client control over server configuration
 - Automatic cleanup of expired files
+- Can be disabled in stdio-focused deployments via `ATTACHMENT_TOOL_MODE=inline`
 
 **Example:**
 ```python

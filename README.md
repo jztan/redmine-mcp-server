@@ -16,7 +16,7 @@ A Model Context Protocol (MCP) server that integrates with Redmine project manag
 
 ## Features
 
-- **Redmine Integration**: List projects, view/create/update issues, download attachments
+- **Redmine Integration**: List projects, view/create/update issues, and retrieve attachments for both stdio and HTTP clients
 - **HTTP File Serving**: Secure file access via UUID-based URLs with automatic expiry
 - **MCP Compliant**: Full Model Context Protocol support with FastMCP and HTTP transport
 - **Flexible Authentication**: API key, username/password, or OAuth2 per-user tokens
@@ -113,6 +113,8 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `AUTO_CLEANUP_ENABLED` | No | `true` | Toggle automatic cleanup of expired attachments |
 | `CLEANUP_INTERVAL_MINUTES` | No | `10` | Interval for cleanup task |
 | `ATTACHMENT_EXPIRES_MINUTES` | No | `60` | Expiry window for generated download URLs |
+| `ATTACHMENT_INLINE_MAX_BYTES` | No | `1048576` | Maximum attachment size returned inline by `get_redmine_attachment_content` |
+| `ATTACHMENT_TOOL_MODE` | No | `both` | Which attachment tools to register: `inline`, `url`, or `both` |
 | `REDMINE_SSL_VERIFY` | No | `true` | Enable/disable SSL certificate verification |
 | `REDMINE_SSL_CERT` | No | – | Path to custom CA certificate file |
 | `REDMINE_SSL_CLIENT_CERT` | No | – | Path to client certificate for mutual TLS |
@@ -464,8 +466,9 @@ This MCP server provides 21 tools for interacting with Redmine. For detailed doc
   - [`update_redmine_wiki_page`](docs/tool-reference.md#update_redmine_wiki_page) - Update existing wiki pages
   - [`delete_redmine_wiki_page`](docs/tool-reference.md#delete_redmine_wiki_page) - Delete wiki pages
 
-- **File Operations** (2 tools)
-  - [`get_redmine_attachment_download_url`](docs/tool-reference.md#get_redmine_attachment_download_url) - Get secure download URLs for attachments
+- **File Operations** (3 tools; the two attachment-retrieval tools are gated by `ATTACHMENT_TOOL_MODE`)
+  - [`get_redmine_attachment_content`](docs/tool-reference.md#get_redmine_attachment_content) - Retrieve attachment content inline for stdio-safe clients
+  - [`get_redmine_attachment_download_url`](docs/tool-reference.md#get_redmine_attachment_download_url) - Get secure download URLs for HTTP deployments
   - [`cleanup_attachment_files`](docs/tool-reference.md#cleanup_attachment_files) - Clean up expired attachment files
 
 

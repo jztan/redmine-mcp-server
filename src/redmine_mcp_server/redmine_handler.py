@@ -24,16 +24,21 @@ Dependencies:
 """
 
 import os
-import uuid
 import json
 import re
 import asyncio
+import base64
 import logging
+import shutil
+import tempfile
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Union
+from urllib.parse import quote
 
 from dotenv import load_dotenv
+import mcp.types as mcp_types
 from redminelib import Redmine
 from redminelib.exceptions import (
     ResourceNotFoundError,
@@ -51,6 +56,8 @@ from requests.exceptions import (
     SSLError as RequestsSSLError,
 )
 from fastmcp import FastMCP
+from fastmcp.tools.base import ToolResult
+from mcp.types import BlobResourceContents, EmbeddedResource, TextContent
 from .file_manager import AttachmentFileManager
 
 # Configure logging
@@ -199,6 +206,65 @@ def _get_redmine_client() -> Redmine:
 
 # Initialize FastMCP server
 mcp = FastMCP("redmine_mcp_tools")
+
+DEFAULT_ATTACHMENT_INLINE_MAX_BYTES = 1024 * 1024
+DEFAULT_ATTACHMENT_TOOL_MODE = "both"
+VALID_ATTACHMENT_TOOL_MODES = {"inline", "url", "both"}
+TEXT_ATTACHMENT_MIME_TYPES = {
+    "application/json",
+    "application/ld+json",
+    "application/xml",
+    "application/javascript",
+    "application/x-javascript",
+    "application/x-httpd-php",
+    "application/x-sh",
+    "application/x-shellscript",
+    "application/x-yaml",
+    "application/yaml",
+    "application/toml",
+    "application/x-toml",
+    "application/sql",
+    "application/graphql",
+    "application/csv",
+    "application/x-ndjson",
+}
+TEXT_ATTACHMENT_SUFFIXES = {
+    ".bat",
+    ".c",
+    ".cfg",
+    ".conf",
+    ".cpp",
+    ".css",
+    ".csv",
+    ".env",
+    ".graphql",
+    ".h",
+    ".hpp",
+    ".html",
+    ".ini",
+    ".java",
+    ".js",
+    ".json",
+    ".jsx",
+    ".log",
+    ".md",
+    ".php",
+    ".properties",
+    ".ps1",
+    ".py",
+    ".rb",
+    ".rs",
+    ".sh",
+    ".sql",
+    ".svg",
+    ".toml",
+    ".ts",
+    ".tsx",
+    ".txt",
+    ".xml",
+    ".yaml",
+    ".yml",
+}
 
 
 class CleanupTaskManager:
@@ -1321,6 +1387,29 @@ def _attachments_to_list(issue: Any) -> List[Dict[str, Any]]:
         )
     return attachments
 
+def _get_attachment_inline_max_bytes() -> int:
+    """Return the maximum inline attachment size in bytes."""
+    raw_limit = os.getenv(
+        "ATTACHMENT_INLINE_MAX_BYTES", str(DEFAULT_ATTACHMENT_INLINE_MAX_BYTES)
+    )
+    try:
+        max_bytes = int(raw_limit)
+    except ValueError:
+        logger.warning(
+            "Invalid ATTACHMENT_INLINE_MAX_BYTES=%s; falling back to %s",
+            raw_limit,
+            DEFAULT_ATTACHMENT_INLINE_MAX_BYTES,
+        )
+        return DEFAULT_ATTACHMENT_INLINE_MAX_BYTES
+    if max_bytes <= 0:
+        logger.warning(
+            "ATTACHMENT_INLINE_MAX_BYTES must be positive; falling back to %s",
+            DEFAULT_ATTACHMENT_INLINE_MAX_BYTES,
+        )
+        return DEFAULT_ATTACHMENT_INLINE_MAX_BYTES
+
+    return max_bytes
+
 
 def _version_to_dict(version: Any) -> Dict[str, Any]:
     """Convert a python-redmine Version object to a serializable dict."""
@@ -1331,9 +1420,7 @@ def _version_to_dict(version: Any) -> Dict[str, Any]:
         "description": wrap_insecure_content(getattr(version, "description", "")),
         "status": getattr(version, "status", ""),
         "due_date": (
-            str(version.due_date)
-            if getattr(version, "due_date", None) is not None
-            else None
+            str(version.due_date) if getattr(version, "due_date", None) is not None else None
         ),
         "sharing": getattr(version, "sharing", ""),
         "wiki_page_title": getattr(version, "wiki_page_title", ""),
@@ -1413,6 +1500,299 @@ def _custom_field_to_dict(custom_field: Any) -> Dict[str, Any]:
         "possible_values": _extract_possible_values(custom_field),
         "trackers": _custom_field_trackers_to_list(custom_field),
     }
+
+
+def _get_attachment_tool_mode() -> str:
+    """Return which attachment tools should be registered."""
+    tool_mode = os.getenv("ATTACHMENT_TOOL_MODE", DEFAULT_ATTACHMENT_TOOL_MODE).lower()
+    if tool_mode not in VALID_ATTACHMENT_TOOL_MODES:
+        logger.warning(
+            "Invalid ATTACHMENT_TOOL_MODE=%s; falling back to %s",
+            tool_mode,
+            DEFAULT_ATTACHMENT_TOOL_MODE,
+        )
+        return DEFAULT_ATTACHMENT_TOOL_MODE
+    return tool_mode
+
+
+_ATTACHMENT_TOOL_NAMES: Dict[str, str] = {
+    "inline": "get_redmine_attachment_content",
+    "url": "get_redmine_attachment_download_url",
+}
+
+# Callables registered with FastMCP via @mcp.tool() — populated after the
+# tool bodies are defined, below.
+_attachment_tool_fns: Dict[str, Any] = {}
+
+
+def _apply_attachment_tool_mode() -> None:
+    """Publish or retract attachment tools to match ATTACHMENT_TOOL_MODE.
+
+    Called once at module import and re-callable from tests without reloading
+    the module. Idempotent: removes tools that should not be published and
+    re-adds ones that should be.
+    """
+    mode = _get_attachment_tool_mode()
+    enabled_kinds = set(_ATTACHMENT_TOOL_NAMES) if mode == "both" else {mode}
+
+    provider = getattr(mcp, "local_provider", mcp)
+    for kind, name in _ATTACHMENT_TOOL_NAMES.items():
+        try:
+            provider.remove_tool(name)
+        except Exception:
+            pass  # Tool may not be registered yet; that is fine.
+        if kind in enabled_kinds and kind in _attachment_tool_fns:
+            provider.add_tool(_attachment_tool_fns[kind])
+
+
+def _sanitize_attachment_filename(filename: Optional[str], attachment_id: int) -> str:
+    """Reduce an attachment filename to a safe basename.
+
+    Redmine returns user-supplied filenames that may contain path separators,
+    parent-directory references, or null bytes. We keep only the final path
+    component and reject anything that would still escape its parent.
+    """
+    candidate = (filename or "").replace("\x00", "").strip()
+    if not candidate:
+        return f"attachment_{attachment_id}"
+    basename = os.path.basename(candidate.replace("\\", "/"))
+    if not basename or basename in {".", ".."}:
+        return f"attachment_{attachment_id}"
+    return basename
+
+
+class _AttachmentTooLargeError(Exception):
+    """Raised when a streaming download exceeds the configured byte cap."""
+
+    def __init__(self, observed_bytes: int):
+        super().__init__(f"Attachment exceeds inline size limit ({observed_bytes} bytes)")
+        self.observed_bytes = observed_bytes
+
+
+def _stream_download_attachment(
+    attachment: Any,
+    dest_path: Path,
+    max_bytes: int,
+    chunk_size: int = 65536,
+) -> int:
+    """Stream an attachment to disk, aborting if the byte cap is exceeded.
+
+    Returns the total number of bytes written. Raises ``_AttachmentTooLargeError``
+    if the cumulative byte count passes ``max_bytes``; in that case the partial
+    file is removed before the exception propagates.
+    """
+    response = _get_redmine_client().download(attachment.content_url, savepath=None)
+    total = 0
+    try:
+        with open(dest_path, "wb") as sink:
+            for chunk in response.iter_content(chunk_size):
+                if not chunk:
+                    continue
+                total += len(chunk)
+                if total > max_bytes:
+                    raise _AttachmentTooLargeError(total)
+                sink.write(chunk)
+    except _AttachmentTooLargeError:
+        try:
+            dest_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+    finally:
+        close = getattr(response, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass
+    return total
+
+
+def _get_attachment_metadata(
+    attachment_id: int,
+) -> tuple[Any, str, str, Optional[int]]:
+    """Fetch attachment metadata without downloading content."""
+    attachment = _get_redmine_client().attachment.get(attachment_id)
+    original_filename = _sanitize_attachment_filename(
+        getattr(attachment, "filename", None), attachment_id
+    )
+    content_type = getattr(attachment, "content_type", None) or "application/octet-stream"
+    raw_size = getattr(attachment, "filesize", None)
+    try:
+        size_hint = int(raw_size) if raw_size is not None else None
+    except (TypeError, ValueError):
+        size_hint = None
+
+    return attachment, original_filename, content_type, size_hint
+
+
+def _download_attachment_to_tempdir(
+    attachment: Any,
+    original_filename: str,
+    max_bytes: int,
+) -> tuple[Path, Path, int]:
+    """Stream-download an attachment into a fresh temp directory.
+
+    Returns ``(temp_dir, file_path, size)``. The caller owns ``temp_dir`` and
+    must remove it with :func:`_cleanup_temp_attachment_dir` when done. A
+    hard byte cap protects against attachments whose ``filesize`` metadata is
+    missing or understated.
+    """
+    temp_dir = Path(tempfile.mkdtemp(prefix="redmine-mcp-attachment-"))
+    safe_name = _sanitize_attachment_filename(original_filename, 0)
+    dest_path = temp_dir / safe_name
+    try:
+        size = _stream_download_attachment(attachment, dest_path, max_bytes)
+    except BaseException:
+        _cleanup_temp_attachment_dir(temp_dir)
+        raise
+    return temp_dir, dest_path, size
+
+
+def _cleanup_temp_attachment_dir(path: Path) -> None:
+    """Best-effort cleanup for temporary attachment directories."""
+    shutil.rmtree(path, ignore_errors=True)
+
+
+def _build_attachment_inline_error(
+    attachment_id: int,
+    filename: str,
+    content_type: str,
+    size: int,
+    max_bytes: int,
+) -> Dict[str, Any]:
+    """Build a deterministic oversized attachment error response."""
+    return {
+        "error": (
+            "Attachment exceeds inline size limit: "
+            f"{size} bytes > {max_bytes} bytes."
+        ),
+        "attachment_id": attachment_id,
+        "filename": filename,
+        "content_type": content_type,
+        "size": size,
+        "max_inline_size": max_bytes,
+    }
+
+
+def _attachment_uri(attachment_id: int, filename: str) -> str:
+    """Build a stable synthetic URI for inline attachment content blocks."""
+    quoted_filename = quote(filename or f"attachment_{attachment_id}", safe="")
+    return f"redmine-attachment://{attachment_id}/{quoted_filename}"
+
+
+def _extract_charset(content_type: str) -> Optional[str]:
+    """Extract a charset parameter from a MIME content type, if present."""
+    if not content_type:
+        return None
+
+    match = re.search(r"charset=([^\s;]+)", content_type, flags=re.IGNORECASE)
+    if not match:
+        return None
+
+    return match.group(1).strip("\"'")
+
+
+def _is_text_attachment(content_type: str, filename: str) -> bool:
+    """Return True when an attachment should be treated as text."""
+    normalized_type = (content_type or "").split(";", 1)[0].strip().lower()
+    suffix = Path(filename or "").suffix.lower()
+
+    if normalized_type.startswith("text/"):
+        return True
+    if normalized_type in TEXT_ATTACHMENT_MIME_TYPES:
+        return True
+    return suffix in TEXT_ATTACHMENT_SUFFIXES
+
+
+def _decode_text_attachment(raw_bytes: bytes, content_type: str) -> str:
+    """Decode a text attachment using declared charset or sensible fallbacks."""
+    candidates: List[str] = []
+    declared_charset = _extract_charset(content_type)
+    if declared_charset:
+        candidates.append(declared_charset)
+
+    candidates.extend(["utf-8", "latin-1"])
+
+    seen = set()
+    for candidate in candidates:
+        normalized = candidate.lower()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        try:
+            return raw_bytes.decode(candidate)
+        except LookupError:
+            logger.debug("Unknown charset %r; trying next fallback", candidate)
+            continue
+        except UnicodeDecodeError:
+            logger.debug("Charset %r failed to decode; trying next fallback", candidate)
+            continue
+
+    return raw_bytes.decode("utf-8", errors="replace")
+
+
+def _build_attachment_inline_result(
+    attachment_id: int,
+    filename: str,
+    content_type: str,
+    size: int,
+    raw_bytes: bytes,
+) -> ToolResult:
+    """Build MCP-native content blocks for inline attachment responses."""
+    metadata = {
+        "attachment_id": attachment_id,
+        "filename": filename,
+        "content_type": content_type,
+        "size": size,
+    }
+
+    # Strip MIME parameters (e.g. "image/png; quality=90") before branching,
+    # consistent with how _is_text_attachment normalises content_type.
+    base_type = content_type.split(";", 1)[0].strip().lower()
+
+    if base_type.startswith("image/"):
+        image_content = mcp_types.ImageContent(
+            type="image",
+            data=base64.b64encode(raw_bytes).decode("ascii"),
+            mimeType=content_type,
+        )
+        return ToolResult(
+            content=[image_content],
+            structured_content=metadata | {"representation": "image"},
+        )
+
+    if base_type.startswith("audio/"):
+        audio_content = mcp_types.AudioContent(
+            type="audio",
+            data=base64.b64encode(raw_bytes).decode("ascii"),
+            mimeType=content_type,
+        )
+        return ToolResult(
+            content=[audio_content],
+            structured_content=metadata | {"representation": "audio"},
+        )
+
+    if _is_text_attachment(content_type, filename):
+        text = _decode_text_attachment(raw_bytes, content_type)
+        return ToolResult(
+            content=[TextContent(type="text", text=wrap_insecure_content(text))],
+            structured_content=metadata
+            | {"representation": "text", "text_length": len(text)},
+        )
+
+    blob_content = EmbeddedResource(
+        type="resource",
+        resource=BlobResourceContents(
+            uri=_attachment_uri(attachment_id, filename),
+            mimeType=content_type,
+            blob=base64.b64encode(raw_bytes).decode("ascii"),
+        ),
+    )
+    return ToolResult(
+        content=[blob_content],
+        structured_content=metadata | {"representation": "blob"},
+    )
 
 
 @mcp.tool()
@@ -2329,8 +2709,9 @@ async def get_redmine_attachment_download_url(
     await _ensure_cleanup_started()
 
     try:
-        # Get attachment metadata from Redmine
-        attachment = _get_redmine_client().attachment.get(attachment_id)
+        attachment, original_filename, content_type, _ = _get_attachment_metadata(
+            attachment_id
+        )
 
         # Server-controlled configuration (secure)
         attachments_dir = Path(os.getenv("ATTACHMENTS_DIR", "./attachments"))
@@ -2342,36 +2723,20 @@ async def get_redmine_attachment_download_url(
         # Generate secure UUID-based filename
         file_id = str(uuid.uuid4())
 
-        # Download using existing approach - keeps original filename
-        downloaded_path = attachment.download(savepath=str(attachments_dir))
-
-        # Get file info
-        original_filename = getattr(
-            attachment, "filename", f"attachment_{attachment_id}"
-        )
-
         # Create organized storage with UUID directory
         uuid_dir = attachments_dir / file_id
         uuid_dir.mkdir(exist_ok=True)
 
-        # Move file to UUID-based location using atomic operations
-        final_path = uuid_dir / original_filename
-        temp_path = uuid_dir / f"{original_filename}.tmp"
-
-        # Atomic file move with error handling
+        # Download directly into ATTACHMENTS_DIR staging area, bypassing /tmp
         try:
-            os.rename(downloaded_path, temp_path)
-            os.rename(temp_path, final_path)
+            downloaded_path = Path(attachment.download(savepath=str(uuid_dir)))
+            final_path = uuid_dir / original_filename
+            if downloaded_path != final_path:
+                os.replace(downloaded_path, final_path)
+            size = final_path.stat().st_size
         except (OSError, IOError) as e:
-            # Cleanup on failure
-            try:
-                if temp_path.exists():
-                    temp_path.unlink()
-                if Path(downloaded_path).exists():
-                    Path(downloaded_path).unlink()
-            except OSError:
-                pass  # Best effort cleanup
-            return {"error": f"Failed to store attachment: {str(e)}"}
+            shutil.rmtree(uuid_dir, ignore_errors=True)
+            return {"error": f"Failed to download attachment: {str(e)}"}
 
         # Calculate expiry time (timezone-aware)
         expires_hours = expires_minutes / 60.0
@@ -2383,10 +2748,8 @@ async def get_redmine_attachment_download_url(
             "attachment_id": attachment_id,
             "original_filename": original_filename,
             "file_path": str(final_path),
-            "content_type": getattr(
-                attachment, "content_type", "application/octet-stream"
-            ),
-            "size": final_path.stat().st_size,
+            "content_type": content_type,
+            "size": size,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "expires_at": expires_at.isoformat(),
         }
@@ -2398,7 +2761,7 @@ async def get_redmine_attachment_download_url(
         try:
             with open(temp_metadata, "w") as f:
                 json.dump(metadata, f, indent=2)
-            os.rename(temp_metadata, metadata_file)
+            os.replace(temp_metadata, metadata_file)
         except (OSError, IOError, ValueError) as e:
             # Cleanup on failure
             try:
@@ -2424,8 +2787,8 @@ async def get_redmine_attachment_download_url(
         return {
             "download_url": download_url,
             "filename": original_filename,
-            "content_type": metadata["content_type"],
-            "size": metadata["size"],
+            "content_type": content_type,
+            "size": size,
             "expires_at": metadata["expires_at"],
             "attachment_id": attachment_id,
         }
@@ -2436,6 +2799,96 @@ async def get_redmine_attachment_download_url(
             f"downloading attachment {attachment_id}",
             {"resource_type": "attachment", "resource_id": attachment_id},
         )
+
+
+@mcp.tool()
+async def get_redmine_attachment_content(
+    attachment_id: int,
+) -> ToolResult | Dict[str, Any]:
+    """Get inline attachment content for stdio-compatible MCP clients.
+
+    Streams the attachment to temporary server storage under a hard byte
+    cap, then returns MCP-native content blocks for images, audio, text,
+    and binary files directly in the MCP tool response. The stream is
+    aborted as soon as the cap is exceeded, so attachments with missing
+    or understated ``filesize`` metadata cannot exhaust disk or memory.
+
+    Args:
+        attachment_id: The ID of the attachment to retrieve
+
+    Returns:
+        ToolResult with MCP-native content blocks (ImageContent, AudioContent,
+        TextContent, or EmbeddedResource blob) on success, or a Dict with an
+        "error" key for oversized files and error conditions.
+    """
+    await _ensure_cleanup_started()
+    max_bytes = _get_attachment_inline_max_bytes()
+
+    try:
+        attachment, original_filename, content_type, size_hint = (
+            _get_attachment_metadata(attachment_id)
+        )
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"downloading attachment {attachment_id}",
+            {"resource_type": "attachment", "resource_id": attachment_id},
+        )
+
+    if size_hint is not None and size_hint > max_bytes:
+        return _build_attachment_inline_error(
+            attachment_id,
+            original_filename,
+            content_type,
+            size_hint,
+            max_bytes,
+        )
+
+    temp_dir: Optional[Path] = None
+    try:
+        temp_dir, downloaded_path, size = _download_attachment_to_tempdir(
+            attachment, original_filename, max_bytes
+        )
+    except _AttachmentTooLargeError as exc:
+        return _build_attachment_inline_error(
+            attachment_id,
+            original_filename,
+            content_type,
+            exc.observed_bytes,
+            max_bytes,
+        )
+    except OSError as exc:
+        return {"error": f"Failed to download attachment: {exc}"}
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"downloading attachment {attachment_id}",
+            {"resource_type": "attachment", "resource_id": attachment_id},
+        )
+
+    try:
+        raw_bytes = downloaded_path.read_bytes()
+        return _build_attachment_inline_result(
+            attachment_id=attachment_id,
+            filename=original_filename,
+            content_type=content_type,
+            size=size,
+            raw_bytes=raw_bytes,
+        )
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"reading attachment {attachment_id}",
+            {"resource_type": "attachment", "resource_id": attachment_id},
+        )
+    finally:
+        if temp_dir is not None:
+            _cleanup_temp_attachment_dir(temp_dir)
+
+
+_attachment_tool_fns["inline"] = get_redmine_attachment_content
+_attachment_tool_fns["url"] = get_redmine_attachment_download_url
+_apply_attachment_tool_mode()
 
 
 @mcp.tool()

@@ -10,7 +10,15 @@ import sys
 import uuid
 
 import pytest
-from unittest.mock import AsyncMock, Mock, patch, MagicMock, mock_open
+from unittest.mock import AsyncMock, Mock, patch, MagicMock
+from fastmcp.tools.base import ToolResult
+from mcp.types import (
+    AudioContent,
+    BlobResourceContents,
+    EmbeddedResource,
+    ImageContent,
+    TextContent,
+)
 
 # Add the src directory to the path so we can import our modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -1076,30 +1084,28 @@ class TestRedmineHandler:
     @patch("redmine_mcp_server.redmine_handler.redmine")
     @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
     async def test_get_redmine_attachment_download_url_success(
-        self, mock_cleanup, mock_redmine
+        self, mock_cleanup, mock_redmine, tmp_path
     ):
         """Test successful URL generation with secure implementation."""
         # Mock setup
         mock_attachment = MagicMock()
         mock_attachment.filename = "test.pdf"
         mock_attachment.content_type = "application/pdf"
-        mock_attachment.download = MagicMock(return_value="/tmp/test_download")
+        mock_attachment.filesize = 1024
+        temp_file = tmp_path / "test_download.pdf"
+        temp_file.write_bytes(b"pdf content")
+        mock_attachment.download = MagicMock(return_value=str(temp_file))
 
         mock_redmine.attachment.get.return_value = mock_attachment
 
         with patch("uuid.uuid4", return_value=MagicMock(spec=uuid.UUID)) as mock_uuid:
             mock_uuid.return_value.__str__ = MagicMock(return_value="test-uuid-123")
-            with patch("builtins.open", mock_open()):
-                with patch("pathlib.Path.mkdir"):
-                    with patch("pathlib.Path.stat") as mock_stat:
-                        mock_stat.return_value.st_size = 1024
-                        with patch("os.rename"):
-                            with patch("json.dump"):
-                                from redmine_mcp_server.redmine_handler import (
-                                    get_redmine_attachment_download_url,
-                                )
+            with patch.dict(os.environ, {"ATTACHMENTS_DIR": str(tmp_path)}):
+                from redmine_mcp_server.redmine_handler import (
+                    get_redmine_attachment_download_url,
+                )
 
-                                result = await get_redmine_attachment_download_url(123)
+                result = await get_redmine_attachment_download_url(123)
 
         # Assertions
         assert "error" not in result
@@ -1109,6 +1115,302 @@ class TestRedmineHandler:
         assert result["attachment_id"] == 123
         assert "test.pdf" in result["filename"]
         assert "test-uuid-123" in result["download_url"]
+
+    @staticmethod
+    def _prime_attachment_stream(mock_redmine, data: bytes):
+        """Configure the redmine client so _stream_download_attachment yields data."""
+        mock_response = MagicMock()
+        mock_response.iter_content = MagicMock(
+            side_effect=lambda _chunk_size=65536: iter([data])
+        )
+        mock_redmine.download = MagicMock(return_value=mock_response)
+        return mock_response
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    async def test_get_redmine_attachment_content_success(
+        self, mock_cleanup, mock_redmine, tmp_path
+    ):
+        """Text attachments should return MCP text content."""
+        mock_attachment = MagicMock()
+        mock_attachment.filename = "test.txt"
+        mock_attachment.content_type = "text/plain"
+        mock_attachment.filesize = 11
+        mock_attachment.content_url = "http://r/attachments/download/123/test.txt"
+
+        mock_redmine.attachment.get.return_value = mock_attachment
+        self._prime_attachment_stream(mock_redmine, b"hello world")
+
+        from redmine_mcp_server.redmine_handler import get_redmine_attachment_content
+
+        result = await get_redmine_attachment_content(123)
+
+        assert isinstance(result, ToolResult)
+        assert result.structured_content["attachment_id"] == 123
+        assert result.structured_content["filename"] == "test.txt"
+        assert result.structured_content["content_type"] == "text/plain"
+        assert result.structured_content["representation"] == "text"
+        text_block = result.content[0]
+        assert isinstance(text_block, TextContent)
+        assert text_block.text.startswith("<insecure-content-")
+        assert "\nhello world\n" in text_block.text
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    async def test_get_redmine_attachment_content_image(
+        self, mock_cleanup, mock_redmine, tmp_path
+    ):
+        """Image attachments should return MCP image content."""
+        mock_attachment = MagicMock()
+        mock_attachment.filename = "daydream.png"
+        mock_attachment.content_type = "image/png"
+        mock_attachment.filesize = 15
+        mock_attachment.content_url = "http://r/456/daydream.png"
+
+        mock_redmine.attachment.get.return_value = mock_attachment
+        self._prime_attachment_stream(mock_redmine, b"\x89PNG\r\n\x1a\npngdata")
+
+        from redmine_mcp_server.redmine_handler import get_redmine_attachment_content
+
+        result = await get_redmine_attachment_content(456)
+
+        assert isinstance(result, ToolResult)
+        assert result.structured_content["representation"] == "image"
+        assert result.content == [
+            ImageContent(
+                type="image",
+                data="iVBORw0KGgpwbmdkYXRh",
+                mimeType="image/png",
+            )
+        ]
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    async def test_get_redmine_attachment_content_audio(
+        self, mock_cleanup, mock_redmine, tmp_path
+    ):
+        """Audio attachments should return MCP audio content."""
+        mock_attachment = MagicMock()
+        mock_attachment.filename = "alert.wav"
+        mock_attachment.content_type = "audio/wav"
+        mock_attachment.filesize = 12
+        mock_attachment.content_url = "http://r/654/alert.wav"
+
+        mock_redmine.attachment.get.return_value = mock_attachment
+        self._prime_attachment_stream(mock_redmine, b"RIFFWAVEfmt ")
+
+        from redmine_mcp_server.redmine_handler import get_redmine_attachment_content
+
+        result = await get_redmine_attachment_content(654)
+
+        assert isinstance(result, ToolResult)
+        assert result.structured_content["representation"] == "audio"
+        assert result.content == [
+            AudioContent(
+                type="audio",
+                data="UklGRldBVkVmbXQg",
+                mimeType="audio/wav",
+            )
+        ]
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    async def test_get_redmine_attachment_content_binary(
+        self, mock_cleanup, mock_redmine, tmp_path
+    ):
+        """Binary attachments should return an embedded blob resource."""
+        mock_attachment = MagicMock()
+        mock_attachment.filename = "report.pdf"
+        mock_attachment.content_type = "application/pdf"
+        mock_attachment.filesize = 8
+        mock_attachment.content_url = "http://r/777/report.pdf"
+
+        mock_redmine.attachment.get.return_value = mock_attachment
+        self._prime_attachment_stream(mock_redmine, b"%PDF-1.7")
+
+        from redmine_mcp_server.redmine_handler import get_redmine_attachment_content
+
+        result = await get_redmine_attachment_content(777)
+
+        assert isinstance(result, ToolResult)
+        assert result.structured_content["representation"] == "blob"
+        assert result.content == [
+            EmbeddedResource(
+                type="resource",
+                resource=BlobResourceContents(
+                    uri="redmine-attachment://777/report.pdf",
+                    mimeType="application/pdf",
+                    blob="JVBERi0xLjc=",
+                ),
+            )
+        ]
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    async def test_get_redmine_attachment_content_missing_mime_type(
+        self, mock_cleanup, mock_redmine, tmp_path
+    ):
+        """Missing attachment MIME types should fall back to blob rendering."""
+        mock_attachment = MagicMock()
+        mock_attachment.filename = "mystery.bin"
+        mock_attachment.content_type = None
+        mock_attachment.filesize = 4
+        mock_attachment.content_url = "http://r/778/mystery.bin"
+
+        mock_redmine.attachment.get.return_value = mock_attachment
+        self._prime_attachment_stream(mock_redmine, b"\x00\x01\x02\x03")
+
+        from redmine_mcp_server.redmine_handler import get_redmine_attachment_content
+
+        result = await get_redmine_attachment_content(778)
+
+        assert isinstance(result, ToolResult)
+        assert result.structured_content["content_type"] == "application/octet-stream"
+        assert result.structured_content["representation"] == "blob"
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    async def test_get_redmine_attachment_content_oversized(
+        self, mock_cleanup, mock_redmine, tmp_path
+    ):
+        """Oversized attachments return metadata plus a deterministic error."""
+        mock_attachment = MagicMock()
+        mock_attachment.filename = "large.bin"
+        mock_attachment.content_type = "application/octet-stream"
+        mock_attachment.filesize = 10
+        mock_attachment.content_url = "http://r/321/large.bin"
+
+        mock_redmine.attachment.get.return_value = mock_attachment
+        self._prime_attachment_stream(mock_redmine, b"0123456789")
+
+        from redmine_mcp_server.redmine_handler import get_redmine_attachment_content
+
+        with patch.dict(os.environ, {"ATTACHMENT_INLINE_MAX_BYTES": "5"}):
+            result = await get_redmine_attachment_content(321)
+
+        assert "error" in result
+        assert result["attachment_id"] == 321
+        assert result["filename"] == "large.bin"
+        assert result["size"] == 10
+        assert result["max_inline_size"] == 5
+        assert "content" not in result
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    async def test_get_redmine_attachment_content_oversized_skips_download(
+        self, mock_cleanup, mock_redmine
+    ):
+        """Inline size checks should reject oversized files before download."""
+        mock_attachment = MagicMock()
+        mock_attachment.filename = "too-large.bin"
+        mock_attachment.content_type = "application/octet-stream"
+        mock_attachment.filesize = 1024
+        mock_redmine.attachment.get.return_value = mock_attachment
+
+        from redmine_mcp_server.redmine_handler import get_redmine_attachment_content
+
+        with patch.dict(os.environ, {"ATTACHMENT_INLINE_MAX_BYTES": "5"}):
+            result = await get_redmine_attachment_content(654)
+
+        assert "error" in result
+        assert result["size"] == 1024
+        mock_redmine.download.assert_not_called()
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    async def test_get_redmine_attachment_content_missing_filesize_is_capped(
+        self, mock_cleanup, mock_redmine
+    ):
+        """Missing filesize metadata must not bypass the byte cap: streaming aborts."""
+        mock_attachment = MagicMock()
+        mock_attachment.filename = "huge.bin"
+        mock_attachment.content_type = "application/octet-stream"
+        mock_attachment.filesize = None
+        mock_attachment.content_url = "http://r/attachments/huge.bin"
+        mock_redmine.attachment.get.return_value = mock_attachment
+
+        # Emit lots of small chunks; cap should abort mid-stream.
+        chunks = [b"x" * 1024 for _ in range(32)]
+        mock_response = MagicMock()
+        mock_response.iter_content = MagicMock(
+            side_effect=lambda _chunk_size=65536: iter(chunks)
+        )
+        mock_redmine.download = MagicMock(return_value=mock_response)
+
+        from redmine_mcp_server.redmine_handler import get_redmine_attachment_content
+
+        with patch.dict(os.environ, {"ATTACHMENT_INLINE_MAX_BYTES": "2048"}):
+            result = await get_redmine_attachment_content(42)
+
+        assert "error" in result
+        assert result["max_inline_size"] == 2048
+        assert result["size"] > 2048
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    async def test_get_redmine_attachment_content_sanitizes_filename(
+        self, mock_cleanup, mock_redmine
+    ):
+        """Path-traversal filenames from Redmine must be reduced to a basename."""
+        mock_attachment = MagicMock()
+        mock_attachment.filename = "../../etc/passwd"
+        mock_attachment.content_type = "text/plain"
+        mock_attachment.filesize = 3
+        mock_attachment.content_url = "http://r/evil"
+        mock_redmine.attachment.get.return_value = mock_attachment
+        self._prime_attachment_stream(mock_redmine, b"hi\n")
+
+        from redmine_mcp_server.redmine_handler import get_redmine_attachment_content
+
+        result = await get_redmine_attachment_content(9)
+
+        assert isinstance(result, ToolResult)
+        assert result.structured_content["filename"] == "passwd"
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    async def test_get_redmine_attachment_content_respects_declared_charset(
+        self, mock_cleanup, mock_redmine
+    ):
+        """A declared non-utf8 charset should be used to decode the body."""
+        # "café" encoded as latin-1
+        raw = "café".encode("latin-1")
+        mock_attachment = MagicMock()
+        mock_attachment.filename = "note.txt"
+        mock_attachment.content_type = "text/plain; charset=iso-8859-1"
+        mock_attachment.filesize = len(raw)
+        mock_attachment.content_url = "http://r/iso"
+        mock_redmine.attachment.get.return_value = mock_attachment
+        self._prime_attachment_stream(mock_redmine, raw)
+
+        from redmine_mcp_server.redmine_handler import get_redmine_attachment_content
+
+        result = await get_redmine_attachment_content(11)
+
+        assert isinstance(result, ToolResult)
+        text_block = result.content[0]
+        assert isinstance(text_block, TextContent)
+        assert "café" in text_block.text
 
     @pytest.mark.unit
     @pytest.mark.asyncio
@@ -1122,6 +1424,20 @@ class TestRedmineHandler:
         )
 
         result = await get_redmine_attachment_download_url(999)
+
+        assert "error" in result
+        assert "not found" in result["error"].lower()
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_get_redmine_attachment_content_not_found(self, mock_redmine):
+        """Test handling of non-existent attachment ID for inline retrieval."""
+        mock_redmine.attachment.get.side_effect = ResourceNotFoundError()
+
+        from redmine_mcp_server.redmine_handler import get_redmine_attachment_content
+
+        result = await get_redmine_attachment_content(999)
 
         assert "error" in result
         assert "not found" in result["error"].lower()
@@ -1424,14 +1740,14 @@ class TestAttachmentErrorRecovery:
 
         mock_redmine.attachment.get.return_value = mock_attachment
 
-        # Patch os.rename to fail
-        with patch("os.rename", side_effect=OSError("Permission denied")):
+        # Patch file rename into final position to fail
+        with patch("os.replace", side_effect=OSError("Permission denied")):
             with patch.dict(os.environ, {"ATTACHMENTS_DIR": str(tmp_path)}):
                 result = await get_redmine_attachment_download_url(123)
 
         # Should return error dict
         assert "error" in result
-        assert "Failed to store attachment" in result["error"]
+        assert "Failed to download attachment" in result["error"]
 
     @pytest.mark.asyncio
     @patch(
@@ -1465,17 +1781,17 @@ class TestAttachmentErrorRecovery:
 
         mock_redmine.attachment.get.return_value = mock_attachment
 
-        # Wrap os.rename to fail specifically on metadata file moves
-        original_rename = os.rename
+        # Fail specifically on metadata move into place
+        original_replace = os.replace
 
-        def selective_rename(src, dst):
+        def selective_replace(src, dst):
             """Allow normal file moves, but fail on metadata JSON files."""
             dst_str = os.fspath(dst)
             if dst_str.endswith(".json"):
                 raise OSError("Disk full")
-            return original_rename(src, dst)
+            return original_replace(src, dst)
 
-        with patch("os.rename", side_effect=selective_rename):
+        with patch("os.replace", side_effect=selective_replace):
             with patch.dict(os.environ, {"ATTACHMENTS_DIR": str(attachments_dir)}):
                 result = await get_redmine_attachment_download_url(456)
 
@@ -1798,6 +2114,7 @@ class TestAttachmentDownloadEdgeCases:
         mock_attachment.id = 789
         mock_attachment.filename = "test_file.txt"
         mock_attachment.content_type = "text/plain"
+        mock_attachment.filesize = len("test content")
         mock_attachment.download.return_value = str(temp_file)
 
         mock_redmine.attachment.get.return_value = mock_attachment
@@ -1838,34 +2155,20 @@ class TestAttachmentDownloadEdgeCases:
         mock_attachment.id = 999
         mock_attachment.filename = "test_file.txt"
         mock_attachment.content_type = "text/plain"
+        mock_attachment.filesize = len("test content")
         mock_attachment.download.return_value = str(temp_file)
 
         mock_redmine.attachment.get.return_value = mock_attachment
 
-        # Make rename fail
-        original_rename = os.rename
-        rename_call_count = [0]
-
-        def failing_rename(src, dst):
-            rename_call_count[0] += 1
-            if rename_call_count[0] == 1:
-                # First rename (to temp) succeeds
-                return original_rename(src, dst)
-            # Second rename fails
-            raise OSError("Disk full")
-
-        # Make unlink also fail during cleanup
-        def failing_unlink(self, *args, **kwargs):
-            raise OSError("Cannot delete file")
-
-        with patch("os.rename", side_effect=failing_rename):
-            with patch.object(Path, "unlink", failing_unlink):
-                with patch.dict(os.environ, {"ATTACHMENTS_DIR": str(attachments_dir)}):
-                    result = await get_redmine_attachment_download_url(999)
+        # Make rename fail; cleanup uses shutil.rmtree(ignore_errors=True) which
+        # swallows OS errors, so the error dict is always returned regardless.
+        with patch("os.replace", side_effect=OSError("Disk full")):
+            with patch.dict(os.environ, {"ATTACHMENTS_DIR": str(attachments_dir)}):
+                result = await get_redmine_attachment_download_url(999)
 
         # Should still return error even if cleanup fails
         assert "error" in result
-        assert "Failed to store attachment" in result["error"]
+        assert "Failed to download attachment" in result["error"]
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
@@ -1888,6 +2191,7 @@ class TestAttachmentDownloadEdgeCases:
         mock_attachment.id = 888
         mock_attachment.filename = "test_file.txt"
         mock_attachment.content_type = "text/plain"
+        mock_attachment.filesize = len("test content")
         mock_attachment.download.return_value = str(temp_file)
 
         mock_redmine.attachment.get.return_value = mock_attachment
@@ -1896,17 +2200,15 @@ class TestAttachmentDownloadEdgeCases:
         def failing_unlink(self, *args, **kwargs):
             raise OSError("Cannot delete file")
 
-        original_rename = os.rename
-        rename_count = [0]
+        original_replace = os.replace
 
-        def selective_rename(src, dst):
-            rename_count[0] += 1
+        def selective_replace(src, dst):
             dst_str = str(dst)
             if dst_str.endswith(".json"):
                 raise OSError("Cannot write metadata")
-            return original_rename(src, dst)
+            return original_replace(src, dst)
 
-        with patch("os.rename", side_effect=selective_rename):
+        with patch("os.replace", side_effect=selective_replace):
             with patch.object(Path, "unlink", failing_unlink):
                 with patch.dict(os.environ, {"ATTACHMENTS_DIR": str(attachments_dir)}):
                     result = await get_redmine_attachment_download_url(888)
@@ -2477,3 +2779,56 @@ class TestGetRedmineIssueIncludeFlags:
         assert "id" in child
         assert "subject" in child
         assert "tracker" in child
+
+
+class TestAttachmentToolRegistration:
+    """Test ATTACHMENT_TOOL_MODE-driven tool registration.
+
+    Mode switching goes through ``_apply_attachment_tool_mode`` without module
+    reloads, so test state does not leak into other tests.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _restore_default_mode(self):
+        """Always restore ``both`` mode after each test, regardless of outcome."""
+        import redmine_mcp_server.redmine_handler as handler
+
+        yield
+        os.environ.pop("ATTACHMENT_TOOL_MODE", None)
+        handler._apply_attachment_tool_mode()
+
+    @pytest.mark.asyncio
+    async def test_attachment_tool_mode_inline_only_registers_inline_tool(self):
+        """Only inline attachment tool should be published in inline mode."""
+        import redmine_mcp_server.redmine_handler as handler
+
+        with patch.dict(os.environ, {"ATTACHMENT_TOOL_MODE": "inline"}):
+            handler._apply_attachment_tool_mode()
+            tool_names = {tool.name for tool in await handler.mcp.list_tools()}
+
+        assert "get_redmine_attachment_content" in tool_names
+        assert "get_redmine_attachment_download_url" not in tool_names
+
+    @pytest.mark.asyncio
+    async def test_attachment_tool_mode_url_only_registers_url_tool(self):
+        """Only URL attachment tool should be published in url mode."""
+        import redmine_mcp_server.redmine_handler as handler
+
+        with patch.dict(os.environ, {"ATTACHMENT_TOOL_MODE": "url"}):
+            handler._apply_attachment_tool_mode()
+            tool_names = {tool.name for tool in await handler.mcp.list_tools()}
+
+        assert "get_redmine_attachment_download_url" in tool_names
+        assert "get_redmine_attachment_content" not in tool_names
+
+    @pytest.mark.asyncio
+    async def test_attachment_tool_mode_invalid_falls_back_to_both(self):
+        """Invalid mode should keep both attachment tools registered."""
+        import redmine_mcp_server.redmine_handler as handler
+
+        with patch.dict(os.environ, {"ATTACHMENT_TOOL_MODE": "unexpected"}):
+            handler._apply_attachment_tool_mode()
+            tool_names = {tool.name for tool in await handler.mcp.list_tools()}
+
+        assert "get_redmine_attachment_download_url" in tool_names
+        assert "get_redmine_attachment_content" in tool_names
