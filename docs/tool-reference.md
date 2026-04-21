@@ -1841,3 +1841,97 @@ Removes expired attachment files and provides cleanup statistics.
 ```
 
 **Note:** Automatic cleanup runs in the background based on server configuration. This tool allows manual cleanup on demand.
+
+---
+
+## Checklist Tools
+
+These tools require the **RedmineUP Checklists Pro** plugin installed on your Redmine instance and `REDMINE_CHECKLISTS_ENABLED=true`.
+
+### `get_checklist`
+
+Retrieve all checklist items for a Redmine issue.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `issue_id` | int | Yes | The ID of the issue whose checklist to retrieve |
+
+**Returns:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `issue_id` | int | The issue ID |
+| `total_count` | int | Number of checklist items |
+| `items` | list | Array of checklist item objects |
+| `items[].id` | int | Checklist item ID |
+| `items[].subject` | string | Item text (wrapped in `<insecure-content>` tags) |
+| `items[].is_done` | bool | Whether the item is completed |
+| `items[].position` | int | Position/order of the item |
+| `items[].created_at` | string | ISO timestamp of creation |
+| `items[].updated_at` | string | ISO timestamp of last update |
+
+**Error cases:**
+- Plugin disabled: returns `{"error": "Checklist support is disabled. Set REDMINE_CHECKLISTS_ENABLED=true..."}`
+- Invalid `issue_id`: returns `{"error": "issue_id must be a positive integer."}`
+- Issue not found / permission denied: returns Redmine API error
+
+---
+
+### `update_checklist_item`
+
+Update a checklist item's text, done state, or position. This is a **write operation** and is blocked in read-only mode.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `checklist_item_id` | int | Yes | The ID of the checklist item to update |
+| `subject` | string | No | New text for the checklist item |
+| `is_done` | bool | No | New done state |
+| `position` | int | No | New position/order |
+
+At least one optional parameter must be provided.
+
+**Returns:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | bool | `true` on success |
+| `checklist_item_id` | int | The updated item's ID |
+| `updated_fields` | list | Names of fields that were updated |
+
+**Error cases:**
+- Read-only mode: returns read-only error
+- Plugin disabled: returns plugin-disabled error
+- No fields provided: returns `{"error": "No fields to update..."}`
+- Invalid `is_done` type: returns `{"error": "is_done must be a boolean."}`
+- Invalid `position`: returns `{"error": "position must be a positive integer."}`
+
+---
+
+### `mark_checklist_done`
+
+Toggle the done/undone state of a checklist item. Convenience tool equivalent to `update_checklist_item(checklist_item_id, is_done=...)`. This is a **write operation** and is blocked in read-only mode.
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `checklist_item_id` | int | Yes | – | The ID of the checklist item |
+| `is_done` | bool | No | `true` | `true` to mark as done, `false` to mark undone |
+
+**Returns:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | bool | `true` on success |
+| `checklist_item_id` | int | The item's ID |
+| `is_done` | bool | The new done state |
+
+**Error cases:**
+- Read-only mode: returns read-only error
+- Plugin disabled: returns plugin-disabled error
+- Invalid `checklist_item_id`: returns `{"error": "checklist_item_id must be a positive integer."}`
+- Invalid `is_done` type: returns `{"error": "is_done must be a boolean."}`

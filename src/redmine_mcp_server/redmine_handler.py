@@ -594,6 +594,11 @@ def _is_agile_enabled() -> bool:
     return _is_true_env("REDMINE_AGILE_ENABLED", "false")
 
 
+def _is_checklists_enabled() -> bool:
+    """Check if RedmineUP Checklists plugin support is enabled."""
+    return _is_true_env("REDMINE_CHECKLISTS_ENABLED", "false")
+
+
 def _fetch_agile_data(issue_id: int) -> Dict[str, Any]:
     """Fetch agile fields for an issue from the RedmineUP Agile endpoint.
 
@@ -622,6 +627,52 @@ def _apply_agile_story_points(issue_id: int, story_points) -> None:
         {"issue": {"agile_data_attributes": {"story_points": story_points}}}
     )
     client.engine.request(
+        "put",
+        url,
+        headers={"Content-Type": "application/json"},
+        data=payload,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Checklist helpers (requires RedmineUP Checklists plugin)
+# ---------------------------------------------------------------------------
+
+
+def _fetch_checklist_items(issue_id: int) -> List[Dict[str, Any]]:
+    """Fetch checklist items for an issue from the RedmineUP Checklists endpoint.
+
+    Returns a list of checklist item dicts.
+    Raises on any HTTP error (caller is responsible for catching).
+    """
+    client = _get_redmine_client()
+    url = f"{REDMINE_URL}/issues/{issue_id}/checklists.json"
+    payload = client.engine.request("get", url)
+    raw_items = payload if isinstance(payload, list) else payload.get("checklists", [])
+    items = []
+    for item in raw_items:
+        items.append(
+            {
+                "id": item.get("id"),
+                "subject": wrap_insecure_content(item.get("subject", "")),
+                "is_done": item.get("is_done", False),
+                "position": item.get("position"),
+                "created_at": str(item.get("created_at", "")),
+                "updated_at": str(item.get("updated_at", "")),
+            }
+        )
+    return items
+
+
+def _update_checklist_item_api(checklist_item_id: int, updates: Dict[str, Any]) -> Any:
+    """Update a checklist item via the RedmineUP Checklists endpoint.
+
+    Raises on any HTTP error (caller is responsible for catching).
+    """
+    client = _get_redmine_client()
+    url = f"{REDMINE_URL}/checklists/{checklist_item_id}.json"
+    payload = json.dumps({"checklist": updates})
+    return client.engine.request(
         "put",
         url,
         headers={"Content-Type": "application/json"},
@@ -5546,6 +5597,178 @@ async def import_time_entries(
         "created": created,
         "errors": errors,
     }
+
+
+# ---------------------------------------------------------------------------
+# Checklist tools (requires RedmineUP Checklists plugin)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+async def get_checklist(issue_id: int) -> Dict[str, Any]:
+    """Retrieve all checklist items for a Redmine issue.
+
+    Requires the RedmineUP Checklists plugin and
+    ``REDMINE_CHECKLISTS_ENABLED=true``.
+
+    Args:
+        issue_id: The ID of the issue whose checklist to retrieve.
+
+    Returns:
+        A dictionary with an ``items`` list of checklist item dicts,
+        each containing ``id``, ``subject``, ``is_done``, ``position``,
+        ``created_at``, and ``updated_at``. Also includes ``total_count``.
+        Returns an error dict if the plugin is disabled or on failure.
+    """
+    if not _is_checklists_enabled():
+        return {
+            "error": (
+                "Checklist support is disabled. "
+                "Set REDMINE_CHECKLISTS_ENABLED=true to enable it."
+            )
+        }
+
+    if not _is_positive_int(issue_id):
+        return {"error": "issue_id must be a positive integer."}
+
+    try:
+        items = _fetch_checklist_items(issue_id)
+        return {
+            "issue_id": issue_id,
+            "total_count": len(items),
+            "items": items,
+        }
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"fetching checklist for issue {issue_id}",
+            {"resource_type": "checklist", "resource_id": issue_id},
+        )
+
+
+@mcp.tool()
+async def update_checklist_item(
+    checklist_item_id: int,
+    subject: Optional[str] = None,
+    is_done: Optional[bool] = None,
+    position: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Update a checklist item's text, done state, or position.
+
+    Requires the RedmineUP Checklists plugin and
+    ``REDMINE_CHECKLISTS_ENABLED=true``. This is a write operation and
+    is blocked when ``REDMINE_MCP_READ_ONLY=true``.
+
+    Args:
+        checklist_item_id: The ID of the checklist item to update.
+        subject: New text for the checklist item (optional).
+        is_done: New done state (optional).
+        position: New position/order (optional).
+
+    Returns:
+        A success dict with the updated fields, or an error dict on failure.
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    if not _is_checklists_enabled():
+        return {
+            "error": (
+                "Checklist support is disabled. "
+                "Set REDMINE_CHECKLISTS_ENABLED=true to enable it."
+            )
+        }
+
+    if not _is_positive_int(checklist_item_id):
+        return {"error": "checklist_item_id must be a positive integer."}
+
+    updates: Dict[str, Any] = {}
+    if subject is not None:
+        updates["subject"] = subject
+    if is_done is not None:
+        if not isinstance(is_done, bool):
+            return {"error": "is_done must be a boolean."}
+        updates["is_done"] = is_done
+    if position is not None:
+        if not _is_positive_int(position):
+            return {"error": "position must be a positive integer."}
+        updates["position"] = position
+
+    if not updates:
+        return {
+            "error": (
+                "No fields to update. Provide at least one of: "
+                "subject, is_done, position."
+            )
+        }
+
+    try:
+        _update_checklist_item_api(checklist_item_id, updates)
+        return {
+            "success": True,
+            "checklist_item_id": checklist_item_id,
+            "updated_fields": list(updates.keys()),
+        }
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"updating checklist item {checklist_item_id}",
+            {"resource_type": "checklist_item", "resource_id": checklist_item_id},
+        )
+
+
+@mcp.tool()
+async def mark_checklist_done(
+    checklist_item_id: int,
+    is_done: bool = True,
+) -> Dict[str, Any]:
+    """Toggle the done/undone state of a checklist item.
+
+    Convenience tool that marks a checklist item as done or undone.
+    Equivalent to ``update_checklist_item(checklist_item_id, is_done=...)``.
+
+    Requires the RedmineUP Checklists plugin and
+    ``REDMINE_CHECKLISTS_ENABLED=true``. This is a write operation and
+    is blocked when ``REDMINE_MCP_READ_ONLY=true``.
+
+    Args:
+        checklist_item_id: The ID of the checklist item.
+        is_done: ``True`` to mark as done (default), ``False`` to mark undone.
+
+    Returns:
+        A success dict, or an error dict on failure.
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    if not _is_checklists_enabled():
+        return {
+            "error": (
+                "Checklist support is disabled. "
+                "Set REDMINE_CHECKLISTS_ENABLED=true to enable it."
+            )
+        }
+
+    if not _is_positive_int(checklist_item_id):
+        return {"error": "checklist_item_id must be a positive integer."}
+
+    if not isinstance(is_done, bool):
+        return {"error": "is_done must be a boolean."}
+
+    try:
+        _update_checklist_item_api(checklist_item_id, {"is_done": is_done})
+        return {
+            "success": True,
+            "checklist_item_id": checklist_item_id,
+            "is_done": is_done,
+        }
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"marking checklist item {checklist_item_id} "
+            f"as {'done' if is_done else 'undone'}",
+            {"resource_type": "checklist_item", "resource_id": checklist_item_id},
+        )
 
 
 @mcp.tool()
