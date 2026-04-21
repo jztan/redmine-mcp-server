@@ -9,9 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - `REDMINE_CHECKLISTS_ENABLED=true` opt-in support for RedmineUP Checklists Pro plugin:
-  - **`get_checklist`** — retrieve all checklist items for an issue (id, subject, is_done, position, timestamps)
-  - **`update_checklist_item`** — update a checklist item's text, done state, or position
-  - **`mark_checklist_done`** — convenience tool to toggle done/undone state of a checklist item
+  - **`get_checklist`**: retrieve all checklist items for an issue (id, subject, is_done, position, timestamps)
+  - **`update_checklist_item`**: update a checklist item's text, done state, or position
+  - **`mark_checklist_done`**: convenience tool to toggle done/undone state of a checklist item
 - `REDMINE_AGILE_ENABLED=true` opt-in support for RedmineUP Agile plugin: `get_redmine_issue` auto-includes `story_points`, `agile_sprint_id`, and `agile_position`; `update_redmine_issue` accepts `story_points` in the `fields` dict
 - **14 new MCP tools for Issue Tracking:**
   - **Copying and hierarchy:**

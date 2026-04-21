@@ -657,8 +657,8 @@ def _fetch_checklist_items(issue_id: int) -> List[Dict[str, Any]]:
                 "subject": wrap_insecure_content(item.get("subject", "")),
                 "is_done": item.get("is_done", False),
                 "position": item.get("position"),
-                "created_at": str(item.get("created_at", "")),
-                "updated_at": str(item.get("updated_at", "")),
+                "created_at": str(item.get("created_at") or ""),
+                "updated_at": str(item.get("updated_at") or ""),
             }
         )
     return items
