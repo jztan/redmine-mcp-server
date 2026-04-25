@@ -4987,20 +4987,80 @@ async def update_time_entry(
 
 
 @mcp.tool()
-async def list_time_entry_activities() -> List[Dict[str, Any]]:
+async def list_time_entry_activities(
+    project_id: Optional[Union[str, int]] = None,
+) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """List available time entry activities from Redmine.
 
-    Returns all activity types that can be used when creating or updating
-    time entries (e.g., Development, Design, Testing).
+    Returns activity types that can be used when creating or updating time
+    entries (e.g., Development, Design, Testing).
+
+    When called without ``project_id``, returns all global activity types.
+
+    When called with ``project_id``, returns project-specific activities via
+    ``GET /projects/:id.json?include=time_entry_activities`` (Redmine 3.4.0+).
+    Project-specific IDs differ from global ones — always use project-scoped
+    activities when logging time against a specific project to avoid
+    ``"Activity is not included in the list"`` errors.
+
+    Args:
+        project_id: Optional project identifier (ID number or string
+            identifier). When provided, returns project-specific activities
+            instead of global ones.
 
     Returns:
-        A list of activity dictionaries. On failure, a list containing
-        a single dictionary with an "error" key.
+        Without ``project_id``: a list of activity dicts, each with
+        ``id``, ``name``, ``active``, ``is_default``.
+
+        With ``project_id``: a dict with ``project_id`` and ``activities``
+        (same structure). If the project has no custom activities,
+        ``activities`` is empty and a ``note`` field explains the fallback.
+
+        On failure: a list containing a single dict with an ``"error"`` key.
 
     Examples:
         >>> await list_time_entry_activities()
         [{"id": 4, "name": "Development", "active": True, "is_default": False}, ...]
+
+        >>> await list_time_entry_activities(project_id="my-project")
+        {
+            "project_id": "my-project",
+            "activities": [{"id": 9, "name": "Development", ...}]
+        }
     """
+    if project_id is not None:
+        try:
+            project = _get_redmine_client().project.get(
+                project_id, include="time_entry_activities"
+            )
+            activities = getattr(project, "time_entry_activities", None) or []
+            result: Dict[str, Any] = {
+                "project_id": project_id,
+                "activities": [
+                    {
+                        "id": getattr(a, "id", None),
+                        "name": getattr(a, "name", None),
+                        "active": getattr(a, "active", None),
+                        "is_default": getattr(a, "is_default", None),
+                    }
+                    for a in activities
+                ],
+            }
+            if not result["activities"]:
+                result["note"] = (
+                    "No project-specific activities configured. "
+                    "Use list_time_entry_activities for global activities."
+                )
+            return result
+        except Exception as e:
+            return [
+                _handle_redmine_error(
+                    e,
+                    f"listing time entry activities for project {project_id}",
+                    {"resource_type": "project", "resource_id": project_id},
+                )
+            ]
+
     try:
         activities = _get_redmine_client().enumeration.filter(
             resource="time_entry_activities"

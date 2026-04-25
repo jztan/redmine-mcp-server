@@ -88,6 +88,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Contributors
 - @mihajlovicjj — 30 new MCP tools, security hardening, and 82+ new tests ([#89](https://github.com/jztan/redmine-mcp-server/pull/89))
 
+## [1.2.2] - 2026-04-25
+## [1.2.1] - 2026-04-25
+### Changed
+- `list_time_entry_activities` now accepts an optional `project_id` parameter to return project-specific activity IDs (fixes `"Activity is not included in the list"` errors when creating time entries for projects with custom activities)
+- `scripts/release.py` now supports `--hotfix` flag to finish a `hotfix/*` branch: bumps patch version, merges to `master` (tagged), merges back to `develop`, and deletes the hotfix branch
+- `scripts/release.py` `merge_back_to_develop` now detects merge conflicts and exits with actionable instructions (resolve conflicts, stage files, commit, delete branch) instead of crashing with an unhandled error
+
 ## [1.2.0] - 2026-04-14
 ### Added
 - `REDMINE_AGILE_ENABLED=true` opt-in support for RedmineUP Agile plugin: `get_redmine_issue` auto-includes `story_points`, `agile_sprint_id`, and `agile_position`; `update_redmine_issue` accepts `story_points` in the `fields` dict

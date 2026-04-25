@@ -24,6 +24,7 @@ Gitflow:
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -43,6 +44,7 @@ class ReleaseConfig:
     bump_type: str
     dry_run: bool
     project_root: Path
+    hotfix: bool = False
 
 
 def run_command(
@@ -52,13 +54,16 @@ def run_command(
     capture_output: bool = True,
     dry_run: bool = False,
     dry_run_msg: str | None = None,
+    env: dict | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run a shell command with optional dry-run support."""
     if dry_run and dry_run_msg:
         print(f"  [DRY-RUN] Would run: {' '.join(cmd)}")
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-    result = subprocess.run(cmd, capture_output=capture_output, text=True, check=False)
+    result = subprocess.run(
+        cmd, capture_output=capture_output, text=True, check=False, env=env
+    )
     if check and result.returncode != 0:
         print(f"Error running command: {' '.join(cmd)}")
         print(f"  stdout: {result.stdout}")
@@ -100,7 +105,7 @@ def calculate_new_version(current: str, bump_type: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def preflight_checks() -> None:
+def preflight_checks(config: ReleaseConfig) -> None:
     """Verify prerequisites for release."""
     print("\n=== Pre-flight Checks ===\n")
 
@@ -113,22 +118,37 @@ def preflight_checks() -> None:
         sys.exit(1)
     print("  ✓ Working directory is clean")
 
-    # Check we're on develop branch
+    # Check we're on the correct branch
     print("Checking current branch...")
     result = run_command(["git", "rev-parse", "--abbrev-ref", "HEAD"])
     branch = result.stdout.strip()
-    if branch != "develop":
-        print(
-            f"Error: Must be on 'develop' branch to start release, "
-            f"currently on '{branch}'"
-        )
-        sys.exit(1)
-    print("  ✓ On develop branch")
 
-    # Pull latest changes
-    print("Pulling latest changes...")
-    run_command(["git", "pull", "origin", "develop"])
-    print("  ✓ Up to date with origin/develop")
+    if config.hotfix:
+        if not branch.startswith("hotfix/"):
+            print(
+                f"Error: --hotfix requires a hotfix/* branch, "
+                f"currently on '{branch}'"
+            )
+            sys.exit(1)
+        print(f"  ✓ On hotfix branch: {branch}")
+
+        # Pull latest master
+        print("Pulling latest changes from master...")
+        run_command(["git", "pull", "origin", "master"])
+        print("  ✓ Up to date with origin/master")
+    else:
+        if branch != "develop":
+            print(
+                f"Error: Must be on 'develop' branch to start release, "
+                f"currently on '{branch}'"
+            )
+            sys.exit(1)
+        print("  ✓ On develop branch")
+
+        # Pull latest changes
+        print("Pulling latest changes...")
+        run_command(["git", "pull", "origin", "develop"])
+        print("  ✓ Up to date with origin/develop")
 
     # Check code formatting
     print("Checking code formatting...")
@@ -441,6 +461,7 @@ def commit_version_bump(config: ReleaseConfig, new_version: str) -> None:
         ["git", "commit", "-m", commit_msg],
         dry_run=config.dry_run,
         dry_run_msg=f"git commit -m '{commit_msg}'",
+        env={**os.environ, "PRE_COMMIT_ALLOW_NO_CONFIG": "1"},
     )
     if config.dry_run:
         print(f"  [DRY-RUN] Would commit: {commit_msg}")
@@ -581,7 +602,19 @@ def merge_back_to_develop(config: ReleaseConfig, release_branch: str) -> None:
         run_command(["git", "pull", "origin", "develop"])
         print("  ✓ Checked out develop")
 
-        run_command(["git", "merge", release_branch, "--no-edit"])
+        result = run_command(
+            ["git", "merge", release_branch, "--no-edit"],
+            check=False,
+        )
+        if result.returncode != 0:
+            print(f"\n  ✗ Merge conflict when merging {release_branch} into develop.")
+            print("\n  Resolve conflicts manually:")
+            print("    git status                        # see conflicting files")
+            print("    # edit files to resolve")
+            print("    git add <resolved-files>")
+            print("    git commit                        # complete the merge")
+            print(f"    git branch -d {release_branch}   # cleanup branch when done")
+            sys.exit(1)
         print(f"  ✓ Merged {release_branch}")
 
         run_command(["git", "push", "origin", "develop"])
@@ -591,6 +624,24 @@ def merge_back_to_develop(config: ReleaseConfig, release_branch: str) -> None:
         run_command(["git", "branch", "-d", release_branch])
         run_command(["git", "push", "origin", "--delete", release_branch], check=False)
         print(f"  ✓ Deleted branch: {release_branch}")
+
+
+def _check_hotfix_version_sanity(branch: str, new_version: str) -> None:
+    """Warn if hotfix branch name version doesn't match calculated bump."""
+    # Extract version from branch name e.g. hotfix/v1.2.1 -> 1.2.1
+    parts = branch.split("/")
+    if len(parts) < 2:
+        return
+    branch_version = parts[-1].lstrip("v")
+    if branch_version != new_version:
+        print(
+            f"  ⚠ Warning: branch name suggests v{branch_version} "
+            f"but version bump produces v{new_version}."
+        )
+        print(
+            "    Verify pyproject.toml is correct. "
+            "Use --dry-run to inspect before proceeding."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -617,23 +668,39 @@ Gitflow:
     parser.add_argument(
         "bump_type",
         choices=["patch", "minor", "major"],
-        help="Version bump type",
+        nargs="?",
+        default=None,
+        help="Version bump type (required unless --hotfix is set)",
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Preview changes without executing",
     )
+    parser.add_argument(
+        "--hotfix",
+        action="store_true",
+        help="Finish the current hotfix/* branch (patch bump implied)",
+    )
 
     args = parser.parse_args()
+
+    # Validate: bump_type required unless --hotfix
+    if args.hotfix:
+        bump_type = "patch"
+    elif args.bump_type is None:
+        parser.error("bump_type is required unless --hotfix is set")
+    else:
+        bump_type = args.bump_type
 
     # Determine project root (parent of scripts directory)
     project_root = Path(__file__).parent.parent.resolve()
 
     config = ReleaseConfig(
-        bump_type=args.bump_type,
+        bump_type=bump_type,
         dry_run=args.dry_run,
         project_root=project_root,
+        hotfix=args.hotfix,
     )
 
     print("=" * 60)
@@ -644,19 +711,28 @@ Gitflow:
         print("\n  ⚠️  DRY-RUN MODE - No changes will be made\n")
 
     # Step 1: Pre-flight checks
-    preflight_checks()
+    preflight_checks(config)
 
     # Step 2: Calculate new version
     current_version = get_current_version(config.project_root)
     new_version = calculate_new_version(current_version, config.bump_type)
 
-    # Step 3: Create release branch
-    release_branch = create_release_branch(new_version, config.dry_run)
+    # Step 3: Create release branch (skipped in hotfix mode)
+    if config.hotfix:
+        result = run_command(["git", "rev-parse", "--abbrev-ref", "HEAD"])
+        release_branch = result.stdout.strip()
+        print(f"\n=== Hotfix Branch: {release_branch} ===\n")
+    else:
+        release_branch = create_release_branch(new_version, config.dry_run)
 
     # Step 4: Bump version in files
     print("\n=== Version Bump ===\n")
     print(f"Version: {current_version} -> {new_version}")
     print()
+
+    # Hotfix sanity check: warn if branch name doesn't match calculated version
+    if config.hotfix:
+        _check_hotfix_version_sanity(release_branch, new_version)
     update_pyproject_toml(config.project_root, new_version, config.dry_run)
     update_server_json(config.project_root, new_version, config.dry_run)
     update_changelog(config.project_root, new_version, config.dry_run)
