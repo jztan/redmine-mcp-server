@@ -24,6 +24,7 @@ Gitflow:
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -53,13 +54,16 @@ def run_command(
     capture_output: bool = True,
     dry_run: bool = False,
     dry_run_msg: str | None = None,
+    env: dict | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run a shell command with optional dry-run support."""
     if dry_run and dry_run_msg:
         print(f"  [DRY-RUN] Would run: {' '.join(cmd)}")
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-    result = subprocess.run(cmd, capture_output=capture_output, text=True, check=False)
+    result = subprocess.run(
+        cmd, capture_output=capture_output, text=True, check=False, env=env
+    )
     if check and result.returncode != 0:
         print(f"Error running command: {' '.join(cmd)}")
         print(f"  stdout: {result.stdout}")
@@ -449,6 +453,7 @@ def commit_version_bump(config: ReleaseConfig, new_version: str) -> None:
         ["git", "commit", "-m", commit_msg],
         dry_run=config.dry_run,
         dry_run_msg=f"git commit -m '{commit_msg}'",
+        env={**os.environ, "PRE_COMMIT_ALLOW_NO_CONFIG": "1"},
     )
     if config.dry_run:
         print(f"  [DRY-RUN] Would commit: {commit_msg}")
