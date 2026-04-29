@@ -157,6 +157,28 @@ class TestManageRedmineVersionCreate:
         assert call_kwargs["sharing"] == "none"
 
     @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    async def test_create_success_required_fields_only(
+        self, mock_cleanup, mock_redmine
+    ):
+        from redmine_mcp_server.redmine_handler import manage_redmine_version
+
+        mock_version = create_mock_version(version_id=3, name="v1.0")
+        mock_redmine.version.create.return_value = mock_version
+
+        result = await manage_redmine_version(
+            action="create",
+            project_id=1,
+            name="v1.0",
+        )
+
+        assert "error" not in result
+        assert result["id"] == 3
+        assert result["name"] == "v1.0"
+        mock_redmine.version.create.assert_called_once()
+
+    @pytest.mark.asyncio
     async def test_create_missing_project_id(self):
         from redmine_mcp_server.redmine_handler import manage_redmine_version
 
@@ -286,6 +308,7 @@ class TestManageRedmineVersionUpdate:
 
         assert "error" in result
         assert "done" in result["error"]
+        assert "open, locked, closed" in result["error"]
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
