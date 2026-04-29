@@ -134,6 +134,8 @@ class TestManageRedmineVersionCreate:
         assert result["id"] == 5
         assert result["name"] == "v2.0"
         assert result["status"] == "open"
+        assert result["sharing"] == "none"
+        assert result["wiki_page_title"] == "Release_v2"
         mock_redmine.version.create.assert_called_once()
 
     @pytest.mark.asyncio
@@ -152,7 +154,7 @@ class TestManageRedmineVersionCreate:
             name="v1.0",
         )
 
-        call_kwargs = mock_redmine.version.create.call_args[1]
+        call_kwargs = mock_redmine.version.create.call_args.kwargs
         assert call_kwargs["status"] == "open"
         assert call_kwargs["sharing"] == "none"
 
@@ -274,7 +276,7 @@ class TestManageRedmineVersionUpdate:
             action="update", version_id=1, project_id=5, name="v2.0"
         )
 
-        call_kwargs = mock_redmine.version.update.call_args[1]
+        call_kwargs = mock_redmine.version.update.call_args.kwargs
         assert "action" not in call_kwargs
         assert "project_id" not in call_kwargs
         assert "version_id" not in call_kwargs
@@ -317,6 +319,7 @@ class TestManageRedmineVersionUpdate:
         from redmine_mcp_server.redmine_handler import manage_redmine_version
 
         mock_redmine.version.update.side_effect = ResourceNotFoundError()
+        mock_redmine.version.get.return_value = create_mock_version(version_id=999)
 
         result = await manage_redmine_version(
             action="update", version_id=999, name="v2.0"
