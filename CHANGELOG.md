@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- **`manage_redmine_version`**: single MCP tool for full version lifecycle management (create, update, delete) via an `action` parameter
+  - `action="create"`: create a version in a project with optional `description`, `status`, `due_date`, `sharing`, `wiki_page_title`; defaults to `status="open"` and `sharing="none"`
+  - `action="update"`: update any subset of fields on an existing version by `version_id`
+  - `action="delete"`: delete a version by `version_id`
+  - Validates `action` and `status` values client-side with actionable error messages
+  - Respects `REDMINE_MCP_READ_ONLY` mode
+  - **21 new unit tests** covering all three actions, defaults enforcement, meta-param exclusion, read-only mode, and API error paths
 - `REDMINE_CHECKLISTS_ENABLED=true` opt-in support for RedmineUP Checklists Pro plugin:
   - **`get_checklist`**: retrieve all checklist items for an issue (id, subject, is_done, position, timestamps)
   - **`update_checklist_item`**: update a checklist item's text, done state, or position
