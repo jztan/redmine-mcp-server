@@ -4128,7 +4128,7 @@ async def add_project_member(
 
     principal_candidate = user_id if user_id is not None else group_id
     if not _is_positive_int(principal_candidate):
-        return {"error": ("user_id / group_id must be a positive integer.")}
+        return {"error": "user_id / group_id must be a positive integer."}
 
     if not role_ids:
         return {
@@ -4777,7 +4777,7 @@ async def upload_file(
         try:
             content_bytes = base64.b64decode(content_base64, validate=True)
         except (binascii.Error, ValueError) as e:
-            return {"error": ("content_base64 is not valid base64. " f"Details: {e}")}
+            return {"error": f"content_base64 is not valid base64. Details: {e}"}
 
         if len(content_bytes) == 0:
             return {"error": "Decoded file content is empty."}
