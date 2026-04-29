@@ -1887,7 +1887,7 @@ async def manage_redmine_version(
         return {"error": f"Invalid action '{action}'. Allowed: create, update, delete"}
 
     if status is not None and status not in _valid_statuses:
-        return {"error": (f"Invalid status '{status}'. Allowed: open, locked, closed")}
+        return {"error": f"Invalid status '{status}'. Allowed: open, locked, closed"}
 
     if action == "create":
         if project_id is None:
