@@ -16,7 +16,7 @@ A Model Context Protocol (MCP) server that integrates with Redmine project manag
 
 ## Features
 
-- **51 MCP Tools**: Issues, projects, time tracking, wiki, file operations, membership management, and more
+- **55 MCP Tools**: Issues, projects, time tracking, wiki, file operations, membership management, and more
 - **Flexible Authentication**: API key, username/password, or OAuth2 per-user tokens
 - **Prompt Injection Protection**: User-controlled content wrapped in boundary tags for safe LLM consumption
 - **Read-Only Mode**: Restrict to read-only operations via `REDMINE_MCP_READ_ONLY` environment variable
@@ -435,12 +435,13 @@ curl http://localhost:8000/health
 
 ## Available Tools
 
-This MCP server provides 54 tools for interacting with Redmine. For detailed documentation, see [Tool Reference](./docs/tool-reference.md).
+This MCP server provides 55 tools for interacting with Redmine. For detailed documentation, see [Tool Reference](./docs/tool-reference.md).
 
-- **Project Management** (10 tools)
+- **Project Management** (11 tools)
   - [`list_redmine_projects`](docs/tool-reference.md#list_redmine_projects) - List all accessible projects
   - [`list_project_issue_custom_fields`](docs/tool-reference.md#list_project_issue_custom_fields) - List issue custom fields configured for a project
   - [`list_redmine_versions`](docs/tool-reference.md#list_redmine_versions) - List versions/milestones for a project
+  - [`manage_redmine_version`](docs/tool-reference.md#manage_redmine_version) - Create, update, or delete a version/milestone
   - [`list_project_members`](docs/tool-reference.md#list_project_members) - List members and roles of a project
   - [`summarize_project_status`](docs/tool-reference.md#summarize_project_status) - Get comprehensive project status summary
   - [`list_redmine_roles`](docs/tool-reference.md#list_redmine_roles) - List all roles defined in the Redmine instance (for discovering valid `role_ids`)
