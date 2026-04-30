@@ -312,6 +312,55 @@ issues = list_redmine_issues(fixed_version_id=versions[0]["id"])
 
 ---
 
+### `manage_redmine_version`
+
+Create, update, or delete a Redmine version (roadmap milestone).
+
+**Parameters:**
+- `action` (string, required): Operation to perform. Allowed values: `create`, `update`, `delete`
+- `project_id` (integer or string): Project ID or identifier. Required for `action="create"`
+- `version_id` (integer): Version ID. Required for `action="update"` and `action="delete"`
+- `name` (string): Version name. Required for `action="create"`, optional for `action="update"`
+- `description` (string, optional): Version description
+- `status` (string, optional): Version status. Allowed values: `open`, `locked`, `closed`. Defaults to `open` on create
+- `due_date` (string, optional): Due date in `YYYY-MM-DD` format
+- `sharing` (string, optional): Sharing scope. Allowed values: `none`, `descendants`, `hierarchy`, `tree`, `system`. Defaults to `none` on create
+- `wiki_page_title` (string, optional): Associated wiki page title
+
+**Returns:**
+- `create`/`update`: full version dictionary (same shape as `list_redmine_versions` entries)
+- `delete`: `{"success": true, "version_id": ..., "message": "Version deleted successfully."}`
+- Error: `{"error": "..."}`
+
+**Examples:**
+
+```python
+# Create a new version
+manage_redmine_version(
+    action="create",
+    project_id="my-project",
+    name="v2.0",
+    description="Second major release",
+    status="open",
+    due_date="2026-09-01",
+)
+
+# Update version status to locked
+manage_redmine_version(
+    action="update",
+    version_id=42,
+    status="locked",
+)
+
+# Delete a version
+manage_redmine_version(
+    action="delete",
+    version_id=42,
+)
+```
+
+---
+
 ### `list_project_members`
 
 List all members (users and groups) of a Redmine project along with their assigned roles.
