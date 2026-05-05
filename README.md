@@ -118,6 +118,8 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `REDMINE_MCP_READ_ONLY` | No | `false` | Block all write operations (create/update/delete) when set to `true` |
 | `REDMINE_AGILE_ENABLED` | No | `false` | Enable RedmineUP Agile plugin support: `get_redmine_issue` returns `story_points`, `agile_sprint_id`, `agile_position`; `update_redmine_issue` accepts `story_points` |
 | `REDMINE_CHECKLISTS_ENABLED` | No | `false` | Enable RedmineUP Checklists plugin support: `get_checklist`, `update_checklist_item`, `mark_checklist_done` (requires Checklists Pro plugin) |
+| `REDMINE_PRODUCTS_ENABLED` | No | `false` | Enable RedmineUP Products plugin support: `list_products`, `get_product`, `add_product`, `edit_product` |
+| `REDMINE_CRM_ENABLED` | No | `false` | Enable RedmineUP CRM plugin support: `list_contacts`, `get_contact`, `edit_contact`, `create_contact`, `delete_contact`, `assign_contact_to_project`, `remove_contact_from_project` |
 | `REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS` | No | `false` | Enable one retry for issue creation by filling missing required custom fields |
 | `REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS` | No | `{}` | JSON object mapping required custom field names to fallback values used when creating issues |
 | `REDMINE_ALLOW_PRIVATE_FETCH_URLS` | No | `false` | **Warning:** disables all SSRF protection for attachment fetching. Never set to `true` in production. |
@@ -435,7 +437,7 @@ curl http://localhost:8000/health
 
 ## Available Tools
 
-This MCP server provides 55 tools for interacting with Redmine. For detailed documentation, see [Tool Reference](./docs/tool-reference.md).
+This MCP server provides 69 tools for interacting with Redmine. For detailed documentation, see [Tool Reference](./docs/tool-reference.md).
 
 - **Project Management** (11 tools)
   - [`list_redmine_projects`](docs/tool-reference.md#list_redmine_projects) - List all accessible projects
@@ -488,12 +490,14 @@ This MCP server provides 55 tools for interacting with Redmine. For detailed doc
   - [`get_current_user`](docs/tool-reference.md#get_current_user) - Get the authenticated user's profile (works for non-admins)
   - [`list_redmine_queries`](docs/tool-reference.md#list_redmine_queries) - List saved custom queries (read-only)
 
-- **Search & Wiki** (5 tools)
+- **Search & Wiki** (7 tools)
   - [`search_entire_redmine`](docs/tool-reference.md#search_entire_redmine) - Global search across issues and wiki pages (Redmine 3.3.0+)
   - [`get_redmine_wiki_page`](docs/tool-reference.md#get_redmine_wiki_page) - Retrieve wiki page content
   - [`create_redmine_wiki_page`](docs/tool-reference.md#create_redmine_wiki_page) - Create new wiki pages
   - [`update_redmine_wiki_page`](docs/tool-reference.md#update_redmine_wiki_page) - Update existing wiki pages
   - [`delete_redmine_wiki_page`](docs/tool-reference.md#delete_redmine_wiki_page) - Delete wiki pages
+  - [`list_wiki_pages`](docs/tool-reference.md#list_wiki_pages) - List all wiki pages in a project (titles, versions, parents)
+  - [`rename_wiki_page`](docs/tool-reference.md#rename_wiki_page) - Rename/move a wiki page (with optional redirect)
 
 - **File Operations** (5 tools)
   - [`list_files`](docs/tool-reference.md#list_files) - List files uploaded to a project's Files section
@@ -506,6 +510,24 @@ This MCP server provides 55 tools for interacting with Redmine. For detailed doc
   - [`get_checklist`](docs/tool-reference.md#get_checklist) - Retrieve all checklist items for an issue
   - [`update_checklist_item`](docs/tool-reference.md#update_checklist_item) - Update a checklist item's text, done state, or position
   - [`mark_checklist_done`](docs/tool-reference.md#mark_checklist_done) - Toggle the done/undone state of a checklist item
+
+- **Gantt** (1 tool, no plugin required)
+  - [`get_gantt_chart`](docs/tool-reference.md#get_gantt_chart) - Retrieve project timeline data: issues with dates, dependencies, and milestones
+
+- **Products** (4 tools, requires `REDMINE_PRODUCTS_ENABLED=true` + RedmineUP Products plugin)
+  - [`list_products`](docs/tool-reference.md#list_products) - List products (optionally filtered by project)
+  - [`get_product`](docs/tool-reference.md#get_product) - Retrieve a specific product by ID
+  - [`add_product`](docs/tool-reference.md#add_product) - Create a new product
+  - [`edit_product`](docs/tool-reference.md#edit_product) - Update product fields
+
+- **Contacts (CRM)** (7 tools, requires `REDMINE_CRM_ENABLED=true` + RedmineUP CRM plugin)
+  - [`list_contacts`](docs/tool-reference.md#list_contacts) - List contacts with optional filters (project, search, tags, assignee)
+  - [`get_contact`](docs/tool-reference.md#get_contact) - Retrieve a single contact by ID
+  - [`edit_contact`](docs/tool-reference.md#edit_contact) - Update contact fields
+  - [`create_contact`](docs/tool-reference.md#create_contact) - Create a new contact in a project
+  - [`delete_contact`](docs/tool-reference.md#delete_contact) - Delete a contact
+  - [`assign_contact_to_project`](docs/tool-reference.md#assign_contact_to_project) - Add a contact to an additional project
+  - [`remove_contact_from_project`](docs/tool-reference.md#remove_contact_from_project) - Remove a contact from a project (does not delete)
 
 
 ## Docker Deployment
