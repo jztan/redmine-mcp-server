@@ -1,7 +1,7 @@
 """
 Test cases for time entry tools.
 
-Tests for list_time_entries, create_time_entry, and update_time_entry tools.
+Tests for list_time_entries and manage_time_entry (action=create|update).
 """
 
 import pytest
@@ -10,8 +10,7 @@ from datetime import datetime
 
 from redmine_mcp_server.redmine_handler import (
     list_time_entries,
-    create_time_entry,
-    update_time_entry,
+    manage_time_entry,
     _time_entry_to_dict,
 )
 
@@ -296,7 +295,9 @@ class TestCreateTimeEntry:
         mock_entry = self.create_mock_time_entry(1, 2.5, issue_id=123)
         mock_redmine.time_entry.create.return_value = mock_entry
 
-        result = await create_time_entry(hours=2.5, issue_id=123, comments="Bug fix")
+        result = await manage_time_entry(
+            action="create", hours=2.5, issue_id=123, comments="Bug fix"
+        )
 
         assert result["id"] == 1
         assert result["hours"] == 2.5
@@ -311,8 +312,8 @@ class TestCreateTimeEntry:
         mock_entry = self.create_mock_time_entry(1, 1.0)
         mock_redmine.time_entry.create.return_value = mock_entry
 
-        result = await create_time_entry(
-            hours=1.0, project_id=10, comments="Project meeting"
+        result = await manage_time_entry(
+            action="create", hours=1.0, project_id=10, comments="Project meeting"
         )
 
         assert result["id"] == 1
@@ -325,7 +326,9 @@ class TestCreateTimeEntry:
         mock_entry = self.create_mock_time_entry(1, 1.0)
         mock_redmine.time_entry.create.return_value = mock_entry
 
-        await create_time_entry(hours=1.0, project_id="my-project", comments="Work")
+        await manage_time_entry(
+            action="create", hours=1.0, project_id="my-project", comments="Work"
+        )
 
         call_kwargs = mock_redmine.time_entry.create.call_args[1]
         assert call_kwargs["project_id"] == "my-project"
@@ -336,7 +339,7 @@ class TestCreateTimeEntry:
         mock_entry = self.create_mock_time_entry(1, 2.0)
         mock_redmine.time_entry.create.return_value = mock_entry
 
-        await create_time_entry(hours=2.0, issue_id=123, activity_id=9)
+        await manage_time_entry(action="create", hours=2.0, issue_id=123, activity_id=9)
 
         call_kwargs = mock_redmine.time_entry.create.call_args[1]
         assert call_kwargs["activity_id"] == 9
@@ -347,7 +350,9 @@ class TestCreateTimeEntry:
         mock_entry = self.create_mock_time_entry(1, 2.0)
         mock_redmine.time_entry.create.return_value = mock_entry
 
-        await create_time_entry(hours=2.0, issue_id=123, spent_on="2024-03-15")
+        await manage_time_entry(
+            action="create", hours=2.0, issue_id=123, spent_on="2024-03-15"
+        )
 
         call_kwargs = mock_redmine.time_entry.create.call_args[1]
         assert call_kwargs["spent_on"] == "2024-03-15"
@@ -355,7 +360,7 @@ class TestCreateTimeEntry:
     @pytest.mark.asyncio
     async def test_create_time_entry_missing_project_and_issue(self, mock_redmine):
         """Test error when neither project_id nor issue_id provided."""
-        result = await create_time_entry(hours=2.0)
+        result = await manage_time_entry(action="create", hours=2.0)
 
         assert "error" in result
         assert "project_id or issue_id" in result["error"]
@@ -363,7 +368,7 @@ class TestCreateTimeEntry:
     @pytest.mark.asyncio
     async def test_create_time_entry_zero_hours(self, mock_redmine):
         """Test error when hours is zero."""
-        result = await create_time_entry(hours=0, issue_id=123)
+        result = await manage_time_entry(action="create", hours=0, issue_id=123)
 
         assert "error" in result
         assert "positive" in result["error"]
@@ -371,7 +376,7 @@ class TestCreateTimeEntry:
     @pytest.mark.asyncio
     async def test_create_time_entry_negative_hours(self, mock_redmine):
         """Test error when hours is negative."""
-        result = await create_time_entry(hours=-1.0, issue_id=123)
+        result = await manage_time_entry(action="create", hours=-1.0, issue_id=123)
 
         assert "error" in result
         assert "positive" in result["error"]
@@ -383,7 +388,7 @@ class TestCreateTimeEntry:
             "redmine_mcp_server.redmine_handler._get_redmine_client",
             side_effect=RuntimeError("No Redmine authentication available"),
         ):
-            result = await create_time_entry(hours=2.0, issue_id=123)
+            result = await manage_time_entry(action="create", hours=2.0, issue_id=123)
 
         assert "error" in result
 
@@ -394,7 +399,7 @@ class TestCreateTimeEntry:
 
         mock_redmine.time_entry.create.side_effect = ResourceNotFoundError()
 
-        result = await create_time_entry(hours=2.0, issue_id=9999)
+        result = await manage_time_entry(action="create", hours=2.0, issue_id=9999)
 
         assert "error" in result
 
@@ -404,7 +409,7 @@ class TestCreateTimeEntry:
         mock_entry = self.create_mock_time_entry(1, 0.25)
         mock_redmine.time_entry.create.return_value = mock_entry
 
-        result = await create_time_entry(hours=0.25, issue_id=123)
+        result = await manage_time_entry(action="create", hours=0.25, issue_id=123)
 
         assert result["id"] == 1
         call_kwargs = mock_redmine.time_entry.create.call_args[1]
@@ -441,7 +446,7 @@ class TestUpdateTimeEntry:
         mock_entry = self.create_mock_time_entry(1, 3.0)
         mock_redmine.time_entry.get.return_value = mock_entry
 
-        result = await update_time_entry(time_entry_id=1, hours=3.0)
+        result = await manage_time_entry(action="update", time_entry_id=1, hours=3.0)
 
         assert result["id"] == 1
         assert result["hours"] == 3.0
@@ -455,7 +460,9 @@ class TestUpdateTimeEntry:
         mock_entry = self.create_mock_time_entry(1, 2.0)
         mock_redmine.time_entry.get.return_value = mock_entry
 
-        await update_time_entry(time_entry_id=1, comments="New description")
+        await manage_time_entry(
+            action="update", time_entry_id=1, comments="New description"
+        )
 
         call_kwargs = mock_redmine.time_entry.update.call_args[1]
         assert call_kwargs["comments"] == "New description"
@@ -466,7 +473,7 @@ class TestUpdateTimeEntry:
         mock_entry = self.create_mock_time_entry(1, 2.0)
         mock_redmine.time_entry.get.return_value = mock_entry
 
-        await update_time_entry(time_entry_id=1, activity_id=10)
+        await manage_time_entry(action="update", time_entry_id=1, activity_id=10)
 
         call_kwargs = mock_redmine.time_entry.update.call_args[1]
         assert call_kwargs["activity_id"] == 10
@@ -477,7 +484,7 @@ class TestUpdateTimeEntry:
         mock_entry = self.create_mock_time_entry(1, 2.0)
         mock_redmine.time_entry.get.return_value = mock_entry
 
-        await update_time_entry(time_entry_id=1, spent_on="2024-03-20")
+        await manage_time_entry(action="update", time_entry_id=1, spent_on="2024-03-20")
 
         call_kwargs = mock_redmine.time_entry.update.call_args[1]
         assert call_kwargs["spent_on"] == "2024-03-20"
@@ -488,7 +495,8 @@ class TestUpdateTimeEntry:
         mock_entry = self.create_mock_time_entry(1, 4.0)
         mock_redmine.time_entry.get.return_value = mock_entry
 
-        await update_time_entry(
+        await manage_time_entry(
+            action="update",
             time_entry_id=1,
             hours=4.0,
             comments="Extended work",
@@ -503,7 +511,7 @@ class TestUpdateTimeEntry:
     @pytest.mark.asyncio
     async def test_update_time_entry_no_fields(self, mock_redmine):
         """Test error when no fields provided for update."""
-        result = await update_time_entry(time_entry_id=1)
+        result = await manage_time_entry(action="update", time_entry_id=1)
 
         assert "error" in result
         assert "No fields" in result["error"]
@@ -511,7 +519,7 @@ class TestUpdateTimeEntry:
     @pytest.mark.asyncio
     async def test_update_time_entry_zero_hours(self, mock_redmine):
         """Test error when hours set to zero."""
-        result = await update_time_entry(time_entry_id=1, hours=0)
+        result = await manage_time_entry(action="update", time_entry_id=1, hours=0)
 
         assert "error" in result
         assert "positive" in result["error"]
@@ -519,7 +527,7 @@ class TestUpdateTimeEntry:
     @pytest.mark.asyncio
     async def test_update_time_entry_negative_hours(self, mock_redmine):
         """Test error when hours set to negative."""
-        result = await update_time_entry(time_entry_id=1, hours=-1.0)
+        result = await manage_time_entry(action="update", time_entry_id=1, hours=-1.0)
 
         assert "error" in result
         assert "positive" in result["error"]
@@ -531,7 +539,7 @@ class TestUpdateTimeEntry:
 
         mock_redmine.time_entry.update.side_effect = ResourceNotFoundError()
 
-        result = await update_time_entry(time_entry_id=9999, hours=2.0)
+        result = await manage_time_entry(action="update", time_entry_id=9999, hours=2.0)
 
         assert "error" in result
 
@@ -542,7 +550,9 @@ class TestUpdateTimeEntry:
             "redmine_mcp_server.redmine_handler._get_redmine_client",
             side_effect=RuntimeError("No Redmine authentication available"),
         ):
-            result = await update_time_entry(time_entry_id=1, hours=2.0)
+            result = await manage_time_entry(
+                action="update", time_entry_id=1, hours=2.0
+            )
 
         assert "error" in result
 
@@ -553,7 +563,7 @@ class TestUpdateTimeEntry:
 
         mock_redmine.time_entry.update.side_effect = ForbiddenError()
 
-        result = await update_time_entry(time_entry_id=1, hours=2.0)
+        result = await manage_time_entry(action="update", time_entry_id=1, hours=2.0)
 
         assert "error" in result
         assert "Access denied" in result["error"]

@@ -5212,151 +5212,113 @@ async def list_time_entries(
 
 
 @mcp.tool()
-async def create_time_entry(
-    hours: float,
+async def manage_time_entry(
+    action: str,
+    hours: Optional[float] = None,
     project_id: Optional[Union[str, int]] = None,
     issue_id: Optional[int] = None,
-    activity_id: Optional[int] = None,
-    comments: str = "",
-    spent_on: Optional[str] = None,
-) -> Dict[str, Any]:
-    """Create a new time entry in Redmine.
-
-    Log time against a project or issue. Either project_id or issue_id
-    must be provided. If issue_id is provided, the time entry will be
-    associated with that issue's project.
-
-    Args:
-        hours: Number of hours spent (required). Can be decimal (e.g., 1.5).
-        project_id: Project to log time against (ID or identifier).
-            Required if issue_id is not provided.
-        issue_id: Issue to log time against. If provided, project_id is optional.
-        activity_id: Time entry activity ID (e.g., Development, Design).
-            If not provided, Redmine uses the default activity.
-        comments: Description of work performed.
-        spent_on: Date when time was spent (YYYY-MM-DD). Defaults to today.
-
-    Returns:
-        Dictionary containing the created time entry, or error dict on failure.
-
-    Examples:
-        >>> await create_time_entry(hours=2.5, issue_id=123, comments="Bug fix")
-        {"id": 1, "hours": 2.5, "issue": {"id": 123}, ...}
-
-        >>> await create_time_entry(
-        ...     hours=1.0,
-        ...     project_id="my-project",
-        ...     activity_id=9,
-        ...     comments="Code review",
-        ...     spent_on="2024-03-15"
-        ... )
-        {"id": 2, "hours": 1.0, "project": {"id": 1, "name": "My Project"}, ...}
-    """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-
-    if project_id is None and issue_id is None:
-        return {"error": "Either project_id or issue_id must be provided."}
-
-    hours_error = _validate_hours(hours)
-    if hours_error is not None:
-        return {"error": hours_error}
-
-    try:
-        # Build create parameters
-        params: Dict[str, Any] = {
-            "hours": hours,
-        }
-
-        if project_id is not None:
-            params["project_id"] = project_id
-        if issue_id is not None:
-            params["issue_id"] = issue_id
-        if activity_id is not None:
-            params["activity_id"] = activity_id
-        if comments:
-            params["comments"] = comments
-        if spent_on is not None:
-            params["spent_on"] = spent_on
-
-        time_entry = _get_redmine_client().time_entry.create(**params)
-        return _time_entry_to_dict(time_entry)
-
-    except Exception as e:
-        context = {}
-        if issue_id:
-            context = {"resource_type": "issue", "resource_id": issue_id}
-        elif project_id:
-            context = {"resource_type": "project", "resource_id": project_id}
-        return _handle_redmine_error(e, "creating time entry", context)
-
-
-@mcp.tool()
-async def update_time_entry(
-    time_entry_id: int,
-    hours: Optional[float] = None,
+    user_id: Optional[int] = None,
+    time_entry_id: Optional[int] = None,
     activity_id: Optional[int] = None,
     comments: Optional[str] = None,
     spent_on: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Update an existing time entry in Redmine.
-
-    Modify hours, activity, comments, or date of an existing time entry.
-    Only provided fields will be updated.
+    """Create or update a Redmine time entry.
 
     Args:
-        time_entry_id: ID of the time entry to update (required).
-        hours: New hours value. Must be positive if provided.
-        activity_id: New activity ID.
-        comments: New comments/description.
-        spent_on: New date (YYYY-MM-DD format).
+        action: One of: ``create``, ``update``.
+        hours: Hours spent. Required for ``create``; optional for
+            ``update`` (must be positive if provided).
+        project_id: Project to log against. Required for ``create`` if
+            ``issue_id`` is not provided.
+        issue_id: Issue to log against. Required for ``create`` if
+            ``project_id`` is not provided.
+        user_id: Log on behalf of this user (``create`` only). Requires
+            ``log_time_for_other_users`` permission.
+        time_entry_id: Entry to update. Required for ``update``.
+        activity_id: Activity ID (optional for both actions).
+        comments: Description. Empty string clears the field on
+            ``update``.
+        spent_on: Date in ``YYYY-MM-DD`` format (optional).
 
     Returns:
-        Dictionary containing the updated time entry, or error dict on failure.
-
-    Examples:
-        >>> await update_time_entry(time_entry_id=1, hours=3.0)
-        {"id": 1, "hours": 3.0, ...}
-
-        >>> await update_time_entry(
-        ...     time_entry_id=1,
-        ...     comments="Updated description",
-        ...     spent_on="2024-03-16"
-        ... )
-        {"id": 1, "comments": "Updated description", ...}
+        Time entry dictionary, or ``{"error": "..."}``.
     """
-    if hours is not None and hours <= 0:
-        return {"error": "Hours must be a positive number."}
+    _valid_actions = {"create", "update"}
+    if action not in _valid_actions:
+        return {"error": f"Invalid action '{action}'. Allowed: create, update"}
 
-    try:
-        # Build update parameters
-        params: Dict[str, Any] = {}
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
 
+    await _ensure_cleanup_started()
+
+    if action == "create":
+        if project_id is None and issue_id is None:
+            return {"error": "Either project_id or issue_id must be provided."}
+
+        hours_error = _validate_hours(hours)
+        if hours_error is not None:
+            return {"error": hours_error}
+
+        if user_id is not None and not _is_positive_int(user_id):
+            return {"error": "user_id must be a positive integer."}
+
+        try:
+            params: Dict[str, Any] = {"hours": hours}
+            if project_id is not None:
+                params["project_id"] = project_id
+            if issue_id is not None:
+                params["issue_id"] = issue_id
+            if user_id is not None:
+                params["user_id"] = user_id
+            if activity_id is not None:
+                params["activity_id"] = activity_id
+            if comments is not None:
+                params["comments"] = comments
+            if spent_on is not None:
+                params["spent_on"] = spent_on
+            time_entry = _get_redmine_client().time_entry.create(**params)
+            return _time_entry_to_dict(time_entry)
+        except Exception as e:
+            context = {}
+            if issue_id:
+                context = {"resource_type": "issue", "resource_id": issue_id}
+            elif project_id:
+                context = {"resource_type": "project", "resource_id": project_id}
+            return _handle_redmine_error(e, "creating time entry", context)
+
+    else:  # action == "update"
+        if time_entry_id is None:
+            return {"error": "time_entry_id is required for action 'update'"}
+
+        update_params: Dict[str, Any] = {}
         if hours is not None:
-            params["hours"] = hours
+            hours_error = _validate_hours(hours)
+            if hours_error is not None:
+                return {"error": hours_error}
+            update_params["hours"] = hours
         if activity_id is not None:
-            params["activity_id"] = activity_id
+            update_params["activity_id"] = activity_id
         if comments is not None:
-            params["comments"] = comments
+            update_params["comments"] = comments
         if spent_on is not None:
-            params["spent_on"] = spent_on
+            update_params["spent_on"] = spent_on
 
-        if not params:
+        if not update_params:
             return {"error": "No fields provided for update."}
 
-        client = _get_redmine_client()
-        client.time_entry.update(time_entry_id, **params)
-
-        # Fetch and return updated entry
-        updated_entry = client.time_entry.get(time_entry_id)
-        return _time_entry_to_dict(updated_entry)
-
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"updating time entry {time_entry_id}",
-            {"resource_type": "time entry", "resource_id": time_entry_id},
-        )
+        try:
+            client = _get_redmine_client()
+            client.time_entry.update(time_entry_id, **update_params)
+            updated = client.time_entry.get(time_entry_id)
+            return _time_entry_to_dict(updated)
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"updating time entry {time_entry_id}",
+                {"resource_type": "time entry", "resource_id": time_entry_id},
+            )
 
 
 @mcp.tool()
@@ -5760,101 +5722,13 @@ def _validate_hours(value: Any) -> Optional[str]:
 
 
 @mcp.tool()
-async def log_time_for_user(
-    user_id: int,
-    hours: float,
-    project_id: Optional[Union[str, int]] = None,
-    issue_id: Optional[int] = None,
-    activity_id: Optional[int] = None,
-    comments: str = "",
-    spent_on: Optional[str] = None,
-) -> Dict[str, Any]:
-    """Create a time entry on behalf of another user.
-
-    Logs time against a project or issue with the given ``user_id`` as
-    the owner instead of the authenticated user. The authenticated user
-    must have the ``log_time_for_other_users`` permission on the target
-    project, and the target user must be a member of that project.
-
-    Note: This is functionally ``create_time_entry`` with a ``user_id``
-    parameter. It is provided as a dedicated tool to make PM-level
-    workflows explicit (logging time on behalf of a teammate).
-
-    Args:
-        user_id: ID of the user to log time for. Use ``list_project_members``
-            to discover valid user IDs for a project.
-        hours: Number of hours spent (must be positive).
-        project_id: Project to log time against (ID or identifier).
-            Required if ``issue_id`` is not provided.
-        issue_id: Issue to log time against. If provided, ``project_id``
-            is optional.
-        activity_id: Time entry activity ID. Use ``list_time_entry_activities``
-            to discover valid IDs. Defaults to Redmine's default activity.
-        comments: Description of work performed.
-        spent_on: Date when time was spent (YYYY-MM-DD). Defaults to today.
-
-    Returns:
-        Dictionary containing the created time entry. On failure a dict
-        with an ``"error"`` key is returned.
-
-    Known Redmine quirks:
-        - Some Redmine versions reject the ``user_id`` parameter when the
-          authenticated user is an admin but NOT a member of the target
-          project (defects #31587, #32774). The workaround is to add the
-          admin as a project member.
-    """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-
-    if not _is_positive_int(user_id):
-        return {"error": "user_id must be a positive integer."}
-
-    if project_id is None and issue_id is None:
-        return {"error": "Either project_id or issue_id must be provided."}
-
-    hours_error = _validate_hours(hours)
-    if hours_error is not None:
-        return {"error": hours_error}
-
-    try:
-        params: Dict[str, Any] = {
-            "hours": hours,
-            "user_id": user_id,
-        }
-        if project_id is not None:
-            params["project_id"] = project_id
-        if issue_id is not None:
-            params["issue_id"] = issue_id
-        if activity_id is not None:
-            params["activity_id"] = activity_id
-        if comments:
-            params["comments"] = comments
-        if spent_on is not None:
-            params["spent_on"] = spent_on
-
-        time_entry = _get_redmine_client().time_entry.create(**params)
-        return _time_entry_to_dict(time_entry)
-    except Exception as e:
-        context = {}
-        if issue_id:
-            context = {"resource_type": "issue", "resource_id": issue_id}
-        elif project_id:
-            context = {"resource_type": "project", "resource_id": project_id}
-        return _handle_redmine_error(
-            e,
-            f"logging time for user {user_id}",
-            context,
-        )
-
-
-@mcp.tool()
 async def import_time_entries(
     entries: Union[List[Dict[str, Any]], str],
     stop_on_error: bool = False,
 ) -> Dict[str, Any]:
     """Bulk import multiple time entries in a single call.
 
-    **Use this tool (NOT ``create_time_entry`` in a loop) whenever the
+    **Use this tool (NOT ``manage_time_entry(action="create")`` in a loop) whenever the
     user asks to:**
         - import a timesheet / weekly timesheet / monthly report
         - bulk log, batch log, or log multiple entries at once
@@ -5863,11 +5737,12 @@ async def import_time_entries(
         - log the same activity for multiple team members at once
         - log a day's work spanning multiple issues
 
-    **Prefer this tool over calling ``create_time_entry`` N times** — it
-    reports partial failures via a ``succeeded``/``failed`` summary and
-    supports ``stop_on_error`` for transactional-style behaviour. Calling
-    ``create_time_entry`` in a loop gives no aggregate feedback and cannot
-    continue past per-entry errors gracefully.
+    **Prefer this tool over calling ``manage_time_entry(action="create")``
+    N times** -- it reports partial failures via a
+    ``succeeded``/``failed`` summary and supports ``stop_on_error`` for
+    transactional-style behaviour. Calling
+    ``manage_time_entry(action="create")`` in a loop gives no aggregate
+    feedback and cannot continue past per-entry errors gracefully.
 
     Redmine has no native bulk-import endpoint, so this tool creates each
     entry individually via ``POST /time_entries.json`` under the hood.
@@ -5875,9 +5750,10 @@ async def import_time_entries(
     partial import still yields useful feedback.
 
     Each entry must be a dict (or JSON object) with the standard
-    ``create_time_entry`` fields: ``hours`` (required), plus at least one
-    of ``project_id``/``issue_id``. Optional fields: ``user_id`` (to log
-    on behalf of a teammate), ``activity_id``, ``comments``, ``spent_on``.
+    ``manage_time_entry(action="create")`` fields: ``hours`` (required),
+    plus at least one of ``project_id``/``issue_id``. Optional fields:
+    ``user_id`` (to log on behalf of a teammate), ``activity_id``,
+    ``comments``, ``spent_on``.
 
     Args:
         entries: List of time entry dicts, OR a JSON array string. Capped

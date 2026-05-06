@@ -1315,8 +1315,8 @@ class TestTimeEntriesIntegration:
             pytest.skip("Redmine client not initialized")
 
         from redmine_mcp_server.redmine_handler import (
-            create_time_entry,
             list_time_entries,
+            manage_time_entry,
         )
 
         # Ensure at least one time entry exists
@@ -1325,7 +1325,8 @@ class TestTimeEntriesIntegration:
         activity_id = _get_activity_id(redmine)
         assert activity_id is not None, "No time entry activities configured"
 
-        created = await create_time_entry(
+        created = await manage_time_entry(
+            action="create",
             hours=0.1,
             project_id=projects[0].id,
             activity_id=activity_id,
@@ -1394,10 +1395,7 @@ class TestTimeEntriesIntegration:
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
-        from redmine_mcp_server.redmine_handler import (
-            create_time_entry,
-            update_time_entry,
-        )
+        from redmine_mcp_server.redmine_handler import manage_time_entry
 
         # Pick the first available project
         projects = list(redmine.project.all())
@@ -1411,7 +1409,8 @@ class TestTimeEntriesIntegration:
         time_entry_id = None
         try:
             # 1. Create a time entry
-            create_result = await create_time_entry(
+            create_result = await manage_time_entry(
+                action="create",
                 hours=0.25,
                 project_id=project_id,
                 activity_id=activity_id,
@@ -1433,7 +1432,8 @@ class TestTimeEntriesIntegration:
             time_entry_id = create_result["id"]
 
             # 2. Update the time entry
-            update_result = await update_time_entry(
+            update_result = await manage_time_entry(
+                action="update",
                 time_entry_id=time_entry_id,
                 hours=0.5,
                 comments="Integration test time entry (updated)",
@@ -1464,15 +1464,15 @@ class TestTimeEntriesIntegration:
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
-        from redmine_mcp_server.redmine_handler import create_time_entry
+        from redmine_mcp_server.redmine_handler import manage_time_entry
 
         # Missing both project_id and issue_id
-        result = await create_time_entry(hours=1.0)
+        result = await manage_time_entry(action="create", hours=1.0)
         assert "error" in result
         assert "project_id or issue_id" in result["error"]
 
         # Negative hours
-        result = await create_time_entry(hours=-1.0, project_id=1)
+        result = await manage_time_entry(action="create", hours=-1.0, project_id=1)
         assert "error" in result
         assert "positive" in result["error"]
 

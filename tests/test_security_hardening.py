@@ -816,9 +816,11 @@ class TestWatcherUserIdValidation:
 class TestLogTimeForUserRejectsBool:
     @pytest.mark.asyncio
     async def test_user_id_bool_rejected(self):
-        from redmine_mcp_server.redmine_handler import log_time_for_user
+        from redmine_mcp_server.redmine_handler import manage_time_entry
 
-        result = await log_time_for_user(user_id=True, hours=1.0, issue_id=123)
+        result = await manage_time_entry(
+            action="create", user_id=True, hours=1.0, issue_id=123
+        )
         assert "error" in result
         assert "positive integer" in result["error"]
 
