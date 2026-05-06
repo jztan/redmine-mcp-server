@@ -6409,8 +6409,8 @@ async def add_product(
         return dict(_PRODUCTS_DISABLED_ERROR)
     if not isinstance(name, str) or not name.strip():
         return {"error": "name must be a non-empty string."}
-    if not _is_positive_int(status_id):
-        return {"error": "status_id must be a positive integer (1=Active, 2=Inactive)."}
+    if isinstance(status_id, bool) or status_id not in (1, 2):
+        return {"error": "status_id must be 1 (Active) or 2 (Inactive)."}
 
     body: Dict[str, Any] = {"name": name, "status_id": status_id}
     if project_id is not None:

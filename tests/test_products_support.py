@@ -276,6 +276,27 @@ class TestAddProduct:
             result = await add_product(name="X", status_id=-1)
         assert "error" in result
 
+    @pytest.mark.asyncio
+    async def test_rejects_unknown_status_id(self):
+        with patch.dict(os.environ, {"REDMINE_PRODUCTS_ENABLED": "true"}):
+            result = await add_product(name="Widget", status_id=999)
+        assert "error" in result
+        assert "status_id" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_rejects_zero_status_id(self):
+        with patch.dict(os.environ, {"REDMINE_PRODUCTS_ENABLED": "true"}):
+            result = await add_product(name="Widget", status_id=0)
+        assert "error" in result
+        assert "status_id" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_rejects_bool_status_id(self):
+        with patch.dict(os.environ, {"REDMINE_PRODUCTS_ENABLED": "true"}):
+            result = await add_product(name="Widget", status_id=True)
+        assert "error" in result
+        assert "status_id" in result["error"]
+
 
 # ---------------------------------------------------------------------------
 # edit_product
