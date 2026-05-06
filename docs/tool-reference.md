@@ -154,12 +154,23 @@ Block all write operations by setting the `REDMINE_MCP_READ_ONLY` environment va
 REDMINE_MCP_READ_ONLY=true
 ```
 
-When enabled, the following tools return an error instead of executing:
+When enabled, the following tools return an error instead of executing
+(write actions only — read actions within the same tool still work):
+
+**Fully blocked (all actions are writes):**
 - `create_redmine_issue`
 - `update_redmine_issue`
-- `create_redmine_wiki_page`
-- `update_redmine_wiki_page`
-- `delete_redmine_wiki_page`
+- `manage_project_member` — all actions
+- `manage_issue_watcher` — all actions
+- `manage_issue_note` — all actions
+- `manage_time_entry` — all actions
+
+**Partially blocked (read actions still work):**
+- `manage_redmine_wiki_page` — `create`, `update`, `delete`, `rename` blocked; `list`, `get` allowed
+- `manage_issue_category` — `create`, `update`, `delete` blocked; `list` allowed
+- `manage_issue_relation` — `create`, `delete` blocked; `list` allowed
+- `manage_product` — `create`, `update` blocked; `list`, `get` allowed (also requires `REDMINE_PRODUCTS_ENABLED=true`)
+- `manage_contact` — `create`, `update`, `delete`, `assign_to_project`, `remove_from_project` blocked; `list`, `get` allowed (also requires `REDMINE_CRM_ENABLED=true`)
 
 All read tools (`get_redmine_issue`, `list_redmine_issues`, `list_redmine_projects`, etc.) and local operations (`cleanup_attachment_files`) continue to work normally.
 
