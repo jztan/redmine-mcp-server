@@ -2052,7 +2052,7 @@ Use cases: "What's the current timeline for project X?", "Which issues are overd
 | `project_id` | int or string | Yes | – | Project identifier |
 | `start_date_after` | string | No | – | `YYYY-MM-DD` filter (issues with `start_date >= this`) |
 | `due_date_before` | string | No | – | `YYYY-MM-DD` filter (issues with `due_date <= this`) |
-| `include_closed` | bool | No | `true` | Include closed issues |
+| `include_closed` | bool | No | `false` | Include closed issues. Default `false` keeps response size and pagination cost low on long-lived projects; set to `true` for full historical timelines. |
 | `limit` | int | No | `250` | Max issues (1–500) |
 
 **Returns:**
@@ -2110,7 +2110,7 @@ Create a new product. **Write operation** — blocked when `REDMINE_MCP_READ_ONL
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | `name` | string | Yes | – | Product name |
-| `status_id` | int | No | `1` | 1=Active, 2=Inactive |
+| `status_id` | int | No | `1` | Must be `1` (Active) or `2` (Inactive); other values are rejected. |
 | `project_id` | int or string | No | – | Optional project association |
 | `description`, `code` | string | No | – | Optional descriptive fields |
 | `price` | float | No | – | Optional price |
