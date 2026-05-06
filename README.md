@@ -16,7 +16,7 @@ A Model Context Protocol (MCP) server that integrates with Redmine project manag
 
 ## Features
 
-- **69 MCP Tools**: Issues, projects, time tracking, wiki, Gantt, file operations, membership management, products, contacts (CRM), and more
+- **43 MCP Tools**: Issues, projects, time tracking, wiki, Gantt, file operations, membership management, products, contacts (CRM), and more
 - **Flexible Authentication**: API key, username/password, or OAuth2 per-user tokens
 - **Prompt Injection Protection**: User-controlled content wrapped in boundary tags for safe LLM consumption
 - **Read-Only Mode**: Restrict to read-only operations via `REDMINE_MCP_READ_ONLY` environment variable
@@ -117,9 +117,9 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `REDMINE_SSL_CLIENT_CERT` | No | – | Path to client certificate for mutual TLS |
 | `REDMINE_MCP_READ_ONLY` | No | `false` | Block all write operations (create/update/delete) when set to `true` |
 | `REDMINE_AGILE_ENABLED` | No | `false` | Enable RedmineUP Agile plugin support: `get_redmine_issue` returns `story_points`, `agile_sprint_id`, `agile_position`; `update_redmine_issue` accepts `story_points` |
-| `REDMINE_CHECKLISTS_ENABLED` | No | `false` | Enable RedmineUP Checklists plugin support: `get_checklist`, `update_checklist_item`, `mark_checklist_done` (requires Checklists Pro plugin) |
-| `REDMINE_PRODUCTS_ENABLED` | No | `false` | Enable RedmineUP Products plugin support: `list_products`, `get_product`, `add_product`, `edit_product` |
-| `REDMINE_CRM_ENABLED` | No | `false` | Enable RedmineUP CRM plugin support: `list_contacts`, `get_contact`, `edit_contact`, `create_contact`, `delete_contact`, `assign_contact_to_project`, `remove_contact_from_project` |
+| `REDMINE_CHECKLISTS_ENABLED` | No | `false` | Enable RedmineUP Checklists plugin support: `get_checklist`, `update_checklist_item` (requires Checklists Pro plugin) |
+| `REDMINE_PRODUCTS_ENABLED` | No | `false` | Enable RedmineUP Products plugin support: `manage_product` (action=list/get/create/update) |
+| `REDMINE_CRM_ENABLED` | No | `false` | Enable RedmineUP CRM plugin support: `manage_contact` (action=list/get/create/update/delete/assign_to_project/remove_from_project) |
 | `REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS` | No | `false` | Enable one retry for issue creation by filling missing required custom fields |
 | `REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS` | No | `{}` | JSON object mapping required custom field names to fallback values used when creating issues |
 | `REDMINE_ALLOW_PRIVATE_FETCH_URLS` | No | `false` | **Warning:** disables all SSRF protection for attachment fetching. Never set to `true` in production. |
