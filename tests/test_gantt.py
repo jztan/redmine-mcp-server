@@ -119,6 +119,7 @@ class TestGetGanttChart:
             project_id="proj",
             start_date_after="2026-04-01",
             due_date_before="2026-05-01",
+            include_closed=True,
         )
 
         call_kwargs = mock_redmine.issue.filter.call_args.kwargs
@@ -130,6 +131,17 @@ class TestGetGanttChart:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_default_excludes_closed(self, mock_redmine):
+        mock_redmine.issue.filter.return_value = []
+        mock_redmine.version.filter.return_value = []
+
+        await get_gantt_chart(project_id="proj")
+
+        call_kwargs = mock_redmine.issue.filter.call_args.kwargs
+        assert "status_id" not in call_kwargs
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_excludes_closed_when_requested(self, mock_redmine):
         mock_redmine.issue.filter.return_value = []
         mock_redmine.version.filter.return_value = []
@@ -138,6 +150,17 @@ class TestGetGanttChart:
 
         call_kwargs = mock_redmine.issue.filter.call_args.kwargs
         assert "status_id" not in call_kwargs
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_include_closed_true_passes_status_filter(self, mock_redmine):
+        mock_redmine.issue.filter.return_value = []
+        mock_redmine.version.filter.return_value = []
+
+        await get_gantt_chart(project_id="proj", include_closed=True)
+
+        call_kwargs = mock_redmine.issue.filter.call_args.kwargs
+        assert call_kwargs["status_id"] == "*"
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")

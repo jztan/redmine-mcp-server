@@ -6574,7 +6574,7 @@ async def get_gantt_chart(
     project_id: Union[str, int],
     start_date_after: Optional[str] = None,
     due_date_before: Optional[str] = None,
-    include_closed: bool = True,
+    include_closed: bool = False,
     limit: int = 250,
 ) -> Dict[str, Any]:
     """Retrieve project timeline (Gantt) data: issues with dates, dependencies,
@@ -6599,7 +6599,9 @@ async def get_gantt_chart(
             ``start_date`` is on or after this date).
         due_date_before: Optional ``YYYY-MM-DD`` filter (issues whose
             ``due_date`` is on or before this date).
-        include_closed: When ``True`` (default), include closed issues.
+        include_closed: When ``True``, include closed issues. Default
+            ``False``: only open issues are returned, which keeps response
+            size and pagination cost low on long-lived projects.
         limit: Maximum number of issues to return (1-500, default 250).
 
     Returns:
