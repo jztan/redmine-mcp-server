@@ -4391,157 +4391,144 @@ async def get_project_modules(
 
 
 @mcp.tool()
-async def add_project_member(
-    project_id: Union[str, int],
-    role_ids: List[int],
+async def manage_project_member(
+    action: str,
+    project_id: Optional[Union[str, int]] = None,
+    membership_id: Optional[int] = None,
     user_id: Optional[int] = None,
     group_id: Optional[int] = None,
+    role_ids: Optional[List[int]] = None,
 ) -> Dict[str, Any]:
-    """Add a user or group as a member of a project with assigned roles.
-
-    Exactly one of ``user_id`` or ``group_id`` must be provided.
+    """Add, update, or remove a Redmine project membership.
 
     Args:
-        project_id: Project identifier (numeric ID or string identifier).
-        role_ids: List of role IDs to assign (at least one required).
-            Use the ``list_redmine_roles`` tool to discover valid role IDs
-            before calling this tool — role IDs vary between Redmine
-            instances and must not be guessed.
-        user_id: ID of the user to add as a member.
-        group_id: ID of the group to add as a member.
+        action: Operation to perform. One of: ``add``, ``update``, ``remove``.
+        project_id: Project ID or identifier. Required for ``action="add"``.
+        membership_id: Membership ID. Required for ``action="update"`` and
+            ``action="remove"``.
+        user_id: User ID. Exactly one of ``user_id`` or ``group_id`` required
+            for ``action="add"``.
+        group_id: Group ID. Exactly one of ``user_id`` or ``group_id`` required
+            for ``action="add"``.
+        role_ids: Non-empty list of role IDs. Required for ``action="add"``
+            and ``action="update"``. Use ``list_redmine_roles`` to discover
+            valid role IDs.
 
     Returns:
-        Dictionary containing the created membership. On failure a dict
-        with an ``"error"`` key is returned.
+        For ``add``/``update``: membership dictionary.
+        For ``remove``: ``{"success": True, "deleted_membership_id": ...}``.
+        On error: ``{"error": "..."}``.
     """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
+    _valid_actions = {"add", "update", "remove"}
+    if action not in _valid_actions:
+        return {"error": (f"Invalid action '{action}'. Allowed: add, update, remove")}
 
-    if (user_id is None) == (group_id is None):
-        return {"error": "Exactly one of user_id or group_id must be provided."}
+    if action == "add":
+        if project_id is None:
+            return {"error": "project_id is required for action 'add'"}
+        if (user_id is None) == (group_id is None):
+            return {"error": "Exactly one of user_id or group_id must be provided."}
+        principal_candidate = user_id if user_id is not None else group_id
+        if not _is_positive_int(principal_candidate):
+            return {"error": "user_id / group_id must be a positive integer."}
+        if not role_ids:
+            return {
+                "error": (
+                    "At least one role_id must be provided. "
+                    "Use `list_redmine_roles` to discover valid role IDs."
+                )
+            }
+        if not isinstance(role_ids, list) or not all(
+            _is_positive_int(r) for r in role_ids
+        ):
+            return {
+                "error": (
+                    "role_ids must be a list of positive integers. "
+                    "Use `list_redmine_roles` to discover valid role IDs."
+                )
+            }
 
-    principal_candidate = user_id if user_id is not None else group_id
-    if not _is_positive_int(principal_candidate):
-        return {"error": "user_id / group_id must be a positive integer."}
+        if _is_read_only_mode():
+            return dict(_READ_ONLY_ERROR)
 
-    if not role_ids:
-        return {
-            "error": (
-                "At least one role_id must be provided. "
-                "Use `list_redmine_roles` to discover valid role IDs."
+        await _ensure_cleanup_started()
+
+        # Redmine's POST /projects/{id}/memberships endpoint uses `user_id`
+        # for BOTH users and groups (shared principal ID namespace).
+        principal_id = user_id if user_id is not None else group_id
+
+        try:
+            membership = _get_redmine_client().project_membership.create(
+                project_id=project_id,
+                user_id=principal_id,
+                role_ids=role_ids,
             )
-        }
-    if not isinstance(role_ids, list) or not all(_is_positive_int(r) for r in role_ids):
-        return {
-            "error": (
-                "role_ids must be a list of positive integers. "
-                "Use `list_redmine_roles` to discover valid role IDs."
+            return _membership_to_dict(membership)
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"adding member to project {project_id}",
+                {"resource_type": "project", "resource_id": project_id},
             )
-        }
 
-    # Redmine's POST /projects/{id}/memberships endpoint uses `user_id` for
-    # BOTH users and groups — they share the same principal ID namespace.
-    # There is no separate `group_id` parameter in the API, so we always
-    # forward group_id via the `user_id` field.
-    principal_id = user_id if user_id is not None else group_id
+    elif action == "update":
+        if membership_id is None:
+            return {"error": "membership_id is required for action 'update'"}
+        if not role_ids:
+            return {
+                "error": (
+                    "At least one role_id must be provided. "
+                    "Use `list_redmine_roles` to discover valid role IDs."
+                )
+            }
+        if not isinstance(role_ids, list) or not all(
+            _is_positive_int(r) for r in role_ids
+        ):
+            return {
+                "error": (
+                    "role_ids must be a list of positive integers. "
+                    "Use `list_redmine_roles` to discover valid role IDs."
+                )
+            }
 
-    try:
-        membership = _get_redmine_client().project_membership.create(
-            project_id=project_id,
-            user_id=principal_id,
-            role_ids=role_ids,
-        )
-        return _membership_to_dict(membership)
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"adding member to project {project_id}",
-            {"resource_type": "project", "resource_id": project_id},
-        )
+        if _is_read_only_mode():
+            return dict(_READ_ONLY_ERROR)
 
+        await _ensure_cleanup_started()
 
-@mcp.tool()
-async def update_project_member(
-    membership_id: int,
-    role_ids: List[int],
-) -> Dict[str, Any]:
-    """Update the roles assigned to an existing project membership.
-
-    Only role assignments can be updated via the API. To change the user
-    or group of a membership, delete and recreate it.
-
-    Args:
-        membership_id: ID of the membership to update (obtained from
-            ``list_project_members``).
-        role_ids: New list of role IDs to assign. Replaces the existing set.
-            Use the ``list_redmine_roles`` tool to discover valid role IDs
-            before calling this tool.
-
-    Returns:
-        Dictionary containing the updated membership. On failure a dict
-        with an ``"error"`` key is returned.
-    """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-
-    if not role_ids:
-        return {
-            "error": (
-                "At least one role_id must be provided. "
-                "Use `list_redmine_roles` to discover valid role IDs."
+        try:
+            client = _get_redmine_client()
+            client.project_membership.update(membership_id, role_ids=role_ids)
+            updated = client.project_membership.get(membership_id)
+            return _membership_to_dict(updated)
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"updating project membership {membership_id}",
+                {"resource_type": "membership", "resource_id": membership_id},
             )
-        }
-    if not isinstance(role_ids, list) or not all(_is_positive_int(r) for r in role_ids):
-        return {
-            "error": (
-                "role_ids must be a list of positive integers. "
-                "Use `list_redmine_roles` to discover valid role IDs."
+
+    else:  # action == "remove"
+        if membership_id is None:
+            return {"error": "membership_id is required for action 'remove'"}
+
+        if _is_read_only_mode():
+            return dict(_READ_ONLY_ERROR)
+
+        await _ensure_cleanup_started()
+
+        try:
+            _get_redmine_client().project_membership.delete(membership_id)
+            return {
+                "success": True,
+                "deleted_membership_id": membership_id,
+            }
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"removing project membership {membership_id}",
+                {"resource_type": "membership", "resource_id": membership_id},
             )
-        }
-
-    try:
-        client = _get_redmine_client()
-        client.project_membership.update(membership_id, role_ids=role_ids)
-        updated = client.project_membership.get(membership_id)
-        return _membership_to_dict(updated)
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"updating project membership {membership_id}",
-            {"resource_type": "membership", "resource_id": membership_id},
-        )
-
-
-@mcp.tool()
-async def remove_project_member(membership_id: int) -> Dict[str, Any]:
-    """Remove a membership from a project.
-
-    Note: Inherited memberships (from a parent project) cannot be removed
-    directly — Redmine will return a 422 error. Remove them from the
-    parent project instead.
-
-    Args:
-        membership_id: ID of the membership to remove.
-
-    Returns:
-        Dictionary with ``success: true`` on success. On failure a dict
-        with an ``"error"`` key is returned.
-    """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-
-    try:
-        _get_redmine_client().project_membership.delete(membership_id)
-        return {
-            "success": True,
-            "deleted_membership_id": membership_id,
-        }
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"removing project membership {membership_id}",
-            {"resource_type": "membership", "resource_id": membership_id},
-        )
 
 
 # ---------------------------------------------------------------------------
