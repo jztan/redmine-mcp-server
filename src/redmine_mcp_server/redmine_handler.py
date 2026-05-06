@@ -3125,56 +3125,81 @@ async def manage_issue_watcher(
 
 
 @mcp.tool()
-async def edit_note(
+async def manage_issue_note(
+    action: str,
     journal_id: int,
-    notes: str,
+    notes: Optional[str] = None,
     private_notes: Optional[bool] = None,
+    is_private: Optional[bool] = None,
 ) -> Dict[str, Any]:
-    """Update the text (and optionally privacy) of an existing journal note.
+    """Edit text or toggle privacy of a Redmine journal (issue note).
 
-    Redmine exposes ``PUT /journals/{id}.json`` for editing journal notes.
-    Only the ``notes`` text and the ``private_notes`` flag can be edited;
-    journal ``details`` (field-change history) are immutable.
-
-    Note: If a journal has no details attached and its notes are cleared,
-    Redmine will delete the journal record.
+    Both actions are writes and are blocked in read-only mode.
 
     Args:
-        journal_id: ID of the journal entry to update.
-        notes: New notes text (may be empty to clear notes).
-        private_notes: Optionally toggle the private flag on this journal
-            entry. When omitted, the existing flag is preserved.
+        action: One of: ``edit``, ``set_private``.
+        journal_id: ID of the journal entry (required for both actions).
+        notes: New notes text for ``edit`` (required; may be empty string
+            to clear the note).
+        private_notes: Optionally toggle private flag during ``edit``.
+        is_private: Required for ``set_private`` -- ``True`` to mark
+            private, ``False`` to make public.
 
     Returns:
-        Dictionary confirming the update. On failure a dict with an
-        ``"error"`` key is returned.
+        ``edit``: ``{"success": True, "journal_id": ..., "notes": ...,
+        "private_notes": ...}``.
+        ``set_private``: ``{"success": True, "journal_id": ...,
+        "private_notes": <bool>}``.
+        On error: ``{"error": "..."}``.
     """
+    _valid_actions = {"edit", "set_private"}
+    if action not in _valid_actions:
+        return {"error": f"Invalid action '{action}'. Allowed: edit, set_private"}
+
     if _is_read_only_mode():
         return dict(_READ_ONLY_ERROR)
 
-    try:
-        params: Dict[str, Any] = {"notes": notes}
-        if private_notes is not None:
-            params["private_notes"] = bool(private_notes)
+    if action == "edit":
+        if notes is None:
+            return {"error": "notes is required for action 'edit'"}
+        try:
+            params: Dict[str, Any] = {"notes": notes}
+            if private_notes is not None:
+                params["private_notes"] = bool(private_notes)
+            _get_redmine_client().issue_journal.update(journal_id, **params)
+            return {
+                "success": True,
+                "journal_id": journal_id,
+                "notes": notes,
+                "private_notes": (
+                    bool(private_notes) if private_notes is not None else None
+                ),
+            }
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"editing journal {journal_id}",
+                {"resource_type": "journal", "resource_id": journal_id},
+            )
 
-        client = _get_redmine_client()
-        # python-redmine's IssueJournal supports update via
-        # PUT /journals/{id}.json with a {"journal": {...}} envelope.
-        client.issue_journal.update(journal_id, **params)
-        return {
-            "success": True,
-            "journal_id": journal_id,
-            "notes": notes,
-            "private_notes": (
-                bool(private_notes) if private_notes is not None else None
-            ),
-        }
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"editing journal {journal_id}",
-            {"resource_type": "journal", "resource_id": journal_id},
-        )
+    else:  # action == "set_private"
+        if is_private is None:
+            return {"error": "is_private is required for action 'set_private'"}
+        try:
+            _get_redmine_client().issue_journal.update(
+                journal_id, private_notes=bool(is_private)
+            )
+            return {
+                "success": True,
+                "journal_id": journal_id,
+                "private_notes": bool(is_private),
+            }
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"updating privacy of journal {journal_id}",
+                {"resource_type": "journal", "resource_id": journal_id},
+            )
 
 
 @mcp.tool()
@@ -3219,40 +3244,6 @@ async def get_private_notes(issue_id: int) -> List[Dict[str, Any]]:
                 {"resource_type": "issue", "resource_id": issue_id},
             )
         ]
-
-
-@mcp.tool()
-async def set_note_private(
-    journal_id: int,
-    is_private: bool,
-) -> Dict[str, Any]:
-    """Toggle the private/public state of an existing journal note.
-
-    Args:
-        journal_id: ID of the journal entry to update.
-        is_private: True to mark the note private, False to make it public.
-
-    Returns:
-        Dictionary confirming the change. On failure a dict with an
-        ``"error"`` key is returned.
-    """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-
-    try:
-        client = _get_redmine_client()
-        client.issue_journal.update(journal_id, private_notes=bool(is_private))
-        return {
-            "success": True,
-            "journal_id": journal_id,
-            "private_notes": bool(is_private),
-        }
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"updating privacy of journal {journal_id}",
-            {"resource_type": "journal", "resource_id": journal_id},
-        )
 
 
 @mcp.tool()

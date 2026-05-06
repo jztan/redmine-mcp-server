@@ -4,7 +4,7 @@ Covers:
     - copy_issue
     - manage_issue_relation (action=list|create|delete)
     - list_subtasks
-    - edit_note / get_private_notes / set_note_private
+    - manage_issue_note (action=edit|set_private) / get_private_notes
     - manage_issue_watcher (action=add|remove)
     - manage_issue_category (action=list|create|update|delete)
 
@@ -26,13 +26,12 @@ from redmine_mcp_server.redmine_handler import (  # noqa: E402
     _issue_relation_to_dict,
     _journal_to_dict,
     copy_issue,
-    edit_note,
     get_private_notes,
     list_subtasks,
     manage_issue_category,
+    manage_issue_note,
     manage_issue_relation,
     manage_issue_watcher,
-    set_note_private,
 )
 
 
@@ -533,13 +532,21 @@ class TestManageIssueWatcher:
 # ---------------------------------------------------------------------------
 
 
-class TestEditNote:
+class TestManageIssueNoteEdit:
+    @pytest.mark.asyncio
+    async def test_invalid_action(self):
+        result = await manage_issue_note(action="get", journal_id=1, notes="x")
+        assert "error" in result
+        assert "Invalid action" in result["error"]
+
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_edit_note_basic(self, mock_redmine):
         mock_redmine.issue_journal.update.return_value = True
 
-        result = await edit_note(journal_id=10, notes="Updated text")
+        result = await manage_issue_note(
+            action="edit", journal_id=10, notes="Updated text"
+        )
 
         assert result["success"] is True
         assert result["journal_id"] == 10
@@ -552,17 +559,31 @@ class TestEditNote:
     async def test_edit_note_with_private_flag(self, mock_redmine):
         mock_redmine.issue_journal.update.return_value = True
 
-        await edit_note(journal_id=10, notes="Secret", private_notes=True)
+        await manage_issue_note(
+            action="edit", journal_id=10, notes="Secret", private_notes=True
+        )
 
         mock_redmine.issue_journal.update.assert_called_once_with(
             10, notes="Secret", private_notes=True
         )
 
     @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_edit_note_clear_with_empty_string(self, mock_redmine):
+        result = await manage_issue_note(action="edit", journal_id=10, notes="")
+        assert result["success"] is True
+
+    @pytest.mark.asyncio
+    async def test_edit_note_missing_notes(self):
+        result = await manage_issue_note(action="edit", journal_id=10)
+        assert "error" in result
+
+    @pytest.mark.asyncio
     async def test_edit_note_read_only(self, monkeypatch):
         monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "true")
-        result = await edit_note(journal_id=10, notes="x")
+        result = await manage_issue_note(action="edit", journal_id=10, notes="x")
         assert "error" in result
+        assert "read-only" in result["error"].lower()
 
 
 class TestGetPrivateNotes:
@@ -621,13 +642,15 @@ class TestGetPrivateNotes:
         assert result == []
 
 
-class TestSetNotePrivate:
+class TestManageIssueNoteSetPrivate:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_toggle_private_true(self, mock_redmine):
         mock_redmine.issue_journal.update.return_value = True
 
-        result = await set_note_private(journal_id=10, is_private=True)
+        result = await manage_issue_note(
+            action="set_private", journal_id=10, is_private=True
+        )
 
         assert result["success"] is True
         assert result["private_notes"] is True
@@ -639,16 +662,24 @@ class TestSetNotePrivate:
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_toggle_private_false(self, mock_redmine):
         mock_redmine.issue_journal.update.return_value = True
-        await set_note_private(journal_id=10, is_private=False)
+        await manage_issue_note(action="set_private", journal_id=10, is_private=False)
         mock_redmine.issue_journal.update.assert_called_once_with(
             10, private_notes=False
         )
 
     @pytest.mark.asyncio
+    async def test_set_private_missing_is_private(self):
+        result = await manage_issue_note(action="set_private", journal_id=10)
+        assert "error" in result
+
+    @pytest.mark.asyncio
     async def test_read_only_mode(self, monkeypatch):
         monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "true")
-        result = await set_note_private(journal_id=10, is_private=True)
+        result = await manage_issue_note(
+            action="set_private", journal_id=10, is_private=True
+        )
         assert "error" in result
+        assert "read-only" in result["error"].lower()
 
 
 # ---------------------------------------------------------------------------
