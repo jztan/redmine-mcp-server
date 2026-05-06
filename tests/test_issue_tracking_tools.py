@@ -2,12 +2,11 @@
 
 Covers:
     - copy_issue
-    - list_issue_relations / create_issue_relation / delete_issue_relation
+    - manage_issue_relation (action=list|create|delete)
     - list_subtasks
-    - edit_note / get_private_notes / set_note_private
-    - add_watcher / remove_watcher
-    - list_issue_categories / create_issue_category /
-      update_issue_category / delete_issue_category
+    - manage_issue_note (action=edit|set_private) / get_private_notes
+    - manage_issue_watcher (action=add|remove)
+    - manage_issue_category (action=list|create|update|delete)
 
 Follows the project's mocking convention: patch the module-level
 ``redmine_mcp_server.redmine_handler.redmine`` attribute so that
@@ -26,20 +25,13 @@ from redmine_mcp_server.redmine_handler import (  # noqa: E402
     _issue_category_to_dict,
     _issue_relation_to_dict,
     _journal_to_dict,
-    add_watcher,
     copy_issue,
-    create_issue_category,
-    create_issue_relation,
-    delete_issue_category,
-    delete_issue_relation,
-    edit_note,
     get_private_notes,
-    list_issue_categories,
-    list_issue_relations,
     list_subtasks,
-    remove_watcher,
-    set_note_private,
-    update_issue_category,
+    manage_issue_category,
+    manage_issue_note,
+    manage_issue_relation,
+    manage_issue_watcher,
 )
 
 
@@ -257,7 +249,16 @@ class TestCopyIssue:
 # ---------------------------------------------------------------------------
 
 
-class TestListIssueRelations:
+class TestManageIssueRelation:
+
+    @pytest.mark.asyncio
+    async def test_invalid_action(self):
+        result = await manage_issue_relation(action="get")
+        assert "error" in result
+        assert "Invalid action" in result["error"]
+
+    # --- list ---
+
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_list_returns_relations(self, mock_redmine):
@@ -269,7 +270,7 @@ class TestListIssueRelations:
         rel.delay = None
         mock_redmine.issue_relation.filter.return_value = [rel]
 
-        result = await list_issue_relations(issue_id=1)
+        result = await manage_issue_relation(action="list", issue_id=1)
 
         assert len(result) == 1
         assert result[0]["id"] == 5
@@ -280,7 +281,7 @@ class TestListIssueRelations:
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_list_empty(self, mock_redmine):
         mock_redmine.issue_relation.filter.return_value = []
-        result = await list_issue_relations(issue_id=1)
+        result = await manage_issue_relation(action="list", issue_id=1)
         assert result == []
 
     @pytest.mark.asyncio
@@ -289,15 +290,30 @@ class TestListIssueRelations:
         from redminelib.exceptions import ForbiddenError
 
         mock_redmine.issue_relation.filter.side_effect = ForbiddenError()
-        result = await list_issue_relations(issue_id=1)
+        result = await manage_issue_relation(action="list", issue_id=1)
         assert isinstance(result, dict)
         assert "error" in result
 
+    @pytest.mark.asyncio
+    async def test_list_missing_issue_id(self):
+        result = await manage_issue_relation(action="list")
+        assert "error" in result
+        assert "issue_id" in result["error"]
 
-class TestCreateIssueRelation:
+    @pytest.mark.asyncio
+    async def test_list_allowed_in_read_only(self, monkeypatch):
+        monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "true")
+        with patch("redmine_mcp_server.redmine_handler.redmine") as mock_redmine:
+            mock_redmine.issue_relation.filter.return_value = []
+            result = await manage_issue_relation(action="list", issue_id=1)
+            assert isinstance(result, list)
+
+    # --- create ---
+
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_create_basic(self, mock_redmine):
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    async def test_create_basic(self, mock_cleanup, mock_redmine):
         rel = Mock()
         rel.id = 99
         rel.issue_id = 1
@@ -306,7 +322,7 @@ class TestCreateIssueRelation:
         rel.delay = None
         mock_redmine.issue_relation.create.return_value = rel
 
-        result = await create_issue_relation(issue_id=1, issue_to_id=2)
+        result = await manage_issue_relation(action="create", issue_id=1, issue_to_id=2)
 
         assert result["id"] == 99
         mock_redmine.issue_relation.create.assert_called_once_with(
@@ -315,7 +331,8 @@ class TestCreateIssueRelation:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_create_with_delay_for_precedes(self, mock_redmine):
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    async def test_create_with_delay_for_precedes(self, mock_cleanup, mock_redmine):
         rel = Mock()
         rel.id = 100
         rel.issue_id = 1
@@ -324,7 +341,8 @@ class TestCreateIssueRelation:
         rel.delay = 5
         mock_redmine.issue_relation.create.return_value = rel
 
-        result = await create_issue_relation(
+        result = await manage_issue_relation(
+            action="create",
             issue_id=1,
             issue_to_id=2,
             relation_type="precedes",
@@ -337,43 +355,63 @@ class TestCreateIssueRelation:
         )
 
     @pytest.mark.asyncio
-    async def test_invalid_relation_type(self):
-        result = await create_issue_relation(
-            issue_id=1, issue_to_id=2, relation_type="bogus"
+    async def test_create_invalid_relation_type(self):
+        result = await manage_issue_relation(
+            action="create", issue_id=1, issue_to_id=2, relation_type="bogus"
         )
         assert "error" in result
         assert "Invalid relation_type" in result["error"]
 
     @pytest.mark.asyncio
-    async def test_read_only_mode(self, monkeypatch):
+    async def test_create_missing_issue_id(self):
+        result = await manage_issue_relation(action="create", issue_to_id=2)
+        assert "error" in result
+        assert "issue_id" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_create_missing_issue_to_id(self):
+        result = await manage_issue_relation(action="create", issue_id=1)
+        assert "error" in result
+        assert "issue_to_id" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_create_read_only_mode(self, monkeypatch):
         monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "true")
-        result = await create_issue_relation(issue_id=1, issue_to_id=2)
+        result = await manage_issue_relation(action="create", issue_id=1, issue_to_id=2)
         assert "error" in result
         assert "read-only" in result["error"].lower()
 
+    # --- delete ---
 
-class TestDeleteIssueRelation:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_delete_success(self, mock_redmine):
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    async def test_delete_success(self, mock_cleanup, mock_redmine):
         mock_redmine.issue_relation.delete.return_value = True
-        result = await delete_issue_relation(relation_id=42)
+        result = await manage_issue_relation(action="delete", relation_id=42)
         assert result == {"success": True, "deleted_relation_id": 42}
         mock_redmine.issue_relation.delete.assert_called_once_with(42)
 
     @pytest.mark.asyncio
-    async def test_read_only_mode(self, monkeypatch):
+    async def test_delete_missing_relation_id(self):
+        result = await manage_issue_relation(action="delete")
+        assert "error" in result
+        assert "relation_id" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_delete_read_only_mode(self, monkeypatch):
         monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "true")
-        result = await delete_issue_relation(relation_id=42)
+        result = await manage_issue_relation(action="delete", relation_id=42)
         assert "error" in result
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_delete_not_found(self, mock_redmine):
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    async def test_delete_not_found(self, mock_cleanup, mock_redmine):
         from redminelib.exceptions import ResourceNotFoundError
 
         mock_redmine.issue_relation.delete.side_effect = ResourceNotFoundError()
-        result = await delete_issue_relation(relation_id=999)
+        result = await manage_issue_relation(action="delete", relation_id=999)
         assert "error" in result
 
 
@@ -420,14 +458,21 @@ class TestListSubtasks:
 # ---------------------------------------------------------------------------
 
 
-class TestWatchers:
+class TestManageIssueWatcher:
+    @pytest.mark.asyncio
+    async def test_invalid_action(self):
+        result = await manage_issue_watcher(action="list", issue_id=1, user_id=5)
+        assert "error" in result
+        assert "Invalid action" in result["error"]
+
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_add_watcher(self, mock_redmine):
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    async def test_add_watcher(self, mock_cleanup, mock_redmine):
         issue_mock = Mock()
         mock_redmine.issue.get.return_value = issue_mock
 
-        result = await add_watcher(issue_id=1, user_id=5)
+        result = await manage_issue_watcher(action="add", issue_id=1, user_id=5)
 
         assert result["success"] is True
         assert result["issue_id"] == 1
@@ -437,34 +482,48 @@ class TestWatchers:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_remove_watcher(self, mock_redmine):
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    async def test_remove_watcher(self, mock_cleanup, mock_redmine):
         issue_mock = Mock()
         mock_redmine.issue.get.return_value = issue_mock
 
-        result = await remove_watcher(issue_id=1, user_id=5)
+        result = await manage_issue_watcher(action="remove", issue_id=1, user_id=5)
 
         assert result["success"] is True
         issue_mock.watcher.remove.assert_called_once_with(5)
 
     @pytest.mark.asyncio
+    async def test_add_invalid_issue_id(self):
+        result = await manage_issue_watcher(action="add", issue_id=0, user_id=5)
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_add_invalid_user_id(self):
+        result = await manage_issue_watcher(action="add", issue_id=10, user_id=-1)
+        assert "error" in result
+
+    @pytest.mark.asyncio
     async def test_add_watcher_read_only(self, monkeypatch):
         monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "true")
-        result = await add_watcher(issue_id=1, user_id=5)
+        result = await manage_issue_watcher(action="add", issue_id=1, user_id=5)
         assert "error" in result
+        assert "read-only" in result["error"].lower()
 
     @pytest.mark.asyncio
     async def test_remove_watcher_read_only(self, monkeypatch):
         monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "true")
-        result = await remove_watcher(issue_id=1, user_id=5)
+        result = await manage_issue_watcher(action="remove", issue_id=1, user_id=5)
         assert "error" in result
+        assert "read-only" in result["error"].lower()
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_add_watcher_issue_not_found(self, mock_redmine):
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    async def test_add_watcher_issue_not_found(self, mock_cleanup, mock_redmine):
         from redminelib.exceptions import ResourceNotFoundError
 
         mock_redmine.issue.get.side_effect = ResourceNotFoundError()
-        result = await add_watcher(issue_id=999, user_id=5)
+        result = await manage_issue_watcher(action="add", issue_id=999, user_id=5)
         assert "error" in result
 
 
@@ -473,13 +532,21 @@ class TestWatchers:
 # ---------------------------------------------------------------------------
 
 
-class TestEditNote:
+class TestManageIssueNoteEdit:
+    @pytest.mark.asyncio
+    async def test_invalid_action(self):
+        result = await manage_issue_note(action="get", journal_id=1, notes="x")
+        assert "error" in result
+        assert "Invalid action" in result["error"]
+
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_edit_note_basic(self, mock_redmine):
         mock_redmine.issue_journal.update.return_value = True
 
-        result = await edit_note(journal_id=10, notes="Updated text")
+        result = await manage_issue_note(
+            action="edit", journal_id=10, notes="Updated text"
+        )
 
         assert result["success"] is True
         assert result["journal_id"] == 10
@@ -492,17 +559,31 @@ class TestEditNote:
     async def test_edit_note_with_private_flag(self, mock_redmine):
         mock_redmine.issue_journal.update.return_value = True
 
-        await edit_note(journal_id=10, notes="Secret", private_notes=True)
+        await manage_issue_note(
+            action="edit", journal_id=10, notes="Secret", private_notes=True
+        )
 
         mock_redmine.issue_journal.update.assert_called_once_with(
             10, notes="Secret", private_notes=True
         )
 
     @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_edit_note_clear_with_empty_string(self, mock_redmine):
+        result = await manage_issue_note(action="edit", journal_id=10, notes="")
+        assert result["success"] is True
+
+    @pytest.mark.asyncio
+    async def test_edit_note_missing_notes(self):
+        result = await manage_issue_note(action="edit", journal_id=10)
+        assert "error" in result
+
+    @pytest.mark.asyncio
     async def test_edit_note_read_only(self, monkeypatch):
         monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "true")
-        result = await edit_note(journal_id=10, notes="x")
+        result = await manage_issue_note(action="edit", journal_id=10, notes="x")
         assert "error" in result
+        assert "read-only" in result["error"].lower()
 
 
 class TestGetPrivateNotes:
@@ -561,13 +642,15 @@ class TestGetPrivateNotes:
         assert result == []
 
 
-class TestSetNotePrivate:
+class TestManageIssueNoteSetPrivate:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_toggle_private_true(self, mock_redmine):
         mock_redmine.issue_journal.update.return_value = True
 
-        result = await set_note_private(journal_id=10, is_private=True)
+        result = await manage_issue_note(
+            action="set_private", journal_id=10, is_private=True
+        )
 
         assert result["success"] is True
         assert result["private_notes"] is True
@@ -579,16 +662,24 @@ class TestSetNotePrivate:
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_toggle_private_false(self, mock_redmine):
         mock_redmine.issue_journal.update.return_value = True
-        await set_note_private(journal_id=10, is_private=False)
+        await manage_issue_note(action="set_private", journal_id=10, is_private=False)
         mock_redmine.issue_journal.update.assert_called_once_with(
             10, private_notes=False
         )
 
     @pytest.mark.asyncio
+    async def test_set_private_missing_is_private(self):
+        result = await manage_issue_note(action="set_private", journal_id=10)
+        assert "error" in result
+
+    @pytest.mark.asyncio
     async def test_read_only_mode(self, monkeypatch):
         monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "true")
-        result = await set_note_private(journal_id=10, is_private=True)
+        result = await manage_issue_note(
+            action="set_private", journal_id=10, is_private=True
+        )
         assert "error" in result
+        assert "read-only" in result["error"].lower()
 
 
 # ---------------------------------------------------------------------------
@@ -596,7 +687,16 @@ class TestSetNotePrivate:
 # ---------------------------------------------------------------------------
 
 
-class TestListIssueCategories:
+class TestManageIssueCategory:
+
+    @pytest.mark.asyncio
+    async def test_invalid_action(self):
+        result = await manage_issue_category(action="get")
+        assert "error" in result
+        assert "Invalid action" in result["error"]
+
+    # --- list ---
+
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_list_categories(self, mock_redmine):
@@ -607,7 +707,7 @@ class TestListIssueCategories:
         cat.assigned_to = None
         mock_redmine.issue_category.filter.return_value = [cat]
 
-        result = await list_issue_categories(project_id=10)
+        result = await manage_issue_category(action="list", project_id=10)
 
         assert len(result) == 1
         assert "Bugs" in result[0]["name"]
@@ -617,17 +717,32 @@ class TestListIssueCategories:
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_list_by_identifier(self, mock_redmine):
         mock_redmine.issue_category.filter.return_value = []
-        result = await list_issue_categories(project_id="my-project")
+        result = await manage_issue_category(action="list", project_id="my-project")
         assert result == []
         mock_redmine.issue_category.filter.assert_called_once_with(
             project_id="my-project"
         )
 
+    @pytest.mark.asyncio
+    async def test_list_missing_project_id(self):
+        result = await manage_issue_category(action="list")
+        assert "error" in result
+        assert "project_id" in result["error"]
 
-class TestCreateIssueCategory:
+    @pytest.mark.asyncio
+    async def test_list_allowed_in_read_only(self, monkeypatch):
+        monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "true")
+        with patch("redmine_mcp_server.redmine_handler.redmine") as mock_redmine:
+            mock_redmine.issue_category.filter.return_value = []
+            result = await manage_issue_category(action="list", project_id=10)
+            assert isinstance(result, list)
+
+    # --- create ---
+
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_create_basic(self, mock_redmine):
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    async def test_create_basic(self, mock_cleanup, mock_redmine):
         cat = Mock()
         cat.id = 7
         cat.name = "New Cat"
@@ -635,7 +750,9 @@ class TestCreateIssueCategory:
         cat.assigned_to = None
         mock_redmine.issue_category.create.return_value = cat
 
-        result = await create_issue_category(project_id=10, name="New Cat")
+        result = await manage_issue_category(
+            action="create", project_id=10, name="New Cat"
+        )
 
         assert result["id"] == 7
         mock_redmine.issue_category.create.assert_called_once_with(
@@ -644,7 +761,8 @@ class TestCreateIssueCategory:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_create_with_assignee(self, mock_redmine):
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    async def test_create_with_assignee(self, mock_cleanup, mock_redmine):
         cat = Mock()
         cat.id = 8
         cat.name = "Support"
@@ -652,8 +770,8 @@ class TestCreateIssueCategory:
         cat.assigned_to = _mock_with_name(3, "Bob")
         mock_redmine.issue_category.create.return_value = cat
 
-        result = await create_issue_category(
-            project_id=10, name="Support", assigned_to_id=3
+        result = await manage_issue_category(
+            action="create", project_id=10, name="Support", assigned_to_id=3
         )
 
         assert result["assigned_to"]["id"] == 3
@@ -663,21 +781,31 @@ class TestCreateIssueCategory:
         )
 
     @pytest.mark.asyncio
+    async def test_create_missing_project_id(self):
+        result = await manage_issue_category(action="create", name="X")
+        assert "error" in result
+        assert "project_id" in result["error"]
+
+    @pytest.mark.asyncio
     async def test_create_empty_name(self):
-        result = await create_issue_category(project_id=10, name="   ")
+        result = await manage_issue_category(action="create", project_id=10, name="   ")
         assert "error" in result
 
     @pytest.mark.asyncio
-    async def test_read_only_mode(self, monkeypatch):
+    async def test_create_read_only_mode(self, monkeypatch):
         monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "true")
-        result = await create_issue_category(project_id=10, name="Test")
+        result = await manage_issue_category(
+            action="create", project_id=10, name="Test"
+        )
         assert "error" in result
+        assert "read-only" in result["error"].lower()
 
+    # --- update ---
 
-class TestUpdateIssueCategory:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_update_name(self, mock_redmine):
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    async def test_update_name(self, mock_cleanup, mock_redmine):
         updated = Mock()
         updated.id = 1
         updated.name = "Renamed"
@@ -685,14 +813,17 @@ class TestUpdateIssueCategory:
         updated.assigned_to = None
         mock_redmine.issue_category.get.return_value = updated
 
-        result = await update_issue_category(category_id=1, name="Renamed")
+        result = await manage_issue_category(
+            action="update", category_id=1, name="Renamed"
+        )
 
         assert "Renamed" in result["name"]
         mock_redmine.issue_category.update.assert_called_once_with(1, name="Renamed")
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_update_assignee(self, mock_redmine):
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    async def test_update_assignee(self, mock_cleanup, mock_redmine):
         updated = Mock()
         updated.id = 1
         updated.name = "Cat"
@@ -700,59 +831,80 @@ class TestUpdateIssueCategory:
         updated.assigned_to = _mock_with_name(9, "Carol")
         mock_redmine.issue_category.get.return_value = updated
 
-        result = await update_issue_category(category_id=1, assigned_to_id=9)
+        result = await manage_issue_category(
+            action="update", category_id=1, assigned_to_id=9
+        )
 
         assert result["assigned_to"]["id"] == 9
         assert "Carol" in result["assigned_to"]["name"]
         mock_redmine.issue_category.update.assert_called_once_with(1, assigned_to_id=9)
 
     @pytest.mark.asyncio
+    async def test_update_missing_category_id(self):
+        result = await manage_issue_category(action="update", name="X")
+        assert "error" in result
+        assert "category_id" in result["error"]
+
+    @pytest.mark.asyncio
     async def test_update_no_fields(self):
-        result = await update_issue_category(category_id=1)
+        result = await manage_issue_category(action="update", category_id=1)
         assert "error" in result
         assert "No fields" in result["error"]
 
     @pytest.mark.asyncio
     async def test_update_empty_name(self):
-        result = await update_issue_category(category_id=1, name="   ")
+        result = await manage_issue_category(action="update", category_id=1, name="   ")
         assert "error" in result
 
     @pytest.mark.asyncio
-    async def test_read_only_mode(self, monkeypatch):
+    async def test_update_read_only_mode(self, monkeypatch):
         monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "true")
-        result = await update_issue_category(category_id=1, name="x")
+        result = await manage_issue_category(action="update", category_id=1, name="x")
         assert "error" in result
+        assert "read-only" in result["error"].lower()
 
+    # --- delete ---
 
-class TestDeleteIssueCategory:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_delete_basic(self, mock_redmine):
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    async def test_delete_basic(self, mock_cleanup, mock_redmine):
         mock_redmine.issue_category.delete.return_value = True
-        result = await delete_issue_category(category_id=5)
+        result = await manage_issue_category(action="delete", category_id=5)
         assert result["success"] is True
         assert result["deleted_category_id"] == 5
         mock_redmine.issue_category.delete.assert_called_once_with(5)
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_delete_with_reassign(self, mock_redmine):
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    async def test_delete_with_reassign(self, mock_cleanup, mock_redmine):
         mock_redmine.issue_category.delete.return_value = True
-        result = await delete_issue_category(category_id=5, reassign_to_id=7)
+        result = await manage_issue_category(
+            action="delete", category_id=5, reassign_to_id=7
+        )
         assert result["reassigned_to_id"] == 7
         mock_redmine.issue_category.delete.assert_called_once_with(5, reassign_to_id=7)
 
     @pytest.mark.asyncio
-    async def test_read_only_mode(self, monkeypatch):
-        monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "true")
-        result = await delete_issue_category(category_id=5)
+    async def test_delete_missing_category_id(self):
+        result = await manage_issue_category(action="delete")
         assert "error" in result
+        assert "category_id" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_delete_read_only_mode(self, monkeypatch):
+        monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "true")
+        result = await manage_issue_category(action="delete", category_id=5)
+        assert "error" in result
+        assert "read-only" in result["error"].lower()
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_delete_not_found(self, mock_redmine):
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    async def test_delete_not_found(self, mock_cleanup, mock_redmine):
         from redminelib.exceptions import ResourceNotFoundError
 
         mock_redmine.issue_category.delete.side_effect = ResourceNotFoundError()
-        result = await delete_issue_category(category_id=999)
+        result = await manage_issue_category(action="delete", category_id=999)
         assert "error" in result

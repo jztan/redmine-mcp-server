@@ -755,62 +755,72 @@ class TestIsPositiveInt:
 
 
 class TestRoleIdsRejectBoolean:
-    """add_project_member must reject role_ids=[True] — without the fix
+    """manage_project_member must reject role_ids=[True] — without the fix
     it would silently assign role 1 (often an elevated role)."""
 
     @pytest.mark.asyncio
     async def test_role_ids_with_true_rejected(self):
-        from redmine_mcp_server.redmine_handler import add_project_member
+        from redmine_mcp_server.redmine_handler import manage_project_member
 
-        result = await add_project_member(project_id=10, role_ids=[True], user_id=5)
+        result = await manage_project_member(
+            action="add", project_id=10, role_ids=[True], user_id=5
+        )
         assert "error" in result
         assert "positive integers" in result["error"]
 
     @pytest.mark.asyncio
     async def test_role_ids_with_false_rejected(self):
-        from redmine_mcp_server.redmine_handler import add_project_member
+        from redmine_mcp_server.redmine_handler import manage_project_member
 
-        result = await add_project_member(project_id=10, role_ids=[False], user_id=5)
+        result = await manage_project_member(
+            action="add", project_id=10, role_ids=[False], user_id=5
+        )
         assert "error" in result
 
     @pytest.mark.asyncio
     async def test_role_ids_with_zero_rejected(self):
         """role_id=0 doesn't exist and shouldn't be forwarded."""
-        from redmine_mcp_server.redmine_handler import add_project_member
+        from redmine_mcp_server.redmine_handler import manage_project_member
 
-        result = await add_project_member(project_id=10, role_ids=[0, 3], user_id=5)
+        result = await manage_project_member(
+            action="add", project_id=10, role_ids=[0, 3], user_id=5
+        )
         assert "error" in result
 
     @pytest.mark.asyncio
     async def test_user_id_bool_rejected(self):
-        from redmine_mcp_server.redmine_handler import add_project_member
+        from redmine_mcp_server.redmine_handler import manage_project_member
 
-        result = await add_project_member(project_id=10, role_ids=[3], user_id=True)
+        result = await manage_project_member(
+            action="add", project_id=10, role_ids=[3], user_id=True
+        )
         assert "error" in result
 
 
 class TestWatcherUserIdValidation:
     @pytest.mark.asyncio
     async def test_add_watcher_rejects_bool_user_id(self):
-        from redmine_mcp_server.redmine_handler import add_watcher
+        from redmine_mcp_server.redmine_handler import manage_issue_watcher
 
-        result = await add_watcher(issue_id=1, user_id=True)
+        result = await manage_issue_watcher(action="add", issue_id=1, user_id=True)
         assert "error" in result
 
     @pytest.mark.asyncio
     async def test_remove_watcher_rejects_bool_user_id(self):
-        from redmine_mcp_server.redmine_handler import remove_watcher
+        from redmine_mcp_server.redmine_handler import manage_issue_watcher
 
-        result = await remove_watcher(issue_id=1, user_id=True)
+        result = await manage_issue_watcher(action="remove", issue_id=1, user_id=True)
         assert "error" in result
 
 
 class TestLogTimeForUserRejectsBool:
     @pytest.mark.asyncio
     async def test_user_id_bool_rejected(self):
-        from redmine_mcp_server.redmine_handler import log_time_for_user
+        from redmine_mcp_server.redmine_handler import manage_time_entry
 
-        result = await log_time_for_user(user_id=True, hours=1.0, issue_id=123)
+        result = await manage_time_entry(
+            action="create", user_id=True, hours=1.0, issue_id=123
+        )
         assert "error" in result
         assert "positive integer" in result["error"]
 

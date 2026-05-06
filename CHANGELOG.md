@@ -7,6 +7,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- Consolidated 35 MCP tools into 9 `manage_X` tools, reducing total tool count from 69 to 43:
+  - `add_project_member`, `update_project_member`, `remove_project_member` -> `manage_project_member(action=...)`
+  - `list_issue_categories`, `create_issue_category`, `update_issue_category`, `delete_issue_category` -> `manage_issue_category(action=...)`
+  - `list_issue_relations`, `create_issue_relation`, `delete_issue_relation` -> `manage_issue_relation(action=...)`
+  - `add_watcher`, `remove_watcher` -> `manage_issue_watcher(action=...)`
+  - `edit_note`, `set_note_private` -> `manage_issue_note(action=...)` (`get_private_notes` kept standalone)
+  - `create_time_entry`, `update_time_entry`, `log_time_for_user` -> `manage_time_entry(action=...)`
+  - `get_redmine_wiki_page`, `create_redmine_wiki_page`, `update_redmine_wiki_page`, `delete_redmine_wiki_page`, `list_wiki_pages`, `rename_wiki_page` -> `manage_redmine_wiki_page(action=...)`
+  - `list_products`, `get_product`, `add_product`, `edit_product` -> `manage_product(action=...)` (still gated by `REDMINE_PRODUCTS_ENABLED=true`)
+  - `list_contacts`, `get_contact`, `create_contact`, `edit_contact`, `delete_contact`, `assign_contact_to_project`, `remove_contact_from_project` -> `manage_contact(action=...)` (still gated by `REDMINE_CRM_ENABLED=true`)
+  - `mark_checklist_done` removed: use `update_checklist_item(is_done=True)` directly
+- `manage_time_entry(action="create", user_id=...)` replaces `log_time_for_user`
+- Verb normalization: `add_product` / `edit_product` map to `manage_product(action="create"|"update")`; `create_contact` / `edit_contact` map to `manage_contact(action="create"|"update")` to match the dominant CRUD pattern in the codebase
+- Response shape change: callers of `mark_checklist_done` previously received `{"is_done": bool}`; the equivalent `update_checklist_item` call returns `{"updated_fields": ["is_done"]}`
+- Read-only mode: write actions within `manage_X` tools are blocked; read actions (`list`, `get`) remain available
 
 ## [1.3.0] - 2026-05-06
 ### Added

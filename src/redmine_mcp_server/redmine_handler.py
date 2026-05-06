@@ -2944,106 +2944,105 @@ async def copy_issue(
 
 
 @mcp.tool()
-async def list_issue_relations(
-    issue_id: int,
-) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
-    """List all relations for a given Redmine issue.
-
-    Args:
-        issue_id: ID of the issue whose relations should be listed.
-
-    Returns:
-        List of relation dictionaries. On failure, a dict with an
-        ``"error"`` key is returned.
-    """
-    try:
-        relations = _get_redmine_client().issue_relation.filter(issue_id=issue_id)
-        return [_issue_relation_to_dict(r) for r in _iter_capped(relations)]
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"listing relations for issue {issue_id}",
-            {"resource_type": "issue", "resource_id": issue_id},
-        )
-
-
-@mcp.tool()
-async def create_issue_relation(
-    issue_id: int,
-    issue_to_id: int,
-    relation_type: str = "relates",
+async def manage_issue_relation(
+    action: str,
+    issue_id: Optional[int] = None,
+    issue_to_id: Optional[int] = None,
+    relation_id: Optional[int] = None,
+    relation_type: Optional[str] = None,
     delay: Optional[int] = None,
-) -> Dict[str, Any]:
-    """Create a relation between two Redmine issues.
+) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    """List, create, or delete a Redmine issue relation.
 
     Args:
-        issue_id: ID of the source issue.
-        issue_to_id: ID of the target issue to relate to.
-        relation_type: Type of relation. Must be one of: ``relates``,
-            ``duplicates``, ``duplicated``, ``blocks``, ``blocked``,
-            ``precedes``, ``follows``, ``copied_to``, ``copied_from``.
-            Defaults to ``relates``.
-        delay: Optional delay in days (only meaningful for ``precedes``
-            and ``follows`` relation types).
+        action: One of: ``list``, ``create``, ``delete``.
+        issue_id: Source issue ID. Required for ``list`` and ``create``.
+        issue_to_id: Target issue ID. Required for ``create``.
+        relation_id: Relation ID. Required for ``delete``.
+        relation_type: One of: ``relates``, ``duplicates``, ``duplicated``,
+            ``blocks``, ``blocked``, ``precedes``, ``follows``,
+            ``copied_to``, ``copied_from``. Defaults to ``relates`` for
+            ``create``.
+        delay: Delay in days for ``precedes`` / ``follows`` relations.
 
     Returns:
-        Dictionary containing the newly created relation. On failure a
-        dict with an ``"error"`` key is returned.
+        ``list``: list of relation dicts.
+        ``create``: relation dict.
+        ``delete``: ``{"success": True, "deleted_relation_id": ...}``.
+        On error: ``{"error": "..."}``.
     """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
+    _valid_actions = {"list", "create", "delete"}
+    if action not in _valid_actions:
+        return {"error": f"Invalid action '{action}'. Allowed: list, create, delete"}
 
-    if relation_type not in _VALID_ISSUE_RELATION_TYPES:
-        return {
-            "error": (
-                f"Invalid relation_type '{relation_type}'. Must be one of: "
-                f"{', '.join(sorted(_VALID_ISSUE_RELATION_TYPES))}."
+    if action == "list":
+        if issue_id is None:
+            return {"error": "issue_id is required for action 'list'"}
+        try:
+            relations = _get_redmine_client().issue_relation.filter(issue_id=issue_id)
+            return [_issue_relation_to_dict(r) for r in _iter_capped(relations)]
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"listing relations for issue {issue_id}",
+                {"resource_type": "issue", "resource_id": issue_id},
             )
-        }
 
-    try:
-        params: Dict[str, Any] = {
-            "issue_id": issue_id,
-            "issue_to_id": issue_to_id,
-            "relation_type": relation_type,
-        }
-        if delay is not None:
-            params["delay"] = delay
+    elif action == "create":
+        if issue_id is None:
+            return {"error": "issue_id is required for action 'create'"}
+        if issue_to_id is None:
+            return {"error": "issue_to_id is required for action 'create'"}
 
-        relation = _get_redmine_client().issue_relation.create(**params)
-        return _issue_relation_to_dict(relation)
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"creating relation from issue {issue_id} to {issue_to_id}",
-            {"resource_type": "issue", "resource_id": issue_id},
-        )
+        _rt = relation_type if relation_type is not None else "relates"
+        if _rt not in _VALID_ISSUE_RELATION_TYPES:
+            return {
+                "error": (
+                    f"Invalid relation_type '{_rt}'. Must be one of: "
+                    f"{', '.join(sorted(_VALID_ISSUE_RELATION_TYPES))}."
+                )
+            }
 
+        if _is_read_only_mode():
+            return dict(_READ_ONLY_ERROR)
 
-@mcp.tool()
-async def delete_issue_relation(relation_id: int) -> Dict[str, Any]:
-    """Delete a Redmine issue relation by its ID.
+        await _ensure_cleanup_started()
 
-    Args:
-        relation_id: ID of the relation to delete (the ``id`` field returned
-            by ``list_issue_relations`` or ``create_issue_relation``).
+        try:
+            params: Dict[str, Any] = {
+                "issue_id": issue_id,
+                "issue_to_id": issue_to_id,
+                "relation_type": _rt,
+            }
+            if delay is not None:
+                params["delay"] = delay
+            relation = _get_redmine_client().issue_relation.create(**params)
+            return _issue_relation_to_dict(relation)
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"creating relation from issue {issue_id} to {issue_to_id}",
+                {"resource_type": "issue", "resource_id": issue_id},
+            )
 
-    Returns:
-        Dictionary with ``success: true`` on success. On failure a dict
-        with an ``"error"`` key is returned.
-    """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
+    else:  # action == "delete"
+        if relation_id is None:
+            return {"error": "relation_id is required for action 'delete'"}
 
-    try:
-        _get_redmine_client().issue_relation.delete(relation_id)
-        return {"success": True, "deleted_relation_id": relation_id}
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"deleting relation {relation_id}",
-            {"resource_type": "relation", "resource_id": relation_id},
-        )
+        if _is_read_only_mode():
+            return dict(_READ_ONLY_ERROR)
+
+        await _ensure_cleanup_started()
+
+        try:
+            _get_redmine_client().issue_relation.delete(relation_id)
+            return {"success": True, "deleted_relation_id": relation_id}
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"deleting relation {relation_id}",
+                {"resource_type": "relation", "resource_id": relation_id},
+            )
 
 
 @mcp.tool()
@@ -3080,130 +3079,127 @@ async def list_subtasks(
 
 
 @mcp.tool()
-async def add_watcher(issue_id: int, user_id: int) -> Dict[str, Any]:
-    """Add a user to the watcher list of a Redmine issue.
-
-    Requires Redmine 2.3.0+.
-
-    Args:
-        issue_id: ID of the issue.
-        user_id: ID of the user to add as a watcher.
-
-    Returns:
-        Dictionary with ``success: true`` on success. On failure a dict
-        with an ``"error"`` key is returned.
-    """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-
-    if not _is_positive_int(issue_id):
-        return {"error": "issue_id must be a positive integer."}
-    if not _is_positive_int(user_id):
-        return {"error": "user_id must be a positive integer."}
-
-    try:
-        issue = _get_redmine_client().issue.get(issue_id)
-        issue.watcher.add(user_id)
-        return {
-            "success": True,
-            "issue_id": issue_id,
-            "user_id": user_id,
-        }
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"adding watcher {user_id} to issue {issue_id}",
-            {"resource_type": "issue", "resource_id": issue_id},
-        )
-
-
-@mcp.tool()
-async def remove_watcher(issue_id: int, user_id: int) -> Dict[str, Any]:
-    """Remove a user from the watcher list of a Redmine issue.
-
-    Args:
-        issue_id: ID of the issue.
-        user_id: ID of the user to remove from watchers.
-
-    Returns:
-        Dictionary with ``success: true`` on success. On failure a dict
-        with an ``"error"`` key is returned.
-    """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-
-    if not _is_positive_int(issue_id):
-        return {"error": "issue_id must be a positive integer."}
-    if not _is_positive_int(user_id):
-        return {"error": "user_id must be a positive integer."}
-
-    try:
-        issue = _get_redmine_client().issue.get(issue_id)
-        issue.watcher.remove(user_id)
-        return {
-            "success": True,
-            "issue_id": issue_id,
-            "user_id": user_id,
-        }
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"removing watcher {user_id} from issue {issue_id}",
-            {"resource_type": "issue", "resource_id": issue_id},
-        )
-
-
-@mcp.tool()
-async def edit_note(
-    journal_id: int,
-    notes: str,
-    private_notes: Optional[bool] = None,
+async def manage_issue_watcher(
+    action: str,
+    issue_id: int,
+    user_id: int,
 ) -> Dict[str, Any]:
-    """Update the text (and optionally privacy) of an existing journal note.
-
-    Redmine exposes ``PUT /journals/{id}.json`` for editing journal notes.
-    Only the ``notes`` text and the ``private_notes`` flag can be edited;
-    journal ``details`` (field-change history) are immutable.
-
-    Note: If a journal has no details attached and its notes are cleared,
-    Redmine will delete the journal record.
+    """Add or remove a watcher on a Redmine issue. Requires Redmine 2.3.0+.
 
     Args:
-        journal_id: ID of the journal entry to update.
-        notes: New notes text (may be empty to clear notes).
-        private_notes: Optionally toggle the private flag on this journal
-            entry. When omitted, the existing flag is preserved.
+        action: One of: ``add``, ``remove``.
+        issue_id: ID of the issue.
+        user_id: ID of the user to add or remove as a watcher.
 
     Returns:
-        Dictionary confirming the update. On failure a dict with an
-        ``"error"`` key is returned.
+        ``{"success": True, "issue_id": ..., "user_id": ...}`` on success.
+        On error: ``{"error": "..."}``.
     """
+    _valid_actions = {"add", "remove"}
+    if action not in _valid_actions:
+        return {"error": f"Invalid action '{action}'. Allowed: add, remove"}
+
+    if not _is_positive_int(issue_id):
+        return {"error": "issue_id must be a positive integer."}
+    if not _is_positive_int(user_id):
+        return {"error": "user_id must be a positive integer."}
+
     if _is_read_only_mode():
         return dict(_READ_ONLY_ERROR)
 
-    try:
-        params: Dict[str, Any] = {"notes": notes}
-        if private_notes is not None:
-            params["private_notes"] = bool(private_notes)
+    await _ensure_cleanup_started()
 
-        client = _get_redmine_client()
-        # python-redmine's IssueJournal supports update via
-        # PUT /journals/{id}.json with a {"journal": {...}} envelope.
-        client.issue_journal.update(journal_id, **params)
-        return {
-            "success": True,
-            "journal_id": journal_id,
-            "notes": notes,
-            "private_notes": (
-                bool(private_notes) if private_notes is not None else None
-            ),
-        }
+    try:
+        issue = _get_redmine_client().issue.get(issue_id)
+        if action == "add":
+            issue.watcher.add(user_id)
+        else:
+            issue.watcher.remove(user_id)
+        return {"success": True, "issue_id": issue_id, "user_id": user_id}
     except Exception as e:
         return _handle_redmine_error(
             e,
-            f"editing journal {journal_id}",
-            {"resource_type": "journal", "resource_id": journal_id},
+            f"{action}ing watcher {user_id} on issue {issue_id}",
+            {"resource_type": "issue", "resource_id": issue_id},
         )
+
+
+@mcp.tool()
+async def manage_issue_note(
+    action: str,
+    journal_id: int,
+    notes: Optional[str] = None,
+    private_notes: Optional[bool] = None,
+    is_private: Optional[bool] = None,
+) -> Dict[str, Any]:
+    """Edit text or toggle privacy of a Redmine journal (issue note).
+
+    Both actions are writes and are blocked in read-only mode.
+
+    Args:
+        action: One of: ``edit``, ``set_private``.
+        journal_id: ID of the journal entry (required for both actions).
+        notes: New notes text for ``edit`` (required; may be empty string
+            to clear the note).
+        private_notes: Optionally toggle private flag during ``edit``.
+        is_private: Required for ``set_private`` -- ``True`` to mark
+            private, ``False`` to make public.
+
+    Returns:
+        ``edit``: ``{"success": True, "journal_id": ..., "notes": ...,
+        "private_notes": ...}``.
+        ``set_private``: ``{"success": True, "journal_id": ...,
+        "private_notes": <bool>}``.
+        On error: ``{"error": "..."}``.
+    """
+    _valid_actions = {"edit", "set_private"}
+    if action not in _valid_actions:
+        return {"error": f"Invalid action '{action}'. Allowed: edit, set_private"}
+
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    if action == "edit":
+        if notes is None:
+            return {"error": "notes is required for action 'edit'"}
+        try:
+            params: Dict[str, Any] = {"notes": notes}
+            if private_notes is not None:
+                params["private_notes"] = bool(private_notes)
+            _get_redmine_client().issue_journal.update(journal_id, **params)
+            return {
+                "success": True,
+                "journal_id": journal_id,
+                "notes": notes,
+                "private_notes": (
+                    bool(private_notes) if private_notes is not None else None
+                ),
+            }
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"editing journal {journal_id}",
+                {"resource_type": "journal", "resource_id": journal_id},
+            )
+
+    else:  # action == "set_private"
+        if is_private is None:
+            return {"error": "is_private is required for action 'set_private'"}
+        try:
+            _get_redmine_client().issue_journal.update(
+                journal_id, private_notes=bool(is_private)
+            )
+            return {
+                "success": True,
+                "journal_id": journal_id,
+                "private_notes": bool(is_private),
+            }
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"updating privacy of journal {journal_id}",
+                {"resource_type": "journal", "resource_id": journal_id},
+            )
 
 
 @mcp.tool()
@@ -3251,187 +3247,143 @@ async def get_private_notes(issue_id: int) -> List[Dict[str, Any]]:
 
 
 @mcp.tool()
-async def set_note_private(
-    journal_id: int,
-    is_private: bool,
-) -> Dict[str, Any]:
-    """Toggle the private/public state of an existing journal note.
-
-    Args:
-        journal_id: ID of the journal entry to update.
-        is_private: True to mark the note private, False to make it public.
-
-    Returns:
-        Dictionary confirming the change. On failure a dict with an
-        ``"error"`` key is returned.
-    """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-
-    try:
-        client = _get_redmine_client()
-        client.issue_journal.update(journal_id, private_notes=bool(is_private))
-        return {
-            "success": True,
-            "journal_id": journal_id,
-            "private_notes": bool(is_private),
-        }
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"updating privacy of journal {journal_id}",
-            {"resource_type": "journal", "resource_id": journal_id},
-        )
-
-
-@mcp.tool()
-async def list_issue_categories(
-    project_id: Union[str, int],
-) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
-    """List all issue categories for a given Redmine project.
-
-    Args:
-        project_id: Project identifier (numeric ID or string identifier).
-
-    Returns:
-        List of issue category dictionaries. On failure a dict with an
-        ``"error"`` key is returned.
-    """
-    try:
-        categories = _get_redmine_client().issue_category.filter(project_id=project_id)
-        return [_issue_category_to_dict(c) for c in _iter_capped(categories)]
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"listing issue categories for project {project_id}",
-            {"resource_type": "project", "resource_id": project_id},
-        )
-
-
-@mcp.tool()
-async def create_issue_category(
-    project_id: Union[str, int],
-    name: str,
-    assigned_to_id: Optional[int] = None,
-) -> Dict[str, Any]:
-    """Create a new issue category in a Redmine project.
-
-    Args:
-        project_id: Project identifier (numeric ID or string identifier).
-        name: Category name (required).
-        assigned_to_id: Optional default assignee user ID for issues in
-            this category.
-
-    Returns:
-        Dictionary containing the created issue category. On failure a
-        dict with an ``"error"`` key is returned.
-    """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-
-    if not name or not name.strip():
-        return {"error": "Category 'name' is required."}
-
-    try:
-        params: Dict[str, Any] = {
-            "project_id": project_id,
-            "name": name.strip(),
-        }
-        if assigned_to_id is not None:
-            params["assigned_to_id"] = assigned_to_id
-
-        category = _get_redmine_client().issue_category.create(**params)
-        return _issue_category_to_dict(category)
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"creating issue category in project {project_id}",
-            {"resource_type": "project", "resource_id": project_id},
-        )
-
-
-@mcp.tool()
-async def update_issue_category(
-    category_id: int,
+async def manage_issue_category(
+    action: str,
+    project_id: Optional[Union[str, int]] = None,
+    category_id: Optional[int] = None,
     name: Optional[str] = None,
     assigned_to_id: Optional[int] = None,
-) -> Dict[str, Any]:
-    """Update an existing Redmine issue category.
-
-    Args:
-        category_id: ID of the issue category to update.
-        name: New category name (optional).
-        assigned_to_id: New default assignee user ID (optional).
-
-    Returns:
-        Dictionary containing the updated issue category. On failure a
-        dict with an ``"error"`` key is returned.
-    """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-
-    params: Dict[str, Any] = {}
-    if name is not None:
-        stripped = name.strip()
-        if not stripped:
-            return {"error": "Category 'name' cannot be empty."}
-        params["name"] = stripped
-    if assigned_to_id is not None:
-        params["assigned_to_id"] = assigned_to_id
-
-    if not params:
-        return {"error": "No fields provided for update."}
-
-    try:
-        client = _get_redmine_client()
-        client.issue_category.update(category_id, **params)
-        updated = client.issue_category.get(category_id)
-        return _issue_category_to_dict(updated)
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"updating issue category {category_id}",
-            {"resource_type": "issue_category", "resource_id": category_id},
-        )
-
-
-@mcp.tool()
-async def delete_issue_category(
-    category_id: int,
     reassign_to_id: Optional[int] = None,
-) -> Dict[str, Any]:
-    """Delete a Redmine issue category.
+) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    """List, create, update, or delete a Redmine issue category.
 
     Args:
-        category_id: ID of the issue category to delete.
-        reassign_to_id: Optional ID of another category to reassign existing
-            issues to. When omitted, issues in this category become
-            uncategorised.
+        action: One of: ``list``, ``create``, ``update``, ``delete``.
+        project_id: Project ID or identifier. Required for ``list`` and
+            ``create``.
+        category_id: Category ID. Required for ``update`` and ``delete``.
+        name: Category name. Required for ``create``, optional for
+            ``update`` (cannot be blank).
+        assigned_to_id: Default assignee user ID. Optional for ``create``
+            and ``update``.
+        reassign_to_id: Reassign existing issues to this category ID on
+            ``delete``. Optional.
 
     Returns:
-        Dictionary with ``success: true`` on success. On failure a dict
-        with an ``"error"`` key is returned.
+        ``list``: list of category dicts.
+        ``create``/``update``: category dict.
+        ``delete``: ``{"success": True, "deleted_category_id": ...,
+        "reassigned_to_id": ...}``.
+        On error: ``{"error": "..."}``.
     """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-
-    try:
-        params: Dict[str, Any] = {}
-        if reassign_to_id is not None:
-            params["reassign_to_id"] = reassign_to_id
-
-        _get_redmine_client().issue_category.delete(category_id, **params)
+    _valid_actions = {"list", "create", "update", "delete"}
+    if action not in _valid_actions:
         return {
-            "success": True,
-            "deleted_category_id": category_id,
-            "reassigned_to_id": reassign_to_id,
+            "error": (
+                f"Invalid action '{action}'. " "Allowed: list, create, update, delete"
+            )
         }
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"deleting issue category {category_id}",
-            {"resource_type": "issue_category", "resource_id": category_id},
-        )
+
+    if action == "list":
+        if project_id is None:
+            return {"error": "project_id is required for action 'list'"}
+        try:
+            categories = _get_redmine_client().issue_category.filter(
+                project_id=project_id
+            )
+            return [_issue_category_to_dict(c) for c in _iter_capped(categories)]
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"listing issue categories for project {project_id}",
+                {"resource_type": "project", "resource_id": project_id},
+            )
+
+    elif action == "create":
+        if project_id is None:
+            return {"error": "project_id is required for action 'create'"}
+        if not name or not name.strip():
+            return {"error": "Category 'name' is required."}
+
+        if _is_read_only_mode():
+            return dict(_READ_ONLY_ERROR)
+
+        await _ensure_cleanup_started()
+
+        try:
+            params: Dict[str, Any] = {
+                "project_id": project_id,
+                "name": name.strip(),
+            }
+            if assigned_to_id is not None:
+                params["assigned_to_id"] = assigned_to_id
+            category = _get_redmine_client().issue_category.create(**params)
+            return _issue_category_to_dict(category)
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"creating issue category in project {project_id}",
+                {"resource_type": "project", "resource_id": project_id},
+            )
+
+    elif action == "update":
+        if category_id is None:
+            return {"error": "category_id is required for action 'update'"}
+
+        update_params: Dict[str, Any] = {}
+        if name is not None:
+            stripped = name.strip()
+            if not stripped:
+                return {"error": "Category 'name' cannot be empty."}
+            update_params["name"] = stripped
+        if assigned_to_id is not None:
+            update_params["assigned_to_id"] = assigned_to_id
+
+        if not update_params:
+            return {"error": "No fields provided for update."}
+
+        if _is_read_only_mode():
+            return dict(_READ_ONLY_ERROR)
+
+        await _ensure_cleanup_started()
+
+        try:
+            client = _get_redmine_client()
+            client.issue_category.update(category_id, **update_params)
+            updated = client.issue_category.get(category_id)
+            return _issue_category_to_dict(updated)
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"updating issue category {category_id}",
+                {"resource_type": "issue_category", "resource_id": category_id},
+            )
+
+    else:  # action == "delete"
+        if category_id is None:
+            return {"error": "category_id is required for action 'delete'"}
+
+        if _is_read_only_mode():
+            return dict(_READ_ONLY_ERROR)
+
+        await _ensure_cleanup_started()
+
+        try:
+            params = {}
+            if reassign_to_id is not None:
+                params["reassign_to_id"] = reassign_to_id
+            _get_redmine_client().issue_category.delete(category_id, **params)
+            return {
+                "success": True,
+                "deleted_category_id": category_id,
+                "reassigned_to_id": reassign_to_id,
+            }
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"deleting issue category {category_id}",
+                {"resource_type": "issue_category", "resource_id": category_id},
+            )
 
 
 @mcp.tool()
@@ -3945,302 +3897,236 @@ def _wiki_page_to_dict(
 
 
 @mcp.tool()
-async def get_redmine_wiki_page(
+async def manage_redmine_wiki_page(
+    action: str,
     project_id: Union[str, int],
-    wiki_page_title: str,
+    wiki_page_title: Optional[str] = None,
     version: Optional[int] = None,
     include_attachments: bool = True,
-) -> Dict[str, Any]:
-    """
-    Retrieve full wiki page content from Redmine.
+    text: Optional[str] = None,
+    comments: Optional[str] = None,
+    new_title: Optional[str] = None,
+    redirect_existing_links: bool = True,
+) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    """List, get, create, update, delete, or rename a Redmine wiki page.
 
     Args:
-        project_id: Project identifier (ID number or string identifier)
-        wiki_page_title: Wiki page title (e.g., "Installation_Guide")
-        version: Specific version number (None = latest version)
-        include_attachments: Include attachment metadata in response
+        action: One of: ``list``, ``get``, ``create``, ``update``,
+            ``delete``, ``rename``.
+        project_id: Project identifier (required for all actions).
+        wiki_page_title: Wiki page title. Required for all actions
+            except ``list``.
+        version: Specific version to retrieve (``get`` only, optional).
+        include_attachments: Include attachment metadata in ``get``
+            response. Default ``True``.
+        text: Page content. Required for ``create`` and ``update``.
+        comments: Change log comment. Optional for ``create`` and
+            ``update``.
+        new_title: New title for the page (required for ``rename``).
+        redirect_existing_links: When ``True`` (default), the rename
+            creates a redirect from ``wiki_page_title`` to ``new_title``.
+            Passed to the API as ``"1"`` / ``"0"``.
 
     Returns:
-        Dictionary containing full wiki page content and metadata
-
-    Note:
-        Use get_redmine_attachment_download_url() to download attachments.
+        ``list``: list of page metadata dicts (no body text).
+        ``get`` / ``create`` / ``update``: wiki page dict.
+        ``delete``: ``{"success": True, "title": ..., "message": ...}``.
+        ``rename``: ``{"success": True, ...}`` with the renamed page's
+        metadata to confirm the title change actually applied.
+        On error: ``{"error": "..."}``.
     """
+    _valid_actions = {"list", "get", "create", "update", "delete", "rename"}
+    if action not in _valid_actions:
+        return {
+            "error": (
+                f"Invalid action '{action}'. "
+                "Allowed: list, get, create, update, delete, rename"
+            )
+        }
 
-    try:
+    if action == "list":
+        try:
+            client = _get_redmine_client()
+            pages = client.wiki_page.filter(project_id=project_id)
+            items: List[Dict[str, Any]] = []
+            for page in _iter_capped(pages):
+                entry: Dict[str, Any] = {
+                    "title": getattr(page, "title", None),
+                    "version": getattr(page, "version", None),
+                    "created_on": _safe_isoformat(getattr(page, "created_on", None)),
+                    "updated_on": _safe_isoformat(getattr(page, "updated_on", None)),
+                }
+                parent = getattr(page, "parent", None)
+                if parent is not None:
+                    entry["parent_title"] = getattr(parent, "title", None)
+                items.append(entry)
+            return items
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"listing wiki pages in project {project_id}",
+                {"resource_type": "wiki pages", "resource_id": project_id},
+            )
+
+    # All non-list actions require wiki_page_title.
+    if not isinstance(wiki_page_title, str) or not wiki_page_title.strip():
+        return {
+            "error": (
+                f"wiki_page_title is required for action '{action}' "
+                "and must be a non-empty string."
+            )
+        }
+
+    if action == "get":
+        try:
+            if version:
+                wiki_page = _get_redmine_client().wiki_page.get(
+                    wiki_page_title, project_id=project_id, version=version
+                )
+            else:
+                wiki_page = _get_redmine_client().wiki_page.get(
+                    wiki_page_title, project_id=project_id
+                )
+            return _wiki_page_to_dict(wiki_page, include_attachments)
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"fetching wiki page '{wiki_page_title}' in project {project_id}",
+                {"resource_type": "wiki page", "resource_id": wiki_page_title},
+            )
+
+    elif action == "create":
+        if text is None:
+            return {"error": "text is required for action 'create'"}
+
+        if _is_read_only_mode():
+            return dict(_READ_ONLY_ERROR)
+
         await _ensure_cleanup_started()
 
-        # Retrieve wiki page
-        if version:
-            wiki_page = _get_redmine_client().wiki_page.get(
-                wiki_page_title, project_id=project_id, version=version
+        try:
+            wiki_page = _get_redmine_client().wiki_page.create(
+                project_id=project_id,
+                title=wiki_page_title,
+                text=text,
+                comments=comments if comments else None,
             )
-        else:
+            return _wiki_page_to_dict(wiki_page)
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"creating wiki page '{wiki_page_title}' in project {project_id}",
+                {"resource_type": "wiki page", "resource_id": wiki_page_title},
+            )
+
+    elif action == "update":
+        if text is None:
+            return {"error": "text is required for action 'update'"}
+
+        if _is_read_only_mode():
+            return dict(_READ_ONLY_ERROR)
+
+        await _ensure_cleanup_started()
+
+        try:
+            _get_redmine_client().wiki_page.update(
+                wiki_page_title,
+                project_id=project_id,
+                text=text,
+                comments=comments if comments else None,
+            )
             wiki_page = _get_redmine_client().wiki_page.get(
                 wiki_page_title, project_id=project_id
             )
+            return _wiki_page_to_dict(wiki_page)
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"updating wiki page '{wiki_page_title}' in project {project_id}",
+                {"resource_type": "wiki page", "resource_id": wiki_page_title},
+            )
 
-        return _wiki_page_to_dict(wiki_page, include_attachments)
+    elif action == "delete":
+        if _is_read_only_mode():
+            return dict(_READ_ONLY_ERROR)
 
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"fetching wiki page '{wiki_page_title}' in project {project_id}",
-            {"resource_type": "wiki page", "resource_id": wiki_page_title},
-        )
-
-
-@mcp.tool()
-async def create_redmine_wiki_page(
-    project_id: Union[str, int],
-    wiki_page_title: str,
-    text: str,
-    comments: str = "",
-) -> Dict[str, Any]:
-    """
-    Create a new wiki page in a Redmine project.
-
-    Args:
-        project_id: Project identifier (ID number or string identifier)
-        wiki_page_title: Wiki page title (e.g., "Installation_Guide")
-        text: Wiki page content (Textile or Markdown depending on Redmine config)
-        comments: Optional comment for the change log
-
-    Returns:
-        Dictionary containing created wiki page metadata, or error dict on failure
-    """
-
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-
-    try:
         await _ensure_cleanup_started()
-
-        # Create wiki page
-        wiki_page = _get_redmine_client().wiki_page.create(
-            project_id=project_id,
-            title=wiki_page_title,
-            text=text,
-            comments=comments if comments else None,
-        )
-
-        return _wiki_page_to_dict(wiki_page)
-
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"creating wiki page '{wiki_page_title}' in project {project_id}",
-            {"resource_type": "wiki page", "resource_id": wiki_page_title},
-        )
-
-
-@mcp.tool()
-async def update_redmine_wiki_page(
-    project_id: Union[str, int],
-    wiki_page_title: str,
-    text: str,
-    comments: str = "",
-) -> Dict[str, Any]:
-    """
-    Update an existing wiki page in a Redmine project.
-
-    Args:
-        project_id: Project identifier (ID number or string identifier)
-        wiki_page_title: Wiki page title (e.g., "Installation_Guide")
-        text: New wiki page content
-        comments: Optional comment for the change log
-
-    Returns:
-        Dictionary containing updated wiki page metadata, or error dict on failure
-    """
-
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-
-    try:
-        await _ensure_cleanup_started()
-
-        # Update wiki page
-        _get_redmine_client().wiki_page.update(
-            wiki_page_title,
-            project_id=project_id,
-            text=text,
-            comments=comments if comments else None,
-        )
-
-        # Fetch updated page to return current state
-        wiki_page = _get_redmine_client().wiki_page.get(
-            wiki_page_title, project_id=project_id
-        )
-
-        return _wiki_page_to_dict(wiki_page)
-
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"updating wiki page '{wiki_page_title}' in project {project_id}",
-            {"resource_type": "wiki page", "resource_id": wiki_page_title},
-        )
-
-
-@mcp.tool()
-async def delete_redmine_wiki_page(
-    project_id: Union[str, int],
-    wiki_page_title: str,
-) -> Dict[str, Any]:
-    """
-    Delete a wiki page from a Redmine project.
-
-    Args:
-        project_id: Project identifier (ID number or string identifier)
-        wiki_page_title: Wiki page title to delete
-
-    Returns:
-        Dictionary with success status, or error dict on failure
-    """
-
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-
-    try:
-        await _ensure_cleanup_started()
-
-        # Delete wiki page
-        _get_redmine_client().wiki_page.delete(wiki_page_title, project_id=project_id)
-
-        return {
-            "success": True,
-            "title": wiki_page_title,
-            "message": f"Wiki page '{wiki_page_title}' deleted successfully.",
-        }
-
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"deleting wiki page '{wiki_page_title}' in project {project_id}",
-            {"resource_type": "wiki page", "resource_id": wiki_page_title},
-        )
-
-
-@mcp.tool()
-async def list_wiki_pages(
-    project_id: Union[str, int],
-) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
-    """List all wiki pages in a Redmine project.
-
-    Returns metadata for every wiki page (title, version, parent, timestamps),
-    not the page text. Use ``get_redmine_wiki_page`` to fetch a page's content.
-
-    Args:
-        project_id: Project identifier (ID number or string identifier).
-
-    Returns:
-        A list of wiki page metadata dicts. On failure, a dict with an
-        ``error`` key.
-    """
-    try:
-        client = _get_redmine_client()
-        pages = client.wiki_page.filter(project_id=project_id)
-        items: List[Dict[str, Any]] = []
-        for page in _iter_capped(pages):
-            entry: Dict[str, Any] = {
-                "title": getattr(page, "title", None),
-                "version": getattr(page, "version", None),
-                "created_on": _safe_isoformat(getattr(page, "created_on", None)),
-                "updated_on": _safe_isoformat(getattr(page, "updated_on", None)),
-            }
-            parent = getattr(page, "parent", None)
-            if parent is not None:
-                entry["parent_title"] = getattr(parent, "title", None)
-            items.append(entry)
-        return items
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"listing wiki pages in project {project_id}",
-            {"resource_type": "wiki pages", "resource_id": project_id},
-        )
-
-
-@mcp.tool()
-async def rename_wiki_page(
-    project_id: Union[str, int],
-    old_title: str,
-    new_title: str,
-    redirect_existing_links: bool = True,
-) -> Dict[str, Any]:
-    """Rename (move) an existing wiki page to a new title.
-
-    Renames the page by sending a ``PUT /projects/{id}/wiki/{old_title}.json``
-    request with the new ``title`` parameter. Redmine requires the ``text``
-    field to be re-sent on every update; this tool fetches the current text
-    automatically. When ``redirect_existing_links`` is ``True`` (the default),
-    Redmine creates a ``WikiRedirect`` so that links to the old title keep
-    working.
-
-    Requires the ``rename_wiki_pages`` permission. If the API user lacks
-    this permission, Redmine **silently drops** the title change. To detect
-    that case, this tool re-fetches the page after the update and verifies
-    the rename succeeded — returning an explicit error if not.
-
-    This is a write operation and is blocked when ``REDMINE_MCP_READ_ONLY=true``.
-
-    Args:
-        project_id: Project identifier (ID number or string identifier).
-        old_title: Current wiki page title.
-        new_title: New title for the page.
-        redirect_existing_links: When ``True``, create a redirect from
-            ``old_title`` to ``new_title`` (default ``True``).
-
-    Returns:
-        Dict with the renamed page's metadata, or an error dict on failure.
-    """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-
-    if not isinstance(old_title, str) or not old_title.strip():
-        return {"error": "old_title must be a non-empty string."}
-    if not isinstance(new_title, str) or not new_title.strip():
-        return {"error": "new_title must be a non-empty string."}
-    if old_title == new_title:
-        return {"error": "new_title must differ from old_title."}
-
-    try:
-        client = _get_redmine_client()
-
-        existing = client.wiki_page.get(old_title, project_id=project_id)
-        existing_text = getattr(existing, "text", "") or ""
-
-        update_kwargs: Dict[str, Any] = {
-            "project_id": project_id,
-            "title": new_title,
-            "text": existing_text,
-        }
-        if redirect_existing_links:
-            update_kwargs["redirect_existing_links"] = "1"
-
-        client.wiki_page.update(old_title, **update_kwargs)
 
         try:
-            renamed = client.wiki_page.get(new_title, project_id=project_id)
-        except Exception:
+            _get_redmine_client().wiki_page.delete(
+                wiki_page_title, project_id=project_id
+            )
             return {
-                "error": (
-                    "Rename appeared to succeed but the page is not "
-                    f"reachable at '{new_title}'. The API user may lack "
-                    "the 'rename_wiki_pages' permission (Redmine silently "
-                    "drops the title change in that case)."
-                )
+                "success": True,
+                "title": wiki_page_title,
+                "message": f"Wiki page '{wiki_page_title}' deleted successfully.",
             }
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"deleting wiki page '{wiki_page_title}' in project {project_id}",
+                {"resource_type": "wiki page", "resource_id": wiki_page_title},
+            )
 
-        return _wiki_page_to_dict(renamed, include_attachments=False)
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"renaming wiki page '{old_title}' to '{new_title}' "
-            f"in project {project_id}",
-            {"resource_type": "wiki page", "resource_id": old_title},
-        )
+    else:  # action == "rename"
+        # Title validation runs before the read-only check so the
+        # per-action structure matches the rest of this tool. The original
+        # PR #98 ``rename_wiki_page`` checked read-only first; that ordering
+        # only differs from this one when an invalid ``new_title`` is sent
+        # while read-only mode is on.
+        if not isinstance(new_title, str) or not new_title.strip():
+            return {"error": "new_title must be a non-empty string."}
+        if new_title == wiki_page_title:
+            return {"error": "new_title must differ from wiki_page_title."}
+
+        if _is_read_only_mode():
+            return dict(_READ_ONLY_ERROR)
+
+        await _ensure_cleanup_started()
+
+        try:
+            client = _get_redmine_client()
+
+            # Redmine requires `text` on every wiki update; preserve the
+            # existing body so the rename is a pure title change.
+            existing = client.wiki_page.get(wiki_page_title, project_id=project_id)
+            existing_text = getattr(existing, "text", "") or ""
+
+            update_kwargs: Dict[str, Any] = {
+                "project_id": project_id,
+                "title": new_title,
+                "text": existing_text,
+            }
+            if redirect_existing_links:
+                update_kwargs["redirect_existing_links"] = "1"
+
+            client.wiki_page.update(wiki_page_title, **update_kwargs)
+
+            # If the API user lacks `rename_wiki_pages`, Redmine silently
+            # drops the title change. Re-fetch at the new title to confirm.
+            try:
+                renamed = client.wiki_page.get(new_title, project_id=project_id)
+            except Exception:
+                return {
+                    "error": (
+                        "Rename appeared to succeed but the page is not "
+                        f"reachable at '{new_title}'. The API user may lack "
+                        "the 'rename_wiki_pages' permission (Redmine "
+                        "silently drops the title change in that case)."
+                    )
+                }
+
+            renamed_dict = _wiki_page_to_dict(renamed, include_attachments=False)
+            return {"success": True, **renamed_dict}
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                (
+                    f"renaming wiki page '{wiki_page_title}' to "
+                    f"'{new_title}' in project {project_id}"
+                ),
+                {"resource_type": "wiki page", "resource_id": wiki_page_title},
+            )
 
 
 @mcp.tool()
@@ -4391,157 +4277,144 @@ async def get_project_modules(
 
 
 @mcp.tool()
-async def add_project_member(
-    project_id: Union[str, int],
-    role_ids: List[int],
+async def manage_project_member(
+    action: str,
+    project_id: Optional[Union[str, int]] = None,
+    membership_id: Optional[int] = None,
     user_id: Optional[int] = None,
     group_id: Optional[int] = None,
+    role_ids: Optional[List[int]] = None,
 ) -> Dict[str, Any]:
-    """Add a user or group as a member of a project with assigned roles.
-
-    Exactly one of ``user_id`` or ``group_id`` must be provided.
+    """Add, update, or remove a Redmine project membership.
 
     Args:
-        project_id: Project identifier (numeric ID or string identifier).
-        role_ids: List of role IDs to assign (at least one required).
-            Use the ``list_redmine_roles`` tool to discover valid role IDs
-            before calling this tool — role IDs vary between Redmine
-            instances and must not be guessed.
-        user_id: ID of the user to add as a member.
-        group_id: ID of the group to add as a member.
+        action: Operation to perform. One of: ``add``, ``update``, ``remove``.
+        project_id: Project ID or identifier. Required for ``action="add"``.
+        membership_id: Membership ID. Required for ``action="update"`` and
+            ``action="remove"``.
+        user_id: User ID. Exactly one of ``user_id`` or ``group_id`` required
+            for ``action="add"``.
+        group_id: Group ID. Exactly one of ``user_id`` or ``group_id`` required
+            for ``action="add"``.
+        role_ids: Non-empty list of role IDs. Required for ``action="add"``
+            and ``action="update"``. Use ``list_redmine_roles`` to discover
+            valid role IDs.
 
     Returns:
-        Dictionary containing the created membership. On failure a dict
-        with an ``"error"`` key is returned.
+        For ``add``/``update``: membership dictionary.
+        For ``remove``: ``{"success": True, "deleted_membership_id": ...}``.
+        On error: ``{"error": "..."}``.
     """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
+    _valid_actions = {"add", "update", "remove"}
+    if action not in _valid_actions:
+        return {"error": (f"Invalid action '{action}'. Allowed: add, update, remove")}
 
-    if (user_id is None) == (group_id is None):
-        return {"error": "Exactly one of user_id or group_id must be provided."}
+    if action == "add":
+        if project_id is None:
+            return {"error": "project_id is required for action 'add'"}
+        if (user_id is None) == (group_id is None):
+            return {"error": "Exactly one of user_id or group_id must be provided."}
+        principal_candidate = user_id if user_id is not None else group_id
+        if not _is_positive_int(principal_candidate):
+            return {"error": "user_id / group_id must be a positive integer."}
+        if not role_ids:
+            return {
+                "error": (
+                    "At least one role_id must be provided. "
+                    "Use `list_redmine_roles` to discover valid role IDs."
+                )
+            }
+        if not isinstance(role_ids, list) or not all(
+            _is_positive_int(r) for r in role_ids
+        ):
+            return {
+                "error": (
+                    "role_ids must be a list of positive integers. "
+                    "Use `list_redmine_roles` to discover valid role IDs."
+                )
+            }
 
-    principal_candidate = user_id if user_id is not None else group_id
-    if not _is_positive_int(principal_candidate):
-        return {"error": "user_id / group_id must be a positive integer."}
+        if _is_read_only_mode():
+            return dict(_READ_ONLY_ERROR)
 
-    if not role_ids:
-        return {
-            "error": (
-                "At least one role_id must be provided. "
-                "Use `list_redmine_roles` to discover valid role IDs."
+        await _ensure_cleanup_started()
+
+        # Redmine's POST /projects/{id}/memberships endpoint uses `user_id`
+        # for BOTH users and groups (shared principal ID namespace).
+        principal_id = user_id if user_id is not None else group_id
+
+        try:
+            membership = _get_redmine_client().project_membership.create(
+                project_id=project_id,
+                user_id=principal_id,
+                role_ids=role_ids,
             )
-        }
-    if not isinstance(role_ids, list) or not all(_is_positive_int(r) for r in role_ids):
-        return {
-            "error": (
-                "role_ids must be a list of positive integers. "
-                "Use `list_redmine_roles` to discover valid role IDs."
+            return _membership_to_dict(membership)
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"adding member to project {project_id}",
+                {"resource_type": "project", "resource_id": project_id},
             )
-        }
 
-    # Redmine's POST /projects/{id}/memberships endpoint uses `user_id` for
-    # BOTH users and groups — they share the same principal ID namespace.
-    # There is no separate `group_id` parameter in the API, so we always
-    # forward group_id via the `user_id` field.
-    principal_id = user_id if user_id is not None else group_id
+    elif action == "update":
+        if membership_id is None:
+            return {"error": "membership_id is required for action 'update'"}
+        if not role_ids:
+            return {
+                "error": (
+                    "At least one role_id must be provided. "
+                    "Use `list_redmine_roles` to discover valid role IDs."
+                )
+            }
+        if not isinstance(role_ids, list) or not all(
+            _is_positive_int(r) for r in role_ids
+        ):
+            return {
+                "error": (
+                    "role_ids must be a list of positive integers. "
+                    "Use `list_redmine_roles` to discover valid role IDs."
+                )
+            }
 
-    try:
-        membership = _get_redmine_client().project_membership.create(
-            project_id=project_id,
-            user_id=principal_id,
-            role_ids=role_ids,
-        )
-        return _membership_to_dict(membership)
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"adding member to project {project_id}",
-            {"resource_type": "project", "resource_id": project_id},
-        )
+        if _is_read_only_mode():
+            return dict(_READ_ONLY_ERROR)
 
+        await _ensure_cleanup_started()
 
-@mcp.tool()
-async def update_project_member(
-    membership_id: int,
-    role_ids: List[int],
-) -> Dict[str, Any]:
-    """Update the roles assigned to an existing project membership.
-
-    Only role assignments can be updated via the API. To change the user
-    or group of a membership, delete and recreate it.
-
-    Args:
-        membership_id: ID of the membership to update (obtained from
-            ``list_project_members``).
-        role_ids: New list of role IDs to assign. Replaces the existing set.
-            Use the ``list_redmine_roles`` tool to discover valid role IDs
-            before calling this tool.
-
-    Returns:
-        Dictionary containing the updated membership. On failure a dict
-        with an ``"error"`` key is returned.
-    """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-
-    if not role_ids:
-        return {
-            "error": (
-                "At least one role_id must be provided. "
-                "Use `list_redmine_roles` to discover valid role IDs."
+        try:
+            client = _get_redmine_client()
+            client.project_membership.update(membership_id, role_ids=role_ids)
+            updated = client.project_membership.get(membership_id)
+            return _membership_to_dict(updated)
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"updating project membership {membership_id}",
+                {"resource_type": "membership", "resource_id": membership_id},
             )
-        }
-    if not isinstance(role_ids, list) or not all(_is_positive_int(r) for r in role_ids):
-        return {
-            "error": (
-                "role_ids must be a list of positive integers. "
-                "Use `list_redmine_roles` to discover valid role IDs."
+
+    else:  # action == "remove"
+        if membership_id is None:
+            return {"error": "membership_id is required for action 'remove'"}
+
+        if _is_read_only_mode():
+            return dict(_READ_ONLY_ERROR)
+
+        await _ensure_cleanup_started()
+
+        try:
+            _get_redmine_client().project_membership.delete(membership_id)
+            return {
+                "success": True,
+                "deleted_membership_id": membership_id,
+            }
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"removing project membership {membership_id}",
+                {"resource_type": "membership", "resource_id": membership_id},
             )
-        }
-
-    try:
-        client = _get_redmine_client()
-        client.project_membership.update(membership_id, role_ids=role_ids)
-        updated = client.project_membership.get(membership_id)
-        return _membership_to_dict(updated)
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"updating project membership {membership_id}",
-            {"resource_type": "membership", "resource_id": membership_id},
-        )
-
-
-@mcp.tool()
-async def remove_project_member(membership_id: int) -> Dict[str, Any]:
-    """Remove a membership from a project.
-
-    Note: Inherited memberships (from a parent project) cannot be removed
-    directly — Redmine will return a 422 error. Remove them from the
-    parent project instead.
-
-    Args:
-        membership_id: ID of the membership to remove.
-
-    Returns:
-        Dictionary with ``success: true`` on success. On failure a dict
-        with an ``"error"`` key is returned.
-    """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-
-    try:
-        _get_redmine_client().project_membership.delete(membership_id)
-        return {
-            "success": True,
-            "deleted_membership_id": membership_id,
-        }
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"removing project membership {membership_id}",
-            {"resource_type": "membership", "resource_id": membership_id},
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -5273,151 +5146,113 @@ async def list_time_entries(
 
 
 @mcp.tool()
-async def create_time_entry(
-    hours: float,
+async def manage_time_entry(
+    action: str,
+    hours: Optional[float] = None,
     project_id: Optional[Union[str, int]] = None,
     issue_id: Optional[int] = None,
-    activity_id: Optional[int] = None,
-    comments: str = "",
-    spent_on: Optional[str] = None,
-) -> Dict[str, Any]:
-    """Create a new time entry in Redmine.
-
-    Log time against a project or issue. Either project_id or issue_id
-    must be provided. If issue_id is provided, the time entry will be
-    associated with that issue's project.
-
-    Args:
-        hours: Number of hours spent (required). Can be decimal (e.g., 1.5).
-        project_id: Project to log time against (ID or identifier).
-            Required if issue_id is not provided.
-        issue_id: Issue to log time against. If provided, project_id is optional.
-        activity_id: Time entry activity ID (e.g., Development, Design).
-            If not provided, Redmine uses the default activity.
-        comments: Description of work performed.
-        spent_on: Date when time was spent (YYYY-MM-DD). Defaults to today.
-
-    Returns:
-        Dictionary containing the created time entry, or error dict on failure.
-
-    Examples:
-        >>> await create_time_entry(hours=2.5, issue_id=123, comments="Bug fix")
-        {"id": 1, "hours": 2.5, "issue": {"id": 123}, ...}
-
-        >>> await create_time_entry(
-        ...     hours=1.0,
-        ...     project_id="my-project",
-        ...     activity_id=9,
-        ...     comments="Code review",
-        ...     spent_on="2024-03-15"
-        ... )
-        {"id": 2, "hours": 1.0, "project": {"id": 1, "name": "My Project"}, ...}
-    """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-
-    if project_id is None and issue_id is None:
-        return {"error": "Either project_id or issue_id must be provided."}
-
-    hours_error = _validate_hours(hours)
-    if hours_error is not None:
-        return {"error": hours_error}
-
-    try:
-        # Build create parameters
-        params: Dict[str, Any] = {
-            "hours": hours,
-        }
-
-        if project_id is not None:
-            params["project_id"] = project_id
-        if issue_id is not None:
-            params["issue_id"] = issue_id
-        if activity_id is not None:
-            params["activity_id"] = activity_id
-        if comments:
-            params["comments"] = comments
-        if spent_on is not None:
-            params["spent_on"] = spent_on
-
-        time_entry = _get_redmine_client().time_entry.create(**params)
-        return _time_entry_to_dict(time_entry)
-
-    except Exception as e:
-        context = {}
-        if issue_id:
-            context = {"resource_type": "issue", "resource_id": issue_id}
-        elif project_id:
-            context = {"resource_type": "project", "resource_id": project_id}
-        return _handle_redmine_error(e, "creating time entry", context)
-
-
-@mcp.tool()
-async def update_time_entry(
-    time_entry_id: int,
-    hours: Optional[float] = None,
+    user_id: Optional[int] = None,
+    time_entry_id: Optional[int] = None,
     activity_id: Optional[int] = None,
     comments: Optional[str] = None,
     spent_on: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Update an existing time entry in Redmine.
-
-    Modify hours, activity, comments, or date of an existing time entry.
-    Only provided fields will be updated.
+    """Create or update a Redmine time entry.
 
     Args:
-        time_entry_id: ID of the time entry to update (required).
-        hours: New hours value. Must be positive if provided.
-        activity_id: New activity ID.
-        comments: New comments/description.
-        spent_on: New date (YYYY-MM-DD format).
+        action: One of: ``create``, ``update``.
+        hours: Hours spent. Required for ``create``; optional for
+            ``update`` (must be positive if provided).
+        project_id: Project to log against. Required for ``create`` if
+            ``issue_id`` is not provided.
+        issue_id: Issue to log against. Required for ``create`` if
+            ``project_id`` is not provided.
+        user_id: Log on behalf of this user (``create`` only). Requires
+            ``log_time_for_other_users`` permission.
+        time_entry_id: Entry to update. Required for ``update``.
+        activity_id: Activity ID (optional for both actions).
+        comments: Description. Empty string clears the field on
+            ``update``.
+        spent_on: Date in ``YYYY-MM-DD`` format (optional).
 
     Returns:
-        Dictionary containing the updated time entry, or error dict on failure.
-
-    Examples:
-        >>> await update_time_entry(time_entry_id=1, hours=3.0)
-        {"id": 1, "hours": 3.0, ...}
-
-        >>> await update_time_entry(
-        ...     time_entry_id=1,
-        ...     comments="Updated description",
-        ...     spent_on="2024-03-16"
-        ... )
-        {"id": 1, "comments": "Updated description", ...}
+        Time entry dictionary, or ``{"error": "..."}``.
     """
-    if hours is not None and hours <= 0:
-        return {"error": "Hours must be a positive number."}
+    _valid_actions = {"create", "update"}
+    if action not in _valid_actions:
+        return {"error": f"Invalid action '{action}'. Allowed: create, update"}
 
-    try:
-        # Build update parameters
-        params: Dict[str, Any] = {}
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
 
+    await _ensure_cleanup_started()
+
+    if action == "create":
+        if project_id is None and issue_id is None:
+            return {"error": "Either project_id or issue_id must be provided."}
+
+        hours_error = _validate_hours(hours)
+        if hours_error is not None:
+            return {"error": hours_error}
+
+        if user_id is not None and not _is_positive_int(user_id):
+            return {"error": "user_id must be a positive integer."}
+
+        try:
+            params: Dict[str, Any] = {"hours": hours}
+            if project_id is not None:
+                params["project_id"] = project_id
+            if issue_id is not None:
+                params["issue_id"] = issue_id
+            if user_id is not None:
+                params["user_id"] = user_id
+            if activity_id is not None:
+                params["activity_id"] = activity_id
+            if comments is not None:
+                params["comments"] = comments
+            if spent_on is not None:
+                params["spent_on"] = spent_on
+            time_entry = _get_redmine_client().time_entry.create(**params)
+            return _time_entry_to_dict(time_entry)
+        except Exception as e:
+            context = {}
+            if issue_id:
+                context = {"resource_type": "issue", "resource_id": issue_id}
+            elif project_id:
+                context = {"resource_type": "project", "resource_id": project_id}
+            return _handle_redmine_error(e, "creating time entry", context)
+
+    else:  # action == "update"
+        if time_entry_id is None:
+            return {"error": "time_entry_id is required for action 'update'"}
+
+        update_params: Dict[str, Any] = {}
         if hours is not None:
-            params["hours"] = hours
+            hours_error = _validate_hours(hours)
+            if hours_error is not None:
+                return {"error": hours_error}
+            update_params["hours"] = hours
         if activity_id is not None:
-            params["activity_id"] = activity_id
+            update_params["activity_id"] = activity_id
         if comments is not None:
-            params["comments"] = comments
+            update_params["comments"] = comments
         if spent_on is not None:
-            params["spent_on"] = spent_on
+            update_params["spent_on"] = spent_on
 
-        if not params:
+        if not update_params:
             return {"error": "No fields provided for update."}
 
-        client = _get_redmine_client()
-        client.time_entry.update(time_entry_id, **params)
-
-        # Fetch and return updated entry
-        updated_entry = client.time_entry.get(time_entry_id)
-        return _time_entry_to_dict(updated_entry)
-
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"updating time entry {time_entry_id}",
-            {"resource_type": "time entry", "resource_id": time_entry_id},
-        )
+        try:
+            client = _get_redmine_client()
+            client.time_entry.update(time_entry_id, **update_params)
+            updated = client.time_entry.get(time_entry_id)
+            return _time_entry_to_dict(updated)
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"updating time entry {time_entry_id}",
+                {"resource_type": "time entry", "resource_id": time_entry_id},
+            )
 
 
 @mcp.tool()
@@ -5821,101 +5656,13 @@ def _validate_hours(value: Any) -> Optional[str]:
 
 
 @mcp.tool()
-async def log_time_for_user(
-    user_id: int,
-    hours: float,
-    project_id: Optional[Union[str, int]] = None,
-    issue_id: Optional[int] = None,
-    activity_id: Optional[int] = None,
-    comments: str = "",
-    spent_on: Optional[str] = None,
-) -> Dict[str, Any]:
-    """Create a time entry on behalf of another user.
-
-    Logs time against a project or issue with the given ``user_id`` as
-    the owner instead of the authenticated user. The authenticated user
-    must have the ``log_time_for_other_users`` permission on the target
-    project, and the target user must be a member of that project.
-
-    Note: This is functionally ``create_time_entry`` with a ``user_id``
-    parameter. It is provided as a dedicated tool to make PM-level
-    workflows explicit (logging time on behalf of a teammate).
-
-    Args:
-        user_id: ID of the user to log time for. Use ``list_project_members``
-            to discover valid user IDs for a project.
-        hours: Number of hours spent (must be positive).
-        project_id: Project to log time against (ID or identifier).
-            Required if ``issue_id`` is not provided.
-        issue_id: Issue to log time against. If provided, ``project_id``
-            is optional.
-        activity_id: Time entry activity ID. Use ``list_time_entry_activities``
-            to discover valid IDs. Defaults to Redmine's default activity.
-        comments: Description of work performed.
-        spent_on: Date when time was spent (YYYY-MM-DD). Defaults to today.
-
-    Returns:
-        Dictionary containing the created time entry. On failure a dict
-        with an ``"error"`` key is returned.
-
-    Known Redmine quirks:
-        - Some Redmine versions reject the ``user_id`` parameter when the
-          authenticated user is an admin but NOT a member of the target
-          project (defects #31587, #32774). The workaround is to add the
-          admin as a project member.
-    """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-
-    if not _is_positive_int(user_id):
-        return {"error": "user_id must be a positive integer."}
-
-    if project_id is None and issue_id is None:
-        return {"error": "Either project_id or issue_id must be provided."}
-
-    hours_error = _validate_hours(hours)
-    if hours_error is not None:
-        return {"error": hours_error}
-
-    try:
-        params: Dict[str, Any] = {
-            "hours": hours,
-            "user_id": user_id,
-        }
-        if project_id is not None:
-            params["project_id"] = project_id
-        if issue_id is not None:
-            params["issue_id"] = issue_id
-        if activity_id is not None:
-            params["activity_id"] = activity_id
-        if comments:
-            params["comments"] = comments
-        if spent_on is not None:
-            params["spent_on"] = spent_on
-
-        time_entry = _get_redmine_client().time_entry.create(**params)
-        return _time_entry_to_dict(time_entry)
-    except Exception as e:
-        context = {}
-        if issue_id:
-            context = {"resource_type": "issue", "resource_id": issue_id}
-        elif project_id:
-            context = {"resource_type": "project", "resource_id": project_id}
-        return _handle_redmine_error(
-            e,
-            f"logging time for user {user_id}",
-            context,
-        )
-
-
-@mcp.tool()
 async def import_time_entries(
     entries: Union[List[Dict[str, Any]], str],
     stop_on_error: bool = False,
 ) -> Dict[str, Any]:
     """Bulk import multiple time entries in a single call.
 
-    **Use this tool (NOT ``create_time_entry`` in a loop) whenever the
+    **Use this tool (NOT ``manage_time_entry(action="create")`` in a loop) whenever the
     user asks to:**
         - import a timesheet / weekly timesheet / monthly report
         - bulk log, batch log, or log multiple entries at once
@@ -5924,11 +5671,12 @@ async def import_time_entries(
         - log the same activity for multiple team members at once
         - log a day's work spanning multiple issues
 
-    **Prefer this tool over calling ``create_time_entry`` N times** — it
-    reports partial failures via a ``succeeded``/``failed`` summary and
-    supports ``stop_on_error`` for transactional-style behaviour. Calling
-    ``create_time_entry`` in a loop gives no aggregate feedback and cannot
-    continue past per-entry errors gracefully.
+    **Prefer this tool over calling ``manage_time_entry(action="create")``
+    N times** -- it reports partial failures via a
+    ``succeeded``/``failed`` summary and supports ``stop_on_error`` for
+    transactional-style behaviour. Calling
+    ``manage_time_entry(action="create")`` in a loop gives no aggregate
+    feedback and cannot continue past per-entry errors gracefully.
 
     Redmine has no native bulk-import endpoint, so this tool creates each
     entry individually via ``POST /time_entries.json`` under the hood.
@@ -5936,9 +5684,10 @@ async def import_time_entries(
     partial import still yields useful feedback.
 
     Each entry must be a dict (or JSON object) with the standard
-    ``create_time_entry`` fields: ``hours`` (required), plus at least one
-    of ``project_id``/``issue_id``. Optional fields: ``user_id`` (to log
-    on behalf of a teammate), ``activity_id``, ``comments``, ``spent_on``.
+    ``manage_time_entry(action="create")`` fields: ``hours`` (required),
+    plus at least one of ``project_id``/``issue_id``. Optional fields:
+    ``user_id`` (to log on behalf of a teammate), ``activity_id``,
+    ``comments``, ``spent_on``.
 
     Args:
         entries: List of time entry dicts, OR a JSON array string. Capped
@@ -6234,150 +5983,19 @@ async def update_checklist_item(
         )
 
 
-@mcp.tool()
-async def mark_checklist_done(
-    checklist_item_id: int,
-    is_done: bool = True,
-) -> Dict[str, Any]:
-    """Toggle the done/undone state of a checklist item.
-
-    Convenience tool that marks a checklist item as done or undone.
-    Equivalent to ``update_checklist_item(checklist_item_id, is_done=...)``.
-
-    Requires the RedmineUP Checklists plugin and
-    ``REDMINE_CHECKLISTS_ENABLED=true``. This is a write operation and
-    is blocked when ``REDMINE_MCP_READ_ONLY=true``.
-
-    Args:
-        checklist_item_id: The ID of the checklist item.
-        is_done: ``True`` to mark as done (default), ``False`` to mark undone.
-
-    Returns:
-        A success dict, or an error dict on failure.
-    """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-
-    if not _is_checklists_enabled():
-        return {
-            "error": (
-                "Checklist support is disabled. "
-                "Set REDMINE_CHECKLISTS_ENABLED=true to enable it."
-            )
-        }
-
-    if not _is_positive_int(checklist_item_id):
-        return {"error": "checklist_item_id must be a positive integer."}
-
-    if not isinstance(is_done, bool):
-        return {"error": "is_done must be a boolean."}
-
-    try:
-        _update_checklist_item_api(checklist_item_id, {"is_done": is_done})
-        return {
-            "success": True,
-            "checklist_item_id": checklist_item_id,
-            "is_done": is_done,
-        }
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"marking checklist item {checklist_item_id} "
-            f"as {'done' if is_done else 'undone'}",
-            {"resource_type": "checklist_item", "resource_id": checklist_item_id},
-        )
-
-
 # ---------------------------------------------------------------------------
 # Products tools (requires RedmineUP Products plugin)
 # ---------------------------------------------------------------------------
 
 
 @mcp.tool()
-async def list_products(
+async def manage_product(
+    action: str,
     project_id: Optional[Union[str, int]] = None,
     limit: int = 100,
-) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
-    """List products from the RedmineUP Products plugin.
-
-    Requires the RedmineUP Products plugin and ``REDMINE_PRODUCTS_ENABLED=true``.
-
-    Args:
-        project_id: Optional project identifier to filter products by project.
-            When omitted, returns products across all projects accessible
-            to the API user.
-        limit: Maximum number of products to return per call (1-100, default
-            100). Redmine's REST API caps `limit` at 100; values above that
-            are clamped.
-
-    Returns:
-        List of product dicts (id, name, description, price, currency,
-        status_id, project, category, tags, code, timestamps).
-        On failure, a dict with an ``error`` key.
-    """
-    if not _is_products_enabled():
-        return dict(_PRODUCTS_DISABLED_ERROR)
-
-    if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
-        return {"error": "limit must be a positive integer."}
-    limit = min(limit, _REDMINE_API_PAGE_CAP)
-    if project_id is not None and not _is_valid_project_id(project_id):
-        return {
-            "error": (
-                "project_id must be a non-empty string identifier or "
-                "positive integer."
-            )
-        }
-
-    try:
-        client = _get_redmine_client()
-        if project_id is not None:
-            url = f"{REDMINE_URL}/projects/{project_id}/products.json"
-        else:
-            url = f"{REDMINE_URL}/products.json"
-        payload = client.engine.request("get", url, params={"limit": limit})
-        raw = payload.get("products", []) if isinstance(payload, dict) else []
-        return [_product_to_dict(p) for p in raw[:limit]]
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"listing products (project_id={project_id})",
-            {"resource_type": "products", "resource_id": project_id},
-        )
-
-
-@mcp.tool()
-async def get_product(product_id: int) -> Dict[str, Any]:
-    """Retrieve a single RedmineUP product by ID.
-
-    Requires the RedmineUP Products plugin and ``REDMINE_PRODUCTS_ENABLED=true``.
-    """
-    if not _is_products_enabled():
-        return dict(_PRODUCTS_DISABLED_ERROR)
-    if not _is_positive_int(product_id):
-        return {"error": "product_id must be a positive integer."}
-
-    try:
-        client = _get_redmine_client()
-        url = f"{REDMINE_URL}/products/{product_id}.json"
-        payload = client.engine.request("get", url)
-        product = payload.get("product", {}) if isinstance(payload, dict) else {}
-        if not product:
-            return {"error": f"Product {product_id} not found."}
-        return _product_to_dict(product)
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"fetching product {product_id}",
-            {"resource_type": "product", "resource_id": product_id},
-        )
-
-
-@mcp.tool()
-async def add_product(
-    name: str,
+    product_id: Optional[int] = None,
+    name: Optional[str] = None,
     status_id: int = 1,
-    project_id: Optional[Union[str, int]] = None,
     description: Optional[str] = None,
     price: Optional[float] = None,
     currency: Optional[str] = None,
@@ -6385,100 +6003,123 @@ async def add_product(
     category_id: Optional[int] = None,
     tag_list: Optional[str] = None,
     custom_fields: Optional[List[Dict[str, Any]]] = None,
-) -> Dict[str, Any]:
-    """Create a new RedmineUP product.
+    fields: Optional[Dict[str, Any]] = None,
+) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    """RedmineUP Products plugin tool. Combined CRUD-by-action.
 
-    Requires the RedmineUP Products plugin, ``REDMINE_PRODUCTS_ENABLED=true``,
-    and is blocked when ``REDMINE_MCP_READ_ONLY=true``.
-
-    Args:
-        name: Product name (required).
-        status_id: 1=Active (default), 2=Inactive.
-        project_id: Optional project to associate the product with.
-        description, price, currency, code: Optional fields.
-        category_id: Optional product category ID.
-        tag_list: Comma-separated tag list (e.g., "alpha,beta").
-        custom_fields: Optional list of ``{"id": N, "value": ...}`` dicts.
-
-    Returns:
-        Dict with the created product, or error dict on failure.
+    Actions: ``list``, ``get``, ``create``, ``update``.
+    Requires ``REDMINE_PRODUCTS_ENABLED=true`` and the RedmineUP Products
+    plugin.
     """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
     if not _is_products_enabled():
         return dict(_PRODUCTS_DISABLED_ERROR)
-    if not isinstance(name, str) or not name.strip():
-        return {"error": "name must be a non-empty string."}
-    if isinstance(status_id, bool) or status_id not in (1, 2):
-        return {"error": "status_id must be 1 (Active) or 2 (Inactive)."}
 
-    body: Dict[str, Any] = {"name": name, "status_id": status_id}
-    if project_id is not None:
-        body["project_id"] = project_id
-    if description is not None:
-        body["description"] = description
-    if price is not None:
-        body["price"] = price
-    if currency is not None:
-        body["currency"] = currency
-    if code is not None:
-        body["code"] = code
-    if category_id is not None:
-        if not _is_positive_int(category_id):
-            return {"error": "category_id must be a positive integer."}
-        body["category_id"] = category_id
-    if tag_list is not None:
-        body["tag_list"] = tag_list
-    if custom_fields is not None:
-        body["custom_fields"] = custom_fields
+    _valid_actions = {"list", "get", "create", "update"}
+    if action not in _valid_actions:
+        return {
+            "error": (
+                f"Invalid action '{action}'. " f"Allowed: {sorted(_valid_actions)}"
+            )
+        }
 
-    try:
-        client = _get_redmine_client()
-        url = f"{REDMINE_URL}/products.json"
-        payload = client.engine.request(
-            "post",
-            url,
-            headers={"Content-Type": "application/json"},
-            data=json.dumps({"product": body}),
-        )
-        product = payload.get("product", {}) if isinstance(payload, dict) else {}
-        return _product_to_dict(product) if product else {"success": True}
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"creating product '{name}'",
-            {"resource_type": "product", "resource_id": name},
-        )
+    if action == "list":
+        if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
+            return {"error": "limit must be a positive integer."}
+        limit = min(limit, _REDMINE_API_PAGE_CAP)
+        if project_id is not None and not _is_valid_project_id(project_id):
+            return {
+                "error": (
+                    "project_id must be a non-empty string identifier or "
+                    "positive integer."
+                )
+            }
+        try:
+            client = _get_redmine_client()
+            url = (
+                f"{REDMINE_URL}/projects/{project_id}/products.json"
+                if project_id is not None
+                else f"{REDMINE_URL}/products.json"
+            )
+            payload = client.engine.request("get", url, params={"limit": limit})
+            raw = payload.get("products", []) if isinstance(payload, dict) else []
+            return [_product_to_dict(p) for p in raw[:limit]]
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"listing products (project_id={project_id})",
+                {"resource_type": "products", "resource_id": project_id},
+            )
 
+    if action == "get":
+        if not _is_positive_int(product_id):
+            return {"error": "product_id must be a positive integer."}
+        try:
+            client = _get_redmine_client()
+            url = f"{REDMINE_URL}/products/{product_id}.json"
+            payload = client.engine.request("get", url)
+            product = payload.get("product", {}) if isinstance(payload, dict) else {}
+            if not product:
+                return {"error": f"Product {product_id} not found."}
+            return _product_to_dict(product)
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"fetching product {product_id}",
+                {"resource_type": "product", "resource_id": product_id},
+            )
 
-@mcp.tool()
-async def edit_product(
-    product_id: int,
-    fields: Dict[str, Any],
-) -> Dict[str, Any]:
-    """Update fields on an existing RedmineUP product.
-
-    Requires the RedmineUP Products plugin, ``REDMINE_PRODUCTS_ENABLED=true``,
-    and is blocked when ``REDMINE_MCP_READ_ONLY=true``.
-
-    Args:
-        product_id: The ID of the product to update.
-        fields: Dict of fields to update. Supported keys: name, description,
-            price, currency, status_id, code, project_id, category_id,
-            tag_list, custom_fields. Unknown keys are silently filtered out.
-
-    Returns:
-        Success dict with the updated fields, or error dict on failure.
-    """
+    # write actions below
     if _is_read_only_mode():
         return dict(_READ_ONLY_ERROR)
-    if not _is_products_enabled():
-        return dict(_PRODUCTS_DISABLED_ERROR)
+    await _ensure_cleanup_started()
+
+    if action == "create":
+        if not isinstance(name, str) or not name.strip():
+            return {"error": "name must be a non-empty string."}
+        if isinstance(status_id, bool) or status_id not in (1, 2):
+            return {"error": "status_id must be 1 (Active) or 2 (Inactive)."}
+        body: Dict[str, Any] = {"name": name, "status_id": status_id}
+        if project_id is not None:
+            body["project_id"] = project_id
+        if description is not None:
+            body["description"] = description
+        if price is not None:
+            body["price"] = price
+        if currency is not None:
+            body["currency"] = currency
+        if code is not None:
+            body["code"] = code
+        if category_id is not None:
+            if not _is_positive_int(category_id):
+                return {"error": "category_id must be a positive integer."}
+            body["category_id"] = category_id
+        if tag_list is not None:
+            body["tag_list"] = tag_list
+        if custom_fields is not None:
+            body["custom_fields"] = custom_fields
+        try:
+            client = _get_redmine_client()
+            url = f"{REDMINE_URL}/products.json"
+            payload = client.engine.request(
+                "post",
+                url,
+                headers={"Content-Type": "application/json"},
+                data=json.dumps({"product": body}),
+            )
+            product = payload.get("product", {}) if isinstance(payload, dict) else {}
+            return _product_to_dict(product) if product else {"success": True}
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"creating product '{name}'",
+                {"resource_type": "product", "resource_id": name},
+            )
+
+    # action == "update"
     if not _is_positive_int(product_id):
         return {"error": "product_id must be a positive integer."}
     if not isinstance(fields, dict) or not fields:
         return {"error": "fields must be a non-empty dict."}
-
     filtered = {k: v for k, v in fields.items() if k in _PRODUCT_WRITABLE_FIELDS}
     if not filtered:
         return {
@@ -6487,7 +6128,6 @@ async def edit_product(
                 f"{sorted(_PRODUCT_WRITABLE_FIELDS)}"
             )
         }
-
     try:
         client = _get_redmine_client()
         url = f"{REDMINE_URL}/products/{product_id}.json"
@@ -6667,169 +6307,16 @@ async def get_gantt_chart(
 
 
 @mcp.tool()
-async def list_contacts(
+async def manage_contact(
+    action: str,
     project_id: Optional[Union[str, int]] = None,
     search: Optional[str] = None,
     tags: Optional[str] = None,
     assigned_to_id: Optional[int] = None,
     limit: int = 100,
-) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
-    """List contacts from the RedmineUP CRM plugin.
-
-    Requires the RedmineUP CRM plugin and ``REDMINE_CRM_ENABLED=true``.
-    Visibility is enforced by Redmine: results are scoped to the
-    authenticated user's accessible projects.
-
-    Args:
-        project_id: Optional project identifier filter.
-        search: Optional free-text search (matches name, company, email).
-        tags: Optional comma-separated tag filter.
-        assigned_to_id: Optional filter by assigned user ID.
-        limit: Maximum results per call (1-100, default 100). Redmine's
-            REST API caps `limit` at 100; values above that are clamped.
-
-    Returns:
-        List of contact dicts. On failure, dict with ``error``.
-    """
-    if not _is_crm_enabled():
-        return dict(_CRM_DISABLED_ERROR)
-    if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
-        return {"error": "limit must be a positive integer."}
-    limit = min(limit, _REDMINE_API_PAGE_CAP)
-    if project_id is not None and not _is_valid_project_id(project_id):
-        return {
-            "error": (
-                "project_id must be a non-empty string identifier or "
-                "positive integer."
-            )
-        }
-
-    params: Dict[str, Any] = {"limit": limit}
-    if project_id is not None:
-        params["project_id"] = project_id
-    if search is not None:
-        params["search"] = search
-    if tags is not None:
-        params["tags"] = tags
-    if assigned_to_id is not None:
-        if not _is_positive_int(assigned_to_id):
-            return {"error": "assigned_to_id must be a positive integer."}
-        params["assigned_to_id"] = assigned_to_id
-
-    try:
-        client = _get_redmine_client()
-        url = f"{REDMINE_URL}/contacts.json"
-        payload = client.engine.request("get", url, params=params)
-        raw = payload.get("contacts", []) if isinstance(payload, dict) else []
-        return [_contact_to_dict(c) for c in raw[:limit]]
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            "listing contacts",
-            {"resource_type": "contacts"},
-        )
-
-
-@mcp.tool()
-async def get_contact(
-    contact_id: int,
+    contact_id: Optional[int] = None,
     include: Optional[str] = None,
-) -> Dict[str, Any]:
-    """Retrieve a single CRM contact by ID.
-
-    Requires the RedmineUP CRM plugin and ``REDMINE_CRM_ENABLED=true``.
-
-    Args:
-        contact_id: The contact ID.
-        include: Optional comma-separated includes (``notes``, ``deals``,
-            ``contacts``).
-    """
-    if not _is_crm_enabled():
-        return dict(_CRM_DISABLED_ERROR)
-    if not _is_positive_int(contact_id):
-        return {"error": "contact_id must be a positive integer."}
-
-    try:
-        client = _get_redmine_client()
-        url = f"{REDMINE_URL}/contacts/{contact_id}.json"
-        params: Dict[str, Any] = {}
-        if include:
-            params["include"] = include
-        payload = client.engine.request("get", url, params=params)
-        contact = payload.get("contact", {}) if isinstance(payload, dict) else {}
-        if not contact:
-            return {"error": f"Contact {contact_id} not found."}
-        return _contact_to_dict(contact)
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"fetching contact {contact_id}",
-            {"resource_type": "contact", "resource_id": contact_id},
-        )
-
-
-@mcp.tool()
-async def edit_contact(
-    contact_id: int,
-    fields: Dict[str, Any],
-) -> Dict[str, Any]:
-    """Update fields on an existing CRM contact.
-
-    Requires the RedmineUP CRM plugin, ``REDMINE_CRM_ENABLED=true``, and
-    is blocked when ``REDMINE_MCP_READ_ONLY=true``.
-
-    Args:
-        contact_id: Contact ID to update.
-        fields: Dict of fields. Allowed: first_name, last_name, middle_name,
-            company, job_title, phone, email, website, skype_name, birthday,
-            background, address_attributes, tag_list, is_company,
-            assigned_to_id, custom_fields, visibility, project_id.
-            Unknown fields are silently filtered.
-    """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-    if not _is_crm_enabled():
-        return dict(_CRM_DISABLED_ERROR)
-    if not _is_positive_int(contact_id):
-        return {"error": "contact_id must be a positive integer."}
-    if not isinstance(fields, dict) or not fields:
-        return {"error": "fields must be a non-empty dict."}
-
-    filtered = {k: v for k, v in fields.items() if k in _CONTACT_WRITABLE_FIELDS}
-    if not filtered:
-        return {
-            "error": (
-                "No writable fields provided. Allowed fields: "
-                f"{sorted(_CONTACT_WRITABLE_FIELDS)}"
-            )
-        }
-
-    try:
-        client = _get_redmine_client()
-        url = f"{REDMINE_URL}/contacts/{contact_id}.json"
-        client.engine.request(
-            "put",
-            url,
-            headers={"Content-Type": "application/json"},
-            data=json.dumps({"contact": filtered}),
-        )
-        return {
-            "success": True,
-            "contact_id": contact_id,
-            "updated_fields": list(filtered.keys()),
-        }
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"updating contact {contact_id}",
-            {"resource_type": "contact", "resource_id": contact_id},
-        )
-
-
-@mcp.tool()
-async def create_contact(
-    project_id: Union[str, int],
-    first_name: str,
+    first_name: Optional[str] = None,
     last_name: Optional[str] = None,
     company: Optional[str] = None,
     email: Optional[str] = None,
@@ -6837,161 +6324,198 @@ async def create_contact(
     is_company: bool = False,
     visibility: int = 0,
     fields: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    """Create a new CRM contact in a project.
+) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    """RedmineUP CRM (Contacts) plugin tool. Combined CRUD-by-action.
 
-    Requires the RedmineUP CRM plugin, ``REDMINE_CRM_ENABLED=true``, and
-    is blocked when ``REDMINE_MCP_READ_ONLY=true``.
+    Actions: ``list``, ``get``, ``create``, ``update``, ``delete``,
+    ``assign_to_project``, ``remove_from_project``.
 
-    Args:
-        project_id: Project to associate the contact with (required).
-        first_name: First name (required).
-        last_name, company, email, phone: Common optional fields.
-        is_company: ``True`` to mark this as a company entity.
-        visibility: 0=Project (default), 1=Public, 2=Private.
-        fields: Optional dict of additional fields (any key from the
-            contacts writable field set).
+    Requires ``REDMINE_CRM_ENABLED=true`` and the RedmineUP CRM plugin.
     """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
     if not _is_crm_enabled():
         return dict(_CRM_DISABLED_ERROR)
-    if not isinstance(first_name, str) or not first_name.strip():
-        return {"error": "first_name must be a non-empty string."}
-    if not isinstance(is_company, bool):
-        return {"error": "is_company must be a boolean."}
-    if visibility not in (0, 1, 2):
-        return {"error": "visibility must be 0 (Project), 1 (Public), or 2 (Private)."}
 
-    body: Dict[str, Any] = {
-        "project_id": project_id,
-        "first_name": first_name,
-        "is_company": is_company,
-        "visibility": visibility,
+    _valid_actions = {
+        "list",
+        "get",
+        "create",
+        "update",
+        "delete",
+        "assign_to_project",
+        "remove_from_project",
     }
-    if last_name is not None:
-        body["last_name"] = last_name
-    if company is not None:
-        body["company"] = company
-    if email is not None:
-        body["email"] = email
-    if phone is not None:
-        body["phone"] = phone
-    if fields:
-        for k, v in fields.items():
-            if k in _CONTACT_WRITABLE_FIELDS:
-                body[k] = v
-
-    try:
-        client = _get_redmine_client()
-        url = f"{REDMINE_URL}/contacts.json"
-        payload = client.engine.request(
-            "post",
-            url,
-            headers={"Content-Type": "application/json"},
-            data=json.dumps({"contact": body}),
-        )
-        contact = payload.get("contact", {}) if isinstance(payload, dict) else {}
-        return _contact_to_dict(contact) if contact else {"success": True}
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            "creating contact",
-            {"resource_type": "contact"},
-        )
-
-
-@mcp.tool()
-async def delete_contact(contact_id: int) -> Dict[str, Any]:
-    """Delete a CRM contact.
-
-    Requires the RedmineUP CRM plugin, ``REDMINE_CRM_ENABLED=true``, and
-    is blocked when ``REDMINE_MCP_READ_ONLY=true``.
-    """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-    if not _is_crm_enabled():
-        return dict(_CRM_DISABLED_ERROR)
-    if not _is_positive_int(contact_id):
-        return {"error": "contact_id must be a positive integer."}
-
-    try:
-        client = _get_redmine_client()
-        url = f"{REDMINE_URL}/contacts/{contact_id}.json"
-        client.engine.request("delete", url)
-        return {
-            "success": True,
-            "contact_id": contact_id,
-            "message": f"Contact {contact_id} deleted.",
-        }
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"deleting contact {contact_id}",
-            {"resource_type": "contact", "resource_id": contact_id},
-        )
-
-
-@mcp.tool()
-async def assign_contact_to_project(
-    contact_id: int,
-    project_id: Union[str, int],
-) -> Dict[str, Any]:
-    """Add an existing CRM contact to an additional project.
-
-    Requires the RedmineUP CRM plugin, ``REDMINE_CRM_ENABLED=true``, and
-    is blocked when ``REDMINE_MCP_READ_ONLY=true``.
-    """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-    if not _is_crm_enabled():
-        return dict(_CRM_DISABLED_ERROR)
-    if not _is_positive_int(contact_id):
-        return {"error": "contact_id must be a positive integer."}
-    if not _is_valid_project_id(project_id):
+    if action not in _valid_actions:
         return {
             "error": (
-                "project_id must be a non-empty string identifier or "
-                "positive integer."
+                f"Invalid action '{action}'. " f"Allowed: {sorted(_valid_actions)}"
             )
         }
 
-    try:
-        client = _get_redmine_client()
-        url = f"{REDMINE_URL}/contacts/{contact_id}/projects.json"
-        client.engine.request(
-            "post",
-            url,
-            headers={"Content-Type": "application/json"},
-            data=json.dumps({"project": {"id": project_id}}),
-        )
-        return {
-            "success": True,
-            "contact_id": contact_id,
+    # --- read actions ---
+
+    if action == "list":
+        if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
+            return {"error": "limit must be a positive integer."}
+        limit = min(limit, _REDMINE_API_PAGE_CAP)
+        if project_id is not None and not _is_valid_project_id(project_id):
+            return {
+                "error": (
+                    "project_id must be a non-empty string identifier or "
+                    "positive integer."
+                )
+            }
+        params: Dict[str, Any] = {"limit": limit}
+        if project_id is not None:
+            params["project_id"] = project_id
+        if search is not None:
+            params["search"] = search
+        if tags is not None:
+            params["tags"] = tags
+        if assigned_to_id is not None:
+            if not _is_positive_int(assigned_to_id):
+                return {"error": "assigned_to_id must be a positive integer."}
+            params["assigned_to_id"] = assigned_to_id
+        try:
+            client = _get_redmine_client()
+            url = f"{REDMINE_URL}/contacts.json"
+            payload = client.engine.request("get", url, params=params)
+            raw = payload.get("contacts", []) if isinstance(payload, dict) else []
+            return [_contact_to_dict(c) for c in raw[:limit]]
+        except Exception as e:
+            return _handle_redmine_error(
+                e, "listing contacts", {"resource_type": "contacts"}
+            )
+
+    if action == "get":
+        if not _is_positive_int(contact_id):
+            return {"error": "contact_id must be a positive integer."}
+        try:
+            client = _get_redmine_client()
+            url = f"{REDMINE_URL}/contacts/{contact_id}.json"
+            params = {}
+            if include:
+                params["include"] = include
+            payload = client.engine.request("get", url, params=params)
+            contact = payload.get("contact", {}) if isinstance(payload, dict) else {}
+            if not contact:
+                return {"error": f"Contact {contact_id} not found."}
+            return _contact_to_dict(contact)
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"fetching contact {contact_id}",
+                {"resource_type": "contact", "resource_id": contact_id},
+            )
+
+    # --- write actions ---
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+    await _ensure_cleanup_started()
+
+    if action == "create":
+        if not _is_valid_project_id(project_id):
+            return {
+                "error": (
+                    "project_id is required and must be a non-empty string "
+                    "identifier or positive integer."
+                )
+            }
+        if not isinstance(first_name, str) or not first_name.strip():
+            return {"error": "first_name must be a non-empty string."}
+        if not isinstance(is_company, bool):
+            return {"error": "is_company must be a boolean."}
+        if visibility not in (0, 1, 2):
+            return {
+                "error": "visibility must be 0 (Project), 1 (Public), or 2 (Private)."
+            }
+        body: Dict[str, Any] = {
             "project_id": project_id,
+            "first_name": first_name,
+            "is_company": is_company,
+            "visibility": visibility,
         }
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"assigning contact {contact_id} to project {project_id}",
-            {"resource_type": "contact", "resource_id": contact_id},
-        )
+        if last_name is not None:
+            body["last_name"] = last_name
+        if company is not None:
+            body["company"] = company
+        if email is not None:
+            body["email"] = email
+        if phone is not None:
+            body["phone"] = phone
+        if fields:
+            for k, v in fields.items():
+                if k in _CONTACT_WRITABLE_FIELDS:
+                    body[k] = v
+        try:
+            client = _get_redmine_client()
+            url = f"{REDMINE_URL}/contacts.json"
+            payload = client.engine.request(
+                "post",
+                url,
+                headers={"Content-Type": "application/json"},
+                data=json.dumps({"contact": body}),
+            )
+            contact = payload.get("contact", {}) if isinstance(payload, dict) else {}
+            return _contact_to_dict(contact) if contact else {"success": True}
+        except Exception as e:
+            return _handle_redmine_error(
+                e, "creating contact", {"resource_type": "contact"}
+            )
 
+    if action == "update":
+        if not _is_positive_int(contact_id):
+            return {"error": "contact_id must be a positive integer."}
+        if not isinstance(fields, dict) or not fields:
+            return {"error": "fields must be a non-empty dict."}
+        filtered = {k: v for k, v in fields.items() if k in _CONTACT_WRITABLE_FIELDS}
+        if not filtered:
+            return {
+                "error": (
+                    "No writable fields provided. Allowed fields: "
+                    f"{sorted(_CONTACT_WRITABLE_FIELDS)}"
+                )
+            }
+        try:
+            client = _get_redmine_client()
+            url = f"{REDMINE_URL}/contacts/{contact_id}.json"
+            client.engine.request(
+                "put",
+                url,
+                headers={"Content-Type": "application/json"},
+                data=json.dumps({"contact": filtered}),
+            )
+            return {
+                "success": True,
+                "contact_id": contact_id,
+                "updated_fields": list(filtered.keys()),
+            }
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"updating contact {contact_id}",
+                {"resource_type": "contact", "resource_id": contact_id},
+            )
 
-@mcp.tool()
-async def remove_contact_from_project(
-    contact_id: int,
-    project_id: Union[str, int],
-) -> Dict[str, Any]:
-    """Remove a CRM contact from a project (does not delete the contact).
+    if action == "delete":
+        if not _is_positive_int(contact_id):
+            return {"error": "contact_id must be a positive integer."}
+        try:
+            client = _get_redmine_client()
+            url = f"{REDMINE_URL}/contacts/{contact_id}.json"
+            client.engine.request("delete", url)
+            return {
+                "success": True,
+                "contact_id": contact_id,
+                "message": f"Contact {contact_id} deleted.",
+            }
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"deleting contact {contact_id}",
+                {"resource_type": "contact", "resource_id": contact_id},
+            )
 
-    Requires the RedmineUP CRM plugin, ``REDMINE_CRM_ENABLED=true``, and
-    is blocked when ``REDMINE_MCP_READ_ONLY=true``.
-    """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-    if not _is_crm_enabled():
-        return dict(_CRM_DISABLED_ERROR)
+    # action in {"assign_to_project", "remove_from_project"}
     if not _is_positive_int(contact_id):
         return {"error": "contact_id must be a positive integer."}
     if not _is_valid_project_id(project_id):
@@ -7002,6 +6526,29 @@ async def remove_contact_from_project(
             )
         }
 
+    if action == "assign_to_project":
+        try:
+            client = _get_redmine_client()
+            url = f"{REDMINE_URL}/contacts/{contact_id}/projects.json"
+            client.engine.request(
+                "post",
+                url,
+                headers={"Content-Type": "application/json"},
+                data=json.dumps({"project": {"id": project_id}}),
+            )
+            return {
+                "success": True,
+                "contact_id": contact_id,
+                "project_id": project_id,
+            }
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"assigning contact {contact_id} to project {project_id}",
+                {"resource_type": "contact", "resource_id": contact_id},
+            )
+
+    # action == "remove_from_project"
     try:
         client = _get_redmine_client()
         url = f"{REDMINE_URL}/contacts/{contact_id}/projects/{project_id}.json"

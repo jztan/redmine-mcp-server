@@ -440,12 +440,7 @@ class TestRedmineIntegration:
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
-        from redmine_mcp_server.redmine_handler import (
-            create_redmine_wiki_page,
-            update_redmine_wiki_page,
-            delete_redmine_wiki_page,
-            get_redmine_wiki_page,
-        )
+        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
 
         # Pick the first available project
         projects = list(redmine.project.all())
@@ -457,7 +452,8 @@ class TestRedmineIntegration:
 
         try:
             # 1. Create a new wiki page
-            create_result = await create_redmine_wiki_page(
+            create_result = await manage_redmine_wiki_page(
+                action="create",
                 project_id=project_id,
                 wiki_page_title=wiki_title,
                 text="# Integration Test\n\nCreated by integration tests.",
@@ -479,7 +475,8 @@ class TestRedmineIntegration:
             assert create_result["version"] == 1
 
             # 2. Verify the page was created by reading it
-            read_result = await get_redmine_wiki_page(
+            read_result = await manage_redmine_wiki_page(
+                action="get",
                 project_id=project_id,
                 wiki_page_title=wiki_title,
             )
@@ -487,7 +484,8 @@ class TestRedmineIntegration:
             assert read_result["title"] == wiki_title
 
             # 3. Update the wiki page
-            update_result = await update_redmine_wiki_page(
+            update_result = await manage_redmine_wiki_page(
+                action="update",
                 project_id=project_id,
                 wiki_page_title=wiki_title,
                 text="# Integration Test Updated\n\nUpdated by integration tests.",
@@ -502,7 +500,8 @@ class TestRedmineIntegration:
             assert update_result["version"] >= 2  # Version should increment
 
             # 4. Delete the wiki page
-            delete_result = await delete_redmine_wiki_page(
+            delete_result = await manage_redmine_wiki_page(
+                action="delete",
                 project_id=project_id,
                 wiki_page_title=wiki_title,
             )
@@ -514,7 +513,8 @@ class TestRedmineIntegration:
             assert delete_result["title"] == wiki_title
 
             # 5. Verify the page was deleted
-            verify_result = await get_redmine_wiki_page(
+            verify_result = await manage_redmine_wiki_page(
+                action="get",
                 project_id=project_id,
                 wiki_page_title=wiki_title,
             )
@@ -526,7 +526,8 @@ class TestRedmineIntegration:
         finally:
             # Clean up: attempt to delete the wiki page if it still exists
             try:
-                await delete_redmine_wiki_page(
+                await manage_redmine_wiki_page(
+                    action="delete",
                     project_id=project_id,
                     wiki_page_title=wiki_title,
                 )
@@ -542,7 +543,7 @@ class TestRedmineIntegration:
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
-        from redmine_mcp_server.redmine_handler import delete_redmine_wiki_page
+        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
 
         # Pick the first available project
         projects = list(redmine.project.all())
@@ -555,7 +556,8 @@ class TestRedmineIntegration:
         # Test delete on non-existent page - should return error
         # Note: Redmine's wiki update API has upsert behavior (creates if not exists),
         # so we only test delete for "not found" errors
-        delete_result = await delete_redmine_wiki_page(
+        delete_result = await manage_redmine_wiki_page(
+            action="delete",
             project_id=project_id,
             wiki_page_title=nonexistent_title,
         )
@@ -1315,8 +1317,8 @@ class TestTimeEntriesIntegration:
             pytest.skip("Redmine client not initialized")
 
         from redmine_mcp_server.redmine_handler import (
-            create_time_entry,
             list_time_entries,
+            manage_time_entry,
         )
 
         # Ensure at least one time entry exists
@@ -1325,7 +1327,8 @@ class TestTimeEntriesIntegration:
         activity_id = _get_activity_id(redmine)
         assert activity_id is not None, "No time entry activities configured"
 
-        created = await create_time_entry(
+        created = await manage_time_entry(
+            action="create",
             hours=0.1,
             project_id=projects[0].id,
             activity_id=activity_id,
@@ -1394,10 +1397,7 @@ class TestTimeEntriesIntegration:
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
-        from redmine_mcp_server.redmine_handler import (
-            create_time_entry,
-            update_time_entry,
-        )
+        from redmine_mcp_server.redmine_handler import manage_time_entry
 
         # Pick the first available project
         projects = list(redmine.project.all())
@@ -1411,7 +1411,8 @@ class TestTimeEntriesIntegration:
         time_entry_id = None
         try:
             # 1. Create a time entry
-            create_result = await create_time_entry(
+            create_result = await manage_time_entry(
+                action="create",
                 hours=0.25,
                 project_id=project_id,
                 activity_id=activity_id,
@@ -1433,7 +1434,8 @@ class TestTimeEntriesIntegration:
             time_entry_id = create_result["id"]
 
             # 2. Update the time entry
-            update_result = await update_time_entry(
+            update_result = await manage_time_entry(
+                action="update",
                 time_entry_id=time_entry_id,
                 hours=0.5,
                 comments="Integration test time entry (updated)",
@@ -1464,15 +1466,15 @@ class TestTimeEntriesIntegration:
         if redmine is None:
             pytest.skip("Redmine client not initialized")
 
-        from redmine_mcp_server.redmine_handler import create_time_entry
+        from redmine_mcp_server.redmine_handler import manage_time_entry
 
         # Missing both project_id and issue_id
-        result = await create_time_entry(hours=1.0)
+        result = await manage_time_entry(action="create", hours=1.0)
         assert "error" in result
         assert "project_id or issue_id" in result["error"]
 
         # Negative hours
-        result = await create_time_entry(hours=-1.0, project_id=1)
+        result = await manage_time_entry(action="create", hours=-1.0, project_id=1)
         assert "error" in result
         assert "positive" in result["error"]
 

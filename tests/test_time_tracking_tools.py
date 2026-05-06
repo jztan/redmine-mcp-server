@@ -1,7 +1,7 @@
 """Unit tests for Stage D time tracking tools.
 
 Covers:
-    - log_time_for_user
+    - manage_time_entry(action="create", user_id=...) (replaces log_time_for_user)
     - import_time_entries
 """
 
@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from redmine_mcp_server.redmine_handler import (  # noqa: E402
     import_time_entries,
-    log_time_for_user,
+    manage_time_entry,
 )
 
 
@@ -54,7 +54,7 @@ def _mock_time_entry(
 # ---------------------------------------------------------------------------
 
 
-class TestLogTimeForUser:
+class TestManageTimeEntryForUser:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_log_time_on_issue(self, mock_redmine):
@@ -62,7 +62,8 @@ class TestLogTimeForUser:
             entry_id=100, hours=2.5, user_id=7, user_name="Bob"
         )
 
-        result = await log_time_for_user(
+        result = await manage_time_entry(
+            action="create",
             user_id=7,
             hours=2.5,
             issue_id=123,
@@ -81,7 +82,8 @@ class TestLogTimeForUser:
             entry_id=101, hours=1.0, user_id=7
         )
 
-        result = await log_time_for_user(
+        result = await manage_time_entry(
+            action="create",
             user_id=7,
             hours=1.0,
             project_id="web",
@@ -100,25 +102,31 @@ class TestLogTimeForUser:
 
     @pytest.mark.asyncio
     async def test_missing_project_and_issue(self):
-        result = await log_time_for_user(user_id=7, hours=1.0)
+        result = await manage_time_entry(action="create", user_id=7, hours=1.0)
         assert "error" in result
         assert "project_id or issue_id" in result["error"]
 
     @pytest.mark.asyncio
     async def test_negative_hours(self):
-        result = await log_time_for_user(user_id=7, hours=-1.0, issue_id=123)
+        result = await manage_time_entry(
+            action="create", user_id=7, hours=-1.0, issue_id=123
+        )
         assert "error" in result
         assert "positive" in result["error"].lower()
 
     @pytest.mark.asyncio
     async def test_zero_hours(self):
-        result = await log_time_for_user(user_id=7, hours=0, issue_id=123)
+        result = await manage_time_entry(
+            action="create", user_id=7, hours=0, issue_id=123
+        )
         assert "error" in result
 
     @pytest.mark.asyncio
     async def test_read_only_mode(self, monkeypatch):
         monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "true")
-        result = await log_time_for_user(user_id=7, hours=1.0, issue_id=123)
+        result = await manage_time_entry(
+            action="create", user_id=7, hours=1.0, issue_id=123
+        )
         assert "error" in result
         assert "read-only" in result["error"].lower()
 
@@ -129,7 +137,9 @@ class TestLogTimeForUser:
         from redminelib.exceptions import ForbiddenError
 
         mock_redmine.time_entry.create.side_effect = ForbiddenError()
-        result = await log_time_for_user(user_id=7, hours=1.0, issue_id=123)
+        result = await manage_time_entry(
+            action="create", user_id=7, hours=1.0, issue_id=123
+        )
         assert "error" in result
         assert "Access denied" in result["error"]
 
@@ -140,7 +150,9 @@ class TestLogTimeForUser:
         from redminelib.exceptions import ValidationError
 
         mock_redmine.time_entry.create.side_effect = ValidationError("User is invalid")
-        result = await log_time_for_user(user_id=999, hours=1.0, issue_id=123)
+        result = await manage_time_entry(
+            action="create", user_id=999, hours=1.0, issue_id=123
+        )
         assert "error" in result
 
     @pytest.mark.asyncio
@@ -149,7 +161,9 @@ class TestLogTimeForUser:
         from redminelib.exceptions import ResourceNotFoundError
 
         mock_redmine.time_entry.create.side_effect = ResourceNotFoundError()
-        result = await log_time_for_user(user_id=7, hours=1.0, issue_id=9999)
+        result = await manage_time_entry(
+            action="create", user_id=7, hours=1.0, issue_id=9999
+        )
         assert "error" in result
 
 

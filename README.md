@@ -16,7 +16,7 @@ A Model Context Protocol (MCP) server that integrates with Redmine project manag
 
 ## Features
 
-- **69 MCP Tools**: Issues, projects, time tracking, wiki, Gantt, file operations, membership management, products, contacts (CRM), and more
+- **43 MCP Tools**: Issues, projects, time tracking, wiki, Gantt, file operations, membership management, products, contacts (CRM), and more
 - **Flexible Authentication**: API key, username/password, or OAuth2 per-user tokens
 - **Prompt Injection Protection**: User-controlled content wrapped in boundary tags for safe LLM consumption
 - **Read-Only Mode**: Restrict to read-only operations via `REDMINE_MCP_READ_ONLY` environment variable
@@ -117,9 +117,9 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `REDMINE_SSL_CLIENT_CERT` | No | – | Path to client certificate for mutual TLS |
 | `REDMINE_MCP_READ_ONLY` | No | `false` | Block all write operations (create/update/delete) when set to `true` |
 | `REDMINE_AGILE_ENABLED` | No | `false` | Enable RedmineUP Agile plugin support: `get_redmine_issue` returns `story_points`, `agile_sprint_id`, `agile_position`; `update_redmine_issue` accepts `story_points` |
-| `REDMINE_CHECKLISTS_ENABLED` | No | `false` | Enable RedmineUP Checklists plugin support: `get_checklist`, `update_checklist_item`, `mark_checklist_done` (requires Checklists Pro plugin) |
-| `REDMINE_PRODUCTS_ENABLED` | No | `false` | Enable RedmineUP Products plugin support: `list_products`, `get_product`, `add_product`, `edit_product` |
-| `REDMINE_CRM_ENABLED` | No | `false` | Enable RedmineUP CRM plugin support: `list_contacts`, `get_contact`, `edit_contact`, `create_contact`, `delete_contact`, `assign_contact_to_project`, `remove_contact_from_project` |
+| `REDMINE_CHECKLISTS_ENABLED` | No | `false` | Enable RedmineUP Checklists plugin support: `get_checklist`, `update_checklist_item` (requires Checklists Pro plugin) |
+| `REDMINE_PRODUCTS_ENABLED` | No | `false` | Enable RedmineUP Products plugin support: `manage_product` (action=list/get/create/update) |
+| `REDMINE_CRM_ENABLED` | No | `false` | Enable RedmineUP CRM plugin support: `manage_contact` (action=list/get/create/update/delete/assign_to_project/remove_from_project) |
 | `REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS` | No | `false` | Enable one retry for issue creation by filling missing required custom fields |
 | `REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS` | No | `{}` | JSON object mapping required custom field names to fallback values used when creating issues |
 | `REDMINE_ALLOW_PRIVATE_FETCH_URLS` | No | `false` | **Warning:** disables all SSRF protection for attachment fetching. Never set to `true` in production. |
@@ -437,9 +437,9 @@ curl http://localhost:8000/health
 
 ## Available Tools
 
-This MCP server provides 69 tools for interacting with Redmine. For detailed documentation, see [Tool Reference](./docs/tool-reference.md).
+This MCP server provides 43 tools for interacting with Redmine. For detailed documentation, see [Tool Reference](./docs/tool-reference.md).
 
-- **Project Management** (11 tools)
+- **Project Management** (9 tools)
   - [`list_redmine_projects`](docs/tool-reference.md#list_redmine_projects) - List all accessible projects
   - [`list_project_issue_custom_fields`](docs/tool-reference.md#list_project_issue_custom_fields) - List issue custom fields configured for a project
   - [`list_redmine_versions`](docs/tool-reference.md#list_redmine_versions) - List versions/milestones for a project
@@ -448,38 +448,27 @@ This MCP server provides 69 tools for interacting with Redmine. For detailed doc
   - [`summarize_project_status`](docs/tool-reference.md#summarize_project_status) - Get comprehensive project status summary
   - [`list_redmine_roles`](docs/tool-reference.md#list_redmine_roles) - List all roles defined in the Redmine instance (for discovering valid `role_ids`)
   - [`get_project_modules`](docs/tool-reference.md#get_project_modules) - Retrieve the enabled modules for a project
-  - [`add_project_member`](docs/tool-reference.md#add_project_member) - Add a user or group as a member with roles
-  - [`update_project_member`](docs/tool-reference.md#update_project_member) - Update the roles of an existing membership
-  - [`remove_project_member`](docs/tool-reference.md#remove_project_member) - Remove a membership from a project
+  - [`manage_project_member`](docs/tool-reference.md#manage_project_member) - Add, update, or remove a project membership
 
-- **Issue Operations** (19 tools)
+- **Issue Operations** (12 tools)
   - [`get_redmine_issue`](docs/tool-reference.md#get_redmine_issue) - Retrieve detailed issue information (supports journal pagination, watchers, relations, children)
   - [`list_redmine_issues`](docs/tool-reference.md#list_redmine_issues) - List issues with flexible filtering (project, status, assignee, etc.)
   - [`search_redmine_issues`](docs/tool-reference.md#search_redmine_issues) - Search issues by text query
   - [`create_redmine_issue`](docs/tool-reference.md#create_redmine_issue) - Create new issues
   - [`update_redmine_issue`](docs/tool-reference.md#update_redmine_issue) - Update existing issues
   - [`copy_issue`](docs/tool-reference.md#copy_issue) - Duplicate an existing issue with optional field overrides
-  - [`list_issue_relations`](docs/tool-reference.md#list_issue_relations) - List all relations for an issue
-  - [`create_issue_relation`](docs/tool-reference.md#create_issue_relation) - Create a relation between two issues (blocks, duplicates, relates, etc.)
-  - [`delete_issue_relation`](docs/tool-reference.md#delete_issue_relation) - Delete an existing issue relation
   - [`list_subtasks`](docs/tool-reference.md#list_subtasks) - List subtasks (child issues) of a given parent
-  - [`add_watcher`](docs/tool-reference.md#add_watcher) - Add a user to the watcher list of an issue
-  - [`remove_watcher`](docs/tool-reference.md#remove_watcher) - Remove a user from the watcher list
-  - [`edit_note`](docs/tool-reference.md#edit_note) - Edit an existing journal note's text and/or privacy
   - [`get_private_notes`](docs/tool-reference.md#get_private_notes) - Retrieve private notes on an issue
-  - [`set_note_private`](docs/tool-reference.md#set_note_private) - Toggle the private/public state of a journal note
-  - [`list_issue_categories`](docs/tool-reference.md#list_issue_categories) - List issue categories for a project
-  - [`create_issue_category`](docs/tool-reference.md#create_issue_category) - Create a new issue category
-  - [`update_issue_category`](docs/tool-reference.md#update_issue_category) - Update an existing issue category
-  - [`delete_issue_category`](docs/tool-reference.md#delete_issue_category) - Delete an issue category (with optional reassignment)
+  - [`manage_issue_relation`](docs/tool-reference.md#manage_issue_relation) - List, create, or delete issue relations
+  - [`manage_issue_watcher`](docs/tool-reference.md#manage_issue_watcher) - Add or remove a watcher on an issue
+  - [`manage_issue_note`](docs/tool-reference.md#manage_issue_note) - Edit a journal note's text or toggle its privacy
+  - [`manage_issue_category`](docs/tool-reference.md#manage_issue_category) - List, create, update, or delete issue categories
   - Note: `get_redmine_issue` can include `custom_fields` and `update_redmine_issue` can update custom fields by name (for example `{"size": "S"}`).
 
-- **Time Tracking** (6 tools)
+- **Time Tracking** (4 tools)
   - [`list_time_entries`](docs/tool-reference.md#list_time_entries) - List time entries with filtering by project, issue, user, and date range
-  - [`create_time_entry`](docs/tool-reference.md#create_time_entry) - Log time against projects or issues
-  - [`update_time_entry`](docs/tool-reference.md#update_time_entry) - Modify existing time entries
+  - [`manage_time_entry`](docs/tool-reference.md#manage_time_entry) - Create or update a time entry (use `user_id` to log on behalf of another user)
   - [`list_time_entry_activities`](docs/tool-reference.md#list_time_entry_activities) - Discover available activity types for time entries
-  - [`log_time_for_user`](docs/tool-reference.md#log_time_for_user) - Create a time entry on behalf of another user (requires `log_time_for_other_users` permission)
   - [`import_time_entries`](docs/tool-reference.md#import_time_entries) - Bulk import time entries via sequential API calls with per-entry error reporting
 
 - **Discovery / Enumeration** (6 tools): help LLMs find valid IDs before calling create/update tools
@@ -490,14 +479,9 @@ This MCP server provides 69 tools for interacting with Redmine. For detailed doc
   - [`get_current_user`](docs/tool-reference.md#get_current_user) - Get the authenticated user's profile (works for non-admins)
   - [`list_redmine_queries`](docs/tool-reference.md#list_redmine_queries) - List saved custom queries (read-only)
 
-- **Search & Wiki** (7 tools)
+- **Search & Wiki** (2 tools)
   - [`search_entire_redmine`](docs/tool-reference.md#search_entire_redmine) - Global search across issues and wiki pages (Redmine 3.3.0+)
-  - [`get_redmine_wiki_page`](docs/tool-reference.md#get_redmine_wiki_page) - Retrieve wiki page content
-  - [`create_redmine_wiki_page`](docs/tool-reference.md#create_redmine_wiki_page) - Create new wiki pages
-  - [`update_redmine_wiki_page`](docs/tool-reference.md#update_redmine_wiki_page) - Update existing wiki pages
-  - [`delete_redmine_wiki_page`](docs/tool-reference.md#delete_redmine_wiki_page) - Delete wiki pages
-  - [`list_wiki_pages`](docs/tool-reference.md#list_wiki_pages) - List all wiki pages in a project (titles, versions, parents)
-  - [`rename_wiki_page`](docs/tool-reference.md#rename_wiki_page) - Rename/move a wiki page (with optional redirect)
+  - [`manage_redmine_wiki_page`](docs/tool-reference.md#manage_redmine_wiki_page) - List, get, create, update, delete, or rename wiki pages
 
 - **File Operations** (5 tools)
   - [`list_files`](docs/tool-reference.md#list_files) - List files uploaded to a project's Files section
@@ -506,28 +490,18 @@ This MCP server provides 69 tools for interacting with Redmine. For detailed doc
   - [`get_redmine_attachment_download_url`](docs/tool-reference.md#get_redmine_attachment_download_url) - Get secure download URLs for attachments
   - [`cleanup_attachment_files`](docs/tool-reference.md#cleanup_attachment_files) - Clean up expired attachment files
 
-- **Checklists** (3 tools, requires `REDMINE_CHECKLISTS_ENABLED=true` + RedmineUP Checklists Pro plugin)
+- **Checklists** (2 tools, requires `REDMINE_CHECKLISTS_ENABLED=true` + RedmineUP Checklists Pro plugin)
   - [`get_checklist`](docs/tool-reference.md#get_checklist) - Retrieve all checklist items for an issue
   - [`update_checklist_item`](docs/tool-reference.md#update_checklist_item) - Update a checklist item's text, done state, or position
-  - [`mark_checklist_done`](docs/tool-reference.md#mark_checklist_done) - Toggle the done/undone state of a checklist item
 
 - **Gantt** (1 tool, no plugin required)
   - [`get_gantt_chart`](docs/tool-reference.md#get_gantt_chart) - Retrieve project timeline data: issues with dates, dependencies, and milestones
 
-- **Products** (4 tools, requires `REDMINE_PRODUCTS_ENABLED=true` + RedmineUP Products plugin)
-  - [`list_products`](docs/tool-reference.md#list_products) - List products (optionally filtered by project)
-  - [`get_product`](docs/tool-reference.md#get_product) - Retrieve a specific product by ID
-  - [`add_product`](docs/tool-reference.md#add_product) - Create a new product
-  - [`edit_product`](docs/tool-reference.md#edit_product) - Update product fields
+- **Products** (1 tool, requires `REDMINE_PRODUCTS_ENABLED=true` + RedmineUP Products plugin)
+  - [`manage_product`](docs/tool-reference.md#manage_product) - List, get, create, or update products
 
-- **Contacts (CRM)** (7 tools, requires `REDMINE_CRM_ENABLED=true` + RedmineUP CRM plugin)
-  - [`list_contacts`](docs/tool-reference.md#list_contacts) - List contacts with optional filters (project, search, tags, assignee)
-  - [`get_contact`](docs/tool-reference.md#get_contact) - Retrieve a single contact by ID
-  - [`edit_contact`](docs/tool-reference.md#edit_contact) - Update contact fields
-  - [`create_contact`](docs/tool-reference.md#create_contact) - Create a new contact in a project
-  - [`delete_contact`](docs/tool-reference.md#delete_contact) - Delete a contact
-  - [`assign_contact_to_project`](docs/tool-reference.md#assign_contact_to_project) - Add a contact to an additional project
-  - [`remove_contact_from_project`](docs/tool-reference.md#remove_contact_from_project) - Remove a contact from a project (does not delete)
+- **Contacts (CRM)** (1 tool, requires `REDMINE_CRM_ENABLED=true` + RedmineUP CRM plugin)
+  - [`manage_contact`](docs/tool-reference.md#manage_contact) - List, get, create, update, delete, or assign/remove project association for contacts
 
 
 ## Docker Deployment

@@ -15,7 +15,6 @@ from redmine_mcp_server.redmine_handler import (  # noqa: E402
     _update_checklist_item_api,
     get_checklist,
     update_checklist_item,
-    mark_checklist_done,
 )
 
 # ---------------------------------------------------------------------------
@@ -362,101 +361,20 @@ class TestUpdateChecklistItem:
 
 
 # ---------------------------------------------------------------------------
-# mark_checklist_done tool
+# Removed: mark_checklist_done — use update_checklist_item(is_done=...) directly.
 # ---------------------------------------------------------------------------
 
 
-class TestMarkChecklistDone:
+class TestUpdateChecklistItemIsDone:
+    """Confirms the mark_checklist_done use case is preserved via
+    update_checklist_item(is_done=...)."""
+
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_marks_done(self, mock_redmine):
+    async def test_update_is_done_true(self, mock_redmine):
         mock_redmine.engine.request.return_value = True
-
         with patch.dict(os.environ, {"REDMINE_CHECKLISTS_ENABLED": "true"}):
-            result = await mark_checklist_done(checklist_item_id=10)
-
+            result = await update_checklist_item(checklist_item_id=10, is_done=True)
         assert result["success"] is True
-        assert result["checklist_item_id"] == 10
-        assert result["is_done"] is True
-        mock_redmine.engine.request.assert_called_once_with(
-            "put",
-            "http://localhost:3000/checklists/10.json",
-            headers={"Content-Type": "application/json"},
-            data=json.dumps({"checklist": {"is_done": True}}),
-        )
-
-    @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_marks_undone(self, mock_redmine):
-        mock_redmine.engine.request.return_value = True
-
-        with patch.dict(os.environ, {"REDMINE_CHECKLISTS_ENABLED": "true"}):
-            result = await mark_checklist_done(checklist_item_id=10, is_done=False)
-
-        assert result["success"] is True
-        assert result["is_done"] is False
-        mock_redmine.engine.request.assert_called_once_with(
-            "put",
-            "http://localhost:3000/checklists/10.json",
-            headers={"Content-Type": "application/json"},
-            data=json.dumps({"checklist": {"is_done": False}}),
-        )
-
-    @pytest.mark.asyncio
-    async def test_blocked_in_read_only_mode(self):
-        with patch.dict(
-            os.environ,
-            {
-                "REDMINE_MCP_READ_ONLY": "true",
-                "REDMINE_CHECKLISTS_ENABLED": "true",
-            },
-        ):
-            result = await mark_checklist_done(checklist_item_id=10)
-
-        assert "error" in result
-        assert "read-only" in result["error"].lower()
-
-    @pytest.mark.asyncio
-    async def test_returns_error_when_disabled(self):
-        with patch.dict(os.environ, {"REDMINE_CHECKLISTS_ENABLED": "false"}):
-            result = await mark_checklist_done(checklist_item_id=10)
-
-        assert "error" in result
-        assert "REDMINE_CHECKLISTS_ENABLED" in result["error"]
-
-    @pytest.mark.asyncio
-    async def test_rejects_invalid_id(self):
-        with patch.dict(os.environ, {"REDMINE_CHECKLISTS_ENABLED": "true"}):
-            result = await mark_checklist_done(checklist_item_id=0)
-
-        assert "error" in result
-        assert "positive integer" in result["error"]
-
-    @pytest.mark.asyncio
-    async def test_rejects_boolean_id(self):
-        with patch.dict(os.environ, {"REDMINE_CHECKLISTS_ENABLED": "true"}):
-            result = await mark_checklist_done(checklist_item_id=True)
-
-        assert "error" in result
-        assert "positive integer" in result["error"]
-
-    @pytest.mark.asyncio
-    async def test_rejects_non_bool_is_done(self):
-        with patch.dict(os.environ, {"REDMINE_CHECKLISTS_ENABLED": "true"}):
-            result = await mark_checklist_done(checklist_item_id=10, is_done=1)
-
-        assert "error" in result
-        assert "boolean" in result["error"]
-
-    @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_handles_api_error(self, mock_redmine):
-        mock_redmine.engine.request.side_effect = Exception("not found")
-
-        with patch.dict(os.environ, {"REDMINE_CHECKLISTS_ENABLED": "true"}):
-            result = await mark_checklist_done(checklist_item_id=999)
-
-        assert "error" in result
+        assert "is_done" in result["updated_fields"]

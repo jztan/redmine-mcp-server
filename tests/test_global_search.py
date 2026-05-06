@@ -323,7 +323,7 @@ class TestSearchEntireRedmine:
         assert "unknown" not in result["results_by_type"]
 
 
-class TestGetRedmineWikiPage:
+class TestManageRedmineWikiPageGet:
     """Tests for get_redmine_wiki_page MCP tool."""
 
     @pytest.fixture
@@ -350,10 +350,10 @@ class TestGetRedmineWikiPage:
     @patch("redmine_mcp_server.redmine_handler.redmine", None)
     async def test_wiki_page_no_client(self):
         """Test error when Redmine client is not initialized."""
-        from redmine_mcp_server.redmine_handler import get_redmine_wiki_page
+        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
 
-        result = await get_redmine_wiki_page(
-            project_id="my-project", wiki_page_title="Installation"
+        result = await manage_redmine_wiki_page(
+            action="get", project_id="my-project", wiki_page_title="Installation"
         )
 
         assert "error" in result
@@ -364,12 +364,12 @@ class TestGetRedmineWikiPage:
     @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
     async def test_wiki_page_success(self, mock_cleanup, mock_redmine, mock_wiki_page):
         """Test successful wiki page retrieval."""
-        from redmine_mcp_server.redmine_handler import get_redmine_wiki_page
+        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
 
         mock_redmine.wiki_page.get.return_value = mock_wiki_page
 
-        result = await get_redmine_wiki_page(
-            project_id="my-project", wiki_page_title="Installation Guide"
+        result = await manage_redmine_wiki_page(
+            action="get", project_id="my-project", wiki_page_title="Installation Guide"
         )
 
         assert result["title"] == "Installation Guide"
@@ -385,12 +385,12 @@ class TestGetRedmineWikiPage:
     @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
     async def test_wiki_page_not_found(self, mock_cleanup, mock_redmine):
         """Test handling of non-existent wiki page."""
-        from redmine_mcp_server.redmine_handler import get_redmine_wiki_page
+        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
 
         mock_redmine.wiki_page.get.side_effect = ResourceNotFoundError()
 
-        result = await get_redmine_wiki_page(
-            project_id="my-project", wiki_page_title="NonExistent"
+        result = await manage_redmine_wiki_page(
+            action="get", project_id="my-project", wiki_page_title="NonExistent"
         )
 
         assert "error" in result
@@ -405,13 +405,16 @@ class TestGetRedmineWikiPage:
         self, mock_cleanup, mock_redmine, mock_wiki_page
     ):
         """Test retrieving specific wiki page version."""
-        from redmine_mcp_server.redmine_handler import get_redmine_wiki_page
+        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
 
         mock_wiki_page.version = 3
         mock_redmine.wiki_page.get.return_value = mock_wiki_page
 
-        result = await get_redmine_wiki_page(
-            project_id="my-project", wiki_page_title="Installation", version=3
+        result = await manage_redmine_wiki_page(
+            action="get",
+            project_id="my-project",
+            wiki_page_title="Installation",
+            version=3,
         )
 
         # Verify version parameter passed
@@ -427,7 +430,7 @@ class TestGetRedmineWikiPage:
         self, mock_cleanup, mock_redmine, mock_wiki_page
     ):
         """Test wiki page with attachments."""
-        from redmine_mcp_server.redmine_handler import get_redmine_wiki_page
+        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
 
         mock_attachment = Mock()
         mock_attachment.id = 456
@@ -440,7 +443,8 @@ class TestGetRedmineWikiPage:
         mock_wiki_page.attachments = [mock_attachment]
         mock_redmine.wiki_page.get.return_value = mock_wiki_page
 
-        result = await get_redmine_wiki_page(
+        result = await manage_redmine_wiki_page(
+            action="get",
             project_id="my-project",
             wiki_page_title="Installation",
             include_attachments=True,
@@ -458,12 +462,13 @@ class TestGetRedmineWikiPage:
         self, mock_cleanup, mock_redmine, mock_wiki_page
     ):
         """Test excluding attachments from response."""
-        from redmine_mcp_server.redmine_handler import get_redmine_wiki_page
+        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
 
         mock_wiki_page.attachments = [Mock(id=1)]
         mock_redmine.wiki_page.get.return_value = mock_wiki_page
 
-        result = await get_redmine_wiki_page(
+        result = await manage_redmine_wiki_page(
+            action="get",
             project_id="my-project",
             wiki_page_title="Installation",
             include_attachments=False,
@@ -476,7 +481,7 @@ class TestGetRedmineWikiPage:
     @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
     async def test_wiki_page_missing_attributes(self, mock_cleanup, mock_redmine):
         """Test handling of wiki page with missing optional attributes."""
-        from redmine_mcp_server.redmine_handler import get_redmine_wiki_page
+        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
 
         mock_page = Mock(spec=["title", "text", "version"])
         mock_page.title = "Simple Page"
@@ -485,8 +490,8 @@ class TestGetRedmineWikiPage:
 
         mock_redmine.wiki_page.get.return_value = mock_page
 
-        result = await get_redmine_wiki_page(
-            project_id=1, wiki_page_title="Simple Page"
+        result = await manage_redmine_wiki_page(
+            action="get", project_id=1, wiki_page_title="Simple Page"
         )
 
         assert result["title"] == "Simple Page"
@@ -501,11 +506,13 @@ class TestGetRedmineWikiPage:
         self, mock_cleanup, mock_redmine, mock_wiki_page
     ):
         """Test wiki page retrieval with integer project ID."""
-        from redmine_mcp_server.redmine_handler import get_redmine_wiki_page
+        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
 
         mock_redmine.wiki_page.get.return_value = mock_wiki_page
 
-        await get_redmine_wiki_page(project_id=123, wiki_page_title="Test")
+        await manage_redmine_wiki_page(
+            action="get", project_id=123, wiki_page_title="Test"
+        )
 
         mock_redmine.wiki_page.get.assert_called_once_with("Test", project_id=123)
 
@@ -514,12 +521,12 @@ class TestGetRedmineWikiPage:
     @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
     async def test_wiki_page_general_exception(self, mock_cleanup, mock_redmine):
         """Test handling of general exceptions."""
-        from redmine_mcp_server.redmine_handler import get_redmine_wiki_page
+        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
 
         mock_redmine.wiki_page.get.side_effect = Exception("Network error")
 
-        result = await get_redmine_wiki_page(
-            project_id="my-project", wiki_page_title="Test"
+        result = await manage_redmine_wiki_page(
+            action="get", project_id="my-project", wiki_page_title="Test"
         )
 
         assert "error" in result
@@ -548,7 +555,7 @@ class TestGlobalSearchIntegration:
         """Test wiki page retrieval by first discovering a wiki page via search."""
         from redmine_mcp_server.redmine_handler import (
             search_entire_redmine,
-            get_redmine_wiki_page,
+            manage_redmine_wiki_page,
             _get_redmine_client,
         )
 
@@ -587,8 +594,8 @@ class TestGlobalSearchIntegration:
         project_id = projects[0].identifier
 
         # Retrieve the wiki page
-        result = await get_redmine_wiki_page(
-            project_id=project_id, wiki_page_title=wiki_title
+        result = await manage_redmine_wiki_page(
+            action="get", project_id=project_id, wiki_page_title=wiki_title
         )
 
         # Should return valid structure with content

@@ -63,9 +63,9 @@ GA release. Prompt injection protection with `<insecure-content>` boundary tags;
 ## 📅 Planned Releases
 
 ### v2.0.0 — Tool Consolidation (next)
-*Priority: High | Effort: Medium | Status: Designed; implementation plan ready*
+*Priority: High | Effort: Medium | Status: Implementation complete on `refactor/tool-consolidation` branch; pending merge to `develop` and release*
 
-Reduce tool count from 69 to ~43 by folding CRUD-style tools into `manage_X(action=...)` tools following the `manage_redmine_version` pattern. No functionality is lost; old tool names are removed.
+Reduce tool count from 69 to 43 by folding CRUD-style tools into `manage_X(action=...)` tools following the `manage_redmine_version` pattern. No functionality is lost; old tool names are removed.
 
 **The 9 new `manage_X` tools** (replacing 35 existing tools):
 
@@ -82,10 +82,10 @@ Reduce tool count from 69 to ~43 by folding CRUD-style tools into `manage_X(acti
 | `manage_contact` | `list_contacts`, `get_contact`, `create_contact`, `edit_contact`, `delete_contact`, `assign_contact_to_project`, `remove_contact_from_project` |
 
 **Tasks:**
-- [ ] Land 9 `manage_X` implementations behind a feature branch off post-v1.3 `develop`
-- [ ] Reorganize per-tool tests into per-`manage_X` test classes
-- [ ] Drop `mark_checklist_done` (use `update_checklist_item(is_done=True)` directly)
-- [ ] Update `docs/tool-reference.md`, `README.md`, `CHANGELOG.md` with migration guide
+- [x] Land 9 `manage_X` implementations behind a feature branch off post-v1.3 `develop`
+- [x] Reorganize per-tool tests into per-`manage_X` test classes
+- [x] Drop `mark_checklist_done` (use `update_checklist_item(is_done=True)` directly)
+- [x] Update `docs/tool-reference.md`, `README.md`, `CHANGELOG.md` with migration guide
 - [ ] Open public heads-up issue before merging
 
 **What stays the same:** the four most-used issue tools (`get_redmine_issue`, `list_redmine_issues`, `create_redmine_issue`, `update_redmine_issue`), `get_gantt_chart`, `get_private_notes`, all discovery/enumeration tools, all file operations, auth, SSL, plugin gating.

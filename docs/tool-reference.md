@@ -154,12 +154,23 @@ Block all write operations by setting the `REDMINE_MCP_READ_ONLY` environment va
 REDMINE_MCP_READ_ONLY=true
 ```
 
-When enabled, the following tools return an error instead of executing:
+When enabled, the following tools return an error instead of executing
+(write actions only — read actions within the same tool still work):
+
+**Fully blocked (all actions are writes):**
 - `create_redmine_issue`
 - `update_redmine_issue`
-- `create_redmine_wiki_page`
-- `update_redmine_wiki_page`
-- `delete_redmine_wiki_page`
+- `manage_project_member` — all actions
+- `manage_issue_watcher` — all actions
+- `manage_issue_note` — all actions
+- `manage_time_entry` — all actions
+
+**Partially blocked (read actions still work):**
+- `manage_redmine_wiki_page` — `create`, `update`, `delete`, `rename` blocked; `list`, `get` allowed
+- `manage_issue_category` — `create`, `update`, `delete` blocked; `list` allowed
+- `manage_issue_relation` — `create`, `delete` blocked; `list` allowed
+- `manage_product` — `create`, `update` blocked; `list`, `get` allowed (also requires `REDMINE_PRODUCTS_ENABLED=true`)
+- `manage_contact` — `create`, `update`, `delete`, `assign_to_project`, `remove_from_project` blocked; `list`, `get` allowed (also requires `REDMINE_CRM_ENABLED=true`)
 
 All read tools (`get_redmine_issue`, `list_redmine_issues`, `list_redmine_projects`, etc.) and local operations (`cleanup_attachment_files`) continue to work normally.
 
@@ -421,7 +432,7 @@ List all roles defined in the Redmine instance. Returns basic metadata (`id` and
 ]
 ```
 
-**When to use:** Call this **before** `add_project_member` or `update_project_member` to discover the correct `role_ids`. Role IDs vary between Redmine instances and must not be guessed — calling `add_project_member` with a non-existent role ID returns a validation error from Redmine.
+**When to use:** Call this **before** `manage_project_member(action="add"|"update")` to discover the correct `role_ids`. Role IDs vary between Redmine instances and must not be guessed — calling `manage_project_member` with a non-existent role ID returns a validation error from Redmine.
 
 ---
 
@@ -449,61 +460,43 @@ Retrieve the list of enabled modules for a project (e.g., `issue_tracking`, `tim
 
 ---
 
-### `add_project_member`
+### `manage_project_member`
 
-Add a user or group as a member of a project with assigned roles.
+Add, update, or remove a Redmine project membership.
 
 **Parameters:**
-- `project_id` (integer or string, required): Project identifier.
-- `role_ids` (array of integers, required): List of role IDs to assign (at least one).
-- `user_id` (integer, optional): ID of the user to add.
-- `group_id` (integer, optional): ID of the group to add.
+- `action` (string, required): Operation to perform. Allowed: `add`, `update`, `remove`
+- `project_id` (integer or string): Project identifier. Required for `action="add"`
+- `membership_id` (integer): Membership ID. Required for `action="update"` and `action="remove"`
+- `user_id` (integer): ID of the user. Exactly one of `user_id` or `group_id` required for `action="add"`
+- `group_id` (integer): ID of the group. Exactly one of `user_id` or `group_id` required for `action="add"`
+- `role_ids` (array of integers): Non-empty list of role IDs. Required for `action="add"` and `action="update"`. Use `list_redmine_roles` to discover valid IDs
 
-Exactly one of `user_id` or `group_id` must be provided.
+**Returns:**
+- `add`/`update`: membership dictionary (with `id`, `user`/`group`, `project`, `roles`)
+- `remove`: `{"success": true, "deleted_membership_id": <id>}`
+- Error: `{"error": "..."}`
 
-**Returns:** Dictionary containing the created membership (with `id`, `user`/`group`, `project`, `roles`). On failure, a dict with an `"error"` key.
+**Examples:**
 
-**Example:**
 ```python
 # Add a user as Developer
-add_project_member(project_id="my-project", role_ids=[3], user_id=5)
+manage_project_member(action="add", project_id="my-project", user_id=5, role_ids=[3])
 
 # Add a group with multiple roles
-add_project_member(project_id=10, role_ids=[3, 4], group_id=20)
+manage_project_member(action="add", project_id=10, group_id=20, role_ids=[3, 4])
+
+# Update an existing membership's roles
+manage_project_member(action="update", membership_id=42, role_ids=[3, 4])
+
+# Remove a membership
+manage_project_member(action="remove", membership_id=42)
 ```
 
 **Notes:**
-- Respects `REDMINE_MCP_READ_ONLY`.
-- Role IDs can be discovered from the Redmine web UI at Administration > Roles.
-
----
-
-### `update_project_member`
-
-Update the roles assigned to an existing project membership. Replaces the entire role set.
-
-**Parameters:**
-- `membership_id` (integer, required): ID of the membership (from `list_project_members`).
-- `role_ids` (array of integers, required): New list of role IDs. Must contain at least one.
-
-**Returns:** Dictionary containing the updated membership.
-
-**Notes:**
-- Only role assignments can be updated. To change the user/group of a membership, remove it and add a new one.
-
----
-
-### `remove_project_member`
-
-Remove a membership from a project.
-
-**Parameters:**
-- `membership_id` (integer, required): ID of the membership to remove.
-
-**Returns:** `{"success": true, "deleted_membership_id": <id>}`.
-
-**Notes:**
-- Inherited memberships (from a parent project) cannot be removed directly — Redmine will return a 422. Remove them from the parent project instead.
+- All actions are write operations and respect `REDMINE_MCP_READ_ONLY`.
+- Inherited memberships (from a parent project) cannot be removed directly — Redmine returns a 422. Remove them from the parent project instead.
+- Redmine's API uses the `user_id` field for both users and groups; the tool routes `group_id` through that field automatically.
 
 ---
 
@@ -886,54 +879,42 @@ copy_issue(
 
 ---
 
-### `list_issue_relations`
+### `manage_issue_relation`
 
-List all relations for a given issue.
+List, create, or delete a Redmine issue relation.
 
 **Parameters:**
-- `issue_id` (integer, required): ID of the issue whose relations should be listed.
+- `action` (string, required): Operation to perform. Allowed: `list`, `create`, `delete`
+- `issue_id` (integer): Source issue ID. Required for `action="list"` and `action="create"`
+- `issue_to_id` (integer): Target issue ID. Required for `action="create"`
+- `relation_id` (integer): Relation ID. Required for `action="delete"`
+- `relation_type` (string, optional): One of `relates`, `duplicates`, `duplicated`, `blocks`, `blocked`, `precedes`, `follows`, `copied_to`, `copied_from`. Defaults to `relates` on create
+- `delay` (integer, optional): Delay in days. Only meaningful for `precedes` / `follows`
 
-**Returns:** List of relation dictionaries with `id`, `issue_id`, `issue_to_id`, `relation_type`, and `delay`.
+**Returns:**
+- `list`: array of relation dicts (`id`, `issue_id`, `issue_to_id`, `relation_type`, `delay`)
+- `create`: relation dict
+- `delete`: `{"success": true, "deleted_relation_id": <id>}`
+- Error: `{"error": "..."}`
 
-**Example:**
+**Examples:**
+
 ```python
-list_issue_relations(issue_id=123)
-# [{"id": 5, "issue_id": 123, "issue_to_id": 456, "relation_type": "blocks", "delay": null}]
+# List all relations on an issue
+manage_issue_relation(action="list", issue_id=123)
+
+# Create a "blocks" relation
+manage_issue_relation(action="create", issue_id=123, issue_to_id=456, relation_type="blocks")
+
+# Create a "precedes" relation with a 3-day delay
+manage_issue_relation(action="create", issue_id=1, issue_to_id=2, relation_type="precedes", delay=3)
+
+# Delete a relation by ID
+manage_issue_relation(action="delete", relation_id=42)
 ```
 
----
-
-### `create_issue_relation`
-
-Create a relation between two issues.
-
-**Parameters:**
-- `issue_id` (integer, required): ID of the source issue.
-- `issue_to_id` (integer, required): ID of the target issue.
-- `relation_type` (string, optional): One of `relates`, `duplicates`, `duplicated`, `blocks`, `blocked`, `precedes`, `follows`, `copied_to`, `copied_from`. Default: `relates`.
-- `delay` (integer, optional): Delay in days. Only meaningful for `precedes` / `follows`.
-
-**Returns:** Dictionary containing the newly created relation, or `{"error": "..."}` on failure.
-
-**Example:**
-```python
-create_issue_relation(
-    issue_id=123,
-    issue_to_id=456,
-    relation_type="blocks"
-)
-```
-
----
-
-### `delete_issue_relation`
-
-Delete a relation by its ID (obtained from `list_issue_relations` or `create_issue_relation`).
-
-**Parameters:**
-- `relation_id` (integer, required): ID of the relation to delete.
-
-**Returns:** `{"success": true, "deleted_relation_id": <id>}` on success.
+**Notes:**
+- `list` is allowed in read-only mode; `create` and `delete` are blocked when `REDMINE_MCP_READ_ONLY=true`.
 
 ---
 
@@ -958,44 +939,62 @@ List subtasks (child issues) of a given issue. Includes closed subtasks.
 
 ---
 
-### `add_watcher`
+### `manage_issue_watcher`
 
-Add a user to the watcher list of an issue. Requires Redmine 2.3.0+.
+Add or remove a watcher on a Redmine issue. Requires Redmine 2.3.0+.
 
 **Parameters:**
-- `issue_id` (integer, required): ID of the issue.
-- `user_id` (integer, required): ID of the user to add as a watcher.
+- `action` (string, required): Allowed: `add`, `remove`
+- `issue_id` (integer, required): ID of the issue
+- `user_id` (integer, required): ID of the user to add or remove
 
-**Returns:** `{"success": true, "issue_id": ..., "user_id": ...}` on success.
+**Returns:** `{"success": true, "issue_id": ..., "user_id": ...}` on success; `{"error": "..."}` on failure.
+
+**Examples:**
+
+```python
+manage_issue_watcher(action="add", issue_id=123, user_id=5)
+manage_issue_watcher(action="remove", issue_id=123, user_id=5)
+```
+
+**Notes:**
+- All actions are write operations and respect `REDMINE_MCP_READ_ONLY`.
 
 ---
 
-### `remove_watcher`
+### `manage_issue_note`
 
-Remove a user from the watcher list of an issue.
-
-**Parameters:**
-- `issue_id` (integer, required): ID of the issue.
-- `user_id` (integer, required): ID of the user to remove.
-
-**Returns:** `{"success": true, "issue_id": ..., "user_id": ...}` on success.
-
----
-
-### `edit_note`
-
-Update the text (and optionally the privacy flag) of an existing journal note.
+Edit text or toggle privacy of a Redmine journal entry (issue note). `get_private_notes` is a separate read tool.
 
 **Parameters:**
-- `journal_id` (integer, required): ID of the journal entry (from `get_redmine_issue` with `include_journals=true`).
-- `notes` (string, required): New notes text. May be empty.
-- `private_notes` (boolean, optional): Optionally toggle the private flag on this journal entry.
+- `action` (string, required): Allowed: `edit`, `set_private`
+- `journal_id` (integer, required): ID of the journal entry (from `get_redmine_issue` with `include_journals=true`)
+- `notes` (string): New notes text (may be empty to clear). Required for `action="edit"`
+- `private_notes` (boolean, optional): Optionally toggle the private flag during `edit`
+- `is_private` (boolean): Required for `action="set_private"` — `true` to mark private, `false` to make public
 
-**Returns:** Confirmation dictionary with `success`, `journal_id`, `notes`, and `private_notes`.
+**Returns:**
+- `edit`: `{"success": true, "journal_id": ..., "notes": ..., "private_notes": ...}`
+- `set_private`: `{"success": true, "journal_id": ..., "private_notes": <bool>}`
+- Error: `{"error": "..."}`
+
+**Examples:**
+
+```python
+# Edit a note's text
+manage_issue_note(action="edit", journal_id=42, notes="Updated text")
+
+# Edit text and mark private at the same time
+manage_issue_note(action="edit", journal_id=42, notes="Confidential", private_notes=True)
+
+# Toggle privacy without changing the text
+manage_issue_note(action="set_private", journal_id=42, is_private=True)
+```
 
 **Notes:**
 - Only the `notes` text and `private_notes` flag can be edited. Journal `details` (field-change history) are immutable.
-- If a journal has no `details` and its notes are cleared, Redmine will delete the journal record.
+- If a journal has no `details` and its notes are cleared via `edit`, Redmine will delete the journal record.
+- Both actions are writes and respect `REDMINE_MCP_READ_ONLY`.
 - Requires `edit_issue_notes` / `edit_own_issue_notes` permission (server-enforced).
 
 ---
@@ -1011,66 +1010,43 @@ Retrieve only the private notes (journals with `private_notes=true`) of an issue
 
 ---
 
-### `set_note_private`
+### `manage_issue_category`
 
-Toggle the private/public state of an existing journal note.
-
-**Parameters:**
-- `journal_id` (integer, required): ID of the journal entry.
-- `is_private` (boolean, required): `true` to mark the note private, `false` to make it public.
-
-**Returns:** `{"success": true, "journal_id": ..., "private_notes": <bool>}`.
-
----
-
-### `list_issue_categories`
-
-List all issue categories for a given project.
+List, create, update, or delete a Redmine issue category.
 
 **Parameters:**
-- `project_id` (integer or string, required): Project identifier (numeric ID or string identifier).
+- `action` (string, required): Allowed: `list`, `create`, `update`, `delete`
+- `project_id` (integer or string): Project identifier. Required for `action="list"` and `action="create"`
+- `category_id` (integer): Category ID. Required for `action="update"` and `action="delete"`
+- `name` (string): Category name. Required for `action="create"`, optional for `action="update"` (cannot be blank)
+- `assigned_to_id` (integer, optional): Default assignee user ID. For `create` and `update`
+- `reassign_to_id` (integer, optional): Reassign existing issues to this category ID on `delete`. If omitted, issues become uncategorised
 
-**Returns:** List of category dictionaries with `id`, `name`, `project`, and `assigned_to`.
+**Returns:**
+- `list`: array of category dicts (`id`, `name`, `project`, `assigned_to`)
+- `create`/`update`: category dict
+- `delete`: `{"success": true, "deleted_category_id": ..., "reassigned_to_id": ...}`
+- Error: `{"error": "..."}`
 
----
+**Examples:**
 
-### `create_issue_category`
+```python
+# List all categories in a project
+manage_issue_category(action="list", project_id="my-project")
 
-Create a new issue category in a project.
+# Create a new category with a default assignee
+manage_issue_category(action="create", project_id=10, name="Backend", assigned_to_id=5)
 
-**Parameters:**
-- `project_id` (integer or string, required): Project identifier.
-- `name` (string, required): Category name.
-- `assigned_to_id` (integer, optional): Default assignee user ID for issues in this category.
+# Rename a category
+manage_issue_category(action="update", category_id=3, name="Renamed")
 
-**Returns:** Dictionary containing the created issue category.
+# Delete a category and reassign its issues to another one
+manage_issue_category(action="delete", category_id=3, reassign_to_id=7)
+```
 
----
-
-### `update_issue_category`
-
-Update an existing issue category.
-
-**Parameters:**
-- `category_id` (integer, required): ID of the issue category.
-- `name` (string, optional): New category name.
-- `assigned_to_id` (integer, optional): New default assignee user ID.
-
-**Returns:** Dictionary containing the updated issue category.
-
-**Notes:** At least one of `name` or `assigned_to_id` must be provided.
-
----
-
-### `delete_issue_category`
-
-Delete an issue category.
-
-**Parameters:**
-- `category_id` (integer, required): ID of the issue category.
-- `reassign_to_id` (integer, optional): ID of another category to reassign existing issues to. If omitted, issues in this category become uncategorised.
-
-**Returns:** `{"success": true, "deleted_category_id": ..., "reassigned_to_id": ...}`.
+**Notes:**
+- `list` works in read-only mode; `create`, `update`, and `delete` are blocked when `REDMINE_MCP_READ_ONLY=true`.
+- `update` requires at least one of `name` or `assigned_to_id`.
 
 ---
 
@@ -1127,91 +1103,58 @@ my_entries = list_time_entries(user_id="me")
 
 ---
 
-### `create_time_entry`
+### `manage_time_entry`
 
-Create a new time entry in Redmine. Log time against a project or issue.
+Create or update a Redmine time entry. Replaces `create_time_entry`, `update_time_entry`, and `log_time_for_user`.
 
 **Parameters:**
-- `hours` (float, required): Number of hours spent. Must be positive. Can be decimal (e.g., `1.5`)
-- `project_id` (integer or string, optional): Project to log time against. Required if `issue_id` is not provided
-- `issue_id` (integer, optional): Issue to log time against. If provided, `project_id` is optional
-- `activity_id` (integer, optional): Time entry activity ID (e.g., Development, Design). Uses default if not provided
-- `comments` (string, optional): Description of work performed
-- `spent_on` (string, optional): Date when time was spent (YYYY-MM-DD). Defaults to today
+- `action` (string, required): Allowed: `create`, `update`
+- `hours` (float): Hours spent. Required for `action="create"`; optional for `update` (must be positive if provided)
+- `project_id` (integer or string): Required for `action="create"` if `issue_id` is not provided
+- `issue_id` (integer): Required for `action="create"` if `project_id` is not provided
+- `user_id` (integer, optional): Log on behalf of this user (`create` only). Requires `log_time_for_other_users` permission
+- `time_entry_id` (integer): Entry ID to update. Required for `action="update"`
+- `activity_id` (integer, optional): Activity type (e.g., Development, Design)
+- `comments` (string, optional): Description. Empty string clears the field on `update`
+- `spent_on` (string, optional): Date in `YYYY-MM-DD` format
 
-**Returns:** Created time entry dictionary
+**Returns:**
+- `create`/`update`: time entry dict (`id`, `hours`, `comments`, `spent_on`, `user`, `project`, `issue`, `activity`, etc.)
+- Error: `{"error": "..."}`
 
-**Example:**
-```json
-{
-  "id": 1,
-  "hours": 2.5,
-  "comments": "Bug fix",
-  "spent_on": "2024-03-15",
-  "user": {"id": 5, "name": "John Doe"},
-  "project": {"id": 10, "name": "My Project"},
-  "issue": {"id": 123},
-  "activity": {"id": 9, "name": "Development"}
-}
-```
+**Examples:**
 
-**Usage:**
 ```python
-# Log time against an issue
-create_time_entry(
-    hours=2.5,
-    issue_id=123,
-    comments="Fixed login bug"
-)
+# Log 2.5h against an issue
+manage_time_entry(action="create", hours=2.5, issue_id=123, comments="Fixed login bug")
 
-# Log time against a project with specific date
-create_time_entry(
+# Log 1.0h against a project with explicit activity and date
+manage_time_entry(
+    action="create",
     hours=1.0,
     project_id="my-project",
     activity_id=9,
     comments="Code review",
-    spent_on="2024-03-15"
+    spent_on="2026-04-15",
 )
-```
 
----
-
-### `update_time_entry`
-
-Update an existing time entry in Redmine.
-
-**Parameters:**
-- `time_entry_id` (integer, required): ID of the time entry to update
-- `hours` (float, optional): New hours value. Must be positive if provided
-- `activity_id` (integer, optional): New activity ID
-- `comments` (string, optional): New comments/description
-- `spent_on` (string, optional): New date (YYYY-MM-DD format)
-
-**Returns:** Updated time entry dictionary
-
-**Example:**
-```json
-{
-  "id": 1,
-  "hours": 3.0,
-  "comments": "Extended work on bug fix",
-  "spent_on": "2024-03-15"
-}
-```
-
-**Usage:**
-```python
-# Update hours
-update_time_entry(time_entry_id=1, hours=3.0)
-
-# Update multiple fields
-update_time_entry(
-    time_entry_id=1,
-    hours=4.0,
-    comments="Extended debugging session",
-    spent_on="2024-03-16"
+# Log time on behalf of another user (replaces log_time_for_user)
+manage_time_entry(
+    action="create",
+    hours=2.0,
+    issue_id=123,
+    user_id=7,
+    comments="Pair programming",
 )
+
+# Update an existing entry
+manage_time_entry(action="update", time_entry_id=1, hours=3.0)
 ```
+
+**Notes:**
+- Both actions are write operations and respect `REDMINE_MCP_READ_ONLY`.
+- For bulk imports of multiple entries (timesheets, weekly reports), prefer `import_time_entries` over calling `manage_time_entry(action="create")` in a loop.
+- Some Redmine versions reject `user_id` when the authenticated admin is not a project member (Redmine defects #31587, #32774). The workaround is to add the admin as a project member.
 
 ---
 
@@ -1219,7 +1162,7 @@ update_time_entry(
 
 List available time entry activity types from Redmine.
 
-Use this tool to discover valid `activity_id` values before calling `create_time_entry` or `update_time_entry`.
+Use this tool to discover valid `activity_id` values before calling `manage_time_entry`.
 
 When logging time against a specific project, always call with `project_id` first — project-specific activity IDs differ from global ones and using the wrong ID causes `"Activity is not included in the list"` errors.
 
@@ -1377,39 +1320,6 @@ List all saved custom queries (saved issue filters) visible to the current user.
 
 ---
 
-### `log_time_for_user`
-
-Create a time entry on behalf of another user. Functionally equivalent to `create_time_entry` but with an explicit `user_id` parameter for PM-level workflows (logging time for a teammate).
-
-**Parameters:**
-- `user_id` (integer, required): ID of the user to log time for. Use `list_project_members` to discover valid user IDs for a project.
-- `hours` (number, required): Positive number of hours spent.
-- `project_id` (integer or string, optional): Project to log time against. Required if `issue_id` is not provided.
-- `issue_id` (integer, optional): Issue to log time against.
-- `activity_id` (integer, optional): Activity ID (use `list_time_entry_activities` to discover).
-- `comments` (string, optional): Description of work performed.
-- `spent_on` (string, optional): Date in YYYY-MM-DD format. Defaults to today.
-
-**Returns:** Dictionary containing the created time entry, or `{"error": "..."}` on failure.
-
-**Permission:** Requires `log_time_for_other_users` permission on the target project. The target user must also be a member of that project.
-
-**Example:**
-```python
-log_time_for_user(
-    user_id=7,
-    hours=2.5,
-    issue_id=123,
-    comments="Pair programming session",
-    spent_on="2026-04-15"
-)
-```
-
-**Known Redmine quirks:**
-- Some Redmine versions (defects #31587, #32774) reject `user_id` when the authenticated user is an admin but not a member of the target project. Workaround: add the admin as a project member.
-
----
-
 ### `import_time_entries`
 
 Bulk-import multiple time entries via sequential API calls. Redmine has no native bulk-import endpoint, so each entry is POSTed individually. Per-entry errors are captured so a partial import still yields useful feedback.
@@ -1528,253 +1438,83 @@ search_entire_redmine(query="bug", limit=25, offset=0)
 
 ---
 
-### `get_redmine_wiki_page`
+### `manage_redmine_wiki_page`
 
-Retrieve full wiki page content from a Redmine project.
+List, get, create, update, delete, or rename a Redmine wiki page. Replaces `list_wiki_pages`, `get_redmine_wiki_page`, `create_redmine_wiki_page`, `update_redmine_wiki_page`, `delete_redmine_wiki_page`, and `rename_wiki_page`.
 
 **Parameters:**
-- `project_id` (string or integer, required): Project identifier (ID number or string identifier)
-- `wiki_page_title` (string, required): Wiki page title (e.g., "Installation_Guide")
-- `version` (integer, optional): Specific version number. Default: latest version
-- `include_attachments` (boolean, optional): Include attachment metadata. Default: true
+- `action` (string, required): Allowed: `list`, `get`, `create`, `update`, `delete`, `rename`
+- `project_id` (integer or string, required): Project identifier (numeric ID or short name)
+- `wiki_page_title` (string): Wiki page title. Required for all actions except `list`
+- `version` (integer, optional): Specific version number for `get` (default: latest)
+- `include_attachments` (boolean, optional): Include attachment metadata in `get` response. Default: `true`
+- `text` (string): Page content. Required for `create` and `update`
+- `comments` (string, optional): Change log comment for `create` and `update`
+- `new_title` (string): New title for `rename` (must differ from `wiki_page_title`)
+- `redirect_existing_links` (boolean, optional): When `true` (default), `rename` creates a `WikiRedirect` from the old title to the new title
 
 **Returns:**
-```json
-{
-    "title": "Installation Guide",
-    "text": "# Installation\n\nFollow these steps to install...",
-    "version": 5,
-    "created_on": "2025-01-15T10:00:00Z",
-    "updated_on": "2025-01-20T14:30:00Z",
-    "author": {
-        "id": 123,
-        "name": "John Doe"
-    },
-    "project": {
-        "id": 1,
-        "name": "My Project"
-    },
-    "attachments": [
-        {
-            "id": 456,
-            "filename": "diagram.png",
-            "filesize": 102400,
-            "content_type": "image/png",
-            "description": "Architecture diagram",
-            "created_on": "2025-01-15T10:00:00Z"
-        }
-    ]
-}
-```
+- `list`: array of page metadata dicts (`title`, `version`, `parent_title` if present, `created_on`, `updated_on`) — no body text
+- `get`/`create`/`update`: full wiki page dict (`title`, `text`, `version`, `created_on`, `updated_on`, `author`, `project`, `attachments` when applicable)
+- `delete`: `{"success": true, "title": ..., "message": ...}`
+- `rename`: `{"success": true, ...}` plus the renamed page's metadata
+- Error: `{"error": "..."}`
 
-**Example:**
+**Examples:**
+
 ```python
-# Get latest version
-get_redmine_wiki_page(
-    project_id="my-project",
-    wiki_page_title="Installation_Guide"
-)
+# List all wiki pages in a project (metadata only)
+manage_redmine_wiki_page(action="list", project_id="my-project")
 
-# Get specific version
-get_redmine_wiki_page(
+# Get the latest version of a page (with attachments by default)
+manage_redmine_wiki_page(action="get", project_id="my-project", wiki_page_title="Installation_Guide")
+
+# Get a specific version, no attachments
+manage_redmine_wiki_page(
+    action="get",
     project_id=123,
-    wiki_page_title="Installation",
-    version=3
+    wiki_page_title="Installation_Guide",
+    version=3,
+    include_attachments=False,
 )
 
-# Without attachments
-get_redmine_wiki_page(
-    project_id="docs",
-    wiki_page_title="FAQ",
-    include_attachments=False
-)
-```
-
-**Notes:**
-- Use `get_redmine_attachment_download_url()` to download wiki attachments
-- Supports both string identifiers (e.g., "my-project") and numeric IDs
-
----
-
-### `create_redmine_wiki_page`
-
-Create a new wiki page in a Redmine project. Blocked when `REDMINE_MCP_READ_ONLY=true`.
-
-**Parameters:**
-- `project_id` (string or integer, required): Project identifier (ID number or string identifier)
-- `wiki_page_title` (string, required): Wiki page title (e.g., "Installation_Guide")
-- `text` (string, required): Wiki page content (Textile or Markdown depending on Redmine config)
-- `comments` (string, optional): Comment for the change log. Default: empty
-
-**Returns:**
-```json
-{
-    "title": "New Page",
-    "text": "# New Page\n\nContent here.",
-    "version": 1,
-    "created_on": "2025-01-15T10:00:00Z",
-    "updated_on": "2025-01-15T10:00:00Z",
-    "author": {
-        "id": 123,
-        "name": "John Doe"
-    },
-    "project": {
-        "id": 1,
-        "name": "My Project"
-    }
-}
-```
-
-**Example:**
-```python
-# Create a simple wiki page
-create_redmine_wiki_page(
+# Create a new page
+manage_redmine_wiki_page(
+    action="create",
     project_id="my-project",
     wiki_page_title="Getting_Started",
-    text="# Getting Started\n\nWelcome to the project!"
+    text="# Getting Started\n\nWelcome to the project!",
+    comments="Initial creation",
 )
 
-# Create with change log comment
-create_redmine_wiki_page(
-    project_id=123,
-    wiki_page_title="API_Reference",
-    text="# API Reference\n\n## Endpoints\n...",
-    comments="Initial API documentation"
-)
-```
-
-**Notes:**
-- Wiki page titles typically use underscores instead of spaces
-- Content format (Textile/Markdown) depends on Redmine server configuration
-- Requires wiki edit permissions in the target project
-
----
-
-### `update_redmine_wiki_page`
-
-Update an existing wiki page in a Redmine project. Blocked when `REDMINE_MCP_READ_ONLY=true`.
-
-**Parameters:**
-- `project_id` (string or integer, required): Project identifier (ID number or string identifier)
-- `wiki_page_title` (string, required): Wiki page title (e.g., "Installation_Guide")
-- `text` (string, required): New wiki page content
-- `comments` (string, optional): Comment for the change log. Default: empty
-
-**Returns:**
-```json
-{
-    "title": "Installation Guide",
-    "text": "# Installation\n\nUpdated content...",
-    "version": 6,
-    "created_on": "2025-01-10T10:00:00Z",
-    "updated_on": "2025-01-20T14:30:00Z",
-    "author": {
-        "id": 123,
-        "name": "John Doe"
-    },
-    "project": {
-        "id": 1,
-        "name": "My Project"
-    }
-}
-```
-
-**Example:**
-```python
-# Update wiki page content
-update_redmine_wiki_page(
+# Update an existing page
+manage_redmine_wiki_page(
+    action="update",
     project_id="my-project",
     wiki_page_title="Installation_Guide",
-    text="# Installation\n\nUpdated installation steps..."
+    text="# Installation\n\nUpdated steps...",
+    comments="Refreshed for 2026",
 )
 
-# Update with change log comment
-update_redmine_wiki_page(
-    project_id=123,
-    wiki_page_title="FAQ",
-    text="# FAQ\n\n## New Questions\n...",
-    comments="Added new FAQ entries"
-)
-```
+# Delete a page
+manage_redmine_wiki_page(action="delete", project_id="my-project", wiki_page_title="Obsolete_Page")
 
-**Notes:**
-- Version number increments automatically on each update
-- Redmine maintains version history for rollback
-- Requires wiki edit permissions in the target project
-
----
-
-### `delete_redmine_wiki_page`
-
-Delete a wiki page from a Redmine project. Blocked when `REDMINE_MCP_READ_ONLY=true`.
-
-**Parameters:**
-- `project_id` (string or integer, required): Project identifier (ID number or string identifier)
-- `wiki_page_title` (string, required): Wiki page title to delete
-
-**Returns:**
-```json
-{
-    "success": true,
-    "title": "Obsolete_Page",
-    "message": "Wiki page 'Obsolete_Page' deleted successfully."
-}
-```
-
-**Example:**
-```python
-# Delete a wiki page
-delete_redmine_wiki_page(
+# Rename a page (default: leaves a WikiRedirect)
+manage_redmine_wiki_page(
+    action="rename",
     project_id="my-project",
-    wiki_page_title="Obsolete_Page"
-)
-
-# Delete by numeric project ID
-delete_redmine_wiki_page(
-    project_id=123,
-    wiki_page_title="Old_Documentation"
+    wiki_page_title="Old_Title",
+    new_title="New_Title",
 )
 ```
 
 **Notes:**
-- Deletion is permanent - page and all versions are removed
-- Requires wiki delete permissions in the target project
-- Child pages (if any) may become orphaned
-
----
-
-### `list_wiki_pages`
-
-List all wiki pages in a Redmine project (titles, versions, parents, timestamps). Use [`get_redmine_wiki_page`](#get_redmine_wiki_page) to fetch a page's content.
-
-**Parameters:**
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `project_id` | int or string | Yes | Project identifier (ID or short name) |
-
-**Returns:** A list of wiki page metadata dicts with `title`, `version`, `parent_title` (when present), `created_on`, `updated_on`. On failure, returns a dict with an `error` key.
-
----
-
-### `rename_wiki_page`
-
-Rename (move) an existing wiki page. **Write operation** — blocked when `REDMINE_MCP_READ_ONLY=true`.
-
-Implemented via `PUT /projects/{id}/wiki/{old_title}.json` with the `title` parameter. Redmine requires `text` to be re-sent on every update; the tool fetches the current text automatically. When `redirect_existing_links=True`, Redmine creates a `WikiRedirect` so old links keep working.
-
-**Permission caveat:** Requires the `rename_wiki_pages` permission. If the API user lacks it, Redmine **silently drops the title change** (the body still updates). To detect this, the tool re-fetches the page at the new title after the update and returns an explicit error if the new title is unreachable.
-
-**Parameters:**
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `project_id` | int or string | Yes | – | Project identifier |
-| `old_title` | string | Yes | – | Current wiki page title |
-| `new_title` | string | Yes | – | New title (must differ from old) |
-| `redirect_existing_links` | bool | No | `true` | Create a redirect from old to new title |
-
-**Returns:** Dict with the renamed page's metadata, or an error dict on failure.
+- `list` and `get` are allowed in read-only mode; `create`, `update`, `delete`, and `rename` are blocked when `REDMINE_MCP_READ_ONLY=true`.
+- Wiki page titles typically use underscores instead of spaces.
+- Content format (Textile/Markdown) depends on Redmine server configuration.
+- Use `get_redmine_attachment_download_url` to download wiki attachments.
+- `rename` requires the `rename_wiki_pages` permission. If the API user lacks it, Redmine **silently drops the title change** (the body still updates). The tool re-fetches the page at `new_title` after the update and returns an explicit error if the new title is unreachable.
+- The `rename` action implements `PUT /projects/{id}/wiki/{old_title}.json` and fetches the existing text automatically since Redmine requires `text` on every wiki update.
 
 ---
 
@@ -2010,33 +1750,6 @@ At least one optional parameter must be provided.
 
 ---
 
-### `mark_checklist_done`
-
-Toggle the done/undone state of a checklist item. Convenience tool equivalent to `update_checklist_item(checklist_item_id, is_done=...)`. This is a **write operation** and is blocked in read-only mode.
-
-**Parameters:**
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `checklist_item_id` | int | Yes | – | The ID of the checklist item |
-| `is_done` | bool | No | `true` | `true` to mark as done, `false` to mark undone |
-
-**Returns:**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `success` | bool | `true` on success |
-| `checklist_item_id` | int | The item's ID |
-| `is_done` | bool | The new done state |
-
-**Error cases:**
-- Read-only mode: returns read-only error
-- Plugin disabled: returns plugin-disabled error
-- Invalid `checklist_item_id`: returns `{"error": "checklist_item_id must be a positive integer."}`
-- Invalid `is_done` type: returns `{"error": "is_done must be a boolean."}`
-
----
-
 ## Gantt Chart
 
 ### `get_gantt_chart`
@@ -2074,65 +1787,60 @@ Use cases: "What's the current timeline for project X?", "Which issues are overd
 
 These tools require the **RedmineUP Products** plugin and `REDMINE_PRODUCTS_ENABLED=true`.
 
-### `list_products`
+### `manage_product`
 
-List products from the Products plugin. Returns a list of product dicts. On failure, returns a dict with an `error` key.
+List, get, create, or update RedmineUP products. Replaces `list_products`, `get_product`, `add_product`, and `edit_product`.
 
-**Parameters:**
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `project_id` | int or string | No | – | Filter by project (omitted = all accessible) |
-| `limit` | int | No | `100` | Max results per call (1–100). Redmine's REST API caps `limit` at 100 server-side; values above are silently clamped. |
-
----
-
-### `get_product`
-
-Retrieve a single product by ID.
+Requires the **RedmineUP Products** plugin and `REDMINE_PRODUCTS_ENABLED=true`.
 
 **Parameters:**
+- `action` (string, required): Allowed: `list`, `get`, `create`, `update`
+- `project_id` (integer or string, optional): For `list`, filters products by project (omitted = all accessible). For `create`, optionally associates the new product with a project
+- `limit` (integer, optional): For `list`, max results per call (default `100`). Redmine caps `limit` at 100 server-side; values above are clamped
+- `product_id` (integer): Required for `get` and `update`
+- `name` (string): Required for `create`
+- `status_id` (integer, optional): For `create`. Must be `1` (Active, default) or `2` (Inactive)
+- `description`, `code` (string, optional): For `create`
+- `price` (float, optional): For `create`
+- `currency` (string, optional): For `create` (e.g., `"USD"`)
+- `category_id` (integer, optional): For `create`
+- `tag_list` (string, optional): For `create`, comma-separated tags
+- `custom_fields` (list, optional): For `create`, list of `{"id": N, "value": ...}` dicts
+- `fields` (dict): For `update`, fields to update. Allowed keys: `name`, `description`, `price`, `currency`, `status_id`, `code`, `project_id`, `category_id`, `tag_list`, `custom_fields`. Unknown keys are silently filtered
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `product_id` | int | Yes | Product ID |
+**Returns:**
+- `list`: array of product dicts
+- `get`/`create`: product dict
+- `update`: `{"success": true, "product_id": N, "updated_fields": [...]}`
+- Error: `{"error": "..."}`
 
-Returns a dict with product metadata, or `{"error": "..."}` on failure.
+**Examples:**
 
----
+```python
+# List products in a project
+manage_product(action="list", project_id="catalog", limit=50)
 
-### `add_product`
+# Fetch a specific product
+manage_product(action="get", product_id=42)
 
-Create a new product. **Write operation** — blocked when `REDMINE_MCP_READ_ONLY=true`.
+# Create a new product
+manage_product(
+    action="create",
+    name="Widget Pro",
+    status_id=1,
+    project_id="catalog",
+    price=49.99,
+    currency="USD",
+    code="WP-001",
+)
 
-**Parameters:**
+# Update a product's price
+manage_product(action="update", product_id=42, fields={"price": 39.99})
+```
 
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `name` | string | Yes | – | Product name |
-| `status_id` | int | No | `1` | Must be `1` (Active) or `2` (Inactive); other values are rejected. |
-| `project_id` | int or string | No | – | Optional project association |
-| `description`, `code` | string | No | – | Optional descriptive fields |
-| `price` | float | No | – | Optional price |
-| `currency` | string | No | – | Currency code (e.g., "USD") |
-| `category_id` | int | No | – | Product category ID |
-| `tag_list` | string | No | – | Comma-separated tags |
-| `custom_fields` | list | No | – | List of `{"id": N, "value": ...}` dicts |
-
----
-
-### `edit_product`
-
-Update fields on an existing product. **Write operation** — blocked when `REDMINE_MCP_READ_ONLY=true`.
-
-**Parameters:**
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `product_id` | int | Yes | Product ID |
-| `fields` | dict | Yes | Fields to update. Allowed keys: `name`, `description`, `price`, `currency`, `status_id`, `code`, `project_id`, `category_id`, `tag_list`, `custom_fields`. Unknown keys silently filtered. |
-
-Returns `{"success": True, "product_id": N, "updated_fields": [...]}` or an error dict.
+**Notes:**
+- `list` and `get` are allowed in read-only mode; `create` and `update` are blocked when `REDMINE_MCP_READ_ONLY=true`.
+- The plugin does not expose a delete endpoint, so `manage_product` has no `delete` action.
 
 ---
 
@@ -2142,99 +1850,74 @@ These tools require the **RedmineUP CRM** plugin and `REDMINE_CRM_ENABLED=true`.
 
 **Security note:** Contact PII (email, phone, address) is returned as-is to the caller but is never logged via this module's logger.
 
-### `list_contacts`
+### `manage_contact`
 
-List contacts. Visibility scoping is enforced server-side by Redmine.
+List, get, create, update, delete, or change project association for RedmineUP CRM contacts. Replaces `list_contacts`, `get_contact`, `create_contact`, `edit_contact`, `delete_contact`, `assign_contact_to_project`, and `remove_contact_from_project`.
 
-**Parameters:**
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `project_id` | int or string | No | – | Filter by project |
-| `search` | string | No | – | Free-text search (matches name/company/email) |
-| `tags` | string | No | – | Comma-separated tag filter |
-| `assigned_to_id` | int | No | – | Filter by assignee user ID |
-| `limit` | int | No | `100` | Max results per call (1–100). Redmine's REST API caps `limit` at 100 server-side; values above are silently clamped. |
-
-Returns a list of contact dicts.
-
----
-
-### `get_contact`
-
-Retrieve a single contact by ID.
+Requires the **RedmineUP CRM** plugin and `REDMINE_CRM_ENABLED=true`. Visibility scoping is enforced server-side by Redmine.
 
 **Parameters:**
+- `action` (string, required): Allowed: `list`, `get`, `create`, `update`, `delete`, `assign_to_project`, `remove_from_project`
+- `project_id` (integer or string): For `list`, optional project filter. For `create`, required (project to associate the new contact with). For `assign_to_project` / `remove_from_project`, the project to attach to or detach from
+- `search` (string, optional): For `list`, free-text search (matches name/company/email)
+- `tags` (string, optional): For `list`, comma-separated tag filter
+- `assigned_to_id` (integer, optional): For `list`, filter by assignee user ID
+- `limit` (integer, optional): For `list`, max results per call (default `100`, capped at 100 by Redmine)
+- `contact_id` (integer): Required for all actions except `list` and `create`
+- `include` (string, optional): For `get`, comma-separated includes (`notes`, `deals`, `contacts`)
+- `first_name` (string): Required for `create`
+- `last_name`, `company`, `email`, `phone` (string, optional): For `create`
+- `is_company` (boolean, optional): For `create`. `true` to mark as a company entity (default `false`)
+- `visibility` (integer, optional): For `create`. `0`=Project (default), `1`=Public, `2`=Private
+- `fields` (dict): For `update`, fields to update. Allowed keys: `first_name`, `last_name`, `middle_name`, `company`, `job_title`, `phone`, `email`, `website`, `skype_name`, `birthday`, `background`, `address_attributes`, `tag_list`, `is_company`, `assigned_to_id`, `custom_fields`, `visibility`, `project_id`. For `create`, additional fields beyond the named parameters
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `contact_id` | int | Yes | Contact ID |
-| `include` | string | No | Optional comma-separated includes: `notes`, `deals`, `contacts` |
+**Returns:**
+- `list`: array of contact dicts
+- `get`/`create`: contact dict
+- `update`: `{"success": true, "contact_id": N, "updated_fields": [...]}`
+- `delete`: `{"success": true, "contact_id": N, "message": ...}`
+- `assign_to_project` / `remove_from_project`: `{"success": true, "contact_id": N, "project_id": ...}`
+- Error: `{"error": "..."}`
 
----
+**Examples:**
 
-### `edit_contact`
+```python
+# List contacts in a project, filtering by tag and assignee
+manage_contact(
+    action="list",
+    project_id="sales",
+    tags="lead",
+    assigned_to_id=5,
+    limit=50,
+)
 
-Update fields on an existing contact. **Write operation**.
+# Fetch a single contact with related notes and deals
+manage_contact(action="get", contact_id=42, include="notes,deals")
 
-**Parameters:**
+# Create a new contact
+manage_contact(
+    action="create",
+    project_id="sales",
+    first_name="Alice",
+    last_name="Smith",
+    company="ACME",
+    email="alice@example.com",
+    visibility=0,
+)
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `contact_id` | int | Yes | Contact ID |
-| `fields` | dict | Yes | Fields to update. Allowed keys: `first_name`, `last_name`, `middle_name`, `company`, `job_title`, `phone`, `email`, `website`, `skype_name`, `birthday`, `background`, `address_attributes`, `tag_list`, `is_company`, `assigned_to_id`, `custom_fields`, `visibility`, `project_id`. |
+# Update a contact's job title
+manage_contact(action="update", contact_id=42, fields={"job_title": "Director"})
 
----
+# Delete a contact
+manage_contact(action="delete", contact_id=42)
 
-### `create_contact`
+# Add a contact to an additional project (without creating a new record)
+manage_contact(action="assign_to_project", contact_id=42, project_id="support")
 
-Create a new contact. **Write operation**.
+# Remove a contact from a project (does not delete the contact)
+manage_contact(action="remove_from_project", contact_id=42, project_id="support")
+```
 
-**Parameters:**
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `project_id` | int or string | Yes | – | Project to associate the contact with |
-| `first_name` | string | Yes | – | First name |
-| `last_name`, `company`, `email`, `phone` | string | No | – | Common optional fields |
-| `is_company` | bool | No | `false` | `true` to mark as a company entity |
-| `visibility` | int | No | `0` | 0=Project, 1=Public, 2=Private |
-| `fields` | dict | No | – | Additional fields (any allowed contact field) |
-
----
-
-### `delete_contact`
-
-Permanently delete a CRM contact. **Write operation**.
-
-**Parameters:**
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `contact_id` | int | Yes | Contact ID |
-
----
-
-### `assign_contact_to_project`
-
-Add an existing contact to an additional project (does not create a new contact). **Write operation**.
-
-**Parameters:**
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `contact_id` | int | Yes | Contact ID |
-| `project_id` | int or string | Yes | Project to associate with |
-
----
-
-### `remove_contact_from_project`
-
-Remove a contact from a project without deleting the contact. **Write operation**.
-
-**Parameters:**
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `contact_id` | int | Yes | Contact ID |
-| `project_id` | int or string | Yes | Project to remove from |
+**Notes:**
+- `list` and `get` are allowed in read-only mode; `create`, `update`, `delete`, `assign_to_project`, and `remove_from_project` are blocked when `REDMINE_MCP_READ_ONLY=true`.
+- **PII handling:** contact `email`, `phone`, `address`, `birthday`, `website` are returned as-is to the caller; the module never logs them. Error messages reference only `contact_id`. User-controlled display fields (`first_name`, `last_name`, `middle_name`, `company`, `job_title`, `background`, `assigned_to.name`) are wrapped in `<insecure-content>` boundary tags so downstream LLMs treat them as untrusted data.

@@ -2,7 +2,8 @@
 
 Covers:
     - get_project_modules
-    - add_project_member / update_project_member / remove_project_member
+    - manage_project_member (action=add|update|remove)
+    - list_redmine_roles
 """
 
 import os
@@ -14,11 +15,9 @@ from unittest.mock import Mock, patch
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from redmine_mcp_server.redmine_handler import (  # noqa: E402
-    add_project_member,
     get_project_modules,
     list_redmine_roles,
-    remove_project_member,
-    update_project_member,
+    manage_project_member,
 )
 
 
@@ -154,22 +153,30 @@ class TestGetProjectModules:
 
 
 # ---------------------------------------------------------------------------
-# add_project_member
+# manage_project_member
 # ---------------------------------------------------------------------------
 
 
-class TestAddProjectMember:
+class TestManageProjectMember:
+
+    @pytest.mark.asyncio
+    async def test_invalid_action(self):
+        result = await manage_project_member(action="create")
+        assert "error" in result
+        assert "Invalid action" in result["error"]
+
+    # --- add ---
+
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_add_user(self, mock_redmine):
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    async def test_add_user_success(self, mock_cleanup, mock_redmine):
         mock_redmine.project_membership.create.return_value = _mock_membership(
             membership_id=100, user_id=5, user_name="Alice", role_ids=[3]
         )
-
-        result = await add_project_member(
-            project_id="my-project", role_ids=[3], user_id=5
+        result = await manage_project_member(
+            action="add", project_id="my-project", user_id=5, role_ids=[3]
         )
-
         assert result["id"] == 100
         assert result["user"]["id"] == 5
         assert "Alice" in result["user"]["name"]
@@ -179,7 +186,8 @@ class TestAddProjectMember:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_add_group(self, mock_redmine):
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    async def test_add_group_routes_via_user_id_field(self, mock_cleanup, mock_redmine):
         """Redmine's membership API uses user_id for both users and groups
         (principal ID namespace is shared). The tool forwards group_id via
         the user_id field."""
@@ -191,84 +199,106 @@ class TestAddProjectMember:
         m.roles = [_mock_with_name(3, "Developer")]
         mock_redmine.project_membership.create.return_value = m
 
-        result = await add_project_member(project_id=10, role_ids=[3], group_id=20)
-
+        result = await manage_project_member(
+            action="add", project_id=10, group_id=20, role_ids=[3]
+        )
         assert result["group"]["id"] == 20
         assert "Dev Team" in result["group"]["name"]
         assert result["user"] is None
-        # Verify group_id was forwarded as user_id (Redmine API convention)
         mock_redmine.project_membership.create.assert_called_once_with(
             project_id=10, user_id=20, role_ids=[3]
         )
 
     @pytest.mark.asyncio
-    async def test_missing_user_and_group(self):
-        result = await add_project_member(project_id=10, role_ids=[3])
+    async def test_add_missing_project_id(self):
+        result = await manage_project_member(action="add", user_id=5, role_ids=[3])
+        assert "error" in result
+        assert "project_id" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_add_missing_user_and_group(self):
+        result = await manage_project_member(action="add", project_id=10, role_ids=[3])
         assert "error" in result
         assert "user_id or group_id" in result["error"]
 
     @pytest.mark.asyncio
-    async def test_both_user_and_group(self):
-        result = await add_project_member(
-            project_id=10, role_ids=[3], user_id=5, group_id=20
+    async def test_add_both_user_and_group_rejected(self):
+        result = await manage_project_member(
+            action="add", project_id=10, user_id=5, group_id=20, role_ids=[3]
         )
         assert "error" in result
         assert "Exactly one" in result["error"]
 
     @pytest.mark.asyncio
-    async def test_empty_role_ids(self):
-        result = await add_project_member(project_id=10, role_ids=[], user_id=5)
+    async def test_add_empty_role_ids(self):
+        result = await manage_project_member(
+            action="add", project_id=10, user_id=5, role_ids=[]
+        )
         assert "error" in result
         assert "role_id" in result["error"]
 
     @pytest.mark.asyncio
-    async def test_non_integer_role_ids(self):
-        result = await add_project_member(project_id=10, role_ids=["admin"], user_id=5)
+    async def test_add_non_integer_role_ids(self):
+        result = await manage_project_member(
+            action="add", project_id=10, user_id=5, role_ids=["admin"]
+        )
         assert "error" in result
         assert "integers" in result["error"]
 
     @pytest.mark.asyncio
-    async def test_read_only_mode(self, monkeypatch):
+    async def test_add_boolean_role_id_rejected(self):
+        result = await manage_project_member(
+            action="add", project_id=10, user_id=5, role_ids=[True]
+        )
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_add_read_only_mode(self, monkeypatch):
         monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "true")
-        result = await add_project_member(project_id=10, role_ids=[3], user_id=5)
+        result = await manage_project_member(
+            action="add", project_id=10, user_id=5, role_ids=[3]
+        )
         assert "error" in result
         assert "read-only" in result["error"].lower()
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_project_not_found(self, mock_redmine):
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    async def test_add_project_not_found(self, mock_cleanup, mock_redmine):
         from redminelib.exceptions import ResourceNotFoundError
 
         mock_redmine.project_membership.create.side_effect = ResourceNotFoundError()
-        result = await add_project_member(project_id=9999, role_ids=[3], user_id=5)
+        result = await manage_project_member(
+            action="add", project_id=9999, user_id=5, role_ids=[3]
+        )
         assert "error" in result
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_forbidden(self, mock_redmine):
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    async def test_add_forbidden(self, mock_cleanup, mock_redmine):
         from redminelib.exceptions import ForbiddenError
 
         mock_redmine.project_membership.create.side_effect = ForbiddenError()
-        result = await add_project_member(project_id=10, role_ids=[3], user_id=5)
+        result = await manage_project_member(
+            action="add", project_id=10, user_id=5, role_ids=[3]
+        )
         assert "error" in result
         assert "Access denied" in result["error"]
 
+    # --- update ---
 
-# ---------------------------------------------------------------------------
-# update_project_member
-# ---------------------------------------------------------------------------
-
-
-class TestUpdateProjectMember:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_update_roles(self, mock_redmine):
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    async def test_update_success(self, mock_cleanup, mock_redmine):
         mock_redmine.project_membership.update.return_value = True
         updated = _mock_membership(membership_id=42, role_ids=[3, 4])
         mock_redmine.project_membership.get.return_value = updated
 
-        result = await update_project_member(membership_id=42, role_ids=[3, 4])
-
+        result = await manage_project_member(
+            action="update", membership_id=42, role_ids=[3, 4]
+        )
         assert result["id"] == 42
         assert len(result["roles"]) == 2
         mock_redmine.project_membership.update.assert_called_once_with(
@@ -277,74 +307,92 @@ class TestUpdateProjectMember:
         mock_redmine.project_membership.get.assert_called_once_with(42)
 
     @pytest.mark.asyncio
-    async def test_empty_role_ids(self):
-        result = await update_project_member(membership_id=42, role_ids=[])
+    async def test_update_missing_membership_id(self):
+        result = await manage_project_member(action="update", role_ids=[3])
+        assert "error" in result
+        assert "membership_id" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_update_empty_role_ids(self):
+        result = await manage_project_member(
+            action="update", membership_id=42, role_ids=[]
+        )
         assert "error" in result
 
     @pytest.mark.asyncio
-    async def test_non_integer_role_ids(self):
-        result = await update_project_member(membership_id=42, role_ids=["admin"])
+    async def test_update_non_integer_role_ids(self):
+        result = await manage_project_member(
+            action="update", membership_id=42, role_ids=["admin"]
+        )
         assert "error" in result
 
     @pytest.mark.asyncio
-    async def test_read_only_mode(self, monkeypatch):
+    async def test_update_read_only_mode(self, monkeypatch):
         monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "true")
-        result = await update_project_member(membership_id=42, role_ids=[3])
+        result = await manage_project_member(
+            action="update", membership_id=42, role_ids=[3]
+        )
         assert "error" in result
         assert "read-only" in result["error"].lower()
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_membership_not_found(self, mock_redmine):
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    async def test_update_membership_not_found(self, mock_cleanup, mock_redmine):
         from redminelib.exceptions import ResourceNotFoundError
 
         mock_redmine.project_membership.update.side_effect = ResourceNotFoundError()
-        result = await update_project_member(membership_id=9999, role_ids=[3])
+        result = await manage_project_member(
+            action="update", membership_id=9999, role_ids=[3]
+        )
         assert "error" in result
 
+    # --- remove ---
 
-# ---------------------------------------------------------------------------
-# remove_project_member
-# ---------------------------------------------------------------------------
-
-
-class TestRemoveProjectMember:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_remove_success(self, mock_redmine):
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    async def test_remove_success(self, mock_cleanup, mock_redmine):
         mock_redmine.project_membership.delete.return_value = True
 
-        result = await remove_project_member(membership_id=42)
-
+        result = await manage_project_member(action="remove", membership_id=42)
         assert result == {"success": True, "deleted_membership_id": 42}
         mock_redmine.project_membership.delete.assert_called_once_with(42)
 
     @pytest.mark.asyncio
-    async def test_read_only_mode(self, monkeypatch):
+    async def test_remove_missing_membership_id(self):
+        result = await manage_project_member(action="remove")
+        assert "error" in result
+        assert "membership_id" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_remove_read_only_mode(self, monkeypatch):
         monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "true")
-        result = await remove_project_member(membership_id=42)
+        result = await manage_project_member(action="remove", membership_id=42)
         assert "error" in result
         assert "read-only" in result["error"].lower()
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_membership_not_found(self, mock_redmine):
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    async def test_remove_membership_not_found(self, mock_cleanup, mock_redmine):
         from redminelib.exceptions import ResourceNotFoundError
 
         mock_redmine.project_membership.delete.side_effect = ResourceNotFoundError()
-        result = await remove_project_member(membership_id=9999)
+        result = await manage_project_member(action="remove", membership_id=9999)
         assert "error" in result
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
-    async def test_inherited_membership_error(self, mock_redmine):
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    async def test_remove_inherited_membership_error(self, mock_cleanup, mock_redmine):
         """Redmine returns 422 for inherited memberships that cannot be removed."""
         from redminelib.exceptions import ValidationError
 
         mock_redmine.project_membership.delete.side_effect = ValidationError(
             "Cannot remove inherited membership"
         )
-        result = await remove_project_member(membership_id=42)
+        result = await manage_project_member(action="remove", membership_id=42)
         assert "error" in result
 
 
@@ -422,20 +470,28 @@ class TestRoleIdErrorHints:
 
     @pytest.mark.asyncio
     async def test_add_member_empty_role_ids_hints_list_roles(self):
-        result = await add_project_member(project_id=10, role_ids=[], user_id=5)
+        result = await manage_project_member(
+            action="add", project_id=10, user_id=5, role_ids=[]
+        )
         assert "list_redmine_roles" in result["error"]
 
     @pytest.mark.asyncio
     async def test_add_member_invalid_role_ids_hints_list_roles(self):
-        result = await add_project_member(project_id=10, role_ids=["admin"], user_id=5)
+        result = await manage_project_member(
+            action="add", project_id=10, user_id=5, role_ids=["admin"]
+        )
         assert "list_redmine_roles" in result["error"]
 
     @pytest.mark.asyncio
     async def test_update_member_empty_role_ids_hints_list_roles(self):
-        result = await update_project_member(membership_id=42, role_ids=[])
+        result = await manage_project_member(
+            action="update", membership_id=42, role_ids=[]
+        )
         assert "list_redmine_roles" in result["error"]
 
     @pytest.mark.asyncio
     async def test_update_member_invalid_role_ids_hints_list_roles(self):
-        result = await update_project_member(membership_id=42, role_ids=["admin"])
+        result = await manage_project_member(
+            action="update", membership_id=42, role_ids=["admin"]
+        )
         assert "list_redmine_roles" in result["error"]

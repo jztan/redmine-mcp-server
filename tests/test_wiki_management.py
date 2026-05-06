@@ -9,8 +9,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from redmine_mcp_server.redmine_handler import (  # noqa: E402
-    list_wiki_pages,
-    rename_wiki_page,
+    manage_redmine_wiki_page,
 )
 
 
@@ -40,7 +39,7 @@ def _make_wiki_page(
 # ---------------------------------------------------------------------------
 
 
-class TestListWikiPages:
+class TestManageRedmineWikiPageList:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_returns_list_of_pages(self, mock_redmine):
@@ -49,7 +48,7 @@ class TestListWikiPages:
             _make_wiki_page("Setup", version=1, parent_title="Home"),
         ]
 
-        result = await list_wiki_pages(project_id="my-project")
+        result = await manage_redmine_wiki_page(action="list", project_id="my-project")
 
         assert isinstance(result, list)
         assert len(result) == 2
@@ -64,7 +63,7 @@ class TestListWikiPages:
     async def test_empty_project(self, mock_redmine):
         mock_redmine.wiki_page.filter.return_value = []
 
-        result = await list_wiki_pages(project_id="empty")
+        result = await manage_redmine_wiki_page(action="list", project_id="empty")
 
         assert result == []
 
@@ -73,7 +72,7 @@ class TestListWikiPages:
     async def test_returns_error_dict_on_exception(self, mock_redmine):
         mock_redmine.wiki_page.filter.side_effect = Exception("boom")
 
-        result = await list_wiki_pages(project_id="x")
+        result = await manage_redmine_wiki_page(action="list", project_id="x")
 
         assert isinstance(result, dict)
         assert "error" in result
@@ -84,7 +83,7 @@ class TestListWikiPages:
 # ---------------------------------------------------------------------------
 
 
-class TestRenameWikiPage:
+class TestManageRedmineWikiPageRename:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_rename_success(self, mock_redmine):
@@ -92,8 +91,8 @@ class TestRenameWikiPage:
         renamed = _make_wiki_page("New", text="Body")
         mock_redmine.wiki_page.get.side_effect = [existing, renamed]
 
-        result = await rename_wiki_page(
-            project_id="proj", old_title="Old", new_title="New"
+        result = await manage_redmine_wiki_page(
+            action="rename", project_id="proj", wiki_page_title="Old", new_title="New"
         )
 
         assert "error" not in result
@@ -114,9 +113,10 @@ class TestRenameWikiPage:
         renamed = _make_wiki_page("New", text="Body")
         mock_redmine.wiki_page.get.side_effect = [existing, renamed]
 
-        await rename_wiki_page(
+        await manage_redmine_wiki_page(
+            action="rename",
             project_id="proj",
-            old_title="Old",
+            wiki_page_title="Old",
             new_title="New",
             redirect_existing_links=False,
         )
@@ -135,8 +135,8 @@ class TestRenameWikiPage:
             Exception("404"),
         ]
 
-        result = await rename_wiki_page(
-            project_id="proj", old_title="Old", new_title="New"
+        result = await manage_redmine_wiki_page(
+            action="rename", project_id="proj", wiki_page_title="Old", new_title="New"
         )
 
         assert "error" in result
@@ -145,8 +145,8 @@ class TestRenameWikiPage:
     @pytest.mark.asyncio
     async def test_blocked_in_read_only_mode(self):
         with patch.dict(os.environ, {"REDMINE_MCP_READ_ONLY": "true"}):
-            result = await rename_wiki_page(
-                project_id="p", old_title="A", new_title="B"
+            result = await manage_redmine_wiki_page(
+                action="rename", project_id="p", wiki_page_title="A", new_title="B"
             )
 
         assert "error" in result
@@ -154,21 +154,27 @@ class TestRenameWikiPage:
 
     @pytest.mark.asyncio
     async def test_rejects_empty_old_title(self):
-        result = await rename_wiki_page(project_id="p", old_title="", new_title="B")
+        result = await manage_redmine_wiki_page(
+            action="rename", project_id="p", wiki_page_title="", new_title="B"
+        )
 
         assert "error" in result
-        assert "old_title" in result["error"]
+        assert "wiki_page_title" in result["error"]
 
     @pytest.mark.asyncio
     async def test_rejects_empty_new_title(self):
-        result = await rename_wiki_page(project_id="p", old_title="A", new_title="")
+        result = await manage_redmine_wiki_page(
+            action="rename", project_id="p", wiki_page_title="A", new_title=""
+        )
 
         assert "error" in result
         assert "new_title" in result["error"]
 
     @pytest.mark.asyncio
     async def test_rejects_unchanged_title(self):
-        result = await rename_wiki_page(project_id="p", old_title="A", new_title="A")
+        result = await manage_redmine_wiki_page(
+            action="rename", project_id="p", wiki_page_title="A", new_title="A"
+        )
 
         assert "error" in result
         assert "differ" in result["error"]
@@ -180,8 +186,8 @@ class TestRenameWikiPage:
 
         mock_redmine.wiki_page.get.side_effect = ResourceNotFoundError()
 
-        result = await rename_wiki_page(
-            project_id="p", old_title="Missing", new_title="New"
+        result = await manage_redmine_wiki_page(
+            action="rename", project_id="p", wiki_page_title="Missing", new_title="New"
         )
 
         assert "error" in result

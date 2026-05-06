@@ -706,8 +706,8 @@ docker logs -f <container-id>
    REDMINE_MCP_READ_ONLY=false
    ```
 2. If read-only is intentional (e.g., shared/demo instance), use only read tools:
-   - `get_redmine_issue`, `list_redmine_issues`, `list_redmine_projects`, `search_redmine_issues`, `search_entire_redmine`, `get_redmine_wiki_page`, etc.
-3. Blocked tools in read-only mode: `create_redmine_issue`, `update_redmine_issue`, `create_redmine_wiki_page`, `update_redmine_wiki_page`, `delete_redmine_wiki_page`
+   - `get_redmine_issue`, `list_redmine_issues`, `list_redmine_projects`, `search_redmine_issues`, `search_entire_redmine`, `manage_redmine_wiki_page(action="list"|"get")`, etc.
+3. Blocked tools in read-only mode: `create_redmine_issue`, `update_redmine_issue`, plus the write actions of every `manage_X` tool (e.g., `manage_redmine_wiki_page(action="create"|"update"|"delete"|"rename")`, `manage_issue_category(action="create"|"update"|"delete")`, `manage_project_member`, `manage_issue_watcher`, `manage_issue_note`, `manage_time_entry`, `manage_product(action="create"|"update")`, `manage_contact(action="create"|"update"|"delete"|"assign_to_project"|"remove_from_project")`). See [Read-Only Mode](./tool-reference.md#read-only-mode) in the tool reference for the full breakdown.
 
 #### "list_my_redmine_issues not found" / Import errors after upgrade
 
