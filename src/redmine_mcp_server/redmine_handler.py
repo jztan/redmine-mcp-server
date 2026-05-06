@@ -5773,18 +5773,25 @@ def _is_positive_int(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value > 0
 
 
+# Matches Redmine's project identifier rule: must start with a lowercase
+# letter or digit, then lowercase letters / digits / hyphens / underscores,
+# up to 100 chars total. Restricts the URL-path charset so callers cannot
+# smuggle ``/``, ``?``, ``#``, ``..``, whitespace, or uppercase into paths.
+_PROJECT_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,99}$")
+
+
 def _is_valid_project_id(value: Any) -> bool:
     """Return True if ``value`` is a usable Redmine project identifier.
 
-    Accepts a positive integer (numeric ID) or a non-empty string
-    (project short-name / identifier). Empty strings, ``None``, booleans,
-    and other types are rejected. Used by tools that interpolate
-    ``project_id`` directly into URL paths to surface a clear error
-    instead of letting Redmine 404 on a malformed URL.
+    Accepts a positive integer (numeric ID) or a string matching Redmine's
+    project-identifier rule (``^[a-z0-9][a-z0-9_-]{0,99}$``). Strings
+    containing path-injecting characters (``/``, ``?``, ``#``, ``..``,
+    whitespace) or uppercase letters are rejected. Used by tools that
+    interpolate ``project_id`` directly into URL paths.
     """
     if _is_positive_int(value):
         return True
-    if isinstance(value, str) and value.strip() and value == value.strip():
+    if isinstance(value, str) and _PROJECT_ID_PATTERN.match(value):
         return True
     return False
 
@@ -6402,8 +6409,8 @@ async def add_product(
         return dict(_PRODUCTS_DISABLED_ERROR)
     if not isinstance(name, str) or not name.strip():
         return {"error": "name must be a non-empty string."}
-    if not _is_positive_int(status_id):
-        return {"error": "status_id must be a positive integer (1=Active, 2=Inactive)."}
+    if isinstance(status_id, bool) or status_id not in (1, 2):
+        return {"error": "status_id must be 1 (Active) or 2 (Inactive)."}
 
     body: Dict[str, Any] = {"name": name, "status_id": status_id}
     if project_id is not None:
@@ -6567,7 +6574,7 @@ async def get_gantt_chart(
     project_id: Union[str, int],
     start_date_after: Optional[str] = None,
     due_date_before: Optional[str] = None,
-    include_closed: bool = True,
+    include_closed: bool = False,
     limit: int = 250,
 ) -> Dict[str, Any]:
     """Retrieve project timeline (Gantt) data: issues with dates, dependencies,
@@ -6592,7 +6599,9 @@ async def get_gantt_chart(
             ``start_date`` is on or after this date).
         due_date_before: Optional ``YYYY-MM-DD`` filter (issues whose
             ``due_date`` is on or before this date).
-        include_closed: When ``True`` (default), include closed issues.
+        include_closed: When ``True``, include closed issues. Default
+            ``False``: only open issues are returned, which keeps response
+            size and pagination cost low on long-lived projects.
         limit: Maximum number of issues to return (1-500, default 250).
 
     Returns:

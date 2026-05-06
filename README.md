@@ -16,7 +16,7 @@ A Model Context Protocol (MCP) server that integrates with Redmine project manag
 
 ## Features
 
-- **55 MCP Tools**: Issues, projects, time tracking, wiki, file operations, membership management, and more
+- **69 MCP Tools**: Issues, projects, time tracking, wiki, Gantt, file operations, membership management, products, contacts (CRM), and more
 - **Flexible Authentication**: API key, username/password, or OAuth2 per-user tokens
 - **Prompt Injection Protection**: User-controlled content wrapped in boundary tags for safe LLM consumption
 - **Read-Only Mode**: Restrict to read-only operations via `REDMINE_MCP_READ_ONLY` environment variable

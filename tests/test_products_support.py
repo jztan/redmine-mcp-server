@@ -145,6 +145,45 @@ class TestListProducts:
         assert "error" in result
         assert "project_id" in result["error"]
 
+    @pytest.mark.asyncio
+    async def test_rejects_project_id_with_slash(self):
+        with patch.dict(os.environ, {"REDMINE_PRODUCTS_ENABLED": "true"}):
+            result = await list_products(project_id="foo/../bar")
+        assert "error" in result
+        assert "project_id" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_rejects_project_id_with_query_chars(self):
+        with patch.dict(os.environ, {"REDMINE_PRODUCTS_ENABLED": "true"}):
+            result = await list_products(project_id="foo?x=1")
+        assert "error" in result
+        assert "project_id" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_rejects_project_id_with_uppercase(self):
+        with patch.dict(os.environ, {"REDMINE_PRODUCTS_ENABLED": "true"}):
+            result = await list_products(project_id="MyProject")
+        assert "error" in result
+        assert "project_id" in result["error"]
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_accepts_valid_string_project_id(self, mock_redmine):
+        mock_redmine.engine.request.return_value = {"products": []}
+        with patch.dict(os.environ, {"REDMINE_PRODUCTS_ENABLED": "true"}):
+            result = await list_products(project_id="my-project_42")
+        assert isinstance(result, list)
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_accepts_integer_project_id(self, mock_redmine):
+        mock_redmine.engine.request.return_value = {"products": []}
+        with patch.dict(os.environ, {"REDMINE_PRODUCTS_ENABLED": "true"}):
+            result = await list_products(project_id=42)
+        assert isinstance(result, list)
+
 
 # ---------------------------------------------------------------------------
 # get_product
@@ -236,6 +275,27 @@ class TestAddProduct:
         with patch.dict(os.environ, {"REDMINE_PRODUCTS_ENABLED": "true"}):
             result = await add_product(name="X", status_id=-1)
         assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_rejects_unknown_status_id(self):
+        with patch.dict(os.environ, {"REDMINE_PRODUCTS_ENABLED": "true"}):
+            result = await add_product(name="Widget", status_id=999)
+        assert "error" in result
+        assert "status_id" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_rejects_zero_status_id(self):
+        with patch.dict(os.environ, {"REDMINE_PRODUCTS_ENABLED": "true"}):
+            result = await add_product(name="Widget", status_id=0)
+        assert "error" in result
+        assert "status_id" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_rejects_bool_status_id(self):
+        with patch.dict(os.environ, {"REDMINE_PRODUCTS_ENABLED": "true"}):
+            result = await add_product(name="Widget", status_id=True)
+        assert "error" in result
+        assert "status_id" in result["error"]
 
 
 # ---------------------------------------------------------------------------

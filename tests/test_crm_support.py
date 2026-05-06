@@ -157,6 +157,13 @@ class TestListContacts:
         assert "error" in result
         assert "project_id" in result["error"]
 
+    @pytest.mark.asyncio
+    async def test_rejects_project_id_with_slash(self):
+        with patch.dict(os.environ, {"REDMINE_CRM_ENABLED": "true"}):
+            result = await list_contacts(project_id="foo/../bar")
+        assert "error" in result
+        assert "project_id" in result["error"]
+
 
 # ---------------------------------------------------------------------------
 # get_contact
