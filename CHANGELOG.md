@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- **Wiki management (2 new tools, no plugin required):**
+  - `list_wiki_pages` — list every wiki page in a project (titles, versions, parents, timestamps)
+  - `rename_wiki_page` — rename/move a wiki page with optional redirect (`PUT /projects/{id}/wiki/{old}.json` with `title` parameter); detects silent permission failures by re-fetching the page after the rename
+- `REDMINE_PRODUCTS_ENABLED=true` opt-in support for RedmineUP Products plugin:
+  - `list_products` — list products, optionally filtered by project
+  - `get_product` — retrieve a single product by ID
+  - `add_product` — create a new product (name + status_id required; supports description, price, currency, code, project_id, category_id, tag_list, custom_fields)
+  - `edit_product` — update product fields (whitelist filter on writable fields)
+- **Gantt chart (1 new tool, no plugin required):**
+  - `get_gantt_chart` — composite tool that aggregates issues + versions + relations into a structured Gantt response (start/due dates, progress, parent_id, precedes/blocks dependencies, milestones); supports date-range filters and `include_closed` flag
+- `REDMINE_CRM_ENABLED=true` opt-in support for RedmineUP CRM plugin:
+  - `list_contacts` — list contacts with project/search/tags/assignee filters
+  - `get_contact` — retrieve a single contact (with optional `include=notes,deals,contacts`)
+  - `edit_contact` — update contact fields (whitelist filter)
+  - `create_contact` — create a new contact in a project (with first_name, last_name, company, email, phone, visibility, etc.)
+  - `delete_contact` — delete a contact entirely
+  - `assign_contact_to_project` — add an existing contact to an additional project
+  - `remove_contact_from_project` — remove a contact from a project (without deleting it)
 - **`manage_redmine_version`**: single MCP tool for full version lifecycle management (create, update, delete) via an `action` parameter
   - `action="create"`: create a version in a project with optional `description`, `status`, `due_date`, `sharing`, `wiki_page_title`; defaults to `status="open"` and `sharing="none"`
   - `action="update"`: update any subset of fields on an existing version by `version_id`

@@ -1743,6 +1743,41 @@ delete_redmine_wiki_page(
 
 ---
 
+### `list_wiki_pages`
+
+List all wiki pages in a Redmine project (titles, versions, parents, timestamps). Use [`get_redmine_wiki_page`](#get_redmine_wiki_page) to fetch a page's content.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_id` | int or string | Yes | Project identifier (ID or short name) |
+
+**Returns:** A list of wiki page metadata dicts with `title`, `version`, `parent_title` (when present), `created_on`, `updated_on`. On failure, returns a dict with an `error` key.
+
+---
+
+### `rename_wiki_page`
+
+Rename (move) an existing wiki page. **Write operation** — blocked when `REDMINE_MCP_READ_ONLY=true`.
+
+Implemented via `PUT /projects/{id}/wiki/{old_title}.json` with the `title` parameter. Redmine requires `text` to be re-sent on every update; the tool fetches the current text automatically. When `redirect_existing_links=True`, Redmine creates a `WikiRedirect` so old links keep working.
+
+**Permission caveat:** Requires the `rename_wiki_pages` permission. If the API user lacks it, Redmine **silently drops the title change** (the body still updates). To detect this, the tool re-fetches the page at the new title after the update and returns an explicit error if the new title is unreachable.
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `project_id` | int or string | Yes | – | Project identifier |
+| `old_title` | string | Yes | – | Current wiki page title |
+| `new_title` | string | Yes | – | New title (must differ from old) |
+| `redirect_existing_links` | bool | No | `true` | Create a redirect from old to new title |
+
+**Returns:** Dict with the renamed page's metadata, or an error dict on failure.
+
+---
+
 ## File Operations
 
 ### `list_files`
@@ -1999,3 +2034,207 @@ Toggle the done/undone state of a checklist item. Convenience tool equivalent to
 - Plugin disabled: returns plugin-disabled error
 - Invalid `checklist_item_id`: returns `{"error": "checklist_item_id must be a positive integer."}`
 - Invalid `is_done` type: returns `{"error": "is_done must be a boolean."}`
+
+---
+
+## Gantt Chart
+
+### `get_gantt_chart`
+
+Retrieve project timeline (Gantt) data: issues with start/due dates, progress, dependencies, and milestones. **No plugin required** — uses core Redmine REST API (`GET /issues.json` with `include=relations` + `GET /projects/{id}/versions.json`).
+
+Use cases: "What's the current timeline for project X?", "Which issues are overdue?", "Show me the dependency chain on this project". Returns structured data, not an image.
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `project_id` | int or string | Yes | – | Project identifier |
+| `start_date_after` | string | No | – | `YYYY-MM-DD` filter (issues with `start_date >= this`) |
+| `due_date_before` | string | No | – | `YYYY-MM-DD` filter (issues with `due_date <= this`) |
+| `include_closed` | bool | No | `true` | Include closed issues |
+| `limit` | int | No | `250` | Max issues (1–500) |
+
+**Returns:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `project_id` | int/str | Echo of input |
+| `total_count` | int | Number of issues returned |
+| `issues` | list | Each item has `id`, `subject`, `tracker`, `status`, `assigned_to`, `start_date`, `due_date`, `done_ratio`, `estimated_hours`, `parent_id`, `relations` (only `precedes`/`blocks`) |
+| `versions` | list | Milestones: `id`, `name`, `due_date`, `status` |
+
+**Note:** If the API user lacks permission to view versions, the `versions` list falls back to empty rather than failing the entire call.
+
+**Performance:** Redmine paginates issues at 25 per HTTP call by default, so a `limit=500` request can trigger ~20 underlying API calls. Expect a few seconds of latency on large projects.
+
+---
+
+## Products (RedmineUP Products plugin)
+
+These tools require the **RedmineUP Products** plugin and `REDMINE_PRODUCTS_ENABLED=true`.
+
+### `list_products`
+
+List products from the Products plugin. Returns a list of product dicts. On failure, returns a dict with an `error` key.
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `project_id` | int or string | No | – | Filter by project (omitted = all accessible) |
+| `limit` | int | No | `100` | Max results per call (1–100). Redmine's REST API caps `limit` at 100 server-side; values above are silently clamped. |
+
+---
+
+### `get_product`
+
+Retrieve a single product by ID.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `product_id` | int | Yes | Product ID |
+
+Returns a dict with product metadata, or `{"error": "..."}` on failure.
+
+---
+
+### `add_product`
+
+Create a new product. **Write operation** — blocked when `REDMINE_MCP_READ_ONLY=true`.
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `name` | string | Yes | – | Product name |
+| `status_id` | int | No | `1` | 1=Active, 2=Inactive |
+| `project_id` | int or string | No | – | Optional project association |
+| `description`, `code` | string | No | – | Optional descriptive fields |
+| `price` | float | No | – | Optional price |
+| `currency` | string | No | – | Currency code (e.g., "USD") |
+| `category_id` | int | No | – | Product category ID |
+| `tag_list` | string | No | – | Comma-separated tags |
+| `custom_fields` | list | No | – | List of `{"id": N, "value": ...}` dicts |
+
+---
+
+### `edit_product`
+
+Update fields on an existing product. **Write operation** — blocked when `REDMINE_MCP_READ_ONLY=true`.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `product_id` | int | Yes | Product ID |
+| `fields` | dict | Yes | Fields to update. Allowed keys: `name`, `description`, `price`, `currency`, `status_id`, `code`, `project_id`, `category_id`, `tag_list`, `custom_fields`. Unknown keys silently filtered. |
+
+Returns `{"success": True, "product_id": N, "updated_fields": [...]}` or an error dict.
+
+---
+
+## Contacts / CRM (RedmineUP CRM plugin)
+
+These tools require the **RedmineUP CRM** plugin and `REDMINE_CRM_ENABLED=true`.
+
+**Security note:** Contact PII (email, phone, address) is returned as-is to the caller but is never logged via this module's logger.
+
+### `list_contacts`
+
+List contacts. Visibility scoping is enforced server-side by Redmine.
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `project_id` | int or string | No | – | Filter by project |
+| `search` | string | No | – | Free-text search (matches name/company/email) |
+| `tags` | string | No | – | Comma-separated tag filter |
+| `assigned_to_id` | int | No | – | Filter by assignee user ID |
+| `limit` | int | No | `100` | Max results per call (1–100). Redmine's REST API caps `limit` at 100 server-side; values above are silently clamped. |
+
+Returns a list of contact dicts.
+
+---
+
+### `get_contact`
+
+Retrieve a single contact by ID.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `contact_id` | int | Yes | Contact ID |
+| `include` | string | No | Optional comma-separated includes: `notes`, `deals`, `contacts` |
+
+---
+
+### `edit_contact`
+
+Update fields on an existing contact. **Write operation**.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `contact_id` | int | Yes | Contact ID |
+| `fields` | dict | Yes | Fields to update. Allowed keys: `first_name`, `last_name`, `middle_name`, `company`, `job_title`, `phone`, `email`, `website`, `skype_name`, `birthday`, `background`, `address_attributes`, `tag_list`, `is_company`, `assigned_to_id`, `custom_fields`, `visibility`, `project_id`. |
+
+---
+
+### `create_contact`
+
+Create a new contact. **Write operation**.
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `project_id` | int or string | Yes | – | Project to associate the contact with |
+| `first_name` | string | Yes | – | First name |
+| `last_name`, `company`, `email`, `phone` | string | No | – | Common optional fields |
+| `is_company` | bool | No | `false` | `true` to mark as a company entity |
+| `visibility` | int | No | `0` | 0=Project, 1=Public, 2=Private |
+| `fields` | dict | No | – | Additional fields (any allowed contact field) |
+
+---
+
+### `delete_contact`
+
+Permanently delete a CRM contact. **Write operation**.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `contact_id` | int | Yes | Contact ID |
+
+---
+
+### `assign_contact_to_project`
+
+Add an existing contact to an additional project (does not create a new contact). **Write operation**.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `contact_id` | int | Yes | Contact ID |
+| `project_id` | int or string | Yes | Project to associate with |
+
+---
+
+### `remove_contact_from_project`
+
+Remove a contact from a project without deleting the contact. **Write operation**.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `contact_id` | int | Yes | Contact ID |
+| `project_id` | int or string | Yes | Project to remove from |
