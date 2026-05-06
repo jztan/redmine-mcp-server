@@ -5989,90 +5989,13 @@ async def update_checklist_item(
 
 
 @mcp.tool()
-async def list_products(
+async def manage_product(
+    action: str,
     project_id: Optional[Union[str, int]] = None,
     limit: int = 100,
-) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
-    """List products from the RedmineUP Products plugin.
-
-    Requires the RedmineUP Products plugin and ``REDMINE_PRODUCTS_ENABLED=true``.
-
-    Args:
-        project_id: Optional project identifier to filter products by project.
-            When omitted, returns products across all projects accessible
-            to the API user.
-        limit: Maximum number of products to return per call (1-100, default
-            100). Redmine's REST API caps `limit` at 100; values above that
-            are clamped.
-
-    Returns:
-        List of product dicts (id, name, description, price, currency,
-        status_id, project, category, tags, code, timestamps).
-        On failure, a dict with an ``error`` key.
-    """
-    if not _is_products_enabled():
-        return dict(_PRODUCTS_DISABLED_ERROR)
-
-    if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
-        return {"error": "limit must be a positive integer."}
-    limit = min(limit, _REDMINE_API_PAGE_CAP)
-    if project_id is not None and not _is_valid_project_id(project_id):
-        return {
-            "error": (
-                "project_id must be a non-empty string identifier or "
-                "positive integer."
-            )
-        }
-
-    try:
-        client = _get_redmine_client()
-        if project_id is not None:
-            url = f"{REDMINE_URL}/projects/{project_id}/products.json"
-        else:
-            url = f"{REDMINE_URL}/products.json"
-        payload = client.engine.request("get", url, params={"limit": limit})
-        raw = payload.get("products", []) if isinstance(payload, dict) else []
-        return [_product_to_dict(p) for p in raw[:limit]]
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"listing products (project_id={project_id})",
-            {"resource_type": "products", "resource_id": project_id},
-        )
-
-
-@mcp.tool()
-async def get_product(product_id: int) -> Dict[str, Any]:
-    """Retrieve a single RedmineUP product by ID.
-
-    Requires the RedmineUP Products plugin and ``REDMINE_PRODUCTS_ENABLED=true``.
-    """
-    if not _is_products_enabled():
-        return dict(_PRODUCTS_DISABLED_ERROR)
-    if not _is_positive_int(product_id):
-        return {"error": "product_id must be a positive integer."}
-
-    try:
-        client = _get_redmine_client()
-        url = f"{REDMINE_URL}/products/{product_id}.json"
-        payload = client.engine.request("get", url)
-        product = payload.get("product", {}) if isinstance(payload, dict) else {}
-        if not product:
-            return {"error": f"Product {product_id} not found."}
-        return _product_to_dict(product)
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"fetching product {product_id}",
-            {"resource_type": "product", "resource_id": product_id},
-        )
-
-
-@mcp.tool()
-async def add_product(
-    name: str,
+    product_id: Optional[int] = None,
+    name: Optional[str] = None,
     status_id: int = 1,
-    project_id: Optional[Union[str, int]] = None,
     description: Optional[str] = None,
     price: Optional[float] = None,
     currency: Optional[str] = None,
@@ -6080,100 +6003,123 @@ async def add_product(
     category_id: Optional[int] = None,
     tag_list: Optional[str] = None,
     custom_fields: Optional[List[Dict[str, Any]]] = None,
-) -> Dict[str, Any]:
-    """Create a new RedmineUP product.
+    fields: Optional[Dict[str, Any]] = None,
+) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    """RedmineUP Products plugin tool. Combined CRUD-by-action.
 
-    Requires the RedmineUP Products plugin, ``REDMINE_PRODUCTS_ENABLED=true``,
-    and is blocked when ``REDMINE_MCP_READ_ONLY=true``.
-
-    Args:
-        name: Product name (required).
-        status_id: 1=Active (default), 2=Inactive.
-        project_id: Optional project to associate the product with.
-        description, price, currency, code: Optional fields.
-        category_id: Optional product category ID.
-        tag_list: Comma-separated tag list (e.g., "alpha,beta").
-        custom_fields: Optional list of ``{"id": N, "value": ...}`` dicts.
-
-    Returns:
-        Dict with the created product, or error dict on failure.
+    Actions: ``list``, ``get``, ``create``, ``update``.
+    Requires ``REDMINE_PRODUCTS_ENABLED=true`` and the RedmineUP Products
+    plugin.
     """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
     if not _is_products_enabled():
         return dict(_PRODUCTS_DISABLED_ERROR)
-    if not isinstance(name, str) or not name.strip():
-        return {"error": "name must be a non-empty string."}
-    if isinstance(status_id, bool) or status_id not in (1, 2):
-        return {"error": "status_id must be 1 (Active) or 2 (Inactive)."}
 
-    body: Dict[str, Any] = {"name": name, "status_id": status_id}
-    if project_id is not None:
-        body["project_id"] = project_id
-    if description is not None:
-        body["description"] = description
-    if price is not None:
-        body["price"] = price
-    if currency is not None:
-        body["currency"] = currency
-    if code is not None:
-        body["code"] = code
-    if category_id is not None:
-        if not _is_positive_int(category_id):
-            return {"error": "category_id must be a positive integer."}
-        body["category_id"] = category_id
-    if tag_list is not None:
-        body["tag_list"] = tag_list
-    if custom_fields is not None:
-        body["custom_fields"] = custom_fields
+    _valid_actions = {"list", "get", "create", "update"}
+    if action not in _valid_actions:
+        return {
+            "error": (
+                f"Invalid action '{action}'. " f"Allowed: {sorted(_valid_actions)}"
+            )
+        }
 
-    try:
-        client = _get_redmine_client()
-        url = f"{REDMINE_URL}/products.json"
-        payload = client.engine.request(
-            "post",
-            url,
-            headers={"Content-Type": "application/json"},
-            data=json.dumps({"product": body}),
-        )
-        product = payload.get("product", {}) if isinstance(payload, dict) else {}
-        return _product_to_dict(product) if product else {"success": True}
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"creating product '{name}'",
-            {"resource_type": "product", "resource_id": name},
-        )
+    if action == "list":
+        if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
+            return {"error": "limit must be a positive integer."}
+        limit = min(limit, _REDMINE_API_PAGE_CAP)
+        if project_id is not None and not _is_valid_project_id(project_id):
+            return {
+                "error": (
+                    "project_id must be a non-empty string identifier or "
+                    "positive integer."
+                )
+            }
+        try:
+            client = _get_redmine_client()
+            url = (
+                f"{REDMINE_URL}/projects/{project_id}/products.json"
+                if project_id is not None
+                else f"{REDMINE_URL}/products.json"
+            )
+            payload = client.engine.request("get", url, params={"limit": limit})
+            raw = payload.get("products", []) if isinstance(payload, dict) else []
+            return [_product_to_dict(p) for p in raw[:limit]]
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"listing products (project_id={project_id})",
+                {"resource_type": "products", "resource_id": project_id},
+            )
 
+    if action == "get":
+        if not _is_positive_int(product_id):
+            return {"error": "product_id must be a positive integer."}
+        try:
+            client = _get_redmine_client()
+            url = f"{REDMINE_URL}/products/{product_id}.json"
+            payload = client.engine.request("get", url)
+            product = payload.get("product", {}) if isinstance(payload, dict) else {}
+            if not product:
+                return {"error": f"Product {product_id} not found."}
+            return _product_to_dict(product)
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"fetching product {product_id}",
+                {"resource_type": "product", "resource_id": product_id},
+            )
 
-@mcp.tool()
-async def edit_product(
-    product_id: int,
-    fields: Dict[str, Any],
-) -> Dict[str, Any]:
-    """Update fields on an existing RedmineUP product.
-
-    Requires the RedmineUP Products plugin, ``REDMINE_PRODUCTS_ENABLED=true``,
-    and is blocked when ``REDMINE_MCP_READ_ONLY=true``.
-
-    Args:
-        product_id: The ID of the product to update.
-        fields: Dict of fields to update. Supported keys: name, description,
-            price, currency, status_id, code, project_id, category_id,
-            tag_list, custom_fields. Unknown keys are silently filtered out.
-
-    Returns:
-        Success dict with the updated fields, or error dict on failure.
-    """
+    # write actions below
     if _is_read_only_mode():
         return dict(_READ_ONLY_ERROR)
-    if not _is_products_enabled():
-        return dict(_PRODUCTS_DISABLED_ERROR)
+    await _ensure_cleanup_started()
+
+    if action == "create":
+        if not isinstance(name, str) or not name.strip():
+            return {"error": "name must be a non-empty string."}
+        if isinstance(status_id, bool) or status_id not in (1, 2):
+            return {"error": "status_id must be 1 (Active) or 2 (Inactive)."}
+        body: Dict[str, Any] = {"name": name, "status_id": status_id}
+        if project_id is not None:
+            body["project_id"] = project_id
+        if description is not None:
+            body["description"] = description
+        if price is not None:
+            body["price"] = price
+        if currency is not None:
+            body["currency"] = currency
+        if code is not None:
+            body["code"] = code
+        if category_id is not None:
+            if not _is_positive_int(category_id):
+                return {"error": "category_id must be a positive integer."}
+            body["category_id"] = category_id
+        if tag_list is not None:
+            body["tag_list"] = tag_list
+        if custom_fields is not None:
+            body["custom_fields"] = custom_fields
+        try:
+            client = _get_redmine_client()
+            url = f"{REDMINE_URL}/products.json"
+            payload = client.engine.request(
+                "post",
+                url,
+                headers={"Content-Type": "application/json"},
+                data=json.dumps({"product": body}),
+            )
+            product = payload.get("product", {}) if isinstance(payload, dict) else {}
+            return _product_to_dict(product) if product else {"success": True}
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"creating product '{name}'",
+                {"resource_type": "product", "resource_id": name},
+            )
+
+    # action == "update"
     if not _is_positive_int(product_id):
         return {"error": "product_id must be a positive integer."}
     if not isinstance(fields, dict) or not fields:
         return {"error": "fields must be a non-empty dict."}
-
     filtered = {k: v for k, v in fields.items() if k in _PRODUCT_WRITABLE_FIELDS}
     if not filtered:
         return {
@@ -6182,7 +6128,6 @@ async def edit_product(
                 f"{sorted(_PRODUCT_WRITABLE_FIELDS)}"
             )
         }
-
     try:
         client = _get_redmine_client()
         url = f"{REDMINE_URL}/products/{product_id}.json"
