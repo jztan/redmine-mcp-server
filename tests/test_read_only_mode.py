@@ -17,9 +17,7 @@ from redmine_mcp_server.redmine_handler import (  # noqa: E402
     _is_read_only_mode,
     create_redmine_issue,
     update_redmine_issue,
-    create_redmine_wiki_page,
-    update_redmine_wiki_page,
-    delete_redmine_wiki_page,
+    manage_redmine_wiki_page,
     get_redmine_issue,
     list_redmine_projects,
     list_redmine_issues,
@@ -73,7 +71,9 @@ class TestWriteToolsBlockedInReadOnly:
     @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_create_wiki_blocked(self, mock_redmine, mock_cleanup):
-        result = await create_redmine_wiki_page("proj", "Page", "text")
+        result = await manage_redmine_wiki_page(
+            action="create", project_id="proj", wiki_page_title="Page", text="x"
+        )
         assert "read-only" in result["error"].lower()
         mock_redmine.wiki_page.create.assert_not_called()
 
@@ -82,7 +82,9 @@ class TestWriteToolsBlockedInReadOnly:
     @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_update_wiki_blocked(self, mock_redmine, mock_cleanup):
-        result = await update_redmine_wiki_page("proj", "Page", "text")
+        result = await manage_redmine_wiki_page(
+            action="update", project_id="proj", wiki_page_title="Page", text="x"
+        )
         assert "read-only" in result["error"].lower()
         mock_redmine.wiki_page.update.assert_not_called()
 
@@ -91,9 +93,22 @@ class TestWriteToolsBlockedInReadOnly:
     @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_delete_wiki_blocked(self, mock_redmine, mock_cleanup):
-        result = await delete_redmine_wiki_page("proj", "Page")
+        result = await manage_redmine_wiki_page(
+            action="delete", project_id="proj", wiki_page_title="Page"
+        )
         assert "read-only" in result["error"].lower()
         mock_redmine.wiki_page.delete.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch.dict(os.environ, {"REDMINE_MCP_READ_ONLY": "true"})
+    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server.redmine_handler.redmine")
+    async def test_rename_wiki_blocked(self, mock_redmine, mock_cleanup):
+        result = await manage_redmine_wiki_page(
+            action="rename", project_id="p", wiki_page_title="A", new_title="B"
+        )
+        assert "read-only" in result["error"].lower()
+        mock_redmine.wiki_page.update.assert_not_called()
 
 
 class TestReadToolsWorkInReadOnly:
