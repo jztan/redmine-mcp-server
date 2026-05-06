@@ -800,16 +800,16 @@ class TestRoleIdsRejectBoolean:
 class TestWatcherUserIdValidation:
     @pytest.mark.asyncio
     async def test_add_watcher_rejects_bool_user_id(self):
-        from redmine_mcp_server.redmine_handler import add_watcher
+        from redmine_mcp_server.redmine_handler import manage_issue_watcher
 
-        result = await add_watcher(issue_id=1, user_id=True)
+        result = await manage_issue_watcher(action="add", issue_id=1, user_id=True)
         assert "error" in result
 
     @pytest.mark.asyncio
     async def test_remove_watcher_rejects_bool_user_id(self):
-        from redmine_mcp_server.redmine_handler import remove_watcher
+        from redmine_mcp_server.redmine_handler import manage_issue_watcher
 
-        result = await remove_watcher(issue_id=1, user_id=True)
+        result = await manage_issue_watcher(action="remove", issue_id=1, user_id=True)
         assert "error" in result
 
 

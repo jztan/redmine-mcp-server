@@ -2944,106 +2944,105 @@ async def copy_issue(
 
 
 @mcp.tool()
-async def list_issue_relations(
-    issue_id: int,
-) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
-    """List all relations for a given Redmine issue.
-
-    Args:
-        issue_id: ID of the issue whose relations should be listed.
-
-    Returns:
-        List of relation dictionaries. On failure, a dict with an
-        ``"error"`` key is returned.
-    """
-    try:
-        relations = _get_redmine_client().issue_relation.filter(issue_id=issue_id)
-        return [_issue_relation_to_dict(r) for r in _iter_capped(relations)]
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"listing relations for issue {issue_id}",
-            {"resource_type": "issue", "resource_id": issue_id},
-        )
-
-
-@mcp.tool()
-async def create_issue_relation(
-    issue_id: int,
-    issue_to_id: int,
-    relation_type: str = "relates",
+async def manage_issue_relation(
+    action: str,
+    issue_id: Optional[int] = None,
+    issue_to_id: Optional[int] = None,
+    relation_id: Optional[int] = None,
+    relation_type: Optional[str] = None,
     delay: Optional[int] = None,
-) -> Dict[str, Any]:
-    """Create a relation between two Redmine issues.
+) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    """List, create, or delete a Redmine issue relation.
 
     Args:
-        issue_id: ID of the source issue.
-        issue_to_id: ID of the target issue to relate to.
-        relation_type: Type of relation. Must be one of: ``relates``,
-            ``duplicates``, ``duplicated``, ``blocks``, ``blocked``,
-            ``precedes``, ``follows``, ``copied_to``, ``copied_from``.
-            Defaults to ``relates``.
-        delay: Optional delay in days (only meaningful for ``precedes``
-            and ``follows`` relation types).
+        action: One of: ``list``, ``create``, ``delete``.
+        issue_id: Source issue ID. Required for ``list`` and ``create``.
+        issue_to_id: Target issue ID. Required for ``create``.
+        relation_id: Relation ID. Required for ``delete``.
+        relation_type: One of: ``relates``, ``duplicates``, ``duplicated``,
+            ``blocks``, ``blocked``, ``precedes``, ``follows``,
+            ``copied_to``, ``copied_from``. Defaults to ``relates`` for
+            ``create``.
+        delay: Delay in days for ``precedes`` / ``follows`` relations.
 
     Returns:
-        Dictionary containing the newly created relation. On failure a
-        dict with an ``"error"`` key is returned.
+        ``list``: list of relation dicts.
+        ``create``: relation dict.
+        ``delete``: ``{"success": True, "deleted_relation_id": ...}``.
+        On error: ``{"error": "..."}``.
     """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
+    _valid_actions = {"list", "create", "delete"}
+    if action not in _valid_actions:
+        return {"error": f"Invalid action '{action}'. Allowed: list, create, delete"}
 
-    if relation_type not in _VALID_ISSUE_RELATION_TYPES:
-        return {
-            "error": (
-                f"Invalid relation_type '{relation_type}'. Must be one of: "
-                f"{', '.join(sorted(_VALID_ISSUE_RELATION_TYPES))}."
+    if action == "list":
+        if issue_id is None:
+            return {"error": "issue_id is required for action 'list'"}
+        try:
+            relations = _get_redmine_client().issue_relation.filter(issue_id=issue_id)
+            return [_issue_relation_to_dict(r) for r in _iter_capped(relations)]
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"listing relations for issue {issue_id}",
+                {"resource_type": "issue", "resource_id": issue_id},
             )
-        }
 
-    try:
-        params: Dict[str, Any] = {
-            "issue_id": issue_id,
-            "issue_to_id": issue_to_id,
-            "relation_type": relation_type,
-        }
-        if delay is not None:
-            params["delay"] = delay
+    elif action == "create":
+        if issue_id is None:
+            return {"error": "issue_id is required for action 'create'"}
+        if issue_to_id is None:
+            return {"error": "issue_to_id is required for action 'create'"}
 
-        relation = _get_redmine_client().issue_relation.create(**params)
-        return _issue_relation_to_dict(relation)
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"creating relation from issue {issue_id} to {issue_to_id}",
-            {"resource_type": "issue", "resource_id": issue_id},
-        )
+        _rt = relation_type if relation_type is not None else "relates"
+        if _rt not in _VALID_ISSUE_RELATION_TYPES:
+            return {
+                "error": (
+                    f"Invalid relation_type '{_rt}'. Must be one of: "
+                    f"{', '.join(sorted(_VALID_ISSUE_RELATION_TYPES))}."
+                )
+            }
 
+        if _is_read_only_mode():
+            return dict(_READ_ONLY_ERROR)
 
-@mcp.tool()
-async def delete_issue_relation(relation_id: int) -> Dict[str, Any]:
-    """Delete a Redmine issue relation by its ID.
+        await _ensure_cleanup_started()
 
-    Args:
-        relation_id: ID of the relation to delete (the ``id`` field returned
-            by ``list_issue_relations`` or ``create_issue_relation``).
+        try:
+            params: Dict[str, Any] = {
+                "issue_id": issue_id,
+                "issue_to_id": issue_to_id,
+                "relation_type": _rt,
+            }
+            if delay is not None:
+                params["delay"] = delay
+            relation = _get_redmine_client().issue_relation.create(**params)
+            return _issue_relation_to_dict(relation)
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"creating relation from issue {issue_id} to {issue_to_id}",
+                {"resource_type": "issue", "resource_id": issue_id},
+            )
 
-    Returns:
-        Dictionary with ``success: true`` on success. On failure a dict
-        with an ``"error"`` key is returned.
-    """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
+    else:  # action == "delete"
+        if relation_id is None:
+            return {"error": "relation_id is required for action 'delete'"}
 
-    try:
-        _get_redmine_client().issue_relation.delete(relation_id)
-        return {"success": True, "deleted_relation_id": relation_id}
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"deleting relation {relation_id}",
-            {"resource_type": "relation", "resource_id": relation_id},
-        )
+        if _is_read_only_mode():
+            return dict(_READ_ONLY_ERROR)
+
+        await _ensure_cleanup_started()
+
+        try:
+            _get_redmine_client().issue_relation.delete(relation_id)
+            return {"success": True, "deleted_relation_id": relation_id}
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"deleting relation {relation_id}",
+                {"resource_type": "relation", "resource_id": relation_id},
+            )
 
 
 @mcp.tool()
@@ -3080,75 +3079,47 @@ async def list_subtasks(
 
 
 @mcp.tool()
-async def add_watcher(issue_id: int, user_id: int) -> Dict[str, Any]:
-    """Add a user to the watcher list of a Redmine issue.
-
-    Requires Redmine 2.3.0+.
+async def manage_issue_watcher(
+    action: str,
+    issue_id: int,
+    user_id: int,
+) -> Dict[str, Any]:
+    """Add or remove a watcher on a Redmine issue. Requires Redmine 2.3.0+.
 
     Args:
+        action: One of: ``add``, ``remove``.
         issue_id: ID of the issue.
-        user_id: ID of the user to add as a watcher.
+        user_id: ID of the user to add or remove as a watcher.
 
     Returns:
-        Dictionary with ``success: true`` on success. On failure a dict
-        with an ``"error"`` key is returned.
+        ``{"success": True, "issue_id": ..., "user_id": ...}`` on success.
+        On error: ``{"error": "..."}``.
     """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
+    _valid_actions = {"add", "remove"}
+    if action not in _valid_actions:
+        return {"error": f"Invalid action '{action}'. Allowed: add, remove"}
 
     if not _is_positive_int(issue_id):
         return {"error": "issue_id must be a positive integer."}
     if not _is_positive_int(user_id):
         return {"error": "user_id must be a positive integer."}
 
-    try:
-        issue = _get_redmine_client().issue.get(issue_id)
-        issue.watcher.add(user_id)
-        return {
-            "success": True,
-            "issue_id": issue_id,
-            "user_id": user_id,
-        }
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"adding watcher {user_id} to issue {issue_id}",
-            {"resource_type": "issue", "resource_id": issue_id},
-        )
-
-
-@mcp.tool()
-async def remove_watcher(issue_id: int, user_id: int) -> Dict[str, Any]:
-    """Remove a user from the watcher list of a Redmine issue.
-
-    Args:
-        issue_id: ID of the issue.
-        user_id: ID of the user to remove from watchers.
-
-    Returns:
-        Dictionary with ``success: true`` on success. On failure a dict
-        with an ``"error"`` key is returned.
-    """
     if _is_read_only_mode():
         return dict(_READ_ONLY_ERROR)
 
-    if not _is_positive_int(issue_id):
-        return {"error": "issue_id must be a positive integer."}
-    if not _is_positive_int(user_id):
-        return {"error": "user_id must be a positive integer."}
+    await _ensure_cleanup_started()
 
     try:
         issue = _get_redmine_client().issue.get(issue_id)
-        issue.watcher.remove(user_id)
-        return {
-            "success": True,
-            "issue_id": issue_id,
-            "user_id": user_id,
-        }
+        if action == "add":
+            issue.watcher.add(user_id)
+        else:
+            issue.watcher.remove(user_id)
+        return {"success": True, "issue_id": issue_id, "user_id": user_id}
     except Exception as e:
         return _handle_redmine_error(
             e,
-            f"removing watcher {user_id} from issue {issue_id}",
+            f"{action}ing watcher {user_id} on issue {issue_id}",
             {"resource_type": "issue", "resource_id": issue_id},
         )
 
