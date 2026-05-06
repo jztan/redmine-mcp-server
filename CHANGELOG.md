@@ -115,6 +115,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Contributors
 - @mihajlovicjj — 30 new MCP tools, security hardening, and 82+ new tests ([#89](https://github.com/jztan/redmine-mcp-server/pull/89))
+- @mihajlovicjj: 14 new MCP tools (Wiki, Products, Gantt, Contacts), security hardening, and 86 new tests ([#98](https://github.com/jztan/redmine-mcp-server/pull/98))
 
 ## [1.2.2] - 2026-04-25
 ### Changed
