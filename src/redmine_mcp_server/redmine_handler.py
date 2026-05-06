@@ -3285,153 +3285,143 @@ async def set_note_private(
 
 
 @mcp.tool()
-async def list_issue_categories(
-    project_id: Union[str, int],
-) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
-    """List all issue categories for a given Redmine project.
-
-    Args:
-        project_id: Project identifier (numeric ID or string identifier).
-
-    Returns:
-        List of issue category dictionaries. On failure a dict with an
-        ``"error"`` key is returned.
-    """
-    try:
-        categories = _get_redmine_client().issue_category.filter(project_id=project_id)
-        return [_issue_category_to_dict(c) for c in _iter_capped(categories)]
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"listing issue categories for project {project_id}",
-            {"resource_type": "project", "resource_id": project_id},
-        )
-
-
-@mcp.tool()
-async def create_issue_category(
-    project_id: Union[str, int],
-    name: str,
-    assigned_to_id: Optional[int] = None,
-) -> Dict[str, Any]:
-    """Create a new issue category in a Redmine project.
-
-    Args:
-        project_id: Project identifier (numeric ID or string identifier).
-        name: Category name (required).
-        assigned_to_id: Optional default assignee user ID for issues in
-            this category.
-
-    Returns:
-        Dictionary containing the created issue category. On failure a
-        dict with an ``"error"`` key is returned.
-    """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-
-    if not name or not name.strip():
-        return {"error": "Category 'name' is required."}
-
-    try:
-        params: Dict[str, Any] = {
-            "project_id": project_id,
-            "name": name.strip(),
-        }
-        if assigned_to_id is not None:
-            params["assigned_to_id"] = assigned_to_id
-
-        category = _get_redmine_client().issue_category.create(**params)
-        return _issue_category_to_dict(category)
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"creating issue category in project {project_id}",
-            {"resource_type": "project", "resource_id": project_id},
-        )
-
-
-@mcp.tool()
-async def update_issue_category(
-    category_id: int,
+async def manage_issue_category(
+    action: str,
+    project_id: Optional[Union[str, int]] = None,
+    category_id: Optional[int] = None,
     name: Optional[str] = None,
     assigned_to_id: Optional[int] = None,
-) -> Dict[str, Any]:
-    """Update an existing Redmine issue category.
-
-    Args:
-        category_id: ID of the issue category to update.
-        name: New category name (optional).
-        assigned_to_id: New default assignee user ID (optional).
-
-    Returns:
-        Dictionary containing the updated issue category. On failure a
-        dict with an ``"error"`` key is returned.
-    """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-
-    params: Dict[str, Any] = {}
-    if name is not None:
-        stripped = name.strip()
-        if not stripped:
-            return {"error": "Category 'name' cannot be empty."}
-        params["name"] = stripped
-    if assigned_to_id is not None:
-        params["assigned_to_id"] = assigned_to_id
-
-    if not params:
-        return {"error": "No fields provided for update."}
-
-    try:
-        client = _get_redmine_client()
-        client.issue_category.update(category_id, **params)
-        updated = client.issue_category.get(category_id)
-        return _issue_category_to_dict(updated)
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"updating issue category {category_id}",
-            {"resource_type": "issue_category", "resource_id": category_id},
-        )
-
-
-@mcp.tool()
-async def delete_issue_category(
-    category_id: int,
     reassign_to_id: Optional[int] = None,
-) -> Dict[str, Any]:
-    """Delete a Redmine issue category.
+) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    """List, create, update, or delete a Redmine issue category.
 
     Args:
-        category_id: ID of the issue category to delete.
-        reassign_to_id: Optional ID of another category to reassign existing
-            issues to. When omitted, issues in this category become
-            uncategorised.
+        action: One of: ``list``, ``create``, ``update``, ``delete``.
+        project_id: Project ID or identifier. Required for ``list`` and
+            ``create``.
+        category_id: Category ID. Required for ``update`` and ``delete``.
+        name: Category name. Required for ``create``, optional for
+            ``update`` (cannot be blank).
+        assigned_to_id: Default assignee user ID. Optional for ``create``
+            and ``update``.
+        reassign_to_id: Reassign existing issues to this category ID on
+            ``delete``. Optional.
 
     Returns:
-        Dictionary with ``success: true`` on success. On failure a dict
-        with an ``"error"`` key is returned.
+        ``list``: list of category dicts.
+        ``create``/``update``: category dict.
+        ``delete``: ``{"success": True, "deleted_category_id": ...,
+        "reassigned_to_id": ...}``.
+        On error: ``{"error": "..."}``.
     """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-
-    try:
-        params: Dict[str, Any] = {}
-        if reassign_to_id is not None:
-            params["reassign_to_id"] = reassign_to_id
-
-        _get_redmine_client().issue_category.delete(category_id, **params)
+    _valid_actions = {"list", "create", "update", "delete"}
+    if action not in _valid_actions:
         return {
-            "success": True,
-            "deleted_category_id": category_id,
-            "reassigned_to_id": reassign_to_id,
+            "error": (
+                f"Invalid action '{action}'. " "Allowed: list, create, update, delete"
+            )
         }
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"deleting issue category {category_id}",
-            {"resource_type": "issue_category", "resource_id": category_id},
-        )
+
+    if action == "list":
+        if project_id is None:
+            return {"error": "project_id is required for action 'list'"}
+        try:
+            categories = _get_redmine_client().issue_category.filter(
+                project_id=project_id
+            )
+            return [_issue_category_to_dict(c) for c in _iter_capped(categories)]
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"listing issue categories for project {project_id}",
+                {"resource_type": "project", "resource_id": project_id},
+            )
+
+    elif action == "create":
+        if project_id is None:
+            return {"error": "project_id is required for action 'create'"}
+        if not name or not name.strip():
+            return {"error": "Category 'name' is required."}
+
+        if _is_read_only_mode():
+            return dict(_READ_ONLY_ERROR)
+
+        await _ensure_cleanup_started()
+
+        try:
+            params: Dict[str, Any] = {
+                "project_id": project_id,
+                "name": name.strip(),
+            }
+            if assigned_to_id is not None:
+                params["assigned_to_id"] = assigned_to_id
+            category = _get_redmine_client().issue_category.create(**params)
+            return _issue_category_to_dict(category)
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"creating issue category in project {project_id}",
+                {"resource_type": "project", "resource_id": project_id},
+            )
+
+    elif action == "update":
+        if category_id is None:
+            return {"error": "category_id is required for action 'update'"}
+
+        update_params: Dict[str, Any] = {}
+        if name is not None:
+            stripped = name.strip()
+            if not stripped:
+                return {"error": "Category 'name' cannot be empty."}
+            update_params["name"] = stripped
+        if assigned_to_id is not None:
+            update_params["assigned_to_id"] = assigned_to_id
+
+        if not update_params:
+            return {"error": "No fields provided for update."}
+
+        if _is_read_only_mode():
+            return dict(_READ_ONLY_ERROR)
+
+        await _ensure_cleanup_started()
+
+        try:
+            client = _get_redmine_client()
+            client.issue_category.update(category_id, **update_params)
+            updated = client.issue_category.get(category_id)
+            return _issue_category_to_dict(updated)
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"updating issue category {category_id}",
+                {"resource_type": "issue_category", "resource_id": category_id},
+            )
+
+    else:  # action == "delete"
+        if category_id is None:
+            return {"error": "category_id is required for action 'delete'"}
+
+        if _is_read_only_mode():
+            return dict(_READ_ONLY_ERROR)
+
+        await _ensure_cleanup_started()
+
+        try:
+            params = {}
+            if reassign_to_id is not None:
+                params["reassign_to_id"] = reassign_to_id
+            _get_redmine_client().issue_category.delete(category_id, **params)
+            return {
+                "success": True,
+                "deleted_category_id": category_id,
+                "reassigned_to_id": reassign_to_id,
+            }
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"deleting issue category {category_id}",
+                {"resource_type": "issue_category", "resource_id": category_id},
+            )
 
 
 @mcp.tool()
