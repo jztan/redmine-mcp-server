@@ -157,7 +157,7 @@ Ships everything currently in `Unreleased`. Highlights:
 - List tools cap results at 500 items via `_iter_capped`
 
 #### v2.0.0 — Tool Consolidation (breaking)
-*Priority: High | Effort: Medium | Status: Designed; plan in `docs/superpowers/plans/2026-04-30-tool-consolidation.md` (gitignored)*
+*Priority: High | Effort: Medium | Status: Designed; implementation plan ready*
 
 Reduce tool count from 69 to ~43 by folding CRUD-style tools into `manage_X(action=...)` tools following the `manage_redmine_version` pattern. No functionality is lost; old tool names are removed.
 
