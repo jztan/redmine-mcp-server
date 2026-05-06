@@ -5773,18 +5773,25 @@ def _is_positive_int(value: Any) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value > 0
 
 
+# Matches Redmine's project identifier rule: must start with a lowercase
+# letter or digit, then lowercase letters / digits / hyphens / underscores,
+# up to 100 chars total. Restricts the URL-path charset so callers cannot
+# smuggle ``/``, ``?``, ``#``, ``..``, whitespace, or uppercase into paths.
+_PROJECT_ID_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,99}$")
+
+
 def _is_valid_project_id(value: Any) -> bool:
     """Return True if ``value`` is a usable Redmine project identifier.
 
-    Accepts a positive integer (numeric ID) or a non-empty string
-    (project short-name / identifier). Empty strings, ``None``, booleans,
-    and other types are rejected. Used by tools that interpolate
-    ``project_id`` directly into URL paths to surface a clear error
-    instead of letting Redmine 404 on a malformed URL.
+    Accepts a positive integer (numeric ID) or a string matching Redmine's
+    project-identifier rule (``^[a-z0-9][a-z0-9_-]{0,99}$``). Strings
+    containing path-injecting characters (``/``, ``?``, ``#``, ``..``,
+    whitespace) or uppercase letters are rejected. Used by tools that
+    interpolate ``project_id`` directly into URL paths.
     """
     if _is_positive_int(value):
         return True
-    if isinstance(value, str) and value.strip() and value == value.strip():
+    if isinstance(value, str) and _PROJECT_ID_PATTERN.match(value):
         return True
     return False
 
