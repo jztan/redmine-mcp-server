@@ -5983,60 +5983,6 @@ async def update_checklist_item(
         )
 
 
-@mcp.tool()
-async def mark_checklist_done(
-    checklist_item_id: int,
-    is_done: bool = True,
-) -> Dict[str, Any]:
-    """Toggle the done/undone state of a checklist item.
-
-    Convenience tool that marks a checklist item as done or undone.
-    Equivalent to ``update_checklist_item(checklist_item_id, is_done=...)``.
-
-    Requires the RedmineUP Checklists plugin and
-    ``REDMINE_CHECKLISTS_ENABLED=true``. This is a write operation and
-    is blocked when ``REDMINE_MCP_READ_ONLY=true``.
-
-    Args:
-        checklist_item_id: The ID of the checklist item.
-        is_done: ``True`` to mark as done (default), ``False`` to mark undone.
-
-    Returns:
-        A success dict, or an error dict on failure.
-    """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-
-    if not _is_checklists_enabled():
-        return {
-            "error": (
-                "Checklist support is disabled. "
-                "Set REDMINE_CHECKLISTS_ENABLED=true to enable it."
-            )
-        }
-
-    if not _is_positive_int(checklist_item_id):
-        return {"error": "checklist_item_id must be a positive integer."}
-
-    if not isinstance(is_done, bool):
-        return {"error": "is_done must be a boolean."}
-
-    try:
-        _update_checklist_item_api(checklist_item_id, {"is_done": is_done})
-        return {
-            "success": True,
-            "checklist_item_id": checklist_item_id,
-            "is_done": is_done,
-        }
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"marking checklist item {checklist_item_id} "
-            f"as {'done' if is_done else 'undone'}",
-            {"resource_type": "checklist_item", "resource_id": checklist_item_id},
-        )
-
-
 # ---------------------------------------------------------------------------
 # Products tools (requires RedmineUP Products plugin)
 # ---------------------------------------------------------------------------
