@@ -2,9 +2,8 @@
 
 ## 🎯 Project Status
 
-**Current Version:** v1.2.2 (released 2026-04-25)
-**Next Release:** v1.3.0 (cuts from current `develop`; large feature drop — see below)
-**Next Major:** v2.0.0 (tool consolidation — breaking)
+**Current Version:** v1.3.0 (released 2026-05-06)
+**Next Release:** v2.0.0 (tool consolidation — breaking; designed)
 **MCP Registry Status:** Published
 
 **Test Suite:** 1118 tests passing (1042 unit + 76 integration; 4 skipped behind `REDMINE_AGILE_ENABLED`)
@@ -12,151 +11,58 @@
 
 ---
 
-### ✅ Completed Features
+## ✅ Released Versions
 
-#### Core Infrastructure
-- [x] FastMCP streamable HTTP transport migration (v0.2.0)
-- [x] Native FastMCP v3 core migration (v1.1.0)
-  - `fastmcp>=3.0.0,<4`; converted `**kwargs` tools to explicit typed parameters
-- [x] Docker containerization with multi-stage builds
-- [x] Environment-based configuration with dual `.env` support
-- [x] Centralized error handling with 12 error types and actionable messages (v0.10.0)
-- [x] Comprehensive test suite (unit, integration, security tests)
-- [x] GitHub Actions CI/CD pipeline; dependency-audit workflow with `pip-audit` (v1.1.1)
-- [x] Stale issue / lock closed / autoclose label workflows
-- [x] PyPI package publishing as `redmine-mcp-server` (v0.4.2)
-- [x] MCP Registry preparation with validation (v0.4.3)
-- [x] Console script entry point for easy execution
-- [x] `.env` loading from current working directory for pip installs (v0.7.1)
-- [x] Release SOP documented in `RELEASE_SOP.md` with `scripts/release.py` automation
-- [x] Hotfix workflow via `scripts/release.py --hotfix` (v1.2.2)
+For per-release detail, parameter changes, and contributor credits, see [CHANGELOG.md](CHANGELOG.md).
 
-#### Redmine Integration — Issues & Search
-- [x] List, get, create, update issues (`get_redmine_issue`, `list_redmine_issues`, `create_redmine_issue`, `update_redmine_issue`)
-  - Selective field returns via `fields` parameter (~96% token reduction)
-  - Custom fields by name in `update_redmine_issue` (v0.12.0)
-- [x] Search issues by text query with pagination and field selection (v0.7.0)
-- [x] Global search across all Redmine resources (v0.9.0; requires Redmine 3.3.0+)
-- [x] Journal pagination on `get_redmine_issue` (`journal_limit`/`journal_offset`) (v1.0.0)
-- [x] Include flags on `get_redmine_issue` (watchers, relations, children) (v1.0.0)
-- [x] Required custom field autofill with auto-retry (v0.12.0; opt-in)
-- [x] Smart project status summarization with activity analysis
-- [x] **Issue tracking expansion (v1.3 — pending release):**
-  - `copy_issue`, `list_subtasks`
-  - Issue relations: `list_issue_relations`, `create_issue_relation`, `delete_issue_relation`
-  - Watchers: `add_watcher`, `remove_watcher`
-  - Journal notes: `edit_note`, `set_note_private`, `get_private_notes`
-  - Issue categories: `list_issue_categories`, `create_issue_category`, `update_issue_category`, `delete_issue_category`
+### v1.3.0 — 2026-05-06 (current)
+Large feature drop. 34 new MCP tools added; 1031 → 1042 unit tests.
 
-#### Redmine Integration — Projects, Versions, Wiki
-- [x] List accessible projects (`list_redmine_projects`)
-- [x] Project members listing with roles (v1.0.0)
-- [x] Project versions/milestones listing (v0.12.0; status filtering)
-- [x] Wiki page retrieval, create, update, delete (v0.9.0–v0.10.0)
-- [x] **Project & Wiki expansion (v1.3 — pending release):**
-  - `manage_redmine_version` — create/update/delete versions in one tool with `action` param
-  - `list_redmine_roles`, `get_project_modules`
-  - `add_project_member`, `update_project_member`, `remove_project_member`
-  - `list_wiki_pages`, `rename_wiki_page` (with silent permission failure detection)
+- 14 issue-tracking tools: `copy_issue`, `list_subtasks`, issue relations, watchers, journal notes, issue categories
+- 5 project tools: `list_redmine_roles`, `get_project_modules`, project member CRUD
+- 6 discovery tools: trackers, statuses, priorities, users, current user, queries
+- 2 wiki tools: `list_wiki_pages`, `rename_wiki_page` (with silent permission failure detection)
+- 1 composite tool: `get_gantt_chart` (issues + versions + relations)
+- 4 RedmineUP Products plugin tools (opt-in via `REDMINE_PRODUCTS_ENABLED`)
+- 7 RedmineUP CRM/Contacts plugin tools (opt-in via `REDMINE_CRM_ENABLED`)
+- 3 RedmineUP Checklists Pro plugin tools (opt-in via `REDMINE_CHECKLISTS_ENABLED`)
+- 1 unified version tool: `manage_redmine_version` (replaces three planned tools with one `action`-driven tool)
+- 2 time-tracking tools: `log_time_for_user`, `import_time_entries`
+- 3 file tools: `list_files`, `upload_file` (with SSRF protection), `delete_file`
+- Security hardening: SSRF gating, `_is_valid_project_id` charset restriction, `add_product` `status_id` constraint, secret scrubbing in error messages, prompt-injection wrapping on additional fields, `delete_file` container-type fail-closed
 
-#### Redmine Integration — Time Tracking & Files
-- [x] Time tracking — full CRUD (v1.0.0)
-  - `list_time_entries`, `create_time_entry`, `update_time_entry`, `list_time_entry_activities`
-- [x] Project-scoped activity discovery via `project_id` parameter (v1.2.2)
-- [x] Download attachments with HTTP URLs and UUID-based secure storage
-- [x] Automatic file cleanup with configurable expiry
-- [x] **Time tracking & files expansion (v1.3 — pending release):**
-  - `log_time_for_user` — log time on behalf of another user
-  - `import_time_entries` — bulk import with per-entry error reporting
-  - `list_files`, `upload_file` (with SSRF protection on URL-based uploads), `delete_file`
+**Behavior changes:** `get_gantt_chart` defaults `include_closed=False`; list tools return `Union[List, Dict]` on error; list tools cap at 500 items via `_iter_capped`.
 
-#### Redmine Integration — Discovery / Enumeration (v1.3 — pending release)
-- [x] `list_redmine_trackers`, `list_redmine_issue_statuses`, `list_redmine_issue_priorities`
-- [x] `list_redmine_users` (admin filter), `get_current_user` (works for non-admins)
-- [x] `list_redmine_queries` (saved custom queries; read-only)
+### v1.2.x line — 2026-04-08 to 2026-04-25
+- **v1.2.2** (2026-04-25) — `list_time_entry_activities` accepts `project_id` for project-specific activity discovery; `scripts/release.py --hotfix` workflow
+- **v1.2.0** (2026-04-14) — RedmineUP Agile plugin support (`story_points`, `agile_sprint_id`, `agile_position`); FastMCP v3.2.0 CVE patches (CVE-2025-64340, CVE-2026-27124)
+- **v1.1.2** (2026-04-08) — Fix `AttributeError: 'str' object has no attribute 'isoformat'` on non-UTC Redmine configurations
 
-#### Redmine Integration — Plugin Support (opt-in)
-- [x] **RedmineUP Agile plugin** (v1.2.0; `REDMINE_AGILE_ENABLED=true`)
-  - `get_redmine_issue` returns `story_points`, `agile_sprint_id`, `agile_position`
-  - `update_redmine_issue` accepts `story_points`
-- [x] **RedmineUP Checklists Pro plugin** (v1.3 — pending; `REDMINE_CHECKLISTS_ENABLED=true`)
-  - `get_checklist`, `update_checklist_item`, `mark_checklist_done`
-- [x] **RedmineUP Products plugin** (v1.3 — pending; `REDMINE_PRODUCTS_ENABLED=true`)
-  - `list_products`, `get_product`, `add_product`, `edit_product`
-- [x] **RedmineUP CRM plugin** (v1.3 — pending; `REDMINE_CRM_ENABLED=true`)
-  - `list_contacts`, `get_contact`, `create_contact`, `edit_contact`, `delete_contact`
-  - `assign_contact_to_project`, `remove_contact_from_project`
+### v1.1.x line — FastMCP v3 era (2026-03-21 to 2026-03-31)
+- **v1.1.1** (2026-03-31) — 14 CVEs patched across 7 transitive deps (pyjwt, cryptography, starlette, fastapi, urllib3, requests, python-multipart, pygments); `dependency-audit.yml` workflow
+- **v1.1.0** (2026-03-21) — FastMCP v3 core migration; `**kwargs` tools converted to explicit typed parameters
 
-#### Redmine Integration — Composite Tools (v1.3 — pending release)
-- [x] `get_gantt_chart` — composite read tool aggregating issues + versions + relations into a Gantt-shaped response
+### v1.0.0 — 2026-03-14
+GA release. Prompt injection protection with `<insecure-content>` boundary tags; read-only mode (`REDMINE_MCP_READ_ONLY`); OAuth2 per-user authentication (RFC 8707/8414/7009); time tracking CRUD; project members; journal pagination and include flags on `get_redmine_issue`; deprecated `list_my_redmine_issues` removed.
 
-#### Security & Performance
-- [x] Path traversal vulnerability fix (CVE, CVSS 7.5)
-- [x] UUID-based secure file storage with HTTP file serving and time-limited URLs
-- [x] Server-controlled storage policies; 95% memory reduction with pagination
-- [x] MCP security fix (CVE-2025-62518) via mcp v1.19.0 (v0.6.0)
-- [x] SSL/TLS certificate configuration support (v0.8.0)
-  - Self-signed certs (`REDMINE_SSL_CERT`), mTLS (`REDMINE_SSL_CLIENT_CERT`), verification control (`REDMINE_SSL_VERIFY`)
-- [x] Prompt injection protection with `<insecure-content>` boundary tags (v1.0.0)
-  - Applied to descriptions, journal notes, wiki text, excerpts, version descriptions, attachment metadata, contact display fields
-- [x] Read-only mode via `REDMINE_MCP_READ_ONLY` env var (v1.0.0)
-- [x] Patch 14 CVEs across 7 transitive dependencies (v1.1.1)
-  - pyjwt, cryptography, starlette, fastapi, urllib3, requests, python-multipart, pygments
-- [x] FastMCP v3.2.0 CVE patches: CVE-2025-64340, CVE-2026-27124 (v1.2.0)
-- [x] **Security hardening (v1.3 — pending release):**
-  - SSRF protection for `upload_file(source_url=...)` with public/private IP gating, redirect re-validation, credentials rejection
-  - Container-type fail-closed for `delete_file` (refuse non-Project attachments by default)
-  - Int-ID validators reject booleans (Python `True`/`False` are `int` — guards `role_ids`, `user_id`, `group_id`)
-  - Error-message secret scrubbing (API keys, Bearer tokens, basic-auth credentials)
-  - `_is_valid_project_id` charset restriction `^[a-z0-9][a-z0-9_-]{0,99}$` to prevent URL-path injection in plugin tools
-  - `add_product` `status_id` constraint to `{1, 2}`
-  - `cryptography` 46.0.6 → 46.0.7 patching CVE-2026-39892
-
-#### Authentication
-- [x] API key authentication
-- [x] Username/password authentication
-- [x] OAuth2 per-user authentication mode (v1.0.0)
-  - `REDMINE_AUTH_MODE=oauth` with Bearer token validation
-  - OAuth discovery endpoints (RFC 8707, RFC 8414); token revocation (RFC 7009)
-  - Per-request client isolation via ContextVar
-  - Requires Redmine 6.1+ (Doorkeeper)
-
-#### Documentation & Quality
-- [x] Complete tool documentation in `docs/tool-reference.md`
-- [x] Separate developer guide in `docs/contributing.md`
-- [x] OAuth2 multi-tenant setup guide (`docs/oauth-setup.md`; v1.0.0)
-- [x] Comprehensive troubleshooting guide
-- [x] CHANGELOG with semantic versioning and contributor credits
-- [x] Release SOP in `RELEASE_SOP.md`
-- [x] Test coverage tracking via Codecov (v0.8.1)
-- [x] PEP 8 compliance via flake8 + black; pre-commit hooks (v1.2.2)
-- [x] GitHub issue templates (bug report, feature request)
-- [x] Dependabot integration
-
-#### Python Compatibility
-- [x] Support Python 3.10+ (v0.5.0); CI tests 3.10, 3.11, 3.12, 3.13
+### Pre-v1.0 highlights
+- **v0.12.x** (Feb-Mar 2026) — custom field handling, `list_project_issue_custom_fields`, `list_redmine_versions`, autofill required custom fields, Docker `421 Misdirected Request` fix
+- **v0.11.0** (2026-02-14) — `list_redmine_issues` with flexible filtering and selective field returns
+- **v0.10.0** (2026-01-11) — Wiki page editing (create/update/delete), centralized error handler with 12 error types
+- **v0.9.x** (Dec 2025) — Global search (`search_entire_redmine`), wiki page retrieval (`get_redmine_wiki_page`), removed deprecated `download_redmine_attachment`
+- **v0.8.x** (Dec 2025) — SSL/TLS configuration (self-signed, mTLS, verification control); test coverage tracking via Codecov
+- **v0.7.x** (Nov-Dec 2025) — Search optimization with pagination and field selection; pip-install `.env` loading from CWD
+- **v0.6.0** (2025-10-25) — MCP security fix CVE-2025-62518 via mcp 1.19.0
+- **v0.5.x** (Sep-Oct 2025) — Python 3.10+ support; documentation reorganization
+- **v0.4.x** (Sep 2025) — `get_redmine_attachment_download_url` (replaces deprecated download tool, fixes CVSS 7.5 path traversal); PyPI publishing as `redmine-mcp-server`; MCP Registry support
+- **v0.2.x – v0.3.x** (Sep 2025) — FastMCP streamable HTTP migration; HTTP file serving with UUID-based URLs; automatic file cleanup
+- **v0.1.x** (May-Jun 2025) — Initial release; core issue tools; search, attachments, wiki retrieval
 
 ---
 
-### 📅 Planned Releases
+## 📅 Planned Releases
 
-#### v1.3.0 — Large Feature Drop (next release; cuts from current `develop`)
-*Priority: High | Effort: ready to ship | Status: All work merged into `develop`*
-
-Ships everything currently in `Unreleased`. Highlights:
-
-- **34 new MCP tools** across Issues (14), Projects (5), Time Tracking (2), Files (3), Discovery (6), Wiki (2), Gantt (1), Products (4), Contacts/CRM (7), Checklists (3), and version management (`manage_redmine_version`)
-- **Plugin support:** RedmineUP Checklists, Products, and CRM (all opt-in via env flags)
-- **Security hardening** — SSRF protection, path-charset validation, secret scrubbing, attachment fail-closed, prompt-injection wrapping on additional fields
-- **34 new tests** beyond v1.2.2 (1042 unit total)
-- 1031 → 1042 unit tests, 76 integration tests passing
-
-**Behavior changes worth noting in the release notes:**
-- `get_gantt_chart` ships with `include_closed=False` default
-- List tools now return `Union[List, Dict]` on error (was `[{"error":...}]` for some)
-- List tools cap results at 500 items via `_iter_capped`
-
-#### v2.0.0 — Tool Consolidation (breaking)
+### v2.0.0 — Tool Consolidation (next)
 *Priority: High | Effort: Medium | Status: Designed; implementation plan ready*
 
 Reduce tool count from 69 to ~43 by folding CRUD-style tools into `manage_X(action=...)` tools following the `manage_redmine_version` pattern. No functionality is lost; old tool names are removed.
@@ -186,7 +92,7 @@ Reduce tool count from 69 to ~43 by folding CRUD-style tools into `manage_X(acti
 
 ---
 
-### 🔮 Future (post-v2.0)
+## 🔮 Future (post-v2.0)
 
 - [ ] **Native FastMCP v3 Auth Migration** *(Priority: High security; was previously slated for v2.0)*
   - Replace `RedmineOAuthMiddleware` Starlette middleware with FastMCP v3's native `auth=` constructor parameter (`JWTVerifier` / `OAuthProxy` / `MultiAuth`)
@@ -207,7 +113,7 @@ Reduce tool count from 69 to ~43 by folding CRUD-style tools into `manage_X(acti
 
 ---
 
-### 🔧 Maintenance Notes
+## 🔧 Maintenance Notes
 
 - Monitor GitHub issues for actual user problems
 - Only add features/fixes based on real user feedback
@@ -216,4 +122,4 @@ Reduce tool count from 69 to ~43 by folding CRUD-style tools into `manage_X(acti
 
 ---
 
-**Last Updated:** 2026-05-06 (v1.2.2 current; v1.3 ready to cut; v2.0 consolidation designed)
+**Last Updated:** 2026-05-06 (v1.3.0 released; v2.0.0 consolidation designed and ready to start)
