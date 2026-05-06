@@ -39,7 +39,7 @@ def _make_wiki_page(
 # ---------------------------------------------------------------------------
 
 
-class TestListWikiPages:
+class TestManageRedmineWikiPageList:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_returns_list_of_pages(self, mock_redmine):
@@ -83,7 +83,7 @@ class TestListWikiPages:
 # ---------------------------------------------------------------------------
 
 
-class TestRenameWikiPage:
+class TestManageRedmineWikiPageRename:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_rename_success(self, mock_redmine):

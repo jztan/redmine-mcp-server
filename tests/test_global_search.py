@@ -323,7 +323,7 @@ class TestSearchEntireRedmine:
         assert "unknown" not in result["results_by_type"]
 
 
-class TestGetRedmineWikiPage:
+class TestManageRedmineWikiPageGet:
     """Tests for get_redmine_wiki_page MCP tool."""
 
     @pytest.fixture

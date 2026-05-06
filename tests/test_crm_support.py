@@ -59,7 +59,7 @@ class TestIsCrmEnabled:
 # ---------------------------------------------------------------------------
 
 
-class TestListContacts:
+class TestManageContactList:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
     @patch("redmine_mcp_server.redmine_handler.redmine")
@@ -169,7 +169,7 @@ class TestListContacts:
 # ---------------------------------------------------------------------------
 
 
-class TestGetContact:
+class TestManageContactGet:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
     @patch("redmine_mcp_server.redmine_handler.redmine")
@@ -218,7 +218,7 @@ class TestGetContact:
 # ---------------------------------------------------------------------------
 
 
-class TestEditContact:
+class TestManageContactUpdate:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
     @patch("redmine_mcp_server.redmine_handler.redmine")
@@ -281,7 +281,7 @@ class TestEditContact:
 # ---------------------------------------------------------------------------
 
 
-class TestCreateContact:
+class TestManageContactCreate:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
     @patch("redmine_mcp_server.redmine_handler.redmine")
@@ -368,7 +368,7 @@ class TestCreateContact:
 # ---------------------------------------------------------------------------
 
 
-class TestDeleteContact:
+class TestManageContactDelete:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
     @patch("redmine_mcp_server.redmine_handler.redmine")
@@ -409,7 +409,7 @@ class TestDeleteContact:
 # ---------------------------------------------------------------------------
 
 
-class TestAssignContactToProject:
+class TestManageContactAssignToProject:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
     @patch("redmine_mcp_server.redmine_handler.redmine")
@@ -452,7 +452,7 @@ class TestAssignContactToProject:
         assert "project_id" in result["error"]
 
 
-class TestRemoveContactFromProject:
+class TestManageContactRemoveFromProject:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
     @patch("redmine_mcp_server.redmine_handler.redmine")

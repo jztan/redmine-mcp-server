@@ -53,7 +53,7 @@ class TestIsProductsEnabled:
 # ---------------------------------------------------------------------------
 
 
-class TestListProducts:
+class TestManageProductList:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
     @patch("redmine_mcp_server.redmine_handler.redmine")
@@ -193,7 +193,7 @@ class TestListProducts:
 # ---------------------------------------------------------------------------
 
 
-class TestGetProduct:
+class TestManageProductGet:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
     @patch("redmine_mcp_server.redmine_handler.redmine")
@@ -232,7 +232,7 @@ class TestGetProduct:
 # ---------------------------------------------------------------------------
 
 
-class TestAddProduct:
+class TestManageProductCreate:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
     @patch("redmine_mcp_server.redmine_handler.redmine")
@@ -308,7 +308,7 @@ class TestAddProduct:
 # ---------------------------------------------------------------------------
 
 
-class TestEditProduct:
+class TestManageProductUpdate:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
     @patch("redmine_mcp_server.redmine_handler.redmine")

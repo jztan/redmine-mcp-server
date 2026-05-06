@@ -54,7 +54,7 @@ def _mock_time_entry(
 # ---------------------------------------------------------------------------
 
 
-class TestLogTimeForUser:
+class TestManageTimeEntryForUser:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_log_time_on_issue(self, mock_redmine):

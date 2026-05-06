@@ -12,7 +12,7 @@ from redminelib.exceptions import (
 )
 
 
-class TestCreateRedmineWikiPage:
+class TestManageRedmineWikiPageCreate:
     """Tests for create_redmine_wiki_page MCP tool."""
 
     @pytest.fixture
@@ -158,7 +158,7 @@ class TestCreateRedmineWikiPage:
         assert "error" in result
 
 
-class TestUpdateRedmineWikiPage:
+class TestManageRedmineWikiPageUpdate:
     """Tests for update_redmine_wiki_page MCP tool."""
 
     @pytest.fixture
@@ -302,7 +302,7 @@ class TestUpdateRedmineWikiPage:
         assert "error" in result
 
 
-class TestDeleteRedmineWikiPage:
+class TestManageRedmineWikiPageDelete:
     """Tests for delete_redmine_wiki_page MCP tool."""
 
     @pytest.mark.asyncio

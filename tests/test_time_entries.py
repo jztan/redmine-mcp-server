@@ -265,7 +265,7 @@ class TestListTimeEntries:
         assert len(result) == 0
 
 
-class TestCreateTimeEntry:
+class TestManageTimeEntryCreate:
     """Test cases for create_time_entry tool."""
 
     @pytest.fixture
@@ -416,7 +416,7 @@ class TestCreateTimeEntry:
         assert call_kwargs["hours"] == 0.25
 
 
-class TestUpdateTimeEntry:
+class TestManageTimeEntryUpdate:
     """Test cases for update_time_entry tool."""
 
     @pytest.fixture
