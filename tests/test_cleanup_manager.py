@@ -22,28 +22,28 @@ class TestCleanupTaskManager:
     @pytest.fixture
     def fresh_manager(self):
         """Create a fresh CleanupTaskManager instance."""
-        import redmine_mcp_server.redmine_handler as handler
+        from redmine_mcp_server import _cleanup
 
-        return handler.CleanupTaskManager()
+        return _cleanup.CleanupTaskManager()
 
     @pytest.fixture
     def reset_global_state(self):
         """Reset global cleanup state before and after test."""
-        import redmine_mcp_server.redmine_handler as handler
+        from redmine_mcp_server import _cleanup
 
         # Store original state
-        original_initialized = handler._cleanup_initialized
-        original_manager = handler.cleanup_manager
+        original_initialized = _cleanup._cleanup_initialized
+        original_manager = _cleanup.cleanup_manager
 
         # Reset before test
-        handler._cleanup_initialized = False
-        handler.cleanup_manager = handler.CleanupTaskManager()
+        _cleanup._cleanup_initialized = False
+        _cleanup.cleanup_manager = _cleanup.CleanupTaskManager()
 
         yield
 
         # Restore after test
-        handler._cleanup_initialized = original_initialized
-        handler.cleanup_manager = original_manager
+        _cleanup._cleanup_initialized = original_initialized
+        _cleanup.cleanup_manager = original_manager
 
     def test_cleanup_manager_init(self, fresh_manager):
         """Test CleanupTaskManager initialization."""
@@ -207,21 +207,21 @@ class TestEnsureCleanupStarted:
     @pytest.fixture
     def reset_global_state(self):
         """Reset global cleanup state."""
-        import redmine_mcp_server.redmine_handler as handler
+        from redmine_mcp_server import _cleanup
 
-        original_initialized = handler._cleanup_initialized
-        handler._cleanup_initialized = False
+        original_initialized = _cleanup._cleanup_initialized
+        _cleanup._cleanup_initialized = False
 
-        yield handler
+        yield _cleanup
 
-        handler._cleanup_initialized = original_initialized
+        _cleanup._cleanup_initialized = original_initialized
 
     @pytest.mark.asyncio
     async def test_ensure_cleanup_started_when_enabled(
         self, reset_global_state, tmp_path
     ):
         """Test lazy initialization when cleanup is enabled."""
-        handler = reset_global_state
+        cleanup_mod = reset_global_state
         attachments_dir = tmp_path / "attachments"
         attachments_dir.mkdir()
 
@@ -230,35 +230,35 @@ class TestEnsureCleanupStarted:
             {"AUTO_CLEANUP_ENABLED": "true", "ATTACHMENTS_DIR": str(attachments_dir)},
         ):
             with patch.object(
-                handler.cleanup_manager, "start", new_callable=AsyncMock
+                cleanup_mod.cleanup_manager, "start", new_callable=AsyncMock
             ) as mock_start:
-                await handler._ensure_cleanup_started()
+                await cleanup_mod._ensure_cleanup_started()
 
                 mock_start.assert_called_once()
 
-        assert handler._cleanup_initialized is True
+        assert cleanup_mod._cleanup_initialized is True
 
     @pytest.mark.asyncio
     async def test_ensure_cleanup_started_when_disabled(self, reset_global_state):
         """Test lazy initialization when cleanup is disabled."""
-        handler = reset_global_state
+        cleanup_mod = reset_global_state
 
         with patch.dict(os.environ, {"AUTO_CLEANUP_ENABLED": "false"}):
-            await handler._ensure_cleanup_started()
+            await cleanup_mod._ensure_cleanup_started()
 
         # Should still mark as initialized to avoid repeated checks
-        assert handler._cleanup_initialized is True
+        assert cleanup_mod._cleanup_initialized is True
 
     @pytest.mark.asyncio
     async def test_ensure_cleanup_started_idempotent(self, reset_global_state):
         """Test that multiple calls don't reinitialize."""
-        handler = reset_global_state
-        handler._cleanup_initialized = True
+        cleanup_mod = reset_global_state
+        cleanup_mod._cleanup_initialized = True
 
         with patch.object(
-            handler.cleanup_manager, "start", new_callable=AsyncMock
+            cleanup_mod.cleanup_manager, "start", new_callable=AsyncMock
         ) as mock_start:
-            await handler._ensure_cleanup_started()
-            await handler._ensure_cleanup_started()
+            await cleanup_mod._ensure_cleanup_started()
+            await cleanup_mod._ensure_cleanup_started()
 
             mock_start.assert_not_called()
