@@ -40,8 +40,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 from urllib.parse import unquote, urlparse
 
 import httpx
-from dotenv import load_dotenv
-from redminelib import Redmine
+from redminelib import Redmine  # noqa: F401  -- re-exported for test patching
 from redminelib.exceptions import (
     ResourceNotFoundError,
     VersionMismatchError,
@@ -78,43 +77,24 @@ from ._errors import (  # noqa: F401  -- re-exported for back-compat during refa
     _handle_redmine_error,
     _scrub_error_message,
 )
-
-# Configure logging
-logger = logging.getLogger(__name__)
-
-# Load environment variables from .env file
-# Search order: current working directory first, then package directory
-_env_paths = [
-    Path.cwd() / ".env",  # User's current working directory (highest priority)
-    Path(__file__).parent.parent.parent / ".env",  # Package directory (fallback)
-]
-
-_env_loaded = False
-for _env_path in _env_paths:
-    if _env_path.exists():
-        load_dotenv(dotenv_path=str(_env_path))
-        logger.info(f"Loaded .env from: {_env_path}")
-        _env_loaded = True
-        break
-
-if not _env_loaded:
-    # Try default load_dotenv() behavior as final fallback
-    load_dotenv()
-
-# Load Redmine configuration
-REDMINE_URL = os.getenv("REDMINE_URL")
-REDMINE_USERNAME = os.getenv("REDMINE_USERNAME")
-REDMINE_PASSWORD = os.getenv("REDMINE_PASSWORD")
-REDMINE_API_KEY = os.getenv("REDMINE_API_KEY")
-
-# Auth mode: "oauth" uses per-request Bearer tokens via OAuth middleware;
-# "legacy" uses REDMINE_API_KEY or REDMINE_USERNAME/REDMINE_PASSWORD (default).
-REDMINE_AUTH_MODE = os.getenv("REDMINE_AUTH_MODE", "legacy").lower()
-
-# SSL Configuration (optional)
-REDMINE_SSL_VERIFY = os.getenv("REDMINE_SSL_VERIFY", "true").lower() == "true"
-REDMINE_SSL_CERT = os.getenv("REDMINE_SSL_CERT")
-REDMINE_SSL_CLIENT_CERT = os.getenv("REDMINE_SSL_CLIENT_CERT")
+from ._client import (  # noqa: F401  -- re-exported for back-compat during refactor
+    REDMINE_API_KEY,
+    REDMINE_AUTH_MODE,
+    REDMINE_PASSWORD,
+    REDMINE_SSL_CERT,
+    REDMINE_SSL_CLIENT_CERT,
+    REDMINE_SSL_VERIFY,
+    REDMINE_URL,
+    REDMINE_USERNAME,
+    _build_legacy_client,
+    _build_requests_config,
+    _env_loaded,
+    _env_paths,
+    _get_redmine_client,
+    _legacy_client,
+    logger,
+    redmine,
+)
 
 if not REDMINE_URL:
     logger.warning(
@@ -129,98 +109,6 @@ elif REDMINE_AUTH_MODE != "oauth" and not (
         "Please set REDMINE_API_KEY or REDMINE_USERNAME/REDMINE_PASSWORD "
         "in your .env file, or set REDMINE_AUTH_MODE=oauth."
     )
-
-
-# Build SSL requests config from environment (used by _get_redmine_client)
-def _build_requests_config() -> dict:
-    requests_config = {}
-    if not REDMINE_SSL_VERIFY:
-        requests_config["verify"] = False
-        logger.warning("SSL verification is DISABLED - use only for development!")
-    elif REDMINE_SSL_CERT:
-        cert_path = Path(REDMINE_SSL_CERT).resolve()
-        if not cert_path.exists():
-            raise FileNotFoundError(
-                f"SSL certificate not found: {REDMINE_SSL_CERT} "
-                f"(resolved to: {cert_path})"
-            )
-        if not cert_path.is_file():
-            raise ValueError(
-                f"SSL certificate path must be a file, not directory: {cert_path}"
-            )
-        requests_config["verify"] = str(cert_path)
-        logger.info(f"Using custom SSL certificate: {cert_path}")
-    if REDMINE_SSL_CLIENT_CERT:
-        if "," in REDMINE_SSL_CLIENT_CERT:
-            cert, key = REDMINE_SSL_CLIENT_CERT.split(",", 1)
-            requests_config["cert"] = (cert.strip(), key.strip())
-            logger.info("Using client certificate for mutual TLS")
-        else:
-            requests_config["cert"] = REDMINE_SSL_CLIENT_CERT
-            logger.info("Using client certificate for mutual TLS")
-    return requests_config
-
-
-# Test-compatibility hook: existing unit tests patch this module-level variable
-# directly. When non-None, _get_redmine_client() returns it immediately.
-# In production this stays None and per-request auth is always used.
-redmine = None
-
-# Cached legacy-mode client — avoids recreating Redmine() on every tool call
-# when running without OAuth.
-_legacy_client = None
-
-
-def _build_legacy_client() -> Redmine:
-    """Build a Redmine client using legacy credentials (API key or user/pass)."""
-    requests_config = _build_requests_config()
-    if REDMINE_API_KEY:
-        if requests_config:
-            return Redmine(REDMINE_URL, key=REDMINE_API_KEY, requests=requests_config)
-        return Redmine(REDMINE_URL, key=REDMINE_API_KEY)
-    elif REDMINE_USERNAME and REDMINE_PASSWORD:
-        if requests_config:
-            return Redmine(
-                REDMINE_URL,
-                username=REDMINE_USERNAME,
-                password=REDMINE_PASSWORD,
-                requests=requests_config,
-            )
-        return Redmine(
-            REDMINE_URL, username=REDMINE_USERNAME, password=REDMINE_PASSWORD
-        )
-    else:
-        raise RuntimeError(
-            "No Redmine authentication available. "
-            "Set REDMINE_AUTH_MODE=oauth or configure REDMINE_API_KEY / "
-            "REDMINE_USERNAME+REDMINE_PASSWORD."
-        )
-
-
-def _get_redmine_client() -> Redmine:
-    global _legacy_client
-
-    if redmine is not None:
-        return redmine
-
-    from .oauth_middleware import current_redmine_token
-
-    token = current_redmine_token.get()
-
-    if token:
-        # OAuth mode: per-request client with Bearer token (cannot be cached)
-        requests_config = _build_requests_config()
-        headers = {"Authorization": f"Bearer {token}"}
-        if requests_config:
-            return Redmine(
-                REDMINE_URL, requests={"headers": headers, **requests_config}
-            )
-        return Redmine(REDMINE_URL, requests={"headers": headers})
-
-    # Legacy mode: reuse a cached singleton
-    if _legacy_client is None:
-        _legacy_client = _build_legacy_client()
-    return _legacy_client
 
 
 # Initialize FastMCP server
