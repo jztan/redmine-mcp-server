@@ -74,6 +74,14 @@ from ._serialization import (  # noqa: F401  re-exported for back-compat
     _safe_isoformat,
     wrap_insecure_content,
 )
+from ._env import (  # noqa: F401  -- re-exported for back-compat during refactor
+    _is_agile_enabled,
+    _is_checklists_enabled,
+    _is_crm_enabled,
+    _is_products_enabled,
+    _is_read_only_mode,
+    _is_true_env,
+)
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -591,36 +599,6 @@ _STANDARD_ISSUE_UPDATE_FIELDS: Set[str] = {
     "custom_fields",
     "status_name",
 }
-
-
-def _is_true_env(var_name: str, default: str = "false") -> bool:
-    """Parse common truthy env-var values."""
-    return os.getenv(var_name, default).strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _is_read_only_mode() -> bool:
-    """Check if the server is in read-only mode."""
-    return _is_true_env("REDMINE_MCP_READ_ONLY", "false")
-
-
-def _is_agile_enabled() -> bool:
-    """Check if RedmineUP Agile plugin support is enabled."""
-    return _is_true_env("REDMINE_AGILE_ENABLED", "false")
-
-
-def _is_checklists_enabled() -> bool:
-    """Check if RedmineUP Checklists plugin support is enabled."""
-    return _is_true_env("REDMINE_CHECKLISTS_ENABLED", "false")
-
-
-def _is_products_enabled() -> bool:
-    """Check if RedmineUP Products plugin support is enabled."""
-    return _is_true_env("REDMINE_PRODUCTS_ENABLED", "false")
-
-
-def _is_crm_enabled() -> bool:
-    """Check if RedmineUP CRM (Contacts) plugin support is enabled."""
-    return _is_true_env("REDMINE_CRM_ENABLED", "false")
 
 
 def _fetch_agile_data(issue_id: int) -> Dict[str, Any]:
