@@ -95,7 +95,7 @@ class TestListTimeEntryActivitiesProjectScoped:
         mock_client.project.get.return_value = mock_project
 
         with patch(
-            "redmine_mcp_server.redmine_handler._get_redmine_client",
+            "redmine_mcp_server.tools.time_tracking._get_redmine_client",
             return_value=mock_client,
         ):
             result = await list_time_entry_activities(project_id="my-project")
@@ -104,10 +104,16 @@ class TestListTimeEntryActivitiesProjectScoped:
         assert result["project_id"] == "my-project"
         assert len(result["activities"]) == 2
         assert result["activities"][0] == {
-            "id": 9, "name": "Development", "active": True, "is_default": False
+            "id": 9,
+            "name": "Development",
+            "active": True,
+            "is_default": False,
         }
         assert result["activities"][1] == {
-            "id": 10, "name": "Design", "active": True, "is_default": False
+            "id": 10,
+            "name": "Design",
+            "active": True,
+            "is_default": False,
         }
         assert "note" not in result
         mock_client.project.get.assert_called_once_with(
@@ -122,7 +128,7 @@ class TestListTimeEntryActivitiesProjectScoped:
         mock_client.project.get.return_value = mock_project
 
         with patch(
-            "redmine_mcp_server.redmine_handler._get_redmine_client",
+            "redmine_mcp_server.tools.time_tracking._get_redmine_client",
             return_value=mock_client,
         ):
             result = await list_time_entry_activities(project_id="my-project")
@@ -143,7 +149,7 @@ class TestListTimeEntryActivitiesProjectScoped:
         mock_client.project.get.return_value = mock_project
 
         with patch(
-            "redmine_mcp_server.redmine_handler._get_redmine_client",
+            "redmine_mcp_server.tools.time_tracking._get_redmine_client",
             return_value=mock_client,
         ):
             result = await list_time_entry_activities(project_id=42)
@@ -162,7 +168,7 @@ class TestListTimeEntryActivitiesProjectScoped:
         mock_client.project.get.side_effect = ResourceNotFoundError()
 
         with patch(
-            "redmine_mcp_server.redmine_handler._get_redmine_client",
+            "redmine_mcp_server.tools.time_tracking._get_redmine_client",
             return_value=mock_client,
         ):
             result = await list_time_entry_activities(project_id="nonexistent")
@@ -179,7 +185,7 @@ class TestListTimeEntryActivitiesProjectScoped:
         mock_client.project.get.side_effect = ForbiddenError()
 
         with patch(
-            "redmine_mcp_server.redmine_handler._get_redmine_client",
+            "redmine_mcp_server.tools.time_tracking._get_redmine_client",
             return_value=mock_client,
         ):
             result = await list_time_entry_activities(project_id="secret-project")
@@ -198,7 +204,7 @@ class TestListTimeEntryActivitiesProjectScoped:
         mock_client.project.get.return_value = mock_project
 
         with patch(
-            "redmine_mcp_server.redmine_handler._get_redmine_client",
+            "redmine_mcp_server.tools.time_tracking._get_redmine_client",
             return_value=mock_client,
         ):
             result = await list_time_entry_activities(project_id="old-redmine")

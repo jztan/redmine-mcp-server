@@ -582,7 +582,10 @@ class TestHoursValidationIntegration:
 
 class TestImportTimeEntriesYieldsEventLoop:
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.asyncio.sleep", new_callable=AsyncMock)
+    @patch(
+        "redmine_mcp_server.tools.time_tracking.asyncio.sleep",
+        new_callable=AsyncMock,
+    )
     @patch("redmine_mcp_server.redmine_handler.redmine")
     async def test_sleeps_between_entries(self, mock_redmine, mock_sleep):
         mock_te = Mock()
