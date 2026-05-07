@@ -26,7 +26,8 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
-from .redmine_handler import mcp  # noqa: E402
+from . import redmine_handler  # noqa: E402,F401  -- triggers @mcp.tool registration
+from .server import mcp  # noqa: E402
 from .oauth_middleware import RedmineOAuthMiddleware  # noqa: E402
 
 logger = logging.getLogger(__name__)

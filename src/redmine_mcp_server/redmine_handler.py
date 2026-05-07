@@ -45,7 +45,6 @@ from redminelib.exceptions import (
     VersionMismatchError,
     ValidationError,
 )
-from fastmcp import FastMCP
 from .file_manager import AttachmentFileManager
 from ._validation import (  # noqa: F401  -- re-exported for back-compat during refactor
     _PROJECT_ID_PATTERN,
@@ -150,8 +149,8 @@ elif REDMINE_AUTH_MODE != "oauth" and not (
 
 
 # Initialize FastMCP server
-mcp = FastMCP("redmine_mcp_tools")
-
+# Re-exported for back-compat during refactor
+from .server import mcp  # noqa: E402,F401
 
 # Re-exported for back-compat during refactor
 from ._http_routes import (  # noqa: E402,F401
