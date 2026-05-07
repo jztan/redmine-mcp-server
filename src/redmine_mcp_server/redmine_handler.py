@@ -153,99 +153,18 @@ elif REDMINE_AUTH_MODE != "oauth" and not (
 mcp = FastMCP("redmine_mcp_tools")
 
 
-@mcp.custom_route("/health", methods=["GET"])
-async def health_check(request):
-    """Health check endpoint for container orchestration and monitoring."""
-    from starlette.responses import JSONResponse
+# Re-exported for back-compat during refactor
+from ._http_routes import (  # noqa: E402,F401
+    cleanup_status,
+    health_check,
+    serve_attachment,
+)
 
-    # Initialize cleanup task on first health check (lazy initialization)
-    await _ensure_cleanup_started()
-
-    return JSONResponse(
-        {
-            "status": "ok",
-            "service": "redmine_mcp_tools",
-            "auth_mode": REDMINE_AUTH_MODE,
-        }
-    )
-
-
-@mcp.custom_route("/files/{file_id}", methods=["GET"])
-async def serve_attachment(request):
-    """Serve downloaded attachment files via HTTP."""
-    from starlette.responses import FileResponse
-    from starlette.exceptions import HTTPException
-
-    file_id = request.path_params["file_id"]
-
-    # Security: Validate file_id format (proper UUID validation)
-    try:
-        uuid.UUID(file_id)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid file ID")
-
-    # Load file metadata from UUID directory
-    attachments_dir = Path(os.getenv("ATTACHMENTS_DIR", "./attachments"))
-    uuid_dir = attachments_dir / file_id
-    metadata_file = uuid_dir / "metadata.json"
-
-    if not metadata_file.exists():
-        raise HTTPException(status_code=404, detail="File not found or expired")
-
-    try:
-        # Read metadata
-        with open(metadata_file, "r") as f:
-            metadata = json.load(f)
-
-        # Check expiry with proper timezone-aware datetime comparison
-        expires_at_str = metadata.get("expires_at", "")
-        if expires_at_str:
-            expires_at = datetime.fromisoformat(expires_at_str.replace("Z", "+00:00"))
-            if datetime.now(timezone.utc) > expires_at:
-                # Clean up expired files
-                try:
-                    file_path = Path(metadata["file_path"])
-                    if file_path.exists():
-                        file_path.unlink()
-                    metadata_file.unlink()
-                    # Remove UUID directory if empty
-                    if uuid_dir.exists() and not any(uuid_dir.iterdir()):
-                        uuid_dir.rmdir()
-                except OSError:
-                    pass  # Log but don't fail if cleanup fails
-                raise HTTPException(status_code=404, detail="File expired")
-
-        # Validate file path security (must be within UUID directory)
-        file_path = Path(metadata["file_path"]).resolve()
-        uuid_dir_resolved = uuid_dir.resolve()
-        try:
-            file_path.relative_to(uuid_dir_resolved)
-        except ValueError:
-            raise HTTPException(status_code=403, detail="Access denied")
-
-        # Serve file
-        if not file_path.exists():
-            raise HTTPException(status_code=404, detail="File not found")
-
-        return FileResponse(
-            path=str(file_path),
-            filename=metadata["original_filename"],
-            media_type=metadata.get("content_type", "application/octet-stream"),
-        )
-
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=500, detail="Corrupted metadata")
-    except ValueError:
-        # Invalid datetime format
-        raise HTTPException(status_code=500, detail="Invalid metadata format")
-
-
-@mcp.custom_route("/cleanup/status", methods=["GET"])
-async def cleanup_status(request):
-    """Get cleanup task status and statistics."""
-    from starlette.responses import JSONResponse
-
-    return JSONResponse(cleanup_manager.get_status())
+# Register HTTP routes on the FastMCP instance. Functions live in _http_routes
+# but the @mcp.custom_route decorator must be applied here where `mcp` exists.
+mcp.custom_route("/health", methods=["GET"])(health_check)
+mcp.custom_route("/files/{file_id}", methods=["GET"])(serve_attachment)
+mcp.custom_route("/cleanup/status", methods=["GET"])(cleanup_status)
 
 
 def _fetch_agile_data(issue_id: int) -> Dict[str, Any]:
