@@ -11,6 +11,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from redmine_mcp_server.redmine_handler import (  # noqa: E402
     _is_crm_enabled,
+)
+from redmine_mcp_server.tools.contacts import (  # noqa: E402
     manage_contact,
 )
 

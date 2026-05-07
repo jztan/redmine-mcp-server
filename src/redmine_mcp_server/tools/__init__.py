@@ -12,6 +12,7 @@ migrated one resource at a time.
 # __init__ is gradually populated.
 
 from . import checklists  # noqa: F401  -- triggers @mcp.tool() registration
+from . import contacts  # noqa: F401  -- triggers @mcp.tool() registration
 from . import enumeration  # noqa: F401  -- triggers @mcp.tool() registration
 from . import gantt  # noqa: F401  -- triggers @mcp.tool() registration
 from . import products  # noqa: F401  -- triggers @mcp.tool() registration
