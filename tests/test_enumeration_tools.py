@@ -17,7 +17,7 @@ from unittest.mock import Mock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from redmine_mcp_server.redmine_handler import (  # noqa: E402
+from redmine_mcp_server.tools.enumeration import (  # noqa: E402
     get_current_user,
     list_redmine_issue_priorities,
     list_redmine_issue_statuses,
