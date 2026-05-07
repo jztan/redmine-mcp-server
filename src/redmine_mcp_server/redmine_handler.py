@@ -202,52 +202,6 @@ def _apply_agile_story_points(issue_id: int, story_points) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Checklist helpers (requires RedmineUP Checklists plugin)
-# ---------------------------------------------------------------------------
-
-
-def _fetch_checklist_items(issue_id: int) -> List[Dict[str, Any]]:
-    """Fetch checklist items for an issue from the RedmineUP Checklists endpoint.
-
-    Returns a list of checklist item dicts.
-    Raises on any HTTP error (caller is responsible for catching).
-    """
-    client = _get_redmine_client()
-    url = f"{REDMINE_URL}/issues/{issue_id}/checklists.json"
-    payload = client.engine.request("get", url)
-    raw_items = payload if isinstance(payload, list) else payload.get("checklists", [])
-    items = []
-    for item in raw_items:
-        items.append(
-            {
-                "id": item.get("id"),
-                "subject": wrap_insecure_content(item.get("subject", "")),
-                "is_done": item.get("is_done", False),
-                "position": item.get("position"),
-                "created_at": str(item.get("created_at") or ""),
-                "updated_at": str(item.get("updated_at") or ""),
-            }
-        )
-    return items
-
-
-def _update_checklist_item_api(checklist_item_id: int, updates: Dict[str, Any]) -> Any:
-    """Update a checklist item via the RedmineUP Checklists endpoint.
-
-    Raises on any HTTP error (caller is responsible for catching).
-    """
-    client = _get_redmine_client()
-    url = f"{REDMINE_URL}/checklists/{checklist_item_id}.json"
-    payload = json.dumps({"checklist": updates})
-    return client.engine.request(
-        "put",
-        url,
-        headers={"Content-Type": "application/json"},
-        data=payload,
-    )
-
-
-# ---------------------------------------------------------------------------
 # Products helpers (requires RedmineUP Products plugin)
 # ---------------------------------------------------------------------------
 
@@ -4295,124 +4249,6 @@ async def import_time_entries(
 
 
 # ---------------------------------------------------------------------------
-# Checklist tools (requires RedmineUP Checklists plugin)
-# ---------------------------------------------------------------------------
-
-
-@mcp.tool()
-async def get_checklist(issue_id: int) -> Dict[str, Any]:
-    """Retrieve all checklist items for a Redmine issue.
-
-    Requires the RedmineUP Checklists plugin and
-    ``REDMINE_CHECKLISTS_ENABLED=true``.
-
-    Args:
-        issue_id: The ID of the issue whose checklist to retrieve.
-
-    Returns:
-        A dictionary with an ``items`` list of checklist item dicts,
-        each containing ``id``, ``subject``, ``is_done``, ``position``,
-        ``created_at``, and ``updated_at``. Also includes ``total_count``.
-        Returns an error dict if the plugin is disabled or on failure.
-    """
-    if not _is_checklists_enabled():
-        return {
-            "error": (
-                "Checklist support is disabled. "
-                "Set REDMINE_CHECKLISTS_ENABLED=true to enable it."
-            )
-        }
-
-    if not _is_positive_int(issue_id):
-        return {"error": "issue_id must be a positive integer."}
-
-    try:
-        items = _fetch_checklist_items(issue_id)
-        return {
-            "issue_id": issue_id,
-            "total_count": len(items),
-            "items": items,
-        }
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"fetching checklist for issue {issue_id}",
-            {"resource_type": "checklist", "resource_id": issue_id},
-        )
-
-
-@mcp.tool()
-async def update_checklist_item(
-    checklist_item_id: int,
-    subject: Optional[str] = None,
-    is_done: Optional[bool] = None,
-    position: Optional[int] = None,
-) -> Dict[str, Any]:
-    """Update a checklist item's text, done state, or position.
-
-    Requires the RedmineUP Checklists plugin and
-    ``REDMINE_CHECKLISTS_ENABLED=true``. This is a write operation and
-    is blocked when ``REDMINE_MCP_READ_ONLY=true``.
-
-    Args:
-        checklist_item_id: The ID of the checklist item to update.
-        subject: New text for the checklist item (optional).
-        is_done: New done state (optional).
-        position: New position/order (optional).
-
-    Returns:
-        A success dict with the updated fields, or an error dict on failure.
-    """
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-
-    if not _is_checklists_enabled():
-        return {
-            "error": (
-                "Checklist support is disabled. "
-                "Set REDMINE_CHECKLISTS_ENABLED=true to enable it."
-            )
-        }
-
-    if not _is_positive_int(checklist_item_id):
-        return {"error": "checklist_item_id must be a positive integer."}
-
-    updates: Dict[str, Any] = {}
-    if subject is not None:
-        updates["subject"] = subject
-    if is_done is not None:
-        if not isinstance(is_done, bool):
-            return {"error": "is_done must be a boolean."}
-        updates["is_done"] = is_done
-    if position is not None:
-        if not _is_positive_int(position):
-            return {"error": "position must be a positive integer."}
-        updates["position"] = position
-
-    if not updates:
-        return {
-            "error": (
-                "No fields to update. Provide at least one of: "
-                "subject, is_done, position."
-            )
-        }
-
-    try:
-        _update_checklist_item_api(checklist_item_id, updates)
-        return {
-            "success": True,
-            "checklist_item_id": checklist_item_id,
-            "updated_fields": list(updates.keys()),
-        }
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"updating checklist item {checklist_item_id}",
-            {"resource_type": "checklist_item", "resource_id": checklist_item_id},
-        )
-
-
-# ---------------------------------------------------------------------------
 # Products tools (requires RedmineUP Products plugin)
 # ---------------------------------------------------------------------------
 
@@ -4590,6 +4426,20 @@ from .tools.gantt import (  # noqa: E402,F401
     _gantt_issue_to_dict,
     _gantt_version_to_dict,
     get_gantt_chart,
+)
+
+# ---------------------------------------------------------------------------
+# Checklists tools (requires RedmineUP Checklists plugin)
+#
+# Tool definitions live in ``tools/checklists.py``; re-exported below for
+# back-compat with existing test imports.
+# ---------------------------------------------------------------------------
+# noqa comments below: re-exported for back-compat during refactor
+from .tools.checklists import (  # noqa: E402,F401
+    _fetch_checklist_items,
+    _update_checklist_item_api,
+    get_checklist,
+    update_checklist_item,
 )
 
 # ---------------------------------------------------------------------------

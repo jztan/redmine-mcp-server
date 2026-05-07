@@ -11,6 +11,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from redmine_mcp_server.redmine_handler import (  # noqa: E402
     _is_checklists_enabled,
+)
+from redmine_mcp_server.tools.checklists import (  # noqa: E402
     _fetch_checklist_items,
     _update_checklist_item_api,
     get_checklist,
