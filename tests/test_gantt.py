@@ -8,7 +8,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from redmine_mcp_server.redmine_handler import get_gantt_chart  # noqa: E402
+from redmine_mcp_server.tools.gantt import get_gantt_chart  # noqa: E402
 
 
 def _make_issue(

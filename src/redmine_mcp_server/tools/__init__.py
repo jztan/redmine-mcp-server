@@ -12,3 +12,4 @@ migrated one resource at a time.
 # __init__ is gradually populated.
 
 from . import enumeration  # noqa: F401  -- triggers @mcp.tool() registration
+from . import gantt  # noqa: F401  -- triggers @mcp.tool() registration
