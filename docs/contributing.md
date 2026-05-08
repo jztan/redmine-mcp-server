@@ -67,6 +67,105 @@ Thank you for your interest in contributing to the Redmine MCP Server! This guid
    uv run python -m redmine_mcp_server.main
    ```
 
+## Where things live
+
+After v2.0, the codebase is organized by resource:
+
+### Tool implementations
+
+Tools live under `src/redmine_mcp_server/tools/`, one file per Redmine resource:
+
+| File | Tools |
+|---|---|
+| `tools/projects.py` | Projects, versions, members, roles, modules (9 tools) |
+| `tools/issues.py` | Issues, search, copy, relations, watchers, notes, categories, subtasks (12 tools) |
+| `tools/time_tracking.py` | Time entries, activities, bulk import (4 tools) |
+| `tools/wiki.py` | Wiki page CRUD + rename (1 tool, 6 actions) |
+| `tools/files.py` | File upload/download/delete + attachment URLs (5 tools) |
+| `tools/enumeration.py` | Trackers, statuses, priorities, users, queries (6 tools) |
+| `tools/search.py` | Global search across resources (1 tool) |
+| `tools/checklists.py` | RedmineUP Checklists plugin (2 tools, gated) |
+| `tools/gantt.py` | Gantt chart composite read tool (1 tool) |
+| `tools/products.py` | RedmineUP Products plugin (1 tool, gated) |
+| `tools/contacts.py` | RedmineUP CRM plugin (1 tool, gated) |
+
+Each `tools/<resource>.py` also owns its resource-specific serializers (`_X_to_dict` helpers).
+
+### Shared helpers
+
+Cross-cutting utilities live as flat private modules:
+
+| Module | Responsibility |
+|---|---|
+| `_client.py` | Redmine connection (legacy + OAuth), module-level config, logger |
+| `_errors.py` | `_handle_redmine_error`, `_scrub_error_message`, `_READ_ONLY_ERROR` |
+| `_validation.py` | Input validators (`_is_positive_int`, `_is_valid_project_id`, `_validate_hours`) |
+| `_serialization.py` | `wrap_insecure_content`, `_safe_isoformat`, `_iter_capped`, `_named_ref`, `_coerce_json_safe` |
+| `_env.py` | Environment-flag accessors (`_is_read_only_mode`, `_is_*_enabled`) |
+| `_custom_fields.py` | Custom-field parsing, autofill, and update coercion |
+| `_ssrf.py` | SSRF protection for `upload_file`'s `source_url` |
+| `_cleanup.py` | Background cleanup task |
+| `_http_routes.py` | Starlette routes (`/health`, `/files/{id}`, `/cleanup/status`) |
+| `_decorators.py` | `@action_dispatch` decorator + `ActionMode` enum |
+
+### Adding a new `manage_X` tool
+
+The 9 `manage_X` tools (plus `manage_redmine_version`) follow a consistent pattern via the `@action_dispatch` decorator. Example:
+
+```python
+from .._decorators import ActionMode, action_dispatch
+
+# Per-action handlers (private async functions in the same file)
+async def _list_widgets_action(project_id=None, **_):
+    # validation, fetch, return
+    ...
+
+async def _create_widget_action(project_id=None, name=None, **_):
+    # validation, create, return
+    ...
+
+@mcp.tool()
+@action_dispatch({
+    "list": ActionMode.READ,
+    "create": ActionMode.WRITE,
+})
+async def manage_widget(action: str, project_id=None, name=None):
+    """Docstring with full param/return shape."""
+    return {
+        "list": _list_widgets_action,
+        "create": _create_widget_action,
+    }
+```
+
+The decorator handles:
+- Action validation (returns `{"error": "Invalid action ..."}` on bad input)
+- Read-only guard for `WRITE` actions (returns `_READ_ONLY_ERROR` if env enables read-only mode)
+- `_ensure_cleanup_started()` for `WRITE` actions
+- Routing to the per-action handler
+
+Per-action handlers stay responsible for: their own parameter validation, calling the Redmine API, and wrapping exceptions via `_handle_redmine_error`.
+
+**Important:** keep the public `manage_X` tool's full explicit parameter list (FastMCP rejects `**kwargs` in tool signatures). Only the body changes to return the handler-map dict.
+
+For plugin-gated tools (`manage_product`, `manage_contact`), wrap the dispatcher in a feature-flag check:
+
+```python
+@mcp.tool()
+async def manage_widget(action: str, project_id=None, name=None):
+    if not _is_widgets_enabled():
+        return dict(_WIDGETS_DISABLED_ERROR)
+    return await _manage_widget_dispatch(
+        action,
+        project_id=project_id,
+        name=name,
+    )
+
+
+@action_dispatch({...})
+async def _manage_widget_dispatch(action, **kwargs):
+    return {...}
+```
+
 ## Development Workflow
 
 ### 1. Create a Branch
