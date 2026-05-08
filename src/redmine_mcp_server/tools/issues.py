@@ -18,6 +18,7 @@ from .._custom_fields import (
     _parse_create_issue_fields,
     _parse_optional_object_payload,
 )
+from .._decorators import ActionMode, action_dispatch
 from .._env import _is_agile_enabled, _is_read_only_mode
 from .._errors import _READ_ONLY_ERROR, _handle_redmine_error
 from .._serialization import (
@@ -1204,7 +1205,88 @@ async def copy_issue(
         )
 
 
+async def _list_issue_relations_action(
+    issue_id: Optional[int] = None,
+    **_: Any,
+) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    if issue_id is None:
+        return {"error": "issue_id is required for action 'list'"}
+    try:
+        relations = _get_redmine_client().issue_relation.filter(issue_id=issue_id)
+        return [_issue_relation_to_dict(r) for r in _iter_capped(relations)]
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"listing relations for issue {issue_id}",
+            {"resource_type": "issue", "resource_id": issue_id},
+        )
+
+
+async def _create_issue_relation_action(
+    issue_id: Optional[int] = None,
+    issue_to_id: Optional[int] = None,
+    relation_type: Optional[str] = None,
+    delay: Optional[int] = None,
+    **_: Any,
+) -> Dict[str, Any]:
+    if issue_id is None:
+        return {"error": "issue_id is required for action 'create'"}
+    if issue_to_id is None:
+        return {"error": "issue_to_id is required for action 'create'"}
+
+    _rt = relation_type if relation_type is not None else "relates"
+    if _rt not in _VALID_ISSUE_RELATION_TYPES:
+        return {
+            "error": (
+                f"Invalid relation_type '{_rt}'. Must be one of: "
+                f"{', '.join(sorted(_VALID_ISSUE_RELATION_TYPES))}."
+            )
+        }
+
+    try:
+        params: Dict[str, Any] = {
+            "issue_id": issue_id,
+            "issue_to_id": issue_to_id,
+            "relation_type": _rt,
+        }
+        if delay is not None:
+            params["delay"] = delay
+        relation = _get_redmine_client().issue_relation.create(**params)
+        return _issue_relation_to_dict(relation)
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"creating relation from issue {issue_id} to {issue_to_id}",
+            {"resource_type": "issue", "resource_id": issue_id},
+        )
+
+
+async def _delete_issue_relation_action(
+    relation_id: Optional[int] = None,
+    **_: Any,
+) -> Dict[str, Any]:
+    if relation_id is None:
+        return {"error": "relation_id is required for action 'delete'"}
+
+    try:
+        _get_redmine_client().issue_relation.delete(relation_id)
+        return {"success": True, "deleted_relation_id": relation_id}
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"deleting relation {relation_id}",
+            {"resource_type": "relation", "resource_id": relation_id},
+        )
+
+
 @mcp.tool()
+@action_dispatch(
+    {
+        "list": ActionMode.READ,
+        "create": ActionMode.WRITE,
+        "delete": ActionMode.WRITE,
+    }
+)
 async def manage_issue_relation(
     action: str,
     issue_id: Optional[int] = None,
@@ -1232,78 +1314,11 @@ async def manage_issue_relation(
         ``delete``: ``{"success": True, "deleted_relation_id": ...}``.
         On error: ``{"error": "..."}``.
     """
-    _valid_actions = {"list", "create", "delete"}
-    if action not in _valid_actions:
-        return {"error": f"Invalid action '{action}'. Allowed: list, create, delete"}
-
-    if action == "list":
-        if issue_id is None:
-            return {"error": "issue_id is required for action 'list'"}
-        try:
-            relations = _get_redmine_client().issue_relation.filter(issue_id=issue_id)
-            return [_issue_relation_to_dict(r) for r in _iter_capped(relations)]
-        except Exception as e:
-            return _handle_redmine_error(
-                e,
-                f"listing relations for issue {issue_id}",
-                {"resource_type": "issue", "resource_id": issue_id},
-            )
-
-    elif action == "create":
-        if issue_id is None:
-            return {"error": "issue_id is required for action 'create'"}
-        if issue_to_id is None:
-            return {"error": "issue_to_id is required for action 'create'"}
-
-        _rt = relation_type if relation_type is not None else "relates"
-        if _rt not in _VALID_ISSUE_RELATION_TYPES:
-            return {
-                "error": (
-                    f"Invalid relation_type '{_rt}'. Must be one of: "
-                    f"{', '.join(sorted(_VALID_ISSUE_RELATION_TYPES))}."
-                )
-            }
-
-        if _is_read_only_mode():
-            return dict(_READ_ONLY_ERROR)
-
-        await _ensure_cleanup_started()
-
-        try:
-            params: Dict[str, Any] = {
-                "issue_id": issue_id,
-                "issue_to_id": issue_to_id,
-                "relation_type": _rt,
-            }
-            if delay is not None:
-                params["delay"] = delay
-            relation = _get_redmine_client().issue_relation.create(**params)
-            return _issue_relation_to_dict(relation)
-        except Exception as e:
-            return _handle_redmine_error(
-                e,
-                f"creating relation from issue {issue_id} to {issue_to_id}",
-                {"resource_type": "issue", "resource_id": issue_id},
-            )
-
-    else:  # action == "delete"
-        if relation_id is None:
-            return {"error": "relation_id is required for action 'delete'"}
-
-        if _is_read_only_mode():
-            return dict(_READ_ONLY_ERROR)
-
-        await _ensure_cleanup_started()
-
-        try:
-            _get_redmine_client().issue_relation.delete(relation_id)
-            return {"success": True, "deleted_relation_id": relation_id}
-        except Exception as e:
-            return _handle_redmine_error(
-                e,
-                f"deleting relation {relation_id}",
-                {"resource_type": "relation", "resource_id": relation_id},
-            )
+    return {
+        "list": _list_issue_relations_action,
+        "create": _create_issue_relation_action,
+        "delete": _delete_issue_relation_action,
+    }
 
 
 @mcp.tool()
@@ -1339,7 +1354,57 @@ async def list_subtasks(
         )
 
 
+async def _add_issue_watcher_action(
+    issue_id: Optional[int] = None,
+    user_id: Optional[int] = None,
+    **_: Any,
+) -> Dict[str, Any]:
+    if not _is_positive_int(issue_id):
+        return {"error": "issue_id must be a positive integer."}
+    if not _is_positive_int(user_id):
+        return {"error": "user_id must be a positive integer."}
+
+    try:
+        issue = _get_redmine_client().issue.get(issue_id)
+        issue.watcher.add(user_id)
+        return {"success": True, "issue_id": issue_id, "user_id": user_id}
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"adding watcher {user_id} on issue {issue_id}",
+            {"resource_type": "issue", "resource_id": issue_id},
+        )
+
+
+async def _remove_issue_watcher_action(
+    issue_id: Optional[int] = None,
+    user_id: Optional[int] = None,
+    **_: Any,
+) -> Dict[str, Any]:
+    if not _is_positive_int(issue_id):
+        return {"error": "issue_id must be a positive integer."}
+    if not _is_positive_int(user_id):
+        return {"error": "user_id must be a positive integer."}
+
+    try:
+        issue = _get_redmine_client().issue.get(issue_id)
+        issue.watcher.remove(user_id)
+        return {"success": True, "issue_id": issue_id, "user_id": user_id}
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"removing watcher {user_id} on issue {issue_id}",
+            {"resource_type": "issue", "resource_id": issue_id},
+        )
+
+
 @mcp.tool()
+@action_dispatch(
+    {
+        "add": ActionMode.WRITE,
+        "remove": ActionMode.WRITE,
+    }
+)
 async def manage_issue_watcher(
     action: str,
     issue_id: int,
@@ -1356,36 +1421,72 @@ async def manage_issue_watcher(
         ``{"success": True, "issue_id": ..., "user_id": ...}`` on success.
         On error: ``{"error": "..."}``.
     """
-    _valid_actions = {"add", "remove"}
-    if action not in _valid_actions:
-        return {"error": f"Invalid action '{action}'. Allowed: add, remove"}
+    return {
+        "add": _add_issue_watcher_action,
+        "remove": _remove_issue_watcher_action,
+    }
 
-    if not _is_positive_int(issue_id):
-        return {"error": "issue_id must be a positive integer."}
-    if not _is_positive_int(user_id):
-        return {"error": "user_id must be a positive integer."}
 
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-
-    await _ensure_cleanup_started()
-
+async def _edit_issue_note_action(
+    journal_id: Optional[int] = None,
+    notes: Optional[str] = None,
+    private_notes: Optional[bool] = None,
+    **_: Any,
+) -> Dict[str, Any]:
+    if notes is None:
+        return {"error": "notes is required for action 'edit'"}
     try:
-        issue = _get_redmine_client().issue.get(issue_id)
-        if action == "add":
-            issue.watcher.add(user_id)
-        else:
-            issue.watcher.remove(user_id)
-        return {"success": True, "issue_id": issue_id, "user_id": user_id}
+        params: Dict[str, Any] = {"notes": notes}
+        if private_notes is not None:
+            params["private_notes"] = bool(private_notes)
+        _get_redmine_client().issue_journal.update(journal_id, **params)
+        return {
+            "success": True,
+            "journal_id": journal_id,
+            "notes": notes,
+            "private_notes": (
+                bool(private_notes) if private_notes is not None else None
+            ),
+        }
     except Exception as e:
         return _handle_redmine_error(
             e,
-            f"{action}ing watcher {user_id} on issue {issue_id}",
-            {"resource_type": "issue", "resource_id": issue_id},
+            f"editing journal {journal_id}",
+            {"resource_type": "journal", "resource_id": journal_id},
+        )
+
+
+async def _set_private_issue_note_action(
+    journal_id: Optional[int] = None,
+    is_private: Optional[bool] = None,
+    **_: Any,
+) -> Dict[str, Any]:
+    if is_private is None:
+        return {"error": "is_private is required for action 'set_private'"}
+    try:
+        _get_redmine_client().issue_journal.update(
+            journal_id, private_notes=bool(is_private)
+        )
+        return {
+            "success": True,
+            "journal_id": journal_id,
+            "private_notes": bool(is_private),
+        }
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"updating privacy of journal {journal_id}",
+            {"resource_type": "journal", "resource_id": journal_id},
         )
 
 
 @mcp.tool()
+@action_dispatch(
+    {
+        "edit": ActionMode.WRITE,
+        "set_private": ActionMode.WRITE,
+    }
+)
 async def manage_issue_note(
     action: str,
     journal_id: int,
@@ -1413,54 +1514,10 @@ async def manage_issue_note(
         "private_notes": <bool>}``.
         On error: ``{"error": "..."}``.
     """
-    _valid_actions = {"edit", "set_private"}
-    if action not in _valid_actions:
-        return {"error": f"Invalid action '{action}'. Allowed: edit, set_private"}
-
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-
-    if action == "edit":
-        if notes is None:
-            return {"error": "notes is required for action 'edit'"}
-        try:
-            params: Dict[str, Any] = {"notes": notes}
-            if private_notes is not None:
-                params["private_notes"] = bool(private_notes)
-            _get_redmine_client().issue_journal.update(journal_id, **params)
-            return {
-                "success": True,
-                "journal_id": journal_id,
-                "notes": notes,
-                "private_notes": (
-                    bool(private_notes) if private_notes is not None else None
-                ),
-            }
-        except Exception as e:
-            return _handle_redmine_error(
-                e,
-                f"editing journal {journal_id}",
-                {"resource_type": "journal", "resource_id": journal_id},
-            )
-
-    else:  # action == "set_private"
-        if is_private is None:
-            return {"error": "is_private is required for action 'set_private'"}
-        try:
-            _get_redmine_client().issue_journal.update(
-                journal_id, private_notes=bool(is_private)
-            )
-            return {
-                "success": True,
-                "journal_id": journal_id,
-                "private_notes": bool(is_private),
-            }
-        except Exception as e:
-            return _handle_redmine_error(
-                e,
-                f"updating privacy of journal {journal_id}",
-                {"resource_type": "journal", "resource_id": journal_id},
-            )
+    return {
+        "edit": _edit_issue_note_action,
+        "set_private": _set_private_issue_note_action,
+    }
 
 
 @mcp.tool()
@@ -1507,7 +1564,120 @@ async def get_private_notes(issue_id: int) -> List[Dict[str, Any]]:
         ]
 
 
+async def _list_issue_categories_action(
+    project_id: Optional[Union[str, int]] = None,
+    **_: Any,
+) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    if project_id is None:
+        return {"error": "project_id is required for action 'list'"}
+    try:
+        categories = _get_redmine_client().issue_category.filter(project_id=project_id)
+        return [_issue_category_to_dict(c) for c in _iter_capped(categories)]
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"listing issue categories for project {project_id}",
+            {"resource_type": "project", "resource_id": project_id},
+        )
+
+
+async def _create_issue_category_action(
+    project_id: Optional[Union[str, int]] = None,
+    name: Optional[str] = None,
+    assigned_to_id: Optional[int] = None,
+    **_: Any,
+) -> Dict[str, Any]:
+    if project_id is None:
+        return {"error": "project_id is required for action 'create'"}
+    if not name or not name.strip():
+        return {"error": "Category 'name' is required."}
+
+    try:
+        params: Dict[str, Any] = {
+            "project_id": project_id,
+            "name": name.strip(),
+        }
+        if assigned_to_id is not None:
+            params["assigned_to_id"] = assigned_to_id
+        category = _get_redmine_client().issue_category.create(**params)
+        return _issue_category_to_dict(category)
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"creating issue category in project {project_id}",
+            {"resource_type": "project", "resource_id": project_id},
+        )
+
+
+async def _update_issue_category_action(
+    category_id: Optional[int] = None,
+    name: Optional[str] = None,
+    assigned_to_id: Optional[int] = None,
+    **_: Any,
+) -> Dict[str, Any]:
+    if category_id is None:
+        return {"error": "category_id is required for action 'update'"}
+
+    update_params: Dict[str, Any] = {}
+    if name is not None:
+        stripped = name.strip()
+        if not stripped:
+            return {"error": "Category 'name' cannot be empty."}
+        update_params["name"] = stripped
+    if assigned_to_id is not None:
+        update_params["assigned_to_id"] = assigned_to_id
+
+    if not update_params:
+        return {"error": "No fields provided for update."}
+
+    try:
+        client = _get_redmine_client()
+        client.issue_category.update(category_id, **update_params)
+        updated = client.issue_category.get(category_id)
+        return _issue_category_to_dict(updated)
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"updating issue category {category_id}",
+            {"resource_type": "issue_category", "resource_id": category_id},
+        )
+
+
+async def _delete_issue_category_action(
+    category_id: Optional[int] = None,
+    reassign_to_id: Optional[int] = None,
+    **_: Any,
+) -> Dict[str, Any]:
+    if category_id is None:
+        return {"error": "category_id is required for action 'delete'"}
+
+    try:
+        params: Dict[str, Any] = {}
+        if reassign_to_id is not None:
+            params["reassign_to_id"] = reassign_to_id
+        _get_redmine_client().issue_category.delete(category_id, **params)
+        return {
+            "success": True,
+            "deleted_category_id": category_id,
+            "reassigned_to_id": reassign_to_id,
+        }
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"deleting issue category {category_id}",
+            {"resource_type": "issue_category", "resource_id": category_id},
+        )
+
+
 @mcp.tool()
+@action_dispatch(
+    {
+        "list": ActionMode.READ,
+        "create": ActionMode.WRITE,
+        "update": ActionMode.WRITE,
+        "delete": ActionMode.WRITE,
+    }
+)
 async def manage_issue_category(
     action: str,
     project_id: Optional[Union[str, int]] = None,
@@ -1537,111 +1707,9 @@ async def manage_issue_category(
         "reassigned_to_id": ...}``.
         On error: ``{"error": "..."}``.
     """
-    _valid_actions = {"list", "create", "update", "delete"}
-    if action not in _valid_actions:
-        return {
-            "error": (
-                f"Invalid action '{action}'. " "Allowed: list, create, update, delete"
-            )
-        }
-
-    if action == "list":
-        if project_id is None:
-            return {"error": "project_id is required for action 'list'"}
-        try:
-            categories = _get_redmine_client().issue_category.filter(
-                project_id=project_id
-            )
-            return [_issue_category_to_dict(c) for c in _iter_capped(categories)]
-        except Exception as e:
-            return _handle_redmine_error(
-                e,
-                f"listing issue categories for project {project_id}",
-                {"resource_type": "project", "resource_id": project_id},
-            )
-
-    elif action == "create":
-        if project_id is None:
-            return {"error": "project_id is required for action 'create'"}
-        if not name or not name.strip():
-            return {"error": "Category 'name' is required."}
-
-        if _is_read_only_mode():
-            return dict(_READ_ONLY_ERROR)
-
-        await _ensure_cleanup_started()
-
-        try:
-            params: Dict[str, Any] = {
-                "project_id": project_id,
-                "name": name.strip(),
-            }
-            if assigned_to_id is not None:
-                params["assigned_to_id"] = assigned_to_id
-            category = _get_redmine_client().issue_category.create(**params)
-            return _issue_category_to_dict(category)
-        except Exception as e:
-            return _handle_redmine_error(
-                e,
-                f"creating issue category in project {project_id}",
-                {"resource_type": "project", "resource_id": project_id},
-            )
-
-    elif action == "update":
-        if category_id is None:
-            return {"error": "category_id is required for action 'update'"}
-
-        update_params: Dict[str, Any] = {}
-        if name is not None:
-            stripped = name.strip()
-            if not stripped:
-                return {"error": "Category 'name' cannot be empty."}
-            update_params["name"] = stripped
-        if assigned_to_id is not None:
-            update_params["assigned_to_id"] = assigned_to_id
-
-        if not update_params:
-            return {"error": "No fields provided for update."}
-
-        if _is_read_only_mode():
-            return dict(_READ_ONLY_ERROR)
-
-        await _ensure_cleanup_started()
-
-        try:
-            client = _get_redmine_client()
-            client.issue_category.update(category_id, **update_params)
-            updated = client.issue_category.get(category_id)
-            return _issue_category_to_dict(updated)
-        except Exception as e:
-            return _handle_redmine_error(
-                e,
-                f"updating issue category {category_id}",
-                {"resource_type": "issue_category", "resource_id": category_id},
-            )
-
-    else:  # action == "delete"
-        if category_id is None:
-            return {"error": "category_id is required for action 'delete'"}
-
-        if _is_read_only_mode():
-            return dict(_READ_ONLY_ERROR)
-
-        await _ensure_cleanup_started()
-
-        try:
-            params = {}
-            if reassign_to_id is not None:
-                params["reassign_to_id"] = reassign_to_id
-            _get_redmine_client().issue_category.delete(category_id, **params)
-            return {
-                "success": True,
-                "deleted_category_id": category_id,
-                "reassigned_to_id": reassign_to_id,
-            }
-        except Exception as e:
-            return _handle_redmine_error(
-                e,
-                f"deleting issue category {category_id}",
-                {"resource_type": "issue_category", "resource_id": category_id},
-            )
+    return {
+        "list": _list_issue_categories_action,
+        "create": _create_issue_category_action,
+        "update": _update_issue_category_action,
+        "delete": _delete_issue_category_action,
+    }
