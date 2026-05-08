@@ -18,17 +18,19 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from redmine_mcp_server.redmine_handler import (  # noqa: E402
+from redmine_mcp_server.tools.time_tracking import (  # noqa: E402
     _IMPORT_TIME_ENTRIES_MAX_BATCH,
+    import_time_entries,
+)
+from redmine_mcp_server._ssrf import (  # noqa: E402
     _extract_content_disposition_filename,
     _is_hostname_safe_for_fetch,
     _sanitize_filename,
-    _scrub_error_message,
-    _validate_hours,
-    copy_issue,
-    import_time_entries,
-    upload_file,
 )
+from redmine_mcp_server._errors import _scrub_error_message  # noqa: E402
+from redmine_mcp_server._validation import _validate_hours  # noqa: E402
+from redmine_mcp_server.tools.issues import copy_issue  # noqa: E402
+from redmine_mcp_server.tools.files import upload_file  # noqa: E402
 
 
 def _make_streaming_response(status_code=200, body=b"hello", headers=None):
@@ -85,7 +87,7 @@ class TestIsHostnameSafeForFetch:
         monkeypatch.delenv("REDMINE_ALLOW_PRIVATE_FETCH_URLS", raising=False)
         # Stub getaddrinfo to avoid flakiness/network dependency
         with patch(
-            "redmine_mcp_server.redmine_handler.socket.getaddrinfo",
+            "redmine_mcp_server._ssrf.socket.getaddrinfo",
             return_value=[(2, 1, 6, "", ("93.184.216.34", 0))],
         ):
             safe, err, _ip = _is_hostname_safe_for_fetch("example.com")
@@ -95,7 +97,7 @@ class TestIsHostnameSafeForFetch:
     def test_loopback_rejected(self, monkeypatch):
         monkeypatch.delenv("REDMINE_ALLOW_PRIVATE_FETCH_URLS", raising=False)
         with patch(
-            "redmine_mcp_server.redmine_handler.socket.getaddrinfo",
+            "redmine_mcp_server._ssrf.socket.getaddrinfo",
             return_value=[(2, 1, 6, "", ("127.0.0.1", 0))],
         ):
             safe, err, _ip = _is_hostname_safe_for_fetch("localhost")
@@ -106,7 +108,7 @@ class TestIsHostnameSafeForFetch:
         """169.254.169.254 is link-local and hosts cloud metadata services."""
         monkeypatch.delenv("REDMINE_ALLOW_PRIVATE_FETCH_URLS", raising=False)
         with patch(
-            "redmine_mcp_server.redmine_handler.socket.getaddrinfo",
+            "redmine_mcp_server._ssrf.socket.getaddrinfo",
             return_value=[(2, 1, 6, "", ("169.254.169.254", 0))],
         ):
             safe, err, _ip = _is_hostname_safe_for_fetch("metadata.example")
@@ -116,7 +118,7 @@ class TestIsHostnameSafeForFetch:
     def test_rfc1918_10_network_rejected(self, monkeypatch):
         monkeypatch.delenv("REDMINE_ALLOW_PRIVATE_FETCH_URLS", raising=False)
         with patch(
-            "redmine_mcp_server.redmine_handler.socket.getaddrinfo",
+            "redmine_mcp_server._ssrf.socket.getaddrinfo",
             return_value=[(2, 1, 6, "", ("10.0.0.5", 0))],
         ):
             safe, err, _ip = _is_hostname_safe_for_fetch("internal.corp")
@@ -125,7 +127,7 @@ class TestIsHostnameSafeForFetch:
     def test_rfc1918_192_network_rejected(self, monkeypatch):
         monkeypatch.delenv("REDMINE_ALLOW_PRIVATE_FETCH_URLS", raising=False)
         with patch(
-            "redmine_mcp_server.redmine_handler.socket.getaddrinfo",
+            "redmine_mcp_server._ssrf.socket.getaddrinfo",
             return_value=[(2, 1, 6, "", ("192.168.1.100", 0))],
         ):
             safe, err, _ip = _is_hostname_safe_for_fetch("router")
@@ -134,7 +136,7 @@ class TestIsHostnameSafeForFetch:
     def test_rfc1918_172_network_rejected(self, monkeypatch):
         monkeypatch.delenv("REDMINE_ALLOW_PRIVATE_FETCH_URLS", raising=False)
         with patch(
-            "redmine_mcp_server.redmine_handler.socket.getaddrinfo",
+            "redmine_mcp_server._ssrf.socket.getaddrinfo",
             return_value=[(2, 1, 6, "", ("172.16.5.5", 0))],
         ):
             safe, err, _ip = _is_hostname_safe_for_fetch("dockerhost")
@@ -143,7 +145,7 @@ class TestIsHostnameSafeForFetch:
     def test_ipv6_loopback_rejected(self, monkeypatch):
         monkeypatch.delenv("REDMINE_ALLOW_PRIVATE_FETCH_URLS", raising=False)
         with patch(
-            "redmine_mcp_server.redmine_handler.socket.getaddrinfo",
+            "redmine_mcp_server._ssrf.socket.getaddrinfo",
             return_value=[(10, 1, 6, "", ("::1", 0, 0, 0))],
         ):
             safe, err, _ip = _is_hostname_safe_for_fetch("ip6-localhost")
@@ -154,7 +156,7 @@ class TestIsHostnameSafeForFetch:
 
         monkeypatch.delenv("REDMINE_ALLOW_PRIVATE_FETCH_URLS", raising=False)
         with patch(
-            "redmine_mcp_server.redmine_handler.socket.getaddrinfo",
+            "redmine_mcp_server._ssrf.socket.getaddrinfo",
             side_effect=_socket.gaierror("Name or service not known"),
         ):
             safe, err, _ip = _is_hostname_safe_for_fetch("does-not-resolve")
@@ -184,7 +186,7 @@ class TestUploadFileSSRF:
         """Prompt injection can't exfil cloud credentials via source_url."""
         monkeypatch.delenv("REDMINE_ALLOW_PRIVATE_FETCH_URLS", raising=False)
         with patch(
-            "redmine_mcp_server.redmine_handler.socket.getaddrinfo",
+            "redmine_mcp_server._ssrf.socket.getaddrinfo",
             return_value=[(2, 1, 6, "", ("169.254.169.254", 0))],
         ):
             result = await upload_file(
@@ -199,7 +201,7 @@ class TestUploadFileSSRF:
     async def test_upload_rejects_localhost(self, monkeypatch):
         monkeypatch.delenv("REDMINE_ALLOW_PRIVATE_FETCH_URLS", raising=False)
         with patch(
-            "redmine_mcp_server.redmine_handler.socket.getaddrinfo",
+            "redmine_mcp_server._ssrf.socket.getaddrinfo",
             return_value=[(2, 1, 6, "", ("127.0.0.1", 0))],
         ):
             result = await upload_file(
@@ -240,7 +242,7 @@ class TestUploadFileSSRF:
 
         with (
             patch(
-                "redmine_mcp_server.redmine_handler.socket.getaddrinfo",
+                "redmine_mcp_server._ssrf.socket.getaddrinfo",
                 side_effect=fake_getaddrinfo,
             ),
             patch("httpx.AsyncClient", return_value=client_cm),
@@ -279,7 +281,7 @@ class TestUploadFileSSRF:
 
         with (
             patch(
-                "redmine_mcp_server.redmine_handler.socket.getaddrinfo",
+                "redmine_mcp_server._ssrf.socket.getaddrinfo",
                 return_value=[(2, 1, 6, "", ("93.184.216.34", 0))],
             ),
             patch("httpx.AsyncClient", return_value=client_cm),
@@ -400,7 +402,7 @@ class TestScrubErrorMessage:
     def test_scrubs_configured_api_key(self, monkeypatch):
         """If REDMINE_API_KEY happens to appear verbatim, redact it."""
         monkeypatch.setattr(
-            "redmine_mcp_server.redmine_handler.REDMINE_API_KEY",
+            "redmine_mcp_server._client.REDMINE_API_KEY",
             "configured-key-12345",
         )
         msg = "Something went wrong using configured-key-12345 somehow"
@@ -469,7 +471,7 @@ class TestValidateHours:
 
 class TestCopyIssueBothFlagsFalse:
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_both_flags_false_does_not_copy_subtasks_or_attachments(
         self, mock_redmine
     ):
@@ -515,7 +517,7 @@ class TestImportTimeEntriesBatchCap:
         assert "batch" in result["error"].lower() or "cap" in result["error"].lower()
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_accepts_batch_at_cap(self, mock_redmine):
         """Exactly MAX_BATCH entries should be accepted."""
         # Make create a no-op that returns a bare mock
@@ -553,7 +555,7 @@ class TestHoursValidationIntegration:
     # real client build raises because no REDMINE_* env vars are set.
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_import_rejects_nan_hours(self, mock_redmine):
         result = await import_time_entries([{"hours": float("nan"), "issue_id": 1}])
         assert result["failed"] == 1
@@ -563,13 +565,13 @@ class TestHoursValidationIntegration:
         )
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_import_rejects_boolean_hours(self, mock_redmine):
         result = await import_time_entries([{"hours": True, "issue_id": 1}])
         assert result["failed"] == 1
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_import_rejects_infinity_hours(self, mock_redmine):
         result = await import_time_entries([{"hours": float("inf"), "issue_id": 1}])
         assert result["failed"] == 1
@@ -586,7 +588,7 @@ class TestImportTimeEntriesYieldsEventLoop:
         "redmine_mcp_server.tools.time_tracking.asyncio.sleep",
         new_callable=AsyncMock,
     )
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_sleeps_between_entries(self, mock_redmine, mock_sleep):
         mock_te = Mock()
         mock_te.id = 1
@@ -627,7 +629,7 @@ class TestImportTimeEntriesYieldsEventLoop:
 class TestRejectEmbeddedCredentials:
     @pytest.mark.asyncio
     async def test_url_with_userinfo_rejected(self):
-        from redmine_mcp_server.redmine_handler import upload_file
+        from redmine_mcp_server.tools.files import upload_file
 
         result = await upload_file(
             project_id="web",
@@ -639,7 +641,7 @@ class TestRejectEmbeddedCredentials:
 
     @pytest.mark.asyncio
     async def test_url_with_username_only_rejected(self):
-        from redmine_mcp_server.redmine_handler import upload_file
+        from redmine_mcp_server.tools.files import upload_file
 
         result = await upload_file(
             project_id="web",
@@ -659,11 +661,11 @@ class TestSSRFErrorMessagesDontLeakIPs:
     def test_private_ip_not_in_error(self, monkeypatch):
         """Error returned to caller should not include the resolved IP —
         attackers probing DNS could learn internal topology from it."""
-        from redmine_mcp_server.redmine_handler import _is_hostname_safe_for_fetch
+        from redmine_mcp_server._ssrf import _is_hostname_safe_for_fetch
 
         monkeypatch.delenv("REDMINE_ALLOW_PRIVATE_FETCH_URLS", raising=False)
         with patch(
-            "redmine_mcp_server.redmine_handler.socket.getaddrinfo",
+            "redmine_mcp_server._ssrf.socket.getaddrinfo",
             return_value=[(2, 1, 6, "", ("10.20.30.40", 0))],
         ):
             safe, err, _ip = _is_hostname_safe_for_fetch("internal.corp")
@@ -681,9 +683,9 @@ class TestSSRFErrorMessagesDontLeakIPs:
 
 class TestDeleteFileFailClosed:
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_none_container_type_refuses_delete(self, mock_redmine):
-        from redmine_mcp_server.redmine_handler import delete_file
+        from redmine_mcp_server.tools.files import delete_file
 
         attachment = MagicMock()
         attachment.id = 42
@@ -696,10 +698,10 @@ class TestDeleteFileFailClosed:
         mock_redmine.attachment.delete.assert_not_called()
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_empty_container_type_refuses_delete(self, mock_redmine):
         """Older Redmine versions may return empty string for container_type."""
-        from redmine_mcp_server.redmine_handler import delete_file
+        from redmine_mcp_server.tools.files import delete_file
 
         attachment = MagicMock()
         attachment.id = 42
@@ -719,40 +721,40 @@ class TestDeleteFileFailClosed:
 
 class TestIsPositiveInt:
     def test_positive_int_ok(self):
-        from redmine_mcp_server.redmine_handler import _is_positive_int
+        from redmine_mcp_server._validation import _is_positive_int
 
         assert _is_positive_int(1) is True
         assert _is_positive_int(100) is True
 
     def test_zero_rejected(self):
-        from redmine_mcp_server.redmine_handler import _is_positive_int
+        from redmine_mcp_server._validation import _is_positive_int
 
         assert _is_positive_int(0) is False
 
     def test_negative_rejected(self):
-        from redmine_mcp_server.redmine_handler import _is_positive_int
+        from redmine_mcp_server._validation import _is_positive_int
 
         assert _is_positive_int(-1) is False
 
     def test_bool_rejected(self):
         """True and False must not silently pass as int 1/0."""
-        from redmine_mcp_server.redmine_handler import _is_positive_int
+        from redmine_mcp_server._validation import _is_positive_int
 
         assert _is_positive_int(True) is False
         assert _is_positive_int(False) is False
 
     def test_float_rejected(self):
-        from redmine_mcp_server.redmine_handler import _is_positive_int
+        from redmine_mcp_server._validation import _is_positive_int
 
         assert _is_positive_int(1.5) is False
 
     def test_string_rejected(self):
-        from redmine_mcp_server.redmine_handler import _is_positive_int
+        from redmine_mcp_server._validation import _is_positive_int
 
         assert _is_positive_int("1") is False
 
     def test_none_rejected(self):
-        from redmine_mcp_server.redmine_handler import _is_positive_int
+        from redmine_mcp_server._validation import _is_positive_int
 
         assert _is_positive_int(None) is False
 
@@ -763,7 +765,7 @@ class TestRoleIdsRejectBoolean:
 
     @pytest.mark.asyncio
     async def test_role_ids_with_true_rejected(self):
-        from redmine_mcp_server.redmine_handler import manage_project_member
+        from redmine_mcp_server.tools.projects import manage_project_member
 
         result = await manage_project_member(
             action="add", project_id=10, role_ids=[True], user_id=5
@@ -773,7 +775,7 @@ class TestRoleIdsRejectBoolean:
 
     @pytest.mark.asyncio
     async def test_role_ids_with_false_rejected(self):
-        from redmine_mcp_server.redmine_handler import manage_project_member
+        from redmine_mcp_server.tools.projects import manage_project_member
 
         result = await manage_project_member(
             action="add", project_id=10, role_ids=[False], user_id=5
@@ -783,7 +785,7 @@ class TestRoleIdsRejectBoolean:
     @pytest.mark.asyncio
     async def test_role_ids_with_zero_rejected(self):
         """role_id=0 doesn't exist and shouldn't be forwarded."""
-        from redmine_mcp_server.redmine_handler import manage_project_member
+        from redmine_mcp_server.tools.projects import manage_project_member
 
         result = await manage_project_member(
             action="add", project_id=10, role_ids=[0, 3], user_id=5
@@ -792,7 +794,7 @@ class TestRoleIdsRejectBoolean:
 
     @pytest.mark.asyncio
     async def test_user_id_bool_rejected(self):
-        from redmine_mcp_server.redmine_handler import manage_project_member
+        from redmine_mcp_server.tools.projects import manage_project_member
 
         result = await manage_project_member(
             action="add", project_id=10, role_ids=[3], user_id=True
@@ -803,14 +805,14 @@ class TestRoleIdsRejectBoolean:
 class TestWatcherUserIdValidation:
     @pytest.mark.asyncio
     async def test_add_watcher_rejects_bool_user_id(self):
-        from redmine_mcp_server.redmine_handler import manage_issue_watcher
+        from redmine_mcp_server.tools.issues import manage_issue_watcher
 
         result = await manage_issue_watcher(action="add", issue_id=1, user_id=True)
         assert "error" in result
 
     @pytest.mark.asyncio
     async def test_remove_watcher_rejects_bool_user_id(self):
-        from redmine_mcp_server.redmine_handler import manage_issue_watcher
+        from redmine_mcp_server.tools.issues import manage_issue_watcher
 
         result = await manage_issue_watcher(action="remove", issue_id=1, user_id=True)
         assert "error" in result
@@ -819,7 +821,7 @@ class TestWatcherUserIdValidation:
 class TestLogTimeForUserRejectsBool:
     @pytest.mark.asyncio
     async def test_user_id_bool_rejected(self):
-        from redmine_mcp_server.redmine_handler import manage_time_entry
+        from redmine_mcp_server.tools.time_tracking import manage_time_entry
 
         result = await manage_time_entry(
             action="create", user_id=True, hours=1.0, issue_id=123
@@ -836,7 +838,7 @@ class TestLogTimeForUserRejectsBool:
 class TestListPaginationCap:
     def test_iter_capped_stops_at_cap(self):
         """_iter_capped should truncate to the cap even for huge iterables."""
-        from redmine_mcp_server.redmine_handler import _iter_capped
+        from redmine_mcp_server._serialization import _iter_capped
 
         huge = iter(range(10_000))
         result = _iter_capped(huge, cap=500)
@@ -845,13 +847,13 @@ class TestListPaginationCap:
         assert result[-1] == 499
 
     def test_iter_capped_handles_short_input(self):
-        from redmine_mcp_server.redmine_handler import _iter_capped
+        from redmine_mcp_server._serialization import _iter_capped
 
         result = _iter_capped([1, 2, 3], cap=500)
         assert result == [1, 2, 3]
 
     def test_iter_capped_handles_non_iterable(self):
-        from redmine_mcp_server.redmine_handler import _iter_capped
+        from redmine_mcp_server._serialization import _iter_capped
 
         result = _iter_capped(None)
         assert result == []
@@ -864,10 +866,10 @@ class TestListPaginationCap:
 
 class TestListErrorShape:
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_list_redmine_roles_error_is_dict(self, mock_redmine):
         from redminelib.exceptions import AuthError
-        from redmine_mcp_server.redmine_handler import list_redmine_roles
+        from redmine_mcp_server.tools.projects import list_redmine_roles
 
         mock_redmine.role.all.side_effect = AuthError()
         result = await list_redmine_roles()
@@ -883,7 +885,7 @@ class TestListErrorShape:
 
 class TestNamedRefWrapsNames:
     def test_wraps_user_name(self):
-        from redmine_mcp_server.redmine_handler import _named_ref
+        from redmine_mcp_server._serialization import _named_ref
 
         user = MagicMock()
         user.id = 5
@@ -894,12 +896,12 @@ class TestNamedRefWrapsNames:
         assert ref["name"].startswith("<insecure-content-")
 
     def test_none_returns_none(self):
-        from redmine_mcp_server.redmine_handler import _named_ref
+        from redmine_mcp_server._serialization import _named_ref
 
         assert _named_ref(None) is None
 
     def test_missing_name_gives_empty_string(self):
-        from redmine_mcp_server.redmine_handler import _named_ref
+        from redmine_mcp_server._serialization import _named_ref
 
         obj = MagicMock(spec=["id"])
         obj.id = 1

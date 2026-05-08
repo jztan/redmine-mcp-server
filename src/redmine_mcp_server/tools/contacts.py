@@ -128,11 +128,11 @@ async def _list_contacts_action(
         if not _is_positive_int(assigned_to_id):
             return {"error": "assigned_to_id must be a positive integer."}
         params["assigned_to_id"] = assigned_to_id
-    from .. import redmine_handler as _rh
+    from .. import _client
 
     try:
         client = _get_redmine_client()
-        url = f"{_rh.REDMINE_URL}/contacts.json"
+        url = f"{_client.REDMINE_URL}/contacts.json"
         payload = client.engine.request("get", url, params=params)
         raw = payload.get("contacts", []) if isinstance(payload, dict) else []
         return [_contact_to_dict(c) for c in raw[:limit]]
@@ -149,11 +149,11 @@ async def _get_contact_action(
 ) -> Dict[str, Any]:
     if not _is_positive_int(contact_id):
         return {"error": "contact_id must be a positive integer."}
-    from .. import redmine_handler as _rh
+    from .. import _client
 
     try:
         client = _get_redmine_client()
-        url = f"{_rh.REDMINE_URL}/contacts/{contact_id}.json"
+        url = f"{_client.REDMINE_URL}/contacts/{contact_id}.json"
         params: Dict[str, Any] = {}
         if include:
             params["include"] = include
@@ -213,11 +213,11 @@ async def _create_contact_action(
         for k, v in fields.items():
             if k in _CONTACT_WRITABLE_FIELDS:
                 body[k] = v
-    from .. import redmine_handler as _rh
+    from .. import _client
 
     try:
         client = _get_redmine_client()
-        url = f"{_rh.REDMINE_URL}/contacts.json"
+        url = f"{_client.REDMINE_URL}/contacts.json"
         payload = client.engine.request(
             "post",
             url,
@@ -249,11 +249,11 @@ async def _update_contact_action(
                 f"{sorted(_CONTACT_WRITABLE_FIELDS)}"
             )
         }
-    from .. import redmine_handler as _rh
+    from .. import _client
 
     try:
         client = _get_redmine_client()
-        url = f"{_rh.REDMINE_URL}/contacts/{contact_id}.json"
+        url = f"{_client.REDMINE_URL}/contacts/{contact_id}.json"
         client.engine.request(
             "put",
             url,
@@ -279,11 +279,11 @@ async def _delete_contact_action(
 ) -> Dict[str, Any]:
     if not _is_positive_int(contact_id):
         return {"error": "contact_id must be a positive integer."}
-    from .. import redmine_handler as _rh
+    from .. import _client
 
     try:
         client = _get_redmine_client()
-        url = f"{_rh.REDMINE_URL}/contacts/{contact_id}.json"
+        url = f"{_client.REDMINE_URL}/contacts/{contact_id}.json"
         client.engine.request("delete", url)
         return {
             "success": True,
@@ -312,11 +312,11 @@ async def _assign_contact_to_project_action(
                 "positive integer."
             )
         }
-    from .. import redmine_handler as _rh
+    from .. import _client
 
     try:
         client = _get_redmine_client()
-        url = f"{_rh.REDMINE_URL}/contacts/{contact_id}/projects.json"
+        url = f"{_client.REDMINE_URL}/contacts/{contact_id}/projects.json"
         client.engine.request(
             "post",
             url,
@@ -350,11 +350,11 @@ async def _remove_contact_from_project_action(
                 "positive integer."
             )
         }
-    from .. import redmine_handler as _rh
+    from .. import _client
 
     try:
         client = _get_redmine_client()
-        url = f"{_rh.REDMINE_URL}/contacts/{contact_id}/projects/{project_id}.json"
+        url = f"{_client.REDMINE_URL}/contacts/{contact_id}/projects/{project_id}.json"
         client.engine.request("delete", url)
         return {
             "success": True,

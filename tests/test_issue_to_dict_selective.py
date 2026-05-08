@@ -14,7 +14,7 @@ import sys
 # Add the src directory to the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from redmine_mcp_server.redmine_handler import (  # noqa: E402
+from redmine_mcp_server.tools.issues import (  # noqa: E402
     _issue_to_dict,
     _issue_to_dict_selective,
 )

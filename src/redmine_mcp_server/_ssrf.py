@@ -266,11 +266,12 @@ async def _download_file_url(
     - On success: ``(bytes, sanitized_filename_or_None, None)``
     - On failure: ``(b"", None, {"error": "..."})``
     """
-    # Local import avoids a circular import: redmine_handler imports from
-    # this module at top level, but we need the upload size cap from it.
+    # Local import avoids a circular import: tools.files imports from this
+    # module at top level via tools/__init__, but we need the upload size cap
+    # from it.
     import io
 
-    from .redmine_handler import _FILE_UPLOAD_MAX_SIZE_BYTES
+    from .tools.files import _FILE_UPLOAD_MAX_SIZE_BYTES
 
     def _err(msg: str) -> Tuple[bytes, Optional[str], Dict[str, Any]]:
         return b"", None, {"error": msg}

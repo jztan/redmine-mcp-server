@@ -8,7 +8,7 @@ import pytest
 from unittest.mock import Mock, patch
 from datetime import datetime
 
-from redmine_mcp_server.redmine_handler import (
+from redmine_mcp_server.tools.time_tracking import (  # noqa: E402
     list_time_entries,
     manage_time_entry,
     _time_entry_to_dict,
@@ -113,7 +113,7 @@ class TestListTimeEntries:
     @pytest.fixture
     def mock_redmine(self):
         """Create a mock Redmine client."""
-        with patch("redmine_mcp_server.redmine_handler.redmine") as mock:
+        with patch("redmine_mcp_server._client.redmine") as mock:
             yield mock
 
     def create_mock_time_entry(
@@ -245,7 +245,7 @@ class TestListTimeEntries:
     async def test_list_time_entries_redmine_not_initialized(self):
         """Test error when Redmine client is not initialized."""
         with patch(
-            "redmine_mcp_server.redmine_handler._get_redmine_client",
+            "redmine_mcp_server._client._get_redmine_client",
             side_effect=RuntimeError("No Redmine authentication available"),
         ):
             result = await list_time_entries()
@@ -271,7 +271,7 @@ class TestManageTimeEntryCreate:
     @pytest.fixture
     def mock_redmine(self):
         """Create a mock Redmine client."""
-        with patch("redmine_mcp_server.redmine_handler.redmine") as mock:
+        with patch("redmine_mcp_server._client.redmine") as mock:
             yield mock
 
     def create_mock_time_entry(self, entry_id=1, hours=2.0, issue_id=None):
@@ -385,7 +385,7 @@ class TestManageTimeEntryCreate:
     async def test_create_time_entry_redmine_not_initialized(self):
         """Test error when Redmine client is not initialized."""
         with patch(
-            "redmine_mcp_server.redmine_handler._get_redmine_client",
+            "redmine_mcp_server._client._get_redmine_client",
             side_effect=RuntimeError("No Redmine authentication available"),
         ):
             result = await manage_time_entry(action="create", hours=2.0, issue_id=123)
@@ -422,7 +422,7 @@ class TestManageTimeEntryUpdate:
     @pytest.fixture
     def mock_redmine(self):
         """Create a mock Redmine client."""
-        with patch("redmine_mcp_server.redmine_handler.redmine") as mock:
+        with patch("redmine_mcp_server._client.redmine") as mock:
             yield mock
 
     def create_mock_time_entry(self, entry_id=1, hours=2.0):
@@ -547,7 +547,7 @@ class TestManageTimeEntryUpdate:
     async def test_update_time_entry_redmine_not_initialized(self):
         """Test error when Redmine client is not initialized."""
         with patch(
-            "redmine_mcp_server.redmine_handler._get_redmine_client",
+            "redmine_mcp_server._client._get_redmine_client",
             side_effect=RuntimeError("No Redmine authentication available"),
         ):
             result = await manage_time_entry(

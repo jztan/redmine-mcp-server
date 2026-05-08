@@ -94,15 +94,15 @@ async def _list_products_action(
                 "positive integer."
             )
         }
-    # Lazy lookup so tests patching `redmine_handler.REDMINE_URL` are honored.
-    from .. import redmine_handler as _rh
+    # Lazy lookup so tests patching `_client.REDMINE_URL` are honored.
+    from .. import _client
 
     try:
         client = _get_redmine_client()
         url = (
-            f"{_rh.REDMINE_URL}/projects/{project_id}/products.json"
+            f"{_client.REDMINE_URL}/projects/{project_id}/products.json"
             if project_id is not None
-            else f"{_rh.REDMINE_URL}/products.json"
+            else f"{_client.REDMINE_URL}/products.json"
         )
         payload = client.engine.request("get", url, params={"limit": limit})
         raw = payload.get("products", []) if isinstance(payload, dict) else []
@@ -121,11 +121,11 @@ async def _get_product_action(
 ) -> Dict[str, Any]:
     if not _is_positive_int(product_id):
         return {"error": "product_id must be a positive integer."}
-    from .. import redmine_handler as _rh
+    from .. import _client
 
     try:
         client = _get_redmine_client()
-        url = f"{_rh.REDMINE_URL}/products/{product_id}.json"
+        url = f"{_client.REDMINE_URL}/products/{product_id}.json"
         payload = client.engine.request("get", url)
         product = payload.get("product", {}) if isinstance(payload, dict) else {}
         if not product:
@@ -175,11 +175,11 @@ async def _create_product_action(
         body["tag_list"] = tag_list
     if custom_fields is not None:
         body["custom_fields"] = custom_fields
-    from .. import redmine_handler as _rh
+    from .. import _client
 
     try:
         client = _get_redmine_client()
-        url = f"{_rh.REDMINE_URL}/products.json"
+        url = f"{_client.REDMINE_URL}/products.json"
         payload = client.engine.request(
             "post",
             url,
@@ -213,11 +213,11 @@ async def _update_product_action(
                 f"{sorted(_PRODUCT_WRITABLE_FIELDS)}"
             )
         }
-    from .. import redmine_handler as _rh
+    from .. import _client
 
     try:
         client = _get_redmine_client()
-        url = f"{_rh.REDMINE_URL}/products/{product_id}.json"
+        url = f"{_client.REDMINE_URL}/products/{product_id}.json"
         client.engine.request(
             "put",
             url,

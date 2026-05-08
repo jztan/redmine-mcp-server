@@ -9,15 +9,9 @@ Owns:
 `current_redmine_token` (the OAuth ContextVar) lives in `oauth_middleware.py`
 and is lazy-imported inside `_get_redmine_client()` to avoid circular import.
 
-Note: `_get_redmine_client()` and `_build_legacy_client()` resolve module-level
-config (REDMINE_API_KEY, REDMINE_USERNAME, etc.) and the `Redmine` class via
-`redmine_mcp_server.redmine_handler` module attribute access. This preserves
-back-compat with the large existing test suite that patches
-`redmine_handler.REDMINE_API_KEY`, `redmine_handler.Redmine`, etc. through
-`unittest.mock.patch`. The canonical values are defined here, and
-`redmine_handler.py` re-imports them so both modules stay in sync at import
-time; tests can monkey-patch the `redmine_handler` bindings to override at
-runtime.
+Tests patch this module's attributes directly, e.g.
+``patch("redmine_mcp_server._client.REDMINE_API_KEY", "...")`` or
+``patch("redmine_mcp_server._client.Redmine")``.
 """
 
 import logging
@@ -95,6 +89,22 @@ def _build_requests_config() -> dict:
     return requests_config
 
 
+# Warn at import time if Redmine config is missing or incomplete.
+if not REDMINE_URL:
+    logger.warning(
+        "REDMINE_URL not set. "
+        "Please create a .env file in your working directory with REDMINE_URL defined."
+    )
+elif REDMINE_AUTH_MODE != "oauth" and not (
+    REDMINE_API_KEY or (REDMINE_USERNAME and REDMINE_PASSWORD)
+):
+    logger.warning(
+        "No Redmine authentication configured. "
+        "Please set REDMINE_API_KEY or REDMINE_USERNAME/REDMINE_PASSWORD "
+        "in your .env file, or set REDMINE_AUTH_MODE=oauth."
+    )
+
+
 # Test-compatibility hook: existing unit tests patch this module-level variable
 # directly. When non-None, _get_redmine_client() returns it immediately.
 # In production this stays None and per-request auth is always used.
@@ -109,31 +119,33 @@ def _build_legacy_client() -> Redmine:
     """Build a Redmine client using legacy credentials (API key or user/pass).
 
     Resolves REDMINE_URL / REDMINE_API_KEY / REDMINE_USERNAME / REDMINE_PASSWORD
-    and the `Redmine` class via `redmine_handler` module attribute access so
-    that existing tests patching `redmine_handler.REDMINE_*` and
-    `redmine_handler.Redmine` continue to work.
+    and the `Redmine` class via this module's attributes so tests patching
+    ``_client.REDMINE_*`` / ``_client.Redmine`` are honored.
     """
-    from . import redmine_handler as _rh  # lazy: preserve test patches
-
+    # Read attributes via globals() so tests using patch.object(_client, ...)
+    # observe the override at call time.
+    g = globals()
     requests_config = _build_requests_config()
-    if _rh.REDMINE_API_KEY:
+    if g["REDMINE_API_KEY"]:
         if requests_config:
-            return _rh.Redmine(
-                _rh.REDMINE_URL, key=_rh.REDMINE_API_KEY, requests=requests_config
-            )
-        return _rh.Redmine(_rh.REDMINE_URL, key=_rh.REDMINE_API_KEY)
-    elif _rh.REDMINE_USERNAME and _rh.REDMINE_PASSWORD:
-        if requests_config:
-            return _rh.Redmine(
-                _rh.REDMINE_URL,
-                username=_rh.REDMINE_USERNAME,
-                password=_rh.REDMINE_PASSWORD,
+            return g["Redmine"](
+                g["REDMINE_URL"],
+                key=g["REDMINE_API_KEY"],
                 requests=requests_config,
             )
-        return _rh.Redmine(
-            _rh.REDMINE_URL,
-            username=_rh.REDMINE_USERNAME,
-            password=_rh.REDMINE_PASSWORD,
+        return g["Redmine"](g["REDMINE_URL"], key=g["REDMINE_API_KEY"])
+    elif g["REDMINE_USERNAME"] and g["REDMINE_PASSWORD"]:
+        if requests_config:
+            return g["Redmine"](
+                g["REDMINE_URL"],
+                username=g["REDMINE_USERNAME"],
+                password=g["REDMINE_PASSWORD"],
+                requests=requests_config,
+            )
+        return g["Redmine"](
+            g["REDMINE_URL"],
+            username=g["REDMINE_USERNAME"],
+            password=g["REDMINE_PASSWORD"],
         )
     else:
         raise RuntimeError(
@@ -146,13 +158,13 @@ def _build_legacy_client() -> Redmine:
 def _get_redmine_client() -> Redmine:
     global _legacy_client
 
-    # Lazy lookup through redmine_handler so tests patching
-    # `redmine_handler.redmine`, `redmine_handler._legacy_client`, and
-    # `redmine_handler.Redmine` are observed at call time.
-    from . import redmine_handler as _rh
+    # Read this module's attributes via globals() so tests patching
+    # `_client.redmine`, `_client._legacy_client`, and `_client.Redmine`
+    # are observed at call time.
+    g = globals()
 
-    if _rh.redmine is not None:
-        return _rh.redmine
+    if g["redmine"] is not None:
+        return g["redmine"]
 
     from .oauth_middleware import current_redmine_token
 
@@ -163,17 +175,14 @@ def _get_redmine_client() -> Redmine:
         requests_config = _build_requests_config()
         headers = {"Authorization": f"Bearer {token}"}
         if requests_config:
-            return _rh.Redmine(
-                _rh.REDMINE_URL,
+            return g["Redmine"](
+                g["REDMINE_URL"],
                 requests={"headers": headers, **requests_config},
             )
-        return _rh.Redmine(_rh.REDMINE_URL, requests={"headers": headers})
+        return g["Redmine"](g["REDMINE_URL"], requests={"headers": headers})
 
     # Legacy mode: reuse a cached singleton.
-    # Read/write the cache through `redmine_handler` so existing tests that do
-    # `rh._legacy_client = None` to clear the cache are honored. Mirror onto
-    # `_client._legacy_client` so back-compat re-imports stay consistent.
-    if _rh._legacy_client is None:
-        _rh._legacy_client = _build_legacy_client()
-    _legacy_client = _rh._legacy_client
-    return _rh._legacy_client
+    if g["_legacy_client"] is None:
+        g["_legacy_client"] = _build_legacy_client()
+    _legacy_client = g["_legacy_client"]
+    return g["_legacy_client"]

@@ -8,9 +8,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from redmine_mcp_server.redmine_handler import (  # noqa: E402
-    manage_redmine_wiki_page,
-)
+from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page  # noqa: E402
 
 
 def _make_wiki_page(
@@ -41,7 +39,7 @@ def _make_wiki_page(
 
 class TestManageRedmineWikiPageList:
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_returns_list_of_pages(self, mock_redmine):
         mock_redmine.wiki_page.filter.return_value = [
             _make_wiki_page("Home", version=3),
@@ -59,7 +57,7 @@ class TestManageRedmineWikiPageList:
         assert result[1]["parent_title"] == "Home"
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_empty_project(self, mock_redmine):
         mock_redmine.wiki_page.filter.return_value = []
 
@@ -68,7 +66,7 @@ class TestManageRedmineWikiPageList:
         assert result == []
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_returns_error_dict_on_exception(self, mock_redmine):
         mock_redmine.wiki_page.filter.side_effect = Exception("boom")
 
@@ -85,7 +83,7 @@ class TestManageRedmineWikiPageList:
 
 class TestManageRedmineWikiPageRename:
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_rename_success(self, mock_redmine):
         existing = _make_wiki_page("Old", text="Body")
         renamed = _make_wiki_page("New", text="Body")
@@ -107,7 +105,7 @@ class TestManageRedmineWikiPageRename:
         )
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_rename_without_redirect(self, mock_redmine):
         existing = _make_wiki_page("Old", text="Body")
         renamed = _make_wiki_page("New", text="Body")
@@ -125,7 +123,7 @@ class TestManageRedmineWikiPageRename:
         assert "redirect_existing_links" not in call_kwargs
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_silent_permission_failure_detected(self, mock_redmine):
         """If the rename silently fails (permission missing), Redmine will
         return 404 when fetching by new_title."""
@@ -180,7 +178,7 @@ class TestManageRedmineWikiPageRename:
         assert "differ" in result["error"]
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_handles_get_error_gracefully(self, mock_redmine):
         from redminelib.exceptions import ResourceNotFoundError
 

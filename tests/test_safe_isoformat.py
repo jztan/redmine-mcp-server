@@ -10,16 +10,18 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from redmine_mcp_server.redmine_handler import (
-    _safe_isoformat,
+from redmine_mcp_server._serialization import _safe_isoformat  # noqa: E402
+from redmine_mcp_server.tools.issues import (  # noqa: E402
     _issue_to_dict,
     _issue_to_dict_selective,
-    _version_to_dict,
-    _time_entry_to_dict,
     _journals_to_list,
     _attachments_to_list,
+)
+from redmine_mcp_server.tools.projects import (  # noqa: E402
+    _version_to_dict,
     list_redmine_projects,
 )
+from redmine_mcp_server.tools.time_tracking import _time_entry_to_dict  # noqa: E402
 
 
 class TestSafeIsoformat:
@@ -251,7 +253,7 @@ class TestListRedmineProjects_StringDates:
         return p
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_string_dates(self, mock_redmine):
         """list_redmine_projects passes string dates through without crashing."""
         mock_redmine.project.all.return_value = [
@@ -264,7 +266,7 @@ class TestListRedmineProjects_StringDates:
         assert result[1]["created_on"] == "2024-02-01T08:00:00+02:00"
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_datetime_dates(self, mock_redmine):
         """list_redmine_projects converts datetime objects to ISO strings."""
         mock_redmine.project.all.return_value = [
@@ -275,7 +277,7 @@ class TestListRedmineProjects_StringDates:
         assert result[0]["created_on"] == "2024-01-15T10:30:00"
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_none_dates(self, mock_redmine):
         """list_redmine_projects returns None for missing date fields."""
         mock_redmine.project.all.return_value = [

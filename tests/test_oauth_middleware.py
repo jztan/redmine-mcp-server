@@ -465,7 +465,7 @@ class TestGetRedmineClient:
     @pytest.fixture(autouse=True)
     def _reset_legacy_cache(self):
         """Clear cached legacy client between tests."""
-        import redmine_mcp_server.redmine_handler as rh
+        import redmine_mcp_server._client as rh
 
         rh._legacy_client = None
         yield
@@ -474,11 +474,11 @@ class TestGetRedmineClient:
     def test_uses_oauth_token_when_context_var_is_set(self):
         """When a token is in the ContextVar, a Bearer-auth client is returned."""
         from redmine_mcp_server.oauth_middleware import current_redmine_token
-        from redmine_mcp_server.redmine_handler import _get_redmine_client
+        from redmine_mcp_server._client import _get_redmine_client
 
         token_var = current_redmine_token.set("oauth-token-abc")
         try:
-            with patch("redmine_mcp_server.redmine_handler.Redmine") as mock_redmine:
+            with patch("redmine_mcp_server._client.Redmine") as mock_redmine:
                 _get_redmine_client()
                 call_kwargs = mock_redmine.call_args.kwargs
                 headers = call_kwargs["requests"]["headers"]
@@ -489,14 +489,14 @@ class TestGetRedmineClient:
     def test_falls_back_to_api_key_when_no_context_token(self):
         """Without a ContextVar token, API key is used."""
         from redmine_mcp_server.oauth_middleware import current_redmine_token
-        from redmine_mcp_server.redmine_handler import _get_redmine_client
-        import redmine_mcp_server.redmine_handler as rh
+        from redmine_mcp_server._client import _get_redmine_client
+        import redmine_mcp_server._client as rh
 
         token_var = current_redmine_token.set(None)
         try:
             with (
                 patch.object(rh, "REDMINE_API_KEY", "test-api-key"),
-                patch("redmine_mcp_server.redmine_handler.Redmine") as mock_redmine,
+                patch("redmine_mcp_server._client.Redmine") as mock_redmine,
             ):
                 _get_redmine_client()
                 call_kwargs = mock_redmine.call_args
@@ -507,8 +507,8 @@ class TestGetRedmineClient:
     def test_falls_back_to_username_password_when_no_api_key(self):
         """Without a ContextVar token or API key, username/password is used."""
         from redmine_mcp_server.oauth_middleware import current_redmine_token
-        from redmine_mcp_server.redmine_handler import _get_redmine_client
-        import redmine_mcp_server.redmine_handler as rh
+        from redmine_mcp_server._client import _get_redmine_client
+        import redmine_mcp_server._client as rh
 
         token_var = current_redmine_token.set(None)
         try:
@@ -516,7 +516,7 @@ class TestGetRedmineClient:
                 patch.object(rh, "REDMINE_API_KEY", None),
                 patch.object(rh, "REDMINE_USERNAME", "user"),
                 patch.object(rh, "REDMINE_PASSWORD", "pass"),
-                patch("redmine_mcp_server.redmine_handler.Redmine") as mock_redmine,
+                patch("redmine_mcp_server._client.Redmine") as mock_redmine,
             ):
                 _get_redmine_client()
                 call_kwargs = mock_redmine.call_args
@@ -528,8 +528,8 @@ class TestGetRedmineClient:
     def test_raises_when_no_auth_configured(self):
         """Raises RuntimeError when no auth is available at all."""
         from redmine_mcp_server.oauth_middleware import current_redmine_token
-        from redmine_mcp_server.redmine_handler import _get_redmine_client
-        import redmine_mcp_server.redmine_handler as rh
+        from redmine_mcp_server._client import _get_redmine_client
+        import redmine_mcp_server._client as rh
 
         token_var = current_redmine_token.set(None)
         try:
@@ -548,14 +548,14 @@ class TestGetRedmineClient:
     def test_oauth_token_takes_priority_over_api_key(self):
         """OAuth ContextVar token wins even if REDMINE_API_KEY is also set."""
         from redmine_mcp_server.oauth_middleware import current_redmine_token
-        from redmine_mcp_server.redmine_handler import _get_redmine_client
-        import redmine_mcp_server.redmine_handler as rh
+        from redmine_mcp_server._client import _get_redmine_client
+        import redmine_mcp_server._client as rh
 
         token_var = current_redmine_token.set("oauth-wins")
         try:
             with (
                 patch.object(rh, "REDMINE_API_KEY", "should-not-be-used"),
-                patch("redmine_mcp_server.redmine_handler.Redmine") as mock_redmine,
+                patch("redmine_mcp_server._client.Redmine") as mock_redmine,
             ):
                 _get_redmine_client()
                 call_kwargs = mock_redmine.call_args.kwargs

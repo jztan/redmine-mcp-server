@@ -17,11 +17,11 @@ def _fetch_checklist_items(issue_id: int) -> List[Dict[str, Any]]:
     Returns a list of checklist item dicts.
     Raises on any HTTP error (caller is responsible for catching).
     """
-    # Lazy lookup so tests patching `redmine_handler.REDMINE_URL` are honored.
-    from .. import redmine_handler as _rh
+    # Lazy lookup so tests patching `_client.REDMINE_URL` are honored.
+    from .. import _client
 
     client = _get_redmine_client()
-    url = f"{_rh.REDMINE_URL}/issues/{issue_id}/checklists.json"
+    url = f"{_client.REDMINE_URL}/issues/{issue_id}/checklists.json"
     payload = client.engine.request("get", url)
     raw_items = payload if isinstance(payload, list) else payload.get("checklists", [])
     items = []
@@ -44,11 +44,11 @@ def _update_checklist_item_api(checklist_item_id: int, updates: Dict[str, Any]) 
 
     Raises on any HTTP error (caller is responsible for catching).
     """
-    # Lazy lookup so tests patching `redmine_handler.REDMINE_URL` are honored.
-    from .. import redmine_handler as _rh
+    # Lazy lookup so tests patching `_client.REDMINE_URL` are honored.
+    from .. import _client
 
     client = _get_redmine_client()
-    url = f"{_rh.REDMINE_URL}/checklists/{checklist_item_id}.json"
+    url = f"{_client.REDMINE_URL}/checklists/{checklist_item_id}.json"
     payload = json.dumps({"checklist": updates})
     return client.engine.request(
         "put",

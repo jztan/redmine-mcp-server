@@ -11,7 +11,7 @@ import pytest
 # Add the src directory to the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from redmine_mcp_server.redmine_handler import (  # noqa: E402
+from redmine_mcp_server.tools.projects import (  # noqa: E402
     _custom_field_to_dict,
     list_project_issue_custom_fields,
 )
@@ -72,7 +72,7 @@ class TestListProjectIssueCustomFields:
     @pytest.fixture
     def mock_redmine(self):
         """Create a mock Redmine client."""
-        with patch("redmine_mcp_server.redmine_handler.redmine") as mock:
+        with patch("redmine_mcp_server._client.redmine") as mock:
             yield mock
 
     @pytest.mark.asyncio
@@ -161,7 +161,7 @@ class TestListProjectIssueCustomFields:
         mock_redmine.project.get.assert_not_called()
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine", None)
+    @patch("redmine_mcp_server._client.redmine", None)
     async def test_list_project_issue_custom_fields_no_client(self):
         """Returns initialization error when Redmine client is unavailable."""
         result = await list_project_issue_custom_fields(project_id=41)

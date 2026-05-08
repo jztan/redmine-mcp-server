@@ -50,12 +50,12 @@ def _fetch_agile_data(issue_id: int) -> Dict[str, Any]:
     Returns a dict with story_points, agile_sprint_id, and agile_position.
     Raises on any HTTP error (caller is responsible for catching).
     """
-    # Lazy lookup through redmine_handler so tests patching
-    # `redmine_handler.REDMINE_URL` are observed at call time.
-    from .. import redmine_handler as _rh
+    # Lazy lookup so tests patching
+    # `_client.REDMINE_URL` are observed at call time.
+    from .. import _client
 
     client = _get_redmine_client()
-    url = f"{_rh.REDMINE_URL}/issues/{issue_id}/agile_data.json"
+    url = f"{_client.REDMINE_URL}/issues/{issue_id}/agile_data.json"
     payload = client.engine.request("get", url)
     agile_data = payload.get("agile_data", {}) or {}
     return {
@@ -70,12 +70,12 @@ def _apply_agile_story_points(issue_id: int, story_points) -> None:
 
     Raises on any HTTP error (caller is responsible for catching).
     """
-    # Lazy lookup through redmine_handler so tests patching
-    # `redmine_handler.REDMINE_URL` are observed at call time.
-    from .. import redmine_handler as _rh
+    # Lazy lookup so tests patching
+    # `_client.REDMINE_URL` are observed at call time.
+    from .. import _client
 
     client = _get_redmine_client()
-    url = f"{_rh.REDMINE_URL}/issues/{issue_id}.json"
+    url = f"{_client.REDMINE_URL}/issues/{issue_id}.json"
     payload = json.dumps(
         {"issue": {"agile_data_attributes": {"story_points": story_points}}}
     )

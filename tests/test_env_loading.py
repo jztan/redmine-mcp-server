@@ -41,7 +41,7 @@ for key in ['REDMINE_URL', 'REDMINE_API_KEY', 'REDMINE_USERNAME', 'REDMINE_PASSW
     os.environ.pop(key, None)
 
 # Import the module which triggers env loading
-from redmine_mcp_server.redmine_handler import REDMINE_URL, REDMINE_API_KEY
+from redmine_mcp_server._client import REDMINE_URL, REDMINE_API_KEY
 
 # Print the values for verification
 print(f"REDMINE_URL={REDMINE_URL}")
@@ -90,7 +90,7 @@ for key in ['REDMINE_URL', 'REDMINE_API_KEY', 'REDMINE_USERNAME', 'REDMINE_PASSW
     os.environ.pop(key, None)
 
 # Import the module which triggers env loading and warnings
-from redmine_mcp_server import redmine_handler
+from redmine_mcp_server import _client as redmine_handler
 """
         )
 
@@ -128,7 +128,7 @@ import os
 for key in ['REDMINE_URL', 'REDMINE_API_KEY', 'REDMINE_USERNAME', 'REDMINE_PASSWORD']:
     os.environ.pop(key, None)
 
-from redmine_mcp_server import redmine_handler
+from redmine_mcp_server import _client as redmine_handler
 """
         )
 
@@ -152,7 +152,7 @@ from redmine_mcp_server import redmine_handler
 
     def test_env_paths_priority(self):
         """Test that _env_paths list has correct priority order."""
-        from redmine_mcp_server.redmine_handler import _env_paths
+        from redmine_mcp_server._client import _env_paths
 
         assert len(_env_paths) >= 2, "Expected at least 2 env paths"
         # First path should be CWD
@@ -176,8 +176,7 @@ import os
 for key in ['REDMINE_URL', 'REDMINE_API_KEY', 'REDMINE_USERNAME', 'REDMINE_PASSWORD']:
     os.environ.pop(key, None)
 
-from redmine_mcp_server.redmine_handler import REDMINE_URL
-
+from redmine_mcp_server._client import REDMINE_URL
 print(f"REDMINE_URL={REDMINE_URL}")
 """
         )
@@ -204,7 +203,7 @@ class TestEnvLoadingUnit:
 
     def test_env_paths_variable_exists(self):
         """Test that _env_paths is defined in the module."""
-        from redmine_mcp_server import redmine_handler
+        from redmine_mcp_server import _client as redmine_handler
 
         assert hasattr(
             redmine_handler, "_env_paths"
@@ -212,7 +211,7 @@ class TestEnvLoadingUnit:
 
     def test_env_paths_contains_cwd(self):
         """Test that _env_paths contains current working directory."""
-        from redmine_mcp_server.redmine_handler import _env_paths
+        from redmine_mcp_server._client import _env_paths
 
         cwd_env = Path.cwd() / ".env"
         assert (
@@ -221,7 +220,7 @@ class TestEnvLoadingUnit:
 
     def test_env_loaded_flag_exists(self):
         """Test that _env_loaded flag is defined."""
-        from redmine_mcp_server import redmine_handler
+        from redmine_mcp_server import _client as redmine_handler
 
         assert hasattr(
             redmine_handler, "_env_loaded"

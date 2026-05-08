@@ -61,9 +61,9 @@ def _scrub_error_message(message: str) -> str:
     for pattern, replacement in _SECRET_SCRUB_PATTERNS:
         scrubbed = pattern.sub(replacement, scrubbed)
     # Also redact the configured API key if it happens to appear verbatim.
-    from . import redmine_handler  # lazy import to avoid circular
+    from . import _client  # lazy import to avoid circular
 
-    redmine_api_key = redmine_handler.REDMINE_API_KEY
+    redmine_api_key = _client.REDMINE_API_KEY
     if redmine_api_key and redmine_api_key in scrubbed:
         scrubbed = scrubbed.replace(redmine_api_key, "[redacted]")
     return scrubbed
@@ -75,10 +75,10 @@ def _handle_redmine_error(
     """
     Convert exceptions to user-friendly error messages with actionable guidance.
     """
-    from . import redmine_handler  # lazy import to avoid circular
+    from . import _client  # lazy import to avoid circular
 
     context = context or {}
-    redmine_url = redmine_handler.REDMINE_URL or "REDMINE_URL not configured"
+    redmine_url = _client.REDMINE_URL or "REDMINE_URL not configured"
 
     # Check SSLError BEFORE ConnectionError (SSLError inherits from ConnectionError)
     if isinstance(e, RequestsSSLError):

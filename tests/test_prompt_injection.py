@@ -13,15 +13,15 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from redmine_mcp_server.redmine_handler import (  # noqa: E402
-    wrap_insecure_content,
+from redmine_mcp_server._serialization import wrap_insecure_content  # noqa: E402
+from redmine_mcp_server.tools.issues import (  # noqa: E402
     _issue_to_dict,
     _issue_to_dict_selective,
     _journals_to_list,
-    _resource_to_dict,
-    _wiki_page_to_dict,
-    _version_to_dict,
 )
+from redmine_mcp_server.tools.search import _resource_to_dict  # noqa: E402
+from redmine_mcp_server.tools.wiki import _wiki_page_to_dict  # noqa: E402
+from redmine_mcp_server.tools.projects import _version_to_dict  # noqa: E402
 
 BOUNDARY_PATTERN = re.compile(
     r"^<insecure-content-([0-9a-f]{16})>\n(.*)\n</insecure-content-\1>$",

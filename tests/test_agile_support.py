@@ -9,8 +9,8 @@ from unittest.mock import Mock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from redmine_mcp_server.redmine_handler import (  # noqa: E402
-    _is_agile_enabled,
+from redmine_mcp_server._env import _is_agile_enabled  # noqa: E402
+from redmine_mcp_server.tools.issues import (  # noqa: E402
     _fetch_agile_data,
     _apply_agile_story_points,
     get_redmine_issue,
@@ -53,8 +53,8 @@ class TestIsAgileEnabled:
 
 
 class TestFetchAgileData:
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     def test_returns_mapped_fields(self, mock_redmine):
         mock_redmine.engine.request.return_value = {
             "agile_data": {
@@ -75,8 +75,8 @@ class TestFetchAgileData:
             "get", "http://localhost:3000/issues/42/agile_data.json"
         )
 
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     def test_handles_null_fields(self, mock_redmine):
         mock_redmine.engine.request.return_value = {
             "agile_data": {
@@ -96,8 +96,8 @@ class TestFetchAgileData:
 
 
 class TestApplyAgileStoryPoints:
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     def test_calls_engine_put_with_correct_payload(self, mock_redmine):
         mock_redmine.engine.request.return_value = Mock()
 
@@ -110,8 +110,8 @@ class TestApplyAgileStoryPoints:
             data=json.dumps({"issue": {"agile_data_attributes": {"story_points": 8}}}),
         )
 
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     def test_allows_null_to_clear_story_points(self, mock_redmine):
         mock_redmine.engine.request.return_value = Mock()
 
@@ -130,8 +130,8 @@ class TestApplyAgileStoryPoints:
 class TestGetRedmineIssueAgile:
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_merges_agile_fields_when_enabled(self, mock_redmine):
         mock_redmine.issue.get.return_value = _make_minimal_issue(1)
         mock_redmine.engine.request.return_value = {
@@ -153,7 +153,7 @@ class TestGetRedmineIssueAgile:
         )
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_no_agile_fields_when_disabled(self, mock_redmine):
         mock_redmine.issue.get.return_value = _make_minimal_issue(1)
 
@@ -166,8 +166,8 @@ class TestGetRedmineIssueAgile:
         mock_redmine.engine.request.assert_not_called()
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_silently_omits_agile_on_any_exception(self, mock_redmine):
         mock_redmine.issue.get.return_value = _make_minimal_issue(1)
         mock_redmine.engine.request.side_effect = Exception("plugin not installed")
@@ -183,8 +183,8 @@ class TestGetRedmineIssueAgile:
 class TestUpdateRedmineIssueAgile:
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_extracts_story_points_and_calls_agile_endpoint(self, mock_redmine):
         mock_redmine.issue.update.return_value = True
         mock_redmine.issue.get.return_value = _make_minimal_issue(1)
@@ -207,8 +207,8 @@ class TestUpdateRedmineIssueAgile:
         assert result["id"] == 1
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_null_story_points_clears_field(self, mock_redmine):
         mock_redmine.issue.update.return_value = True
         mock_redmine.issue.get.return_value = _make_minimal_issue(1)
@@ -227,7 +227,7 @@ class TestUpdateRedmineIssueAgile:
         )
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_story_points_silently_dropped_when_disabled(self, mock_redmine):
         mock_redmine.issue.update.return_value = True
         mock_redmine.issue.get.return_value = _make_minimal_issue(1)
@@ -242,7 +242,7 @@ class TestUpdateRedmineIssueAgile:
         assert result["id"] == 1
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_no_agile_call_when_story_points_absent(self, mock_redmine):
         mock_redmine.issue.update.return_value = True
         mock_redmine.issue.get.return_value = _make_minimal_issue(1)
@@ -254,8 +254,8 @@ class TestUpdateRedmineIssueAgile:
         assert result["id"] == 1
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_returns_error_when_agile_call_fails_after_standard_update(
         self, mock_redmine
     ):

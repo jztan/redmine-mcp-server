@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import Mock, patch
 
-from redmine_mcp_server.redmine_handler import list_time_entry_activities
+from redmine_mcp_server.tools.time_tracking import list_time_entry_activities
 
 
 class TestListTimeEntryActivities:
@@ -11,7 +11,7 @@ class TestListTimeEntryActivities:
 
     @pytest.fixture
     def mock_redmine(self):
-        with patch("redmine_mcp_server.redmine_handler.redmine") as mock:
+        with patch("redmine_mcp_server._client.redmine") as mock:
             yield mock
 
     def _make_activity(self, id, name, active=True, is_default=False):
