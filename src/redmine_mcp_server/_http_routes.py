@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ._client import REDMINE_AUTH_MODE
+from .server import mcp
 
 logger = logging.getLogger("redmine_mcp_server")
 
@@ -22,12 +23,12 @@ async def health_check(request):
     """Health check endpoint for container orchestration and monitoring."""
     from starlette.responses import JSONResponse
 
-    # Lazy lookup so tests patching redmine_handler._ensure_cleanup_started
+    # Lazy lookup so tests patching _cleanup._ensure_cleanup_started
     # observe the override.
-    from . import redmine_handler
+    from . import _cleanup
 
     # Initialize cleanup task on first health check (lazy initialization)
-    await redmine_handler._ensure_cleanup_started()
+    await _cleanup._ensure_cleanup_started()
 
     return JSONResponse(
         {
@@ -111,8 +112,15 @@ async def cleanup_status(request):
     """Get cleanup task status and statistics."""
     from starlette.responses import JSONResponse
 
-    # Lazy lookup so tests patching redmine_handler.cleanup_manager
+    # Lazy lookup so tests patching _cleanup.cleanup_manager
     # observe the override.
-    from . import redmine_handler
+    from . import _cleanup
 
-    return JSONResponse(redmine_handler.cleanup_manager.get_status())
+    return JSONResponse(_cleanup.cleanup_manager.get_status())
+
+
+# Register HTTP routes on the FastMCP instance. The decorator must be applied
+# at import time (when this module is imported by main.py / tests).
+mcp.custom_route("/health", methods=["GET"])(health_check)
+mcp.custom_route("/files/{file_id}", methods=["GET"])(serve_attachment)
+mcp.custom_route("/cleanup/status", methods=["GET"])(cleanup_status)

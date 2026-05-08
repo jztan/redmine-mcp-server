@@ -8,7 +8,8 @@ Endpoints:
     - /mcp: Handles MCP requests via streamable HTTP transport.
 
 Modules:
-    - .redmine_handler: Contains the MCP server logic with FastMCP integration.
+    - .tools: Per-resource MCP tool registrations (issues, projects, ...).
+    - .server: Shared FastMCP instance.
 """
 
 import logging
@@ -26,7 +27,8 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
-from . import redmine_handler  # noqa: E402,F401  -- triggers @mcp.tool registration
+from . import tools  # noqa: E402,F401  -- triggers @mcp.tool registration
+from . import _http_routes  # noqa: E402,F401  -- registers HTTP custom routes
 from .server import mcp  # noqa: E402
 from .oauth_middleware import RedmineOAuthMiddleware  # noqa: E402
 

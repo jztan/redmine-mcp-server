@@ -155,18 +155,14 @@ elif REDMINE_AUTH_MODE != "oauth" and not (
 # Re-exported for back-compat during refactor
 from .server import mcp  # noqa: E402,F401
 
-# Re-exported for back-compat during refactor
+# Re-exported for back-compat during refactor.
+# Importing _http_routes also registers the /health, /files/{file_id},
+# and /cleanup/status routes on the shared FastMCP instance.
 from ._http_routes import (  # noqa: E402,F401
     cleanup_status,
     health_check,
     serve_attachment,
 )
-
-# Register HTTP routes on the FastMCP instance. Functions live in _http_routes
-# but the @mcp.custom_route decorator must be applied here where `mcp` exists.
-mcp.custom_route("/health", methods=["GET"])(health_check)
-mcp.custom_route("/files/{file_id}", methods=["GET"])(serve_attachment)
-mcp.custom_route("/cleanup/status", methods=["GET"])(cleanup_status)
 
 
 # ---------------------------------------------------------------------------
