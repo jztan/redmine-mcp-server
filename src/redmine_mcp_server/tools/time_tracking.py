@@ -4,8 +4,8 @@ import asyncio
 import json
 from typing import Any, Dict, List, Optional, Union
 
-from .._cleanup import _ensure_cleanup_started
 from .._client import _get_redmine_client, logger
+from .._decorators import ActionMode, action_dispatch
 from .._env import _is_read_only_mode
 from .._errors import _READ_ONLY_ERROR, _handle_redmine_error, _scrub_error_message
 from .._serialization import (
@@ -114,7 +114,98 @@ async def list_time_entries(
         return [_handle_redmine_error(e, "listing time entries")]
 
 
+async def _create_time_entry_action(
+    hours: Optional[float] = None,
+    project_id: Optional[Union[str, int]] = None,
+    issue_id: Optional[int] = None,
+    user_id: Optional[int] = None,
+    activity_id: Optional[int] = None,
+    comments: Optional[str] = None,
+    spent_on: Optional[str] = None,
+    **_: Any,
+) -> Dict[str, Any]:
+    if project_id is None and issue_id is None:
+        return {"error": "Either project_id or issue_id must be provided."}
+
+    hours_error = _validate_hours(hours)
+    if hours_error is not None:
+        return {"error": hours_error}
+
+    if user_id is not None and not _is_positive_int(user_id):
+        return {"error": "user_id must be a positive integer."}
+
+    try:
+        params: Dict[str, Any] = {"hours": hours}
+        if project_id is not None:
+            params["project_id"] = project_id
+        if issue_id is not None:
+            params["issue_id"] = issue_id
+        if user_id is not None:
+            params["user_id"] = user_id
+        if activity_id is not None:
+            params["activity_id"] = activity_id
+        if comments is not None:
+            params["comments"] = comments
+        if spent_on is not None:
+            params["spent_on"] = spent_on
+        time_entry = _get_redmine_client().time_entry.create(**params)
+        return _time_entry_to_dict(time_entry)
+    except Exception as e:
+        context = {}
+        if issue_id:
+            context = {"resource_type": "issue", "resource_id": issue_id}
+        elif project_id:
+            context = {"resource_type": "project", "resource_id": project_id}
+        return _handle_redmine_error(e, "creating time entry", context)
+
+
+async def _update_time_entry_action(
+    time_entry_id: Optional[int] = None,
+    hours: Optional[float] = None,
+    activity_id: Optional[int] = None,
+    comments: Optional[str] = None,
+    spent_on: Optional[str] = None,
+    **_: Any,
+) -> Dict[str, Any]:
+    if time_entry_id is None:
+        return {"error": "time_entry_id is required for action 'update'"}
+
+    update_params: Dict[str, Any] = {}
+    if hours is not None:
+        hours_error = _validate_hours(hours)
+        if hours_error is not None:
+            return {"error": hours_error}
+        update_params["hours"] = hours
+    if activity_id is not None:
+        update_params["activity_id"] = activity_id
+    if comments is not None:
+        update_params["comments"] = comments
+    if spent_on is not None:
+        update_params["spent_on"] = spent_on
+
+    if not update_params:
+        return {"error": "No fields provided for update."}
+
+    try:
+        client = _get_redmine_client()
+        client.time_entry.update(time_entry_id, **update_params)
+        updated = client.time_entry.get(time_entry_id)
+        return _time_entry_to_dict(updated)
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"updating time entry {time_entry_id}",
+            {"resource_type": "time entry", "resource_id": time_entry_id},
+        )
+
+
 @mcp.tool()
+@action_dispatch(
+    {
+        "create": ActionMode.WRITE,
+        "update": ActionMode.WRITE,
+    }
+)
 async def manage_time_entry(
     action: str,
     hours: Optional[float] = None,
@@ -147,81 +238,10 @@ async def manage_time_entry(
     Returns:
         Time entry dictionary, or ``{"error": "..."}``.
     """
-    _valid_actions = {"create", "update"}
-    if action not in _valid_actions:
-        return {"error": f"Invalid action '{action}'. Allowed: create, update"}
-
-    if _is_read_only_mode():
-        return dict(_READ_ONLY_ERROR)
-
-    await _ensure_cleanup_started()
-
-    if action == "create":
-        if project_id is None and issue_id is None:
-            return {"error": "Either project_id or issue_id must be provided."}
-
-        hours_error = _validate_hours(hours)
-        if hours_error is not None:
-            return {"error": hours_error}
-
-        if user_id is not None and not _is_positive_int(user_id):
-            return {"error": "user_id must be a positive integer."}
-
-        try:
-            params: Dict[str, Any] = {"hours": hours}
-            if project_id is not None:
-                params["project_id"] = project_id
-            if issue_id is not None:
-                params["issue_id"] = issue_id
-            if user_id is not None:
-                params["user_id"] = user_id
-            if activity_id is not None:
-                params["activity_id"] = activity_id
-            if comments is not None:
-                params["comments"] = comments
-            if spent_on is not None:
-                params["spent_on"] = spent_on
-            time_entry = _get_redmine_client().time_entry.create(**params)
-            return _time_entry_to_dict(time_entry)
-        except Exception as e:
-            context = {}
-            if issue_id:
-                context = {"resource_type": "issue", "resource_id": issue_id}
-            elif project_id:
-                context = {"resource_type": "project", "resource_id": project_id}
-            return _handle_redmine_error(e, "creating time entry", context)
-
-    else:  # action == "update"
-        if time_entry_id is None:
-            return {"error": "time_entry_id is required for action 'update'"}
-
-        update_params: Dict[str, Any] = {}
-        if hours is not None:
-            hours_error = _validate_hours(hours)
-            if hours_error is not None:
-                return {"error": hours_error}
-            update_params["hours"] = hours
-        if activity_id is not None:
-            update_params["activity_id"] = activity_id
-        if comments is not None:
-            update_params["comments"] = comments
-        if spent_on is not None:
-            update_params["spent_on"] = spent_on
-
-        if not update_params:
-            return {"error": "No fields provided for update."}
-
-        try:
-            client = _get_redmine_client()
-            client.time_entry.update(time_entry_id, **update_params)
-            updated = client.time_entry.get(time_entry_id)
-            return _time_entry_to_dict(updated)
-        except Exception as e:
-            return _handle_redmine_error(
-                e,
-                f"updating time entry {time_entry_id}",
-                {"resource_type": "time entry", "resource_id": time_entry_id},
-            )
+    return {
+        "create": _create_time_entry_action,
+        "update": _update_time_entry_action,
+    }
 
 
 @mcp.tool()
