@@ -11,8 +11,7 @@ from .._cleanup import _ensure_cleanup_started
 from .._client import _get_redmine_client
 from .._custom_fields import _extract_possible_values
 from .._decorators import ActionMode, action_dispatch
-from .._env import _is_read_only_mode
-from .._errors import _READ_ONLY_ERROR, _handle_redmine_error
+from .._errors import _handle_redmine_error
 from .._serialization import (
     _named_ref,
     _safe_isoformat,
@@ -332,7 +331,122 @@ async def list_redmine_versions(
         ]
 
 
+_VALID_VERSION_STATUSES = {"open", "locked", "closed"}
+
+
+async def _create_redmine_version_action(
+    project_id: Optional[Union[str, int]] = None,
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+    status: Optional[str] = None,
+    due_date: Optional[str] = None,
+    sharing: Optional[str] = None,
+    wiki_page_title: Optional[str] = None,
+    **_: Any,
+) -> Dict[str, Any]:
+    if status is not None and status not in _VALID_VERSION_STATUSES:
+        return {"error": f"Invalid status '{status}'. Allowed: open, locked, closed"}
+    if project_id is None:
+        return {"error": "project_id is required for action 'create'"}
+    if name is None:
+        return {"error": "name is required for action 'create'"}
+
+    optional_fields: Dict[str, Any] = {
+        "status": status if status is not None else "open",
+        "sharing": sharing if sharing is not None else "none",
+    }
+    if description is not None:
+        optional_fields["description"] = description
+    if due_date is not None:
+        optional_fields["due_date"] = due_date
+    if wiki_page_title is not None:
+        optional_fields["wiki_page_title"] = wiki_page_title
+
+    try:
+        version = _get_redmine_client().version.create(
+            project_id=project_id,
+            name=name,
+            **optional_fields,
+        )
+        return _version_to_dict(version)
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"creating version '{name}' in project {project_id}",
+            {"resource_type": "version", "resource_id": name},
+        )
+
+
+async def _update_redmine_version_action(
+    version_id: Optional[int] = None,
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+    status: Optional[str] = None,
+    due_date: Optional[str] = None,
+    sharing: Optional[str] = None,
+    wiki_page_title: Optional[str] = None,
+    **_: Any,
+) -> Dict[str, Any]:
+    if status is not None and status not in _VALID_VERSION_STATUSES:
+        return {"error": f"Invalid status '{status}'. Allowed: open, locked, closed"}
+    if version_id is None:
+        return {"error": "version_id is required for action 'update'"}
+
+    _candidates = {
+        "name": name,
+        "description": description,
+        "status": status,
+        "due_date": due_date,
+        "sharing": sharing,
+        "wiki_page_title": wiki_page_title,
+    }
+    update_fields = {k: v for k, v in _candidates.items() if v is not None}
+
+    if not update_fields:
+        return {"error": "At least one field must be provided to update"}
+
+    try:
+        _get_redmine_client().version.update(version_id, **update_fields)
+        version = _get_redmine_client().version.get(version_id)
+        return _version_to_dict(version)
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"updating version {version_id}",
+            {"resource_type": "version", "resource_id": version_id},
+        )
+
+
+async def _delete_redmine_version_action(
+    version_id: Optional[int] = None,
+    **_: Any,
+) -> Dict[str, Any]:
+    if version_id is None:
+        return {"error": "version_id is required for action 'delete'"}
+
+    try:
+        _get_redmine_client().version.delete(version_id)
+        return {
+            "success": True,
+            "version_id": version_id,
+            "message": "Version deleted successfully.",
+        }
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"deleting version {version_id}",
+            {"resource_type": "version", "resource_id": version_id},
+        )
+
+
 @mcp.tool()
+@action_dispatch(
+    {
+        "create": ActionMode.WRITE,
+        "update": ActionMode.WRITE,
+        "delete": ActionMode.WRITE,
+    }
+)
 async def manage_redmine_version(
     action: str,
     project_id: Optional[Union[str, int]] = None,
@@ -370,106 +484,11 @@ async def manage_redmine_version(
         "message": "..."}``.
         On error: ``{"error": "..."}``.
     """
-    _valid_actions = {"create", "update", "delete"}
-    _valid_statuses = {"open", "locked", "closed"}
-
-    if action not in _valid_actions:
-        return {"error": f"Invalid action '{action}'. Allowed: create, update, delete"}
-
-    if status is not None and status not in _valid_statuses:
-        return {"error": f"Invalid status '{status}'. Allowed: open, locked, closed"}
-
-    if action == "create":
-        if project_id is None:
-            return {"error": "project_id is required for action 'create'"}
-        if name is None:
-            return {"error": "name is required for action 'create'"}
-
-        if _is_read_only_mode():
-            return dict(_READ_ONLY_ERROR)
-
-        await _ensure_cleanup_started()
-
-        optional_fields: Dict[str, Any] = {
-            "status": status if status is not None else "open",
-            "sharing": sharing if sharing is not None else "none",
-        }
-        if description is not None:
-            optional_fields["description"] = description
-        if due_date is not None:
-            optional_fields["due_date"] = due_date
-        if wiki_page_title is not None:
-            optional_fields["wiki_page_title"] = wiki_page_title
-
-        try:
-            version = _get_redmine_client().version.create(
-                project_id=project_id,
-                name=name,
-                **optional_fields,
-            )
-            return _version_to_dict(version)
-        except Exception as e:
-            return _handle_redmine_error(
-                e,
-                f"creating version '{name}' in project {project_id}",
-                {"resource_type": "version", "resource_id": name},
-            )
-
-    elif action == "update":
-        if version_id is None:
-            return {"error": "version_id is required for action 'update'"}
-
-        _candidates = {
-            "name": name,
-            "description": description,
-            "status": status,
-            "due_date": due_date,
-            "sharing": sharing,
-            "wiki_page_title": wiki_page_title,
-        }
-        update_fields = {k: v for k, v in _candidates.items() if v is not None}
-
-        if not update_fields:
-            return {"error": "At least one field must be provided to update"}
-
-        if _is_read_only_mode():
-            return dict(_READ_ONLY_ERROR)
-
-        await _ensure_cleanup_started()
-
-        try:
-            _get_redmine_client().version.update(version_id, **update_fields)
-            version = _get_redmine_client().version.get(version_id)
-            return _version_to_dict(version)
-        except Exception as e:
-            return _handle_redmine_error(
-                e,
-                f"updating version {version_id}",
-                {"resource_type": "version", "resource_id": version_id},
-            )
-
-    else:  # action == "delete"
-        if version_id is None:
-            return {"error": "version_id is required for action 'delete'"}
-
-        if _is_read_only_mode():
-            return dict(_READ_ONLY_ERROR)
-
-        await _ensure_cleanup_started()
-
-        try:
-            _get_redmine_client().version.delete(version_id)
-            return {
-                "success": True,
-                "version_id": version_id,
-                "message": "Version deleted successfully.",
-            }
-        except Exception as e:
-            return _handle_redmine_error(
-                e,
-                f"deleting version {version_id}",
-                {"resource_type": "version", "resource_id": version_id},
-            )
+    return {
+        "create": _create_redmine_version_action,
+        "update": _update_redmine_version_action,
+        "delete": _delete_redmine_version_action,
+    }
 
 
 @mcp.tool()

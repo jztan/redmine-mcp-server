@@ -54,7 +54,7 @@ class TestManageRedmineVersionShared:
 
         assert "error" in result
         assert "publish" in result["error"]
-        assert "create, update, delete" in result["error"]
+        assert "create, delete, update" in result["error"]
 
     @pytest.mark.asyncio
     @patch.dict(os.environ, {"REDMINE_MCP_READ_ONLY": "true"})
