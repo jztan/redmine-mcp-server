@@ -293,7 +293,7 @@ class TestRedmineIntegration:
             pytest.skip("Redmine client not initialized")
 
         from redmine_mcp_server.tools.files import (
-            get_redmine_attachment_download_url,
+            get_redmine_attachment,
         )
         from redmine_mcp_server.tools.issues import create_redmine_issue
         import tempfile
@@ -399,10 +399,10 @@ class TestRedmineIntegration:
                     os.unlink(test_file_path)
 
             # Now test downloading the attachment
-            result = await get_redmine_attachment_download_url(attachment_id)
+            result = await get_redmine_attachment(attachment_id)
 
-            # Test the API format (HTTP download URLs)
-            assert "download_url" in result
+            # Test the API format (uri or file_path depending on mode)
+            assert "uri_type" in result
             assert "filename" in result
             assert "content_type" in result
             assert "size" in result
@@ -410,9 +410,8 @@ class TestRedmineIntegration:
             assert "attachment_id" in result
             assert result["attachment_id"] == attachment_id
 
-            # Verify the download URL is properly formatted
-            assert result["download_url"].startswith("http")
-            assert "/files/" in result["download_url"]
+            # In HTTP mode a URI is returned; in stdio mode a file_path is returned
+            assert "uri" in result or "file_path" in result
 
             # Verify file was actually downloaded to the attachments directory
             attachments_dir = "attachments"

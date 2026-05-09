@@ -5,6 +5,7 @@ Covers:
     - upload_file
     - delete_file
     - _file_to_dict helper
+    - get_redmine_attachment
 """
 
 import base64
@@ -19,6 +20,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from redmine_mcp_server.tools.files import (  # noqa: E402
     _file_to_dict,
     delete_file,
+    get_redmine_attachment,
     list_files,
     upload_file,
 )
@@ -656,3 +658,185 @@ class TestDeleteFile:
         result = await delete_file(file_id=42)
         assert "error" in result
         assert "Access denied" in result["error"]
+
+
+# ---------------------------------------------------------------------------
+# get_redmine_attachment
+# ---------------------------------------------------------------------------
+
+
+def _mock_attachment(
+    attachment_id=1,
+    filename="report.pdf",
+    content_type="application/pdf",
+    content_url="https://redmine.example.com/attachments/download/1/report.pdf",
+):
+    att = MagicMock()
+    att.filename = filename
+    att.content_type = content_type
+    att.content_url = content_url
+    return att
+
+
+def _mock_stream(chunks=None):
+    """Build a mock streaming response whose iter_content yields the given chunks."""
+    response = MagicMock()
+    chunks = chunks or [b"pdf content"]
+    response.iter_content = MagicMock(return_value=iter(chunks))
+    return response
+
+
+class TestGetRedmineAttachment:
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    async def test_stdio_mode_returns_file_path(
+        self, mock_cleanup, mock_redmine, tmp_path, monkeypatch
+    ):
+        monkeypatch.setenv("ATTACHMENTS_DIR", str(tmp_path))
+        monkeypatch.delenv("PUBLIC_HOST", raising=False)
+        monkeypatch.delenv("SERVER_HOST", raising=False)
+
+        mock_redmine.attachment.get.return_value = _mock_attachment()
+        mock_redmine.download.return_value = _mock_stream()
+
+        result = await get_redmine_attachment(1)
+
+        assert "error" not in result
+        assert result.get("uri_type") == "file"
+        assert "file_path" in result
+        assert "uri" not in result
+        assert result["attachment_id"] == 1
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    async def test_http_mode_returns_uri(
+        self, mock_cleanup, mock_redmine, tmp_path, monkeypatch
+    ):
+        monkeypatch.setenv("ATTACHMENTS_DIR", str(tmp_path))
+        monkeypatch.setenv("PUBLIC_HOST", "my-server.example.com")
+        monkeypatch.setenv("PUBLIC_PORT", "8000")
+
+        mock_redmine.attachment.get.return_value = _mock_attachment()
+        mock_redmine.download.return_value = _mock_stream()
+
+        result = await get_redmine_attachment(1)
+
+        assert "error" not in result
+        assert result.get("uri_type") == "http"
+        assert "uri" in result
+        assert "my-server.example.com" in result["uri"]
+        assert "file_path" not in result
+        assert result["attachment_id"] == 1
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    async def test_server_host_fallback_promotes_to_http_mode(
+        self, mock_cleanup, mock_redmine, tmp_path, monkeypatch
+    ):
+        monkeypatch.setenv("ATTACHMENTS_DIR", str(tmp_path))
+        monkeypatch.delenv("PUBLIC_HOST", raising=False)
+        monkeypatch.delenv("PUBLIC_PORT", raising=False)
+        monkeypatch.setenv("SERVER_HOST", "prod-host.example.com")
+        monkeypatch.setenv("SERVER_PORT", "9000")
+
+        mock_redmine.attachment.get.return_value = _mock_attachment()
+        mock_redmine.download.return_value = _mock_stream()
+
+        result = await get_redmine_attachment(1)
+
+        assert "error" not in result
+        assert result.get("uri_type") == "http"
+        assert "prod-host.example.com" in result["uri"]
+        assert ":9000/" in result["uri"]
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    async def test_file_path_is_absolute(
+        self, mock_cleanup, mock_redmine, tmp_path, monkeypatch
+    ):
+        monkeypatch.setenv("ATTACHMENTS_DIR", str(tmp_path))
+        monkeypatch.delenv("PUBLIC_HOST", raising=False)
+        monkeypatch.delenv("SERVER_HOST", raising=False)
+
+        mock_redmine.attachment.get.return_value = _mock_attachment()
+        mock_redmine.download.return_value = _mock_stream()
+
+        result = await get_redmine_attachment(1)
+
+        assert os.path.isabs(result["file_path"])
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    async def test_filename_wrapped_in_insecure_content(
+        self, mock_cleanup, mock_redmine, tmp_path, monkeypatch
+    ):
+        monkeypatch.setenv("ATTACHMENTS_DIR", str(tmp_path))
+        monkeypatch.delenv("PUBLIC_HOST", raising=False)
+
+        mock_redmine.attachment.get.return_value = _mock_attachment(
+            filename="invoice.pdf"
+        )
+        mock_redmine.download.return_value = _mock_stream()
+
+        result = await get_redmine_attachment(1)
+
+        assert "invoice.pdf" in result["filename"]
+        assert result["filename"].startswith("<insecure-content-")
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    async def test_byte_cap_abort_returns_error(
+        self, mock_cleanup, mock_redmine, tmp_path, monkeypatch
+    ):
+        monkeypatch.setenv("ATTACHMENTS_DIR", str(tmp_path))
+        monkeypatch.setenv("ATTACHMENT_MAX_DOWNLOAD_BYTES", "10")
+        monkeypatch.delenv("PUBLIC_HOST", raising=False)
+
+        mock_redmine.attachment.get.return_value = _mock_attachment()
+        # 11 bytes -- exceeds the 10-byte cap
+        mock_redmine.download.return_value = _mock_stream([b"12345678901"])
+
+        result = await get_redmine_attachment(1)
+
+        assert "error" in result
+        # Partial file must not be left behind
+        leftover = list(tmp_path.rglob("*.tmp"))
+        assert leftover == [], f"Temp files not cleaned up: {leftover}"
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    async def test_metadata_json_written_for_cleanup_manager(
+        self, mock_cleanup, mock_redmine, tmp_path, monkeypatch
+    ):
+        monkeypatch.setenv("ATTACHMENTS_DIR", str(tmp_path))
+        monkeypatch.delenv("PUBLIC_HOST", raising=False)
+
+        mock_redmine.attachment.get.return_value = _mock_attachment()
+        mock_redmine.download.return_value = _mock_stream()
+
+        await get_redmine_attachment(1)
+
+        metadata_files = list(tmp_path.rglob("metadata.json"))
+        assert len(metadata_files) == 1
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    async def test_attachment_not_found_returns_error(
+        self, mock_cleanup, mock_redmine, tmp_path, monkeypatch
+    ):
+        from redminelib.exceptions import ResourceNotFoundError
+
+        monkeypatch.setenv("ATTACHMENTS_DIR", str(tmp_path))
+        mock_redmine.attachment.get.side_effect = ResourceNotFoundError()
+
+        result = await get_redmine_attachment(9999)
+
+        assert "error" in result

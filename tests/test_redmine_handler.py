@@ -7,10 +7,9 @@ including tests for project listing and issue retrieval functionality.
 
 import os
 import sys
-import uuid
 
 import pytest
-from unittest.mock import AsyncMock, Mock, patch, MagicMock, mock_open
+from unittest.mock import Mock, patch
 
 # Add the src directory to the path so we can import our modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -21,7 +20,6 @@ from redmine_mcp_server.tools.projects import (  # noqa: E402
     summarize_project_status,
     _analyze_issues,
 )
-from redminelib.exceptions import ResourceNotFoundError  # noqa: E402
 
 
 class TestRedmineHandler:
@@ -1073,61 +1071,6 @@ class TestRedmineHandler:
         assert "Ambiguous custom field name" in result["error"]
         mock_redmine.issue.update.assert_not_called()
 
-    @pytest.mark.unit
-    @pytest.mark.asyncio
-    @patch("redmine_mcp_server._client.redmine")
-    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
-    async def test_get_redmine_attachment_download_url_success(
-        self, mock_cleanup, mock_redmine
-    ):
-        """Test successful URL generation with secure implementation."""
-        # Mock setup
-        mock_attachment = MagicMock()
-        mock_attachment.filename = "test.pdf"
-        mock_attachment.content_type = "application/pdf"
-        mock_attachment.download = MagicMock(return_value="/tmp/test_download")
-
-        mock_redmine.attachment.get.return_value = mock_attachment
-
-        with patch("uuid.uuid4", return_value=MagicMock(spec=uuid.UUID)) as mock_uuid:
-            mock_uuid.return_value.__str__ = MagicMock(return_value="test-uuid-123")
-            with patch("builtins.open", mock_open()):
-                with patch("pathlib.Path.mkdir"):
-                    with patch("pathlib.Path.stat") as mock_stat:
-                        mock_stat.return_value.st_size = 1024
-                        with patch("os.rename"):
-                            with patch("json.dump"):
-                                from redmine_mcp_server.tools.files import (
-                                    get_redmine_attachment_download_url,
-                                )  # noqa: E402
-
-                                result = await get_redmine_attachment_download_url(123)
-
-        # Assertions
-        assert "error" not in result
-        assert "download_url" in result
-        assert "filename" in result
-        assert "attachment_id" in result
-        assert result["attachment_id"] == 123
-        assert "test.pdf" in result["filename"]
-        assert "test-uuid-123" in result["download_url"]
-
-    @pytest.mark.unit
-    @pytest.mark.asyncio
-    @patch("redmine_mcp_server._client.redmine")
-    async def test_get_redmine_attachment_download_url_not_found(self, mock_redmine):
-        """Test handling of non-existent attachment ID."""
-        mock_redmine.attachment.get.side_effect = ResourceNotFoundError()
-
-        from redmine_mcp_server.tools.files import (
-            get_redmine_attachment_download_url,
-        )  # noqa: E402
-
-        result = await get_redmine_attachment_download_url(999)
-
-        assert "error" in result
-        assert "not found" in result["error"].lower()
-
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.redmine")
     async def test_search_redmine_issues_success(
@@ -1392,98 +1335,6 @@ class TestRedmineHandler:
 
         assert "error" in result
         assert "An error occurred during cleanup" in result["error"]
-
-
-@pytest.mark.unit
-class TestAttachmentErrorRecovery:
-    """Tests for attachment download error recovery paths."""
-
-    @pytest.mark.asyncio
-    @patch(
-        "redmine_mcp_server._cleanup._ensure_cleanup_started",
-        new_callable=AsyncMock,
-    )
-    @patch("redmine_mcp_server._client.redmine")
-    async def test_attachment_file_move_failure(
-        self, mock_redmine, mock_cleanup, tmp_path
-    ):
-        """Test OSError recovery during file move."""
-        from redmine_mcp_server.tools.files import (
-            get_redmine_attachment_download_url,
-        )  # noqa: E402
-
-        # Mock attachment with download method
-        mock_attachment = MagicMock()
-        mock_attachment.id = 123
-        mock_attachment.filename = "test.txt"
-        mock_attachment.filesize = 100
-        mock_attachment.content_type = "text/plain"
-
-        # Mock download to create a temp file
-        temp_file = tmp_path / "test.txt"
-        temp_file.write_bytes(b"test content")
-        mock_attachment.download.return_value = str(temp_file)
-
-        mock_redmine.attachment.get.return_value = mock_attachment
-
-        # Patch os.rename to fail
-        with patch("os.rename", side_effect=OSError("Permission denied")):
-            with patch.dict(os.environ, {"ATTACHMENTS_DIR": str(tmp_path)}):
-                result = await get_redmine_attachment_download_url(123)
-
-        # Should return error dict
-        assert "error" in result
-        assert "Failed to store attachment" in result["error"]
-
-    @pytest.mark.asyncio
-    @patch(
-        "redmine_mcp_server._cleanup._ensure_cleanup_started",
-        new_callable=AsyncMock,
-    )
-    @patch("redmine_mcp_server._client.redmine")
-    async def test_attachment_metadata_write_failure(
-        self, mock_redmine, mock_cleanup, tmp_path
-    ):
-        """Test IOError recovery during metadata write."""
-        from redmine_mcp_server.tools.files import (
-            get_redmine_attachment_download_url,
-        )  # noqa: E402
-
-        # Create attachments directory
-        attachments_dir = tmp_path / "attachments"
-        attachments_dir.mkdir()
-
-        # Mock attachment
-        mock_attachment = MagicMock()
-        mock_attachment.id = 456
-        mock_attachment.filename = "doc.pdf"
-        mock_attachment.filesize = 1000
-        mock_attachment.content_type = "application/pdf"
-
-        # Mock download to create a temp file
-        temp_file = attachments_dir / "doc.pdf"
-        temp_file.write_bytes(b"pdf content")
-        mock_attachment.download.return_value = str(temp_file)
-
-        mock_redmine.attachment.get.return_value = mock_attachment
-
-        # Wrap os.rename to fail specifically on metadata file moves
-        original_rename = os.rename
-
-        def selective_rename(src, dst):
-            """Allow normal file moves, but fail on metadata JSON files."""
-            dst_str = os.fspath(dst)
-            if dst_str.endswith(".json"):
-                raise OSError("Disk full")
-            return original_rename(src, dst)
-
-        with patch("os.rename", side_effect=selective_rename):
-            with patch.dict(os.environ, {"ATTACHMENTS_DIR": str(attachments_dir)}):
-                result = await get_redmine_attachment_download_url(456)
-
-        # Should return error dict
-        assert "error" in result
-        assert "Failed to save metadata" in result["error"]
 
 
 class TestHelperFunctionEdgeCases:
@@ -1768,157 +1619,6 @@ class TestUpdateIssueStatusHandling:
         # Should not fail - just skip status resolution
         assert "error" not in result
         assert result["id"] == 123
-
-
-class TestAttachmentDownloadEdgeCases:
-    """Test edge cases for get_redmine_attachment_download_url (line 1380)."""
-
-    @pytest.mark.asyncio
-    @patch("redmine_mcp_server._client.redmine", None)
-    async def test_attachment_download_no_client(self):
-        """Test attachment download with no Redmine client (line 1286)."""
-        from redmine_mcp_server.tools.files import (
-            get_redmine_attachment_download_url,
-        )  # noqa: E402
-
-        result = await get_redmine_attachment_download_url(123)
-        assert "error" in result
-
-    @pytest.mark.asyncio
-    @patch("redmine_mcp_server._client.redmine")
-    async def test_public_host_0000_converts_to_localhost(self, mock_redmine, tmp_path):
-        """PUBLIC_HOST=0.0.0.0 converts to localhost in URL (line 1380)."""
-        from redmine_mcp_server.tools.files import (
-            get_redmine_attachment_download_url,
-        )  # noqa: E402
-
-        attachments_dir = tmp_path / "attachments"
-        attachments_dir.mkdir()
-
-        # Create a temp file to simulate downloaded attachment
-        temp_file = attachments_dir / "test_file.txt"
-        temp_file.write_text("test content")
-
-        mock_attachment = Mock()
-        mock_attachment.id = 789
-        mock_attachment.filename = "test_file.txt"
-        mock_attachment.content_type = "text/plain"
-        mock_attachment.download.return_value = str(temp_file)
-
-        mock_redmine.attachment.get.return_value = mock_attachment
-
-        # Set PUBLIC_HOST to 0.0.0.0
-        with patch.dict(
-            os.environ,
-            {
-                "ATTACHMENTS_DIR": str(attachments_dir),
-                "PUBLIC_HOST": "0.0.0.0",
-                "PUBLIC_PORT": "9000",
-            },
-        ):
-            result = await get_redmine_attachment_download_url(789)
-
-        # URL should use localhost, not 0.0.0.0
-        assert "error" not in result
-        assert "localhost" in result["download_url"]
-        assert "0.0.0.0" not in result["download_url"]
-        assert ":9000" in result["download_url"]
-
-    @pytest.mark.asyncio
-    @patch("redmine_mcp_server._client.redmine")
-    async def test_file_rename_error_with_cleanup_failure(self, mock_redmine, tmp_path):
-        """File rename error with cleanup also failing (lines 1332-1333)."""
-        from pathlib import Path
-        from redmine_mcp_server.tools.files import (
-            get_redmine_attachment_download_url,
-        )  # noqa: E402
-
-        attachments_dir = tmp_path / "attachments"
-        attachments_dir.mkdir()
-
-        temp_file = attachments_dir / "test_file.txt"
-        temp_file.write_text("test content")
-
-        mock_attachment = Mock()
-        mock_attachment.id = 999
-        mock_attachment.filename = "test_file.txt"
-        mock_attachment.content_type = "text/plain"
-        mock_attachment.download.return_value = str(temp_file)
-
-        mock_redmine.attachment.get.return_value = mock_attachment
-
-        # Make rename fail
-        original_rename = os.rename
-        rename_call_count = [0]
-
-        def failing_rename(src, dst):
-            rename_call_count[0] += 1
-            if rename_call_count[0] == 1:
-                # First rename (to temp) succeeds
-                return original_rename(src, dst)
-            # Second rename fails
-            raise OSError("Disk full")
-
-        # Make unlink also fail during cleanup
-        def failing_unlink(self, *args, **kwargs):
-            raise OSError("Cannot delete file")
-
-        with patch("os.rename", side_effect=failing_rename):
-            with patch.object(Path, "unlink", failing_unlink):
-                with patch.dict(os.environ, {"ATTACHMENTS_DIR": str(attachments_dir)}):
-                    result = await get_redmine_attachment_download_url(999)
-
-        # Should still return error even if cleanup fails
-        assert "error" in result
-        assert "Failed to store attachment" in result["error"]
-
-    @pytest.mark.asyncio
-    @patch("redmine_mcp_server._client.redmine")
-    async def test_metadata_write_error_with_cleanup_failure(
-        self, mock_redmine, tmp_path
-    ):
-        """Metadata write error with cleanup also failing (lines 1369-1370)."""
-        from pathlib import Path
-        from redmine_mcp_server.tools.files import (
-            get_redmine_attachment_download_url,
-        )  # noqa: E402
-
-        attachments_dir = tmp_path / "attachments"
-        attachments_dir.mkdir()
-
-        temp_file = attachments_dir / "test_file.txt"
-        temp_file.write_text("test content")
-
-        mock_attachment = Mock()
-        mock_attachment.id = 888
-        mock_attachment.filename = "test_file.txt"
-        mock_attachment.content_type = "text/plain"
-        mock_attachment.download.return_value = str(temp_file)
-
-        mock_redmine.attachment.get.return_value = mock_attachment
-
-        # Make json.dump fail and cleanup also fail
-        def failing_unlink(self, *args, **kwargs):
-            raise OSError("Cannot delete file")
-
-        original_rename = os.rename
-        rename_count = [0]
-
-        def selective_rename(src, dst):
-            rename_count[0] += 1
-            dst_str = str(dst)
-            if dst_str.endswith(".json"):
-                raise OSError("Cannot write metadata")
-            return original_rename(src, dst)
-
-        with patch("os.rename", side_effect=selective_rename):
-            with patch.object(Path, "unlink", failing_unlink):
-                with patch.dict(os.environ, {"ATTACHMENTS_DIR": str(attachments_dir)}):
-                    result = await get_redmine_attachment_download_url(888)
-
-        # Should still return error even if cleanup fails
-        assert "error" in result
-        assert "Failed to save metadata" in result["error"]
 
 
 class TestCleanupTaskManager:
