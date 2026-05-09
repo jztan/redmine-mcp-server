@@ -1318,7 +1318,7 @@ class TestRedmineHandler:
     async def test_summarize_project_status_no_client(self):
         """Test project status summarization with no Redmine client."""
         with patch(
-            "redmine_mcp_server._client._get_redmine_client",
+            "redmine_mcp_server.tools.projects._get_redmine_client",
             side_effect=RuntimeError("No Redmine authentication available"),
         ):
             result = await summarize_project_status(1, 30)
