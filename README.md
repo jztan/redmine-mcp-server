@@ -487,7 +487,7 @@ This MCP server provides 43 tools for interacting with Redmine. For detailed doc
   - [`list_files`](docs/tool-reference.md#list_files) - List files uploaded to a project's Files section
   - [`upload_file`](docs/tool-reference.md#upload_file) - Upload a new file (base64 content) to a project, optionally tied to a version
   - [`delete_file`](docs/tool-reference.md#delete_file) - Delete a file from a project
-  - [`get_redmine_attachment_download_url`](docs/tool-reference.md#get_redmine_attachment_download_url) - Get secure download URLs for attachments
+  - [`get_redmine_attachment`](docs/tool-reference.md#get_redmine_attachment) - Download an attachment (works in both HTTP and stdio mode)
   - [`cleanup_attachment_files`](docs/tool-reference.md#cleanup_attachment_files) - Clean up expired attachment files
 
 - **Checklists** (2 tools, requires `REDMINE_CHECKLISTS_ENABLED=true` + RedmineUP Checklists Pro plugin)

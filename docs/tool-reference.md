@@ -1512,7 +1512,7 @@ manage_redmine_wiki_page(
 - `list` and `get` are allowed in read-only mode; `create`, `update`, `delete`, and `rename` are blocked when `REDMINE_MCP_READ_ONLY=true`.
 - Wiki page titles typically use underscores instead of spaces.
 - Content format (Textile/Markdown) depends on Redmine server configuration.
-- Use `get_redmine_attachment_download_url` to download wiki attachments.
+- Use `get_redmine_attachment` to download wiki attachments.
 - `rename` requires the `rename_wiki_pages` permission. If the API user lacks it, Redmine **silently drops the title change** (the body still updates). The tool re-fetches the page at `new_title` after the update and returns an explicit error if the new title is unreachable.
 - The `rename` action implements `PUT /projects/{id}/wiki/{old_title}.json` and fetches the existing text automatically since Redmine requires `text` on every wiki update.
 
@@ -1624,38 +1624,70 @@ Delete a file from a Redmine project. Uses `DELETE /attachments/{id}.json` since
 
 ---
 
-### `get_redmine_attachment_download_url`
+### `get_redmine_attachment`
 
-Get an HTTP download URL for a Redmine attachment. The attachment is downloaded to server storage and a time-limited URL is returned for client access.
+Download a Redmine attachment and return a usable reference to it. Works in both HTTP and stdio deployments without any configuration from the caller.
 
 **Parameters:**
-- `attachment_id` (integer, required): The ID of the attachment to download
+- `attachment_id` (integer, required): The ID of the attachment to retrieve
 
-**Returns:**
+**Returns (HTTP mode** — `PUBLIC_HOST` or `SERVER_HOST` resolves to an external hostname):
 ```json
 {
-    "download_url": "http://localhost:8000/files/12345678-1234-5678-9abc-123456789012",
-    "filename": "document.pdf",
+    "uri": "http://my-server.example.com:8000/files/12345678-1234-5678-9abc-123456789012",
+    "uri_type": "http",
+    "filename": "<insecure-content-...>document.pdf</insecure-content-...>",
     "content_type": "application/pdf",
     "size": 1024,
-    "expires_at": "2025-09-22T10:30:00Z",
-    "attachment_id": 123
+    "expires_at": "2026-05-09T14:00:00Z",
+    "attachment_id": 456
 }
 ```
 
-**Security Features:**
-- Server-controlled storage location and expiry policy
-- UUID-based filenames prevent path traversal attacks
-- No client control over server configuration
-- Automatic cleanup of expired files
-
-**Example:**
-```python
-# Get download URL for an attachment
-result = get_redmine_attachment_download_url(attachment_id=456)
-print(f"Download from: {result['download_url']}")
-print(f"Expires at: {result['expires_at']}")
+**Returns (stdio mode** — no reachable HTTP server):
+```json
+{
+    "file_path": "/absolute/local/path/uuid/document.pdf",
+    "uri_type": "file",
+    "filename": "<insecure-content-...>document.pdf</insecure-content-...>",
+    "content_type": "application/pdf",
+    "size": 1024,
+    "expires_at": "2026-05-09T14:00:00Z",
+    "attachment_id": 456
+}
 ```
+
+Callers distinguish the two shapes via `uri_type`: `"http"` or `"file"`.
+
+**Mode detection:** Host is resolved via `PUBLIC_HOST` → `SERVER_HOST` → `localhost`. If the resolved host is loopback (`localhost`, `127.0.0.1`, `0.0.0.0`), stdio mode is used and `file_path` is returned. Otherwise HTTP mode is used and `uri` is returned. Port is resolved via `PUBLIC_PORT` → `SERVER_PORT` → `8000`.
+
+**Security features:**
+- Downloads capped at `ATTACHMENT_MAX_DOWNLOAD_BYTES` (default 200 MB). Exceeding the cap aborts the download and deletes the partial file.
+- Streaming download with byte counter — cap is enforced even when Redmine's reported file size is missing or understated.
+- Filename sanitized to basename before writing to disk (path traversal protection).
+- UUID-based storage directories prevent filename collisions and enumeration.
+- `filename` in the response is wrapped in `<insecure-content>` boundary tags (attacker-controlled field).
+- `file_path` is always an absolute path (resolved via `Path.resolve()`).
+- Files are cleaned up automatically by the background cleanup manager on the same schedule as other attachments.
+
+**Examples:**
+```python
+# stdio mode (no PUBLIC_HOST set) -- pass file_path to another tool
+result = get_redmine_attachment(attachment_id=456)
+if result["uri_type"] == "file":
+    # Pass directly to Claude Code's Read tool or pdf-mcp
+    content = read_file(result["file_path"])
+else:
+    download_url = result["uri"]
+
+# HTTP mode -- uri is a time-limited HTTP URL
+result = get_redmine_attachment(attachment_id=456)
+if result["uri_type"] == "http":
+    print(f"Download from: {result['uri']}")
+    print(f"Expires at: {result['expires_at']}")
+```
+
+---
 
 ---
 

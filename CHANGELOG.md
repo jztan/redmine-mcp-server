@@ -7,6 +7,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- **`get_redmine_attachment`**: unified attachment retrieval tool that works in both HTTP and stdio deployments
+  - Downloads the attachment to local disk and returns an HTTP URI (`uri_type: "http"`) when `PUBLIC_HOST` (or `SERVER_HOST`) resolves to an external hostname, or an absolute local `file_path` (`uri_type: "file"`) in stdio mode -- the model does not need to know which mode is active
+  - Streaming download with configurable byte-cap abort (`ATTACHMENT_MAX_DOWNLOAD_BYTES`, default 200 MB); partial files are deleted on abort
+  - Atomic temp-file rename pattern (`{filename}.tmp` -> final) consistent with existing file tools
+  - All stored files go through the existing `AttachmentFileManager` expiry and cleanup cycle
+  - `filename` in the response is wrapped in `<insecure-content>` boundary tags (attacker-controlled)
+  - Path traversal protection: filename sanitized to basename before writing to disk
+  - Host resolution follows the same fallback chain as the existing tool: `PUBLIC_HOST` -> `SERVER_HOST` -> `localhost`; port resolved via `PUBLIC_PORT` -> `SERVER_PORT` -> `8000`
+- **`ATTACHMENT_MAX_DOWNLOAD_BYTES`** environment variable (default `209715200`, 200 MB): cap applied to all `get_redmine_attachment` downloads regardless of content type
+- **`_get_int_env(var, default)`** helper in `_env.py` for numeric environment variables (all existing helpers are boolean `_is_*` functions)
+- **10 new unit tests** covering HTTP mode, stdio mode, `SERVER_HOST` fallback, absolute `file_path`, filename injection wrapping, byte-cap abort, metadata.json cleanup registration, path traversal sanitization, cap-abort leaving no partial files, and 404 error handling
+
+### Removed
+- **`get_redmine_attachment_download_url`**: removed in this major version. Use `get_redmine_attachment` instead, which works in both HTTP and stdio deployments.
+
 ### Changed
 - Consolidated 35 MCP tools into 9 `manage_X` tools, reducing total tool count from 69 to 43:
   - `add_project_member`, `update_project_member`, `remove_project_member` -> `manage_project_member(action=...)`

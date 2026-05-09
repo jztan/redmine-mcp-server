@@ -31,3 +31,11 @@ def _is_products_enabled() -> bool:
 def _is_crm_enabled() -> bool:
     """Check if RedmineUP CRM (Contacts) plugin support is enabled."""
     return _is_true_env("REDMINE_CRM_ENABLED", "false")
+
+
+def _get_int_env(var_name: str, default: int) -> int:
+    """Parse an integer environment variable, falling back to default."""
+    try:
+        return int(os.getenv(var_name, str(default)))
+    except (ValueError, TypeError):
+        return default

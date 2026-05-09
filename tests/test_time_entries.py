@@ -245,7 +245,7 @@ class TestListTimeEntries:
     async def test_list_time_entries_redmine_not_initialized(self):
         """Test error when Redmine client is not initialized."""
         with patch(
-            "redmine_mcp_server._client._get_redmine_client",
+            "redmine_mcp_server.tools.time_tracking._get_redmine_client",
             side_effect=RuntimeError("No Redmine authentication available"),
         ):
             result = await list_time_entries()

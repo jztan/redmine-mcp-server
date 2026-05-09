@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from .._cleanup import _ensure_cleanup_started
 from .._client import _get_redmine_client, logger
-from .._env import _is_read_only_mode
+from .._env import _get_int_env, _is_read_only_mode
 from .._errors import _READ_ONLY_ERROR, _handle_redmine_error
 from .._serialization import (
     _iter_capped,
@@ -62,139 +62,176 @@ def _file_to_dict(file_obj: Any) -> Dict[str, Any]:
     }
 
 
+_LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0"}
+
+_ATTACHMENT_MAX_DOWNLOAD_BYTES_DEFAULT = 200 * 1024 * 1024  # 200 MB
+
+
 @mcp.tool()
-async def get_redmine_attachment_download_url(
+async def get_redmine_attachment(
     attachment_id: int,
 ) -> Dict[str, Any]:
-    """Get HTTP download URL for a Redmine attachment.
+    """Download a Redmine attachment and return a usable reference to it.
 
-    Downloads the attachment to server storage and returns a time-limited
-    HTTP URL that clients can use to download the file. Expiry time and
-    storage location are controlled by server configuration.
+    Downloads the attachment to local disk and returns either an HTTP URL
+    (when the server has a publicly reachable hostname configured) or an
+    absolute local file path (in stdio mode). The caller does not need to
+    know which mode is active.
+
+    **HTTP mode** (PUBLIC_HOST or SERVER_HOST resolves to an external hostname):
+    Returns a dict with ``uri``, ``uri_type: "http"``, filename, content_type,
+    size, expires_at, and attachment_id.
+
+    **stdio mode** (no reachable HTTP server):
+    Returns a dict with ``file_path`` (absolute), ``uri_type: "file"``,
+    filename, content_type, size, expires_at, and attachment_id.
+    The path can be passed directly to Claude Code's ``Read`` tool or pdf-mcp.
+
+    Downloads are capped at ``ATTACHMENT_MAX_DOWNLOAD_BYTES`` (default 200 MB).
+    Files are cleaned up automatically by the background cleanup manager.
 
     Args:
-        attachment_id: The ID of the attachment to retrieve
+        attachment_id: The ID of the attachment to retrieve.
 
     Returns:
-        Dict containing download_url, filename, content_type, size,
-        expires_at, and attachment_id
-
-    Raises:
-        ResourceNotFoundError: If attachment ID doesn't exist
-        Exception: For other download or processing errors
+        Dict with uri or file_path reference on success, or a dict with an
+        ``"error"`` key on failure.
     """
-
-    # Ensure cleanup task is started (lazy initialization)
     await _ensure_cleanup_started()
 
     try:
-        # Get attachment metadata from Redmine
-        attachment = _get_redmine_client().attachment.get(attachment_id)
+        client = _get_redmine_client()
+        attachment = client.attachment.get(attachment_id)
 
-        # Server-controlled configuration (secure)
+        # Sanitize filename: basename only (path traversal protection)
+        raw_filename = getattr(attachment, "filename", "") or ""
+        original_filename = os.path.basename(raw_filename)
+        if not original_filename:
+            original_filename = f"attachment_{attachment_id}"
+
+        content_type = getattr(attachment, "content_type", "application/octet-stream")
+        content_url = getattr(attachment, "content_url", "")
+
+        # Prepare UUID-based storage directory
         attachments_dir = Path(os.getenv("ATTACHMENTS_DIR", "./attachments"))
-        expires_minutes = float(os.getenv("ATTACHMENT_EXPIRES_MINUTES", "60"))
-
-        # Create secure storage directory
         attachments_dir.mkdir(parents=True, exist_ok=True)
-
-        # Generate secure UUID-based filename
         file_id = str(uuid.uuid4())
-
-        # Download using existing approach - keeps original filename
-        downloaded_path = attachment.download(savepath=str(attachments_dir))
-
-        # Get file info
-        original_filename = getattr(
-            attachment, "filename", f"attachment_{attachment_id}"
-        )
-
-        # Create organized storage with UUID directory
         uuid_dir = attachments_dir / file_id
         uuid_dir.mkdir(exist_ok=True)
 
-        # Move file to UUID-based location using atomic operations
-        final_path = uuid_dir / original_filename
         temp_path = uuid_dir / f"{original_filename}.tmp"
+        final_path = uuid_dir / original_filename
 
-        # Atomic file move with error handling
+        # Stream download with byte-cap abort
+        max_bytes = _get_int_env(
+            "ATTACHMENT_MAX_DOWNLOAD_BYTES",
+            _ATTACHMENT_MAX_DOWNLOAD_BYTES_DEFAULT,
+        )
+        response = client.download(content_url, savepath=None)
+
         try:
-            os.rename(downloaded_path, temp_path)
-            os.rename(temp_path, final_path)
-        except (OSError, IOError) as e:
-            # Cleanup on failure
-            try:
-                if temp_path.exists():
-                    temp_path.unlink()
-                if Path(downloaded_path).exists():
-                    Path(downloaded_path).unlink()
-            except OSError:
-                pass  # Best effort cleanup
-            return {"error": f"Failed to store attachment: {str(e)}"}
+            byte_count = 0
+            with open(temp_path, "wb") as fh:
+                for chunk in response.iter_content(65536):
+                    byte_count += len(chunk)
+                    if byte_count > max_bytes:
+                        fh.close()
+                        _cleanup_uuid_dir(uuid_dir, temp_path)
+                        return {
+                            "error": (
+                                f"Attachment {attachment_id} exceeds the "
+                                f"{max_bytes}-byte download limit."
+                            )
+                        }
+                    fh.write(chunk)
+        except Exception:
+            _cleanup_uuid_dir(uuid_dir, temp_path)
+            raise
 
-        # Calculate expiry time (timezone-aware)
-        expires_hours = expires_minutes / 60.0
-        expires_at = datetime.now(timezone.utc) + timedelta(hours=expires_hours)
+        # Atomic rename: temp -> final
+        os.rename(str(temp_path), str(final_path))
 
-        # Store metadata atomically (following existing pattern)
+        # Write metadata for the cleanup manager
+        expires_minutes = float(os.getenv("ATTACHMENT_EXPIRES_MINUTES", "60"))
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=expires_minutes)
+        file_size = final_path.stat().st_size
+        absolute_path = str(final_path.resolve())
+
         metadata = {
             "file_id": file_id,
             "attachment_id": attachment_id,
             "original_filename": original_filename,
-            "file_path": str(final_path),
-            "content_type": getattr(
-                attachment, "content_type", "application/octet-stream"
-            ),
-            "size": final_path.stat().st_size,
+            "file_path": absolute_path,
+            "content_type": content_type,
+            "size": file_size,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "expires_at": expires_at.isoformat(),
         }
-
         metadata_file = uuid_dir / "metadata.json"
         temp_metadata = uuid_dir / "metadata.json.tmp"
-
-        # Atomic metadata write with error handling
         try:
-            with open(temp_metadata, "w") as f:
-                json.dump(metadata, f, indent=2)
-            os.rename(temp_metadata, metadata_file)
-        except (OSError, IOError, ValueError) as e:
-            # Cleanup on failure
+            with open(temp_metadata, "w") as fh:
+                json.dump(metadata, fh, indent=2)
+            os.rename(str(temp_metadata), str(metadata_file))
+        except (OSError, IOError, ValueError) as exc:
             try:
                 if temp_metadata.exists():
                     temp_metadata.unlink()
                 if final_path.exists():
                     final_path.unlink()
             except OSError:
-                pass  # Best effort cleanup
-            return {"error": f"Failed to save metadata: {str(e)}"}
+                pass
+            return {"error": f"Failed to save metadata: {exc}"}
 
-        # Generate server base URL from environment configuration
-        # Use public configuration for external URLs
+        # Mode detection: PUBLIC_HOST -> SERVER_HOST -> "localhost"
         public_host = os.getenv("PUBLIC_HOST", os.getenv("SERVER_HOST", "localhost"))
         public_port = os.getenv("PUBLIC_PORT", os.getenv("SERVER_PORT", "8000"))
 
-        # Handle special case of 0.0.0.0 bind address
-        if public_host == "0.0.0.0":
-            public_host = "localhost"
+        expires_str = expires_at.isoformat()
+        safe_filename = wrap_insecure_content(original_filename)
 
-        download_url = f"http://{public_host}:{public_port}/files/{file_id}"
+        if public_host in _LOOPBACK_HOSTS:
+            return {
+                "file_path": absolute_path,
+                "uri_type": "file",
+                "filename": safe_filename,
+                "content_type": content_type,
+                "size": file_size,
+                "expires_at": expires_str,
+                "attachment_id": attachment_id,
+            }
 
         return {
-            "download_url": download_url,
-            "filename": original_filename,
-            "content_type": metadata["content_type"],
-            "size": metadata["size"],
-            "expires_at": metadata["expires_at"],
+            "uri": f"http://{public_host}:{public_port}/files/{file_id}",
+            "uri_type": "http",
+            "filename": safe_filename,
+            "content_type": content_type,
+            "size": file_size,
+            "expires_at": expires_str,
             "attachment_id": attachment_id,
         }
 
-    except Exception as e:
+    except Exception as exc:
         return _handle_redmine_error(
-            e,
+            exc,
             f"downloading attachment {attachment_id}",
             {"resource_type": "attachment", "resource_id": attachment_id},
         )
+
+
+def _cleanup_uuid_dir(uuid_dir: Path, *extra_paths: Path) -> None:
+    """Best-effort removal of extra_paths then uuid_dir."""
+    for p in extra_paths:
+        try:
+            if p.exists():
+                p.unlink()
+        except OSError:
+            pass
+    try:
+        if uuid_dir.exists() and not any(uuid_dir.iterdir()):
+            uuid_dir.rmdir()
+    except OSError:
+        pass
 
 
 @mcp.tool()
