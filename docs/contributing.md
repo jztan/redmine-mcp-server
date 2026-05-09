@@ -77,7 +77,7 @@ Tools live under `src/redmine_mcp_server/tools/`, one file per Redmine resource:
 
 | File | Tools |
 |---|---|
-| `tools/projects.py` | Projects, versions, members, roles, modules (9 tools) |
+| `tools/projects.py` | Project listing, versions, members, roles, modules (9 tools) |
 | `tools/issues.py` | Issues, search, copy, relations, watchers, notes, categories, subtasks (12 tools) |
 | `tools/time_tracking.py` | Time entries, activities, bulk import (4 tools) |
 | `tools/wiki.py` | Wiki page CRUD + rename (1 tool, 6 actions) |
