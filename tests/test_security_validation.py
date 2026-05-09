@@ -15,7 +15,7 @@ from unittest.mock import patch, MagicMock, mock_open
 # Add the src directory to the path so we can import our modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from redmine_mcp_server.redmine_handler import (  # noqa: E402
+from redmine_mcp_server.tools.files import (  # noqa: E402
     get_redmine_attachment_download_url,
 )
 
@@ -25,8 +25,8 @@ class TestSecurityValidation:
     """Security-focused tests for attachment functions."""
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_uuid_filename_generation(self, mock_cleanup, mock_redmine):
         """Verify that filenames are UUID-based and secure."""
         mock_uuid = "12345678-1234-5678-9abc-123456789012"
@@ -55,8 +55,8 @@ class TestSecurityValidation:
         assert "test.pdf" in result.get("filename", "")
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_secure_metadata_storage(self, mock_cleanup, mock_redmine):
         """Verify metadata is stored securely with proper validation."""
         # Mock successful attachment retrieval

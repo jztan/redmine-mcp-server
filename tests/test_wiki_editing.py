@@ -36,10 +36,10 @@ class TestManageRedmineWikiPageCreate:
         return mock_page
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine", None)
+    @patch("redmine_mcp_server._client.redmine", None)
     async def test_create_wiki_page_no_client(self):
         """Test error when Redmine client is not initialized."""
-        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
 
         result = await manage_redmine_wiki_page(
             action="create",
@@ -52,13 +52,13 @@ class TestManageRedmineWikiPageCreate:
         assert "error" in result
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_create_wiki_page_success(
         self, mock_cleanup, mock_redmine, mock_wiki_page
     ):
         """Test successful wiki page creation."""
-        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
 
         mock_redmine.wiki_page.create.return_value = mock_wiki_page
 
@@ -76,13 +76,13 @@ class TestManageRedmineWikiPageCreate:
         mock_redmine.wiki_page.create.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_create_wiki_page_with_comments(
         self, mock_cleanup, mock_redmine, mock_wiki_page
     ):
         """Test wiki page creation with comments."""
-        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
 
         mock_redmine.wiki_page.create.return_value = mock_wiki_page
 
@@ -98,11 +98,11 @@ class TestManageRedmineWikiPageCreate:
         assert result["title"] == "New Page"
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_create_wiki_page_forbidden(self, mock_cleanup, mock_redmine):
         """Test handling of permission denied error."""
-        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
 
         mock_redmine.wiki_page.create.side_effect = ForbiddenError()
 
@@ -120,11 +120,11 @@ class TestManageRedmineWikiPageCreate:
         )
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_create_wiki_page_validation_error(self, mock_cleanup, mock_redmine):
         """Test handling of validation error."""
-        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
 
         mock_redmine.wiki_page.create.side_effect = ValidationError(
             "Title can't be blank"
@@ -140,11 +140,11 @@ class TestManageRedmineWikiPageCreate:
         assert "error" in result
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_create_wiki_page_general_exception(self, mock_cleanup, mock_redmine):
         """Test handling of general exception."""
-        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
 
         mock_redmine.wiki_page.create.side_effect = Exception("Unexpected error")
 
@@ -182,10 +182,10 @@ class TestManageRedmineWikiPageUpdate:
         return mock_page
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine", None)
+    @patch("redmine_mcp_server._client.redmine", None)
     async def test_update_wiki_page_no_client(self):
         """Test error when Redmine client is not initialized."""
-        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
 
         result = await manage_redmine_wiki_page(
             action="update",
@@ -198,13 +198,13 @@ class TestManageRedmineWikiPageUpdate:
         assert "error" in result
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_update_wiki_page_success(
         self, mock_cleanup, mock_redmine, mock_wiki_page
     ):
         """Test successful wiki page update."""
-        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
 
         mock_redmine.wiki_page.update.return_value = True
         mock_redmine.wiki_page.get.return_value = mock_wiki_page
@@ -221,13 +221,13 @@ class TestManageRedmineWikiPageUpdate:
         mock_redmine.wiki_page.update.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_update_wiki_page_with_comments(
         self, mock_cleanup, mock_redmine, mock_wiki_page
     ):
         """Test wiki page update with comments."""
-        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
 
         mock_redmine.wiki_page.update.return_value = True
         mock_redmine.wiki_page.get.return_value = mock_wiki_page
@@ -243,11 +243,11 @@ class TestManageRedmineWikiPageUpdate:
         assert "error" not in result
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_update_wiki_page_not_found(self, mock_cleanup, mock_redmine):
         """Test handling of non-existent wiki page."""
-        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
 
         mock_redmine.wiki_page.update.side_effect = ResourceNotFoundError()
 
@@ -262,11 +262,11 @@ class TestManageRedmineWikiPageUpdate:
         assert "not found" in result["error"].lower()
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_update_wiki_page_forbidden(self, mock_cleanup, mock_redmine):
         """Test handling of permission denied error."""
-        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
 
         mock_redmine.wiki_page.update.side_effect = ForbiddenError()
 
@@ -284,11 +284,11 @@ class TestManageRedmineWikiPageUpdate:
         )
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_update_wiki_page_general_exception(self, mock_cleanup, mock_redmine):
         """Test handling of general exception."""
-        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
 
         mock_redmine.wiki_page.update.side_effect = Exception("Unexpected error")
 
@@ -306,10 +306,10 @@ class TestManageRedmineWikiPageDelete:
     """Tests for delete_redmine_wiki_page MCP tool."""
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine", None)
+    @patch("redmine_mcp_server._client.redmine", None)
     async def test_delete_wiki_page_no_client(self):
         """Test error when Redmine client is not initialized."""
-        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
 
         result = await manage_redmine_wiki_page(
             action="delete",
@@ -321,11 +321,11 @@ class TestManageRedmineWikiPageDelete:
         assert "error" in result
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_delete_wiki_page_success(self, mock_cleanup, mock_redmine):
         """Test successful wiki page deletion."""
-        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
 
         mock_redmine.wiki_page.delete.return_value = True
 
@@ -340,11 +340,11 @@ class TestManageRedmineWikiPageDelete:
         mock_redmine.wiki_page.delete.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_delete_wiki_page_not_found(self, mock_cleanup, mock_redmine):
         """Test handling of non-existent wiki page."""
-        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
 
         mock_redmine.wiki_page.delete.side_effect = ResourceNotFoundError()
 
@@ -358,11 +358,11 @@ class TestManageRedmineWikiPageDelete:
         assert "not found" in result["error"].lower()
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_delete_wiki_page_forbidden(self, mock_cleanup, mock_redmine):
         """Test handling of permission denied error."""
-        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
 
         mock_redmine.wiki_page.delete.side_effect = ForbiddenError()
 
@@ -379,11 +379,11 @@ class TestManageRedmineWikiPageDelete:
         )
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_delete_wiki_page_general_exception(self, mock_cleanup, mock_redmine):
         """Test handling of general exception."""
-        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
 
         mock_redmine.wiki_page.delete.side_effect = Exception("Unexpected error")
 

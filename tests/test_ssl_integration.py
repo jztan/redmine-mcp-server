@@ -61,7 +61,7 @@ class TestSSLConfigurationIntegration:
         ):
             # Reload module to pick up new environment variables
             import importlib
-            from redmine_mcp_server import redmine_handler
+            from redmine_mcp_server import _client as redmine_handler
 
             importlib.reload(redmine_handler)
 
@@ -80,7 +80,7 @@ class TestSSLConfigurationIntegration:
             },
         ):
             import importlib
-            from redmine_mcp_server import redmine_handler
+            from redmine_mcp_server import _client as redmine_handler
 
             importlib.reload(redmine_handler)
 
@@ -102,7 +102,7 @@ class TestSSLConfigurationIntegration:
             },
         ):
             import importlib
-            from redmine_mcp_server import redmine_handler
+            from redmine_mcp_server import _client as redmine_handler
 
             importlib.reload(redmine_handler)
 
@@ -123,7 +123,7 @@ class TestSSLConfigurationIntegration:
         ):
             # Reload module
             import importlib
-            from redmine_mcp_server import redmine_handler
+            from redmine_mcp_server import _client as redmine_handler
 
             importlib.reload(redmine_handler)
 
@@ -146,7 +146,7 @@ class TestSSLConfigurationIntegration:
         ):
             # Reload module
             import importlib
-            from redmine_mcp_server import redmine_handler
+            from redmine_mcp_server import _client as redmine_handler
 
             importlib.reload(redmine_handler)
 
@@ -165,7 +165,7 @@ class TestSSLConfigurationIntegration:
         ):
             # Reload module
             import importlib
-            from redmine_mcp_server import redmine_handler
+            from redmine_mcp_server import _client as redmine_handler
 
             importlib.reload(redmine_handler)
 
@@ -189,7 +189,7 @@ class TestSSLConfigurationIntegration:
         ):
             # Reload module
             import importlib
-            from redmine_mcp_server import redmine_handler
+            from redmine_mcp_server import _client as redmine_handler
 
             importlib.reload(redmine_handler)
 
@@ -213,7 +213,7 @@ class TestSSLConfigurationIntegration:
         ):
             # Reload module
             import importlib
-            from redmine_mcp_server import redmine_handler
+            from redmine_mcp_server import _client as redmine_handler
 
             importlib.reload(redmine_handler)
 

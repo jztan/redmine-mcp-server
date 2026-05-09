@@ -13,16 +13,16 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from redmine_mcp_server.redmine_handler import (  # noqa: E402
-    _is_read_only_mode,
+from redmine_mcp_server._env import _is_read_only_mode  # noqa: E402
+from redmine_mcp_server.tools.issues import (  # noqa: E402
     create_redmine_issue,
     update_redmine_issue,
-    manage_redmine_wiki_page,
     get_redmine_issue,
-    list_redmine_projects,
     list_redmine_issues,
-    cleanup_attachment_files,
 )
+from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page  # noqa: E402
+from redmine_mcp_server.tools.projects import list_redmine_projects  # noqa: E402
+from redmine_mcp_server.tools.files import cleanup_attachment_files  # noqa: E402
 
 
 class TestIsReadOnlyMode:
@@ -50,8 +50,8 @@ class TestWriteToolsBlockedInReadOnly:
 
     @pytest.mark.asyncio
     @patch.dict(os.environ, {"REDMINE_MCP_READ_ONLY": "true"})
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_create_issue_blocked(self, mock_redmine, mock_cleanup):
         result = await create_redmine_issue(project_id=1, subject="X")
         assert "read-only" in result["error"].lower()
@@ -59,8 +59,8 @@ class TestWriteToolsBlockedInReadOnly:
 
     @pytest.mark.asyncio
     @patch.dict(os.environ, {"REDMINE_MCP_READ_ONLY": "true"})
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_update_issue_blocked(self, mock_redmine, mock_cleanup):
         result = await update_redmine_issue(issue_id=1, fields={"subject": "X"})
         assert "read-only" in result["error"].lower()
@@ -68,8 +68,8 @@ class TestWriteToolsBlockedInReadOnly:
 
     @pytest.mark.asyncio
     @patch.dict(os.environ, {"REDMINE_MCP_READ_ONLY": "true"})
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_create_wiki_blocked(self, mock_redmine, mock_cleanup):
         result = await manage_redmine_wiki_page(
             action="create", project_id="proj", wiki_page_title="Page", text="x"
@@ -79,8 +79,8 @@ class TestWriteToolsBlockedInReadOnly:
 
     @pytest.mark.asyncio
     @patch.dict(os.environ, {"REDMINE_MCP_READ_ONLY": "true"})
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_update_wiki_blocked(self, mock_redmine, mock_cleanup):
         result = await manage_redmine_wiki_page(
             action="update", project_id="proj", wiki_page_title="Page", text="x"
@@ -90,8 +90,8 @@ class TestWriteToolsBlockedInReadOnly:
 
     @pytest.mark.asyncio
     @patch.dict(os.environ, {"REDMINE_MCP_READ_ONLY": "true"})
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_delete_wiki_blocked(self, mock_redmine, mock_cleanup):
         result = await manage_redmine_wiki_page(
             action="delete", project_id="proj", wiki_page_title="Page"
@@ -101,8 +101,8 @@ class TestWriteToolsBlockedInReadOnly:
 
     @pytest.mark.asyncio
     @patch.dict(os.environ, {"REDMINE_MCP_READ_ONLY": "true"})
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_rename_wiki_blocked(self, mock_redmine, mock_cleanup):
         result = await manage_redmine_wiki_page(
             action="rename", project_id="p", wiki_page_title="A", new_title="B"
@@ -116,8 +116,8 @@ class TestReadToolsWorkInReadOnly:
 
     @pytest.mark.asyncio
     @patch.dict(os.environ, {"REDMINE_MCP_READ_ONLY": "true"})
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_get_issue_works(self, mock_redmine, mock_cleanup):
         mock_issue = Mock()
         mock_issue.id = 123
@@ -140,8 +140,8 @@ class TestReadToolsWorkInReadOnly:
 
     @pytest.mark.asyncio
     @patch.dict(os.environ, {"REDMINE_MCP_READ_ONLY": "true"})
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_list_projects_works(self, mock_redmine, mock_cleanup):
         mock_project = Mock()
         mock_project.id = 1
@@ -158,8 +158,8 @@ class TestReadToolsWorkInReadOnly:
 
     @pytest.mark.asyncio
     @patch.dict(os.environ, {"REDMINE_MCP_READ_ONLY": "true"})
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_list_issues_works(self, mock_redmine, mock_cleanup):
         mock_redmine.issue.filter.return_value = []
         result = await list_redmine_issues()
@@ -171,8 +171,8 @@ class TestWriteToolsWorkWhenNotReadOnly:
 
     @pytest.mark.asyncio
     @patch.dict(os.environ, {"REDMINE_MCP_READ_ONLY": "false"})
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_create_issue_proceeds(self, mock_redmine, mock_cleanup):
         mock_issue = Mock()
         mock_issue.id = 1
@@ -191,8 +191,8 @@ class TestWriteToolsWorkWhenNotReadOnly:
         mock_redmine.issue.create.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_update_issue_proceeds_unset(self, mock_redmine, mock_cleanup):
         # Ensure env var is absent
         env = os.environ.copy()
@@ -217,7 +217,7 @@ class TestWriteToolsWorkWhenNotReadOnly:
 
     @pytest.mark.asyncio
     @patch.dict(os.environ, {"REDMINE_MCP_READ_ONLY": "true"})
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_cleanup_not_blocked(self, mock_cleanup):
         # cleanup_attachment_files is a local operation, not guarded
         result = await cleanup_attachment_files()

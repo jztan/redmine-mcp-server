@@ -8,7 +8,8 @@ Endpoints:
     - /mcp: Handles MCP requests via streamable HTTP transport.
 
 Modules:
-    - .redmine_handler: Contains the MCP server logic with FastMCP integration.
+    - .tools: Per-resource MCP tool registrations (issues, projects, ...).
+    - .server: Shared FastMCP instance.
 """
 
 import logging
@@ -26,7 +27,9 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
-from .redmine_handler import mcp  # noqa: E402
+from . import tools  # noqa: E402,F401  -- triggers @mcp.tool registration
+from . import _http_routes  # noqa: E402,F401  -- registers HTTP custom routes
+from .server import mcp  # noqa: E402
 from .oauth_middleware import RedmineOAuthMiddleware  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -191,7 +194,7 @@ logger.info("Auth mode: %s", REDMINE_AUTH_MODE)
 
 def main():
     """Main entry point for the console script."""
-    # Note: .env is already loaded during redmine_handler import
+    # Note: .env is already loaded during _client import
     # Note: version/auth mode are logged at module level
     # (works for both direct and uvicorn invocation)
 

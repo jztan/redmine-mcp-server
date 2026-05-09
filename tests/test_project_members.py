@@ -7,7 +7,7 @@ Tests for listing project memberships including users, groups, and roles.
 import pytest
 from unittest.mock import Mock, patch
 
-from redmine_mcp_server.redmine_handler import (
+from redmine_mcp_server.tools.projects import (  # noqa: E402
     list_project_members,
     _membership_to_dict,
 )
@@ -138,7 +138,7 @@ class TestListProjectMembers:
     @pytest.fixture
     def mock_redmine(self):
         """Create a mock Redmine client."""
-        with patch("redmine_mcp_server.redmine_handler.redmine") as mock:
+        with patch("redmine_mcp_server._client.redmine") as mock:
             yield mock
 
     def create_mock_membership(
@@ -225,7 +225,7 @@ class TestListProjectMembers:
     async def test_list_members_redmine_not_initialized(self):
         """Test error when Redmine client is not initialized."""
         with patch(
-            "redmine_mcp_server.redmine_handler._get_redmine_client",
+            "redmine_mcp_server._client._get_redmine_client",
             side_effect=RuntimeError("No Redmine authentication available"),
         ):
             result = await list_project_members(project_id=10)

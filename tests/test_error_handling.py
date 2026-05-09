@@ -14,13 +14,13 @@ class TestErrorHandler:
 
     def test_handle_redmine_error_exists(self):
         """Verify the error handler function can be imported."""
-        from redmine_mcp_server.redmine_handler import _handle_redmine_error
+        from redmine_mcp_server._errors import _handle_redmine_error
 
         assert callable(_handle_redmine_error)
 
     def test_handle_redmine_error_returns_dict(self):
         """Error handler returns a dictionary with 'error' key."""
-        from redmine_mcp_server.redmine_handler import _handle_redmine_error
+        from redmine_mcp_server._errors import _handle_redmine_error
 
         result = _handle_redmine_error(Exception("test"), "test operation")
 
@@ -30,7 +30,7 @@ class TestErrorHandler:
 
     def test_handle_redmine_error_includes_operation(self):
         """Error message includes the operation description."""
-        from redmine_mcp_server.redmine_handler import _handle_redmine_error
+        from redmine_mcp_server._errors import _handle_redmine_error
 
         result = _handle_redmine_error(Exception("test"), "fetching issue 123")
 
@@ -38,7 +38,7 @@ class TestErrorHandler:
 
     def test_connection_error_message(self):
         """Connection error produces actionable message with URL."""
-        from redmine_mcp_server.redmine_handler import _handle_redmine_error
+        from redmine_mcp_server._errors import _handle_redmine_error
         from requests.exceptions import ConnectionError
 
         error = ConnectionError("Connection refused")
@@ -51,9 +51,7 @@ class TestErrorHandler:
 
     def test_connection_error_includes_url(self):
         """Connection error message includes the Redmine URL."""
-        from redmine_mcp_server.redmine_handler import (
-            _handle_redmine_error,
-        )
+        from redmine_mcp_server._errors import _handle_redmine_error  # noqa: E402
         from requests.exceptions import ConnectionError
 
         error = ConnectionError("Connection refused")
@@ -64,7 +62,7 @@ class TestErrorHandler:
 
     def test_auth_error_message(self):
         """401 error produces credential guidance."""
-        from redmine_mcp_server.redmine_handler import _handle_redmine_error
+        from redmine_mcp_server._errors import _handle_redmine_error
         from redminelib.exceptions import AuthError
 
         error = AuthError()
@@ -77,7 +75,7 @@ class TestErrorHandler:
 
     def test_forbidden_error_message(self):
         """403 error mentions permission and admin contact."""
-        from redmine_mcp_server.redmine_handler import _handle_redmine_error
+        from redmine_mcp_server._errors import _handle_redmine_error
         from redminelib.exceptions import ForbiddenError
 
         error = ForbiddenError()
@@ -89,7 +87,7 @@ class TestErrorHandler:
 
     def test_timeout_error_message(self):
         """Timeout error provides troubleshooting steps."""
-        from redmine_mcp_server.redmine_handler import _handle_redmine_error
+        from redmine_mcp_server._errors import _handle_redmine_error
         from requests.exceptions import Timeout
 
         error = Timeout("Read timed out")
@@ -100,7 +98,7 @@ class TestErrorHandler:
 
     def test_ssl_error_message(self):
         """SSL error provides certificate guidance."""
-        from redmine_mcp_server.redmine_handler import _handle_redmine_error
+        from redmine_mcp_server._errors import _handle_redmine_error
         from requests.exceptions import SSLError
 
         error = SSLError("Certificate verify failed")
@@ -112,7 +110,7 @@ class TestErrorHandler:
 
     def test_server_error_message(self):
         """500 error provides admin contact guidance."""
-        from redmine_mcp_server.redmine_handler import _handle_redmine_error
+        from redmine_mcp_server._errors import _handle_redmine_error
         from redminelib.exceptions import ServerError
 
         error = ServerError()
@@ -124,7 +122,7 @@ class TestErrorHandler:
 
     def test_validation_error_message(self):
         """Validation error includes the validation message."""
-        from redmine_mcp_server.redmine_handler import _handle_redmine_error
+        from redmine_mcp_server._errors import _handle_redmine_error
         from redminelib.exceptions import ValidationError
 
         error = ValidationError("Subject can't be blank")
@@ -135,7 +133,7 @@ class TestErrorHandler:
 
     def test_version_mismatch_error_message(self):
         """Version mismatch error passes through original message."""
-        from redmine_mcp_server.redmine_handler import _handle_redmine_error
+        from redmine_mcp_server._errors import _handle_redmine_error
         from redminelib.exceptions import VersionMismatchError
 
         error = VersionMismatchError("Search")
@@ -145,7 +143,7 @@ class TestErrorHandler:
 
     def test_http_protocol_error_message(self):
         """HTTP protocol error provides protocol guidance."""
-        from redmine_mcp_server.redmine_handler import _handle_redmine_error
+        from redmine_mcp_server._errors import _handle_redmine_error
         from redminelib.exceptions import HTTPProtocolError
 
         error = HTTPProtocolError()
@@ -157,7 +155,7 @@ class TestErrorHandler:
 
     def test_unknown_error_includes_status_code(self):
         """Unknown error includes HTTP status code."""
-        from redmine_mcp_server.redmine_handler import _handle_redmine_error
+        from redmine_mcp_server._errors import _handle_redmine_error
         from redminelib.exceptions import UnknownError
 
         error = UnknownError(418)  # I'm a teapot
@@ -167,7 +165,7 @@ class TestErrorHandler:
 
     def test_resource_not_found_with_context(self):
         """ResourceNotFoundError uses context for better message."""
-        from redmine_mcp_server.redmine_handler import _handle_redmine_error
+        from redmine_mcp_server._errors import _handle_redmine_error
         from redminelib.exceptions import ResourceNotFoundError
 
         error = ResourceNotFoundError()
@@ -182,10 +180,10 @@ class TestToolErrorIntegration:
     """Integration tests verifying tools use the error handler correctly."""
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_get_issue_connection_error(self, mock_redmine):
         """get_redmine_issue produces actionable connection error."""
-        from redmine_mcp_server.redmine_handler import get_redmine_issue
+        from redmine_mcp_server.tools.issues import get_redmine_issue
         from requests.exceptions import ConnectionError
 
         mock_redmine.issue.get.side_effect = ConnectionError("refused")
@@ -194,10 +192,10 @@ class TestToolErrorIntegration:
         assert "Cannot connect to Redmine" in result["error"]
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_get_issue_auth_error(self, mock_redmine):
         """get_redmine_issue produces actionable auth error."""
-        from redmine_mcp_server.redmine_handler import get_redmine_issue
+        from redmine_mcp_server.tools.issues import get_redmine_issue
         from redminelib.exceptions import AuthError
 
         mock_redmine.issue.get.side_effect = AuthError()
@@ -206,10 +204,10 @@ class TestToolErrorIntegration:
         assert "Authentication failed" in result["error"]
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_list_projects_forbidden_error(self, mock_redmine):
         """list_redmine_projects produces actionable forbidden error."""
-        from redmine_mcp_server.redmine_handler import list_redmine_projects
+        from redmine_mcp_server.tools.projects import list_redmine_projects
         from redminelib.exceptions import ForbiddenError
 
         mock_redmine.project.all.side_effect = ForbiddenError()
@@ -219,10 +217,10 @@ class TestToolErrorIntegration:
         assert "Access denied" in result[0]["error"]
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_create_issue_server_error(self, mock_redmine):
         """create_redmine_issue produces actionable server error."""
-        from redmine_mcp_server.redmine_handler import create_redmine_issue
+        from redmine_mcp_server.tools.issues import create_redmine_issue
         from redminelib.exceptions import ServerError
 
         mock_redmine.issue.create.side_effect = ServerError()
@@ -231,10 +229,10 @@ class TestToolErrorIntegration:
         assert "500" in result["error"]
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_search_issues_timeout_error(self, mock_redmine):
         """search_redmine_issues produces actionable timeout error."""
-        from redmine_mcp_server.redmine_handler import search_redmine_issues
+        from redmine_mcp_server.tools.issues import search_redmine_issues
         from requests.exceptions import Timeout
 
         mock_redmine.issue.search.side_effect = Timeout()
@@ -249,11 +247,37 @@ class TestLoggingCleanup:
     def test_no_print_in_error_handling(self):
         """Verify no print() calls in error handling code."""
         import inspect
-        from redmine_mcp_server import redmine_handler
+        from redmine_mcp_server import _errors
+        from redmine_mcp_server.tools import (
+            issues,
+            projects,
+            time_tracking,
+            files,
+            wiki,
+            search,
+            enumeration,
+            products,
+            contacts,
+            checklists,
+            gantt,
+        )
 
-        source = inspect.getsource(redmine_handler)
+        modules = [
+            _errors,
+            issues,
+            projects,
+            time_tracking,
+            files,
+            wiki,
+            search,
+            enumeration,
+            products,
+            contacts,
+            checklists,
+            gantt,
+        ]
 
-        # These specific print patterns should not exist
+        # These specific print patterns should not exist anywhere
         forbidden_patterns = [
             'print(f"Error fetching',
             'print(f"Error listing',
@@ -263,5 +287,9 @@ class TestLoggingCleanup:
             'print(f"Error during attachment',
         ]
 
-        for pattern in forbidden_patterns:
-            assert pattern not in source, f"Found forbidden pattern: {pattern}"
+        for module in modules:
+            source = inspect.getsource(module)
+            for pattern in forbidden_patterns:
+                assert (
+                    pattern not in source
+                ), f"Found forbidden pattern in {module.__name__}: {pattern}"

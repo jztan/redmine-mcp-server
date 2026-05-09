@@ -67,6 +67,105 @@ Thank you for your interest in contributing to the Redmine MCP Server! This guid
    uv run python -m redmine_mcp_server.main
    ```
 
+## Where things live
+
+After v2.0, the codebase is organized by resource:
+
+### Tool implementations
+
+Tools live under `src/redmine_mcp_server/tools/`, one file per Redmine resource:
+
+| File | Tools |
+|---|---|
+| `tools/projects.py` | Project listing, versions, members, roles, modules (9 tools) |
+| `tools/issues.py` | Issues, search, copy, relations, watchers, notes, categories, subtasks (12 tools) |
+| `tools/time_tracking.py` | Time entries, activities, bulk import (4 tools) |
+| `tools/wiki.py` | Wiki page CRUD + rename (1 tool, 6 actions) |
+| `tools/files.py` | File upload/download/delete + attachment URLs (5 tools) |
+| `tools/enumeration.py` | Trackers, statuses, priorities, users, queries (6 tools) |
+| `tools/search.py` | Global search across resources (1 tool) |
+| `tools/checklists.py` | RedmineUP Checklists plugin (2 tools, gated) |
+| `tools/gantt.py` | Gantt chart composite read tool (1 tool) |
+| `tools/products.py` | RedmineUP Products plugin (1 tool, gated) |
+| `tools/contacts.py` | RedmineUP CRM plugin (1 tool, gated) |
+
+Each `tools/<resource>.py` also owns its resource-specific serializers (`_X_to_dict` helpers).
+
+### Shared helpers
+
+Cross-cutting utilities live as flat private modules:
+
+| Module | Responsibility |
+|---|---|
+| `_client.py` | Redmine connection (legacy + OAuth), module-level config, logger |
+| `_errors.py` | `_handle_redmine_error`, `_scrub_error_message`, `_READ_ONLY_ERROR` |
+| `_validation.py` | Input validators (`_is_positive_int`, `_is_valid_project_id`, `_validate_hours`) |
+| `_serialization.py` | `wrap_insecure_content`, `_safe_isoformat`, `_iter_capped`, `_named_ref`, `_coerce_json_safe` |
+| `_env.py` | Environment-flag accessors (`_is_read_only_mode`, `_is_*_enabled`) |
+| `_custom_fields.py` | Custom-field parsing, autofill, and update coercion |
+| `_ssrf.py` | SSRF protection for `upload_file`'s `source_url` |
+| `_cleanup.py` | Background cleanup task |
+| `_http_routes.py` | Starlette routes (`/health`, `/files/{id}`, `/cleanup/status`) |
+| `_decorators.py` | `@action_dispatch` decorator + `ActionMode` enum |
+
+### Adding a new `manage_X` tool
+
+The 9 `manage_X` tools (plus `manage_redmine_version`) follow a consistent pattern via the `@action_dispatch` decorator. Example:
+
+```python
+from .._decorators import ActionMode, action_dispatch
+
+# Per-action handlers (private async functions in the same file)
+async def _list_widgets_action(project_id=None, **_):
+    # validation, fetch, return
+    ...
+
+async def _create_widget_action(project_id=None, name=None, **_):
+    # validation, create, return
+    ...
+
+@mcp.tool()
+@action_dispatch({
+    "list": ActionMode.READ,
+    "create": ActionMode.WRITE,
+})
+async def manage_widget(action: str, project_id=None, name=None):
+    """Docstring with full param/return shape."""
+    return {
+        "list": _list_widgets_action,
+        "create": _create_widget_action,
+    }
+```
+
+The decorator handles:
+- Action validation (returns `{"error": "Invalid action ..."}` on bad input)
+- Read-only guard for `WRITE` actions (returns `_READ_ONLY_ERROR` if env enables read-only mode)
+- `_ensure_cleanup_started()` for `WRITE` actions
+- Routing to the per-action handler
+
+Per-action handlers stay responsible for: their own parameter validation, calling the Redmine API, and wrapping exceptions via `_handle_redmine_error`.
+
+**Important:** keep the public `manage_X` tool's full explicit parameter list (FastMCP rejects `**kwargs` in tool signatures). Only the body changes to return the handler-map dict.
+
+For plugin-gated tools (`manage_product`, `manage_contact`), wrap the dispatcher in a feature-flag check:
+
+```python
+@mcp.tool()
+async def manage_widget(action: str, project_id=None, name=None):
+    if not _is_widgets_enabled():
+        return dict(_WIDGETS_DISABLED_ERROR)
+    return await _manage_widget_dispatch(
+        action,
+        project_id=project_id,
+        name=name,
+    )
+
+
+@action_dispatch({...})
+async def _manage_widget_dispatch(action, **kwargs):
+    return {...}
+```
+
 ## Development Workflow
 
 ### 1. Create a Branch
@@ -426,10 +525,21 @@ See [RELEASE_SOP.md](../RELEASE_SOP.md) for complete release procedures.
 ```
 redmine-mcp-server/
 ├── src/redmine_mcp_server/
-│   ├── main.py              # FastMCP application entry point + OAuth discovery routes
-│   ├── redmine_handler.py   # MCP tools and Redmine integration
+│   ├── main.py              # Starlette/FastMCP entry point + OAuth discovery routes
+│   ├── server.py            # Owns the shared `mcp = FastMCP(...)` instance
+│   ├── tools/               # 11 per-resource tool modules (43 MCP tools total)
+│   ├── _client.py           # Redmine connection (legacy + OAuth)
+│   ├── _errors.py           # Exception → user-friendly dict
+│   ├── _validation.py       # Input validators
+│   ├── _serialization.py    # Serializer helpers + `wrap_insecure_content`
+│   ├── _env.py              # Environment-flag accessors
+│   ├── _custom_fields.py    # Custom-field parsing/coercion
+│   ├── _ssrf.py             # SSRF protection for upload_file source_url
+│   ├── _cleanup.py          # Background attachment cleanup task
+│   ├── _http_routes.py      # Starlette routes (/health, /files, /cleanup/status)
+│   ├── _decorators.py       # `@action_dispatch` decorator + `ActionMode` enum
 │   ├── oauth_middleware.py  # OAuth2 Bearer token validation middleware
-│   └── file_manager.py      # Attachment file management and cleanup
+│   └── file_manager.py      # Attachment file storage manager
 ├── tests/                   # Comprehensive test suite
 ├── docs/                    # Documentation
 │   ├── tool-reference.md    # Tool usage documentation
@@ -444,32 +554,42 @@ redmine-mcp-server/
 
 ### Core Components
 
-- **main.py**: FastMCP application entry point; registers OAuth middleware when `REDMINE_AUTH_MODE=oauth` and serves RFC 8707/8414 discovery endpoints
-- **redmine_handler.py**: MCP tools implementation using python-redmine; `_get_redmine_client()` selects auth per request (OAuth token → API key → username/password)
-- **oauth_middleware.py**: Starlette middleware that validates Bearer tokens against Redmine before forwarding MCP requests; uses `ContextVar` for per-request token storage
-- **file_manager.py**: Attachment file management and cleanup utilities
+- **`main.py`**: Entry point. Builds the Starlette app, registers MCP transport and OAuth middleware (when `REDMINE_AUTH_MODE=oauth`), serves RFC 8707/8414 discovery endpoints, and triggers tool registration via `from . import tools`.
+- **`server.py`**: Owns the shared `mcp = FastMCP(...)` instance imported by every tool module.
+- **`tools/`**: Per-resource tool modules. Each file owns its `@mcp.tool()` definitions and resource-specific serializers (`_X_to_dict` helpers). See [Where things live](#where-things-live) earlier in this guide for the full table.
+- **Flat `_X.py` modules**: Cross-cutting helpers (`_client`, `_errors`, `_validation`, `_serialization`, `_env`, `_custom_fields`, `_ssrf`, `_cleanup`, `_http_routes`, `_decorators`). See [Where things live](#where-things-live) for responsibilities.
+- **`oauth_middleware.py`**: Starlette middleware that validates Bearer tokens against Redmine's `GET /users/current.json` before forwarding MCP requests; uses `ContextVar` for per-request token storage.
+- **`file_manager.py`**: Attachment file storage manager (UUID-based files + metadata.json with expiry).
+
+This layout was introduced in v2.0, replacing the previous monolithic `redmine_handler.py`.
 
 ### Key Technologies
 
 - **FastMCP**: MCP protocol implementation with HTTP transport
 - **python-redmine**: Official Redmine Python library
-- **FastAPI**: HTTP server framework
+- **Starlette**: ASGI HTTP framework
 - **uvicorn**: ASGI server
 
 ### Design Patterns
 
 - Async/await for non-blocking operations
 - Error handling with user-friendly error dictionaries
-- Helper functions for data conversion (_issue_to_dict, etc.)
-- Environment-based configuration with .env files
+- Per-resource serializer helpers (`_issue_to_dict`, `_project_to_dict`, etc.)
+- `@action_dispatch` decorator for `manage_X` tools (action validation, read-only guard, cleanup hook)
+- Environment-based configuration with `.env` files
 
 ## Adding New Tools
 
 To add a new MCP tool to the server:
 
-1. **Define the tool** in `src/redmine_mcp_server/redmine_handler.py`:
+1. **Pick the right `tools/<resource>.py` file** (or create a new one if the resource doesn't fit any existing module). See [Where things live](#where-things-live) for the file/resource mapping.
+
+2. **Define the tool** in that file:
 
    ```python
+   from ..server import mcp
+   from .._errors import _handle_redmine_error
+
    @mcp.tool()
    async def your_new_tool(param: str) -> Dict[str, Any]:
        """
@@ -486,17 +606,19 @@ To add a new MCP tool to the server:
            result = perform_operation(param)
            return {"success": True, "data": result}
        except Exception as e:
-           return {"error": f"Failed to execute tool: {str(e)}"}
+           return _handle_redmine_error(e, "your_new_tool")
    ```
 
-2. **The tool is automatically registered** - FastMCP discovers tools decorated with `@mcp.tool()`
+3. **The tool is automatically registered** — FastMCP discovers tools decorated with `@mcp.tool()` once the module is imported. New `tools/<resource>.py` files must be imported from `tools/__init__.py`.
 
-3. **Test your tool**:
-   - Add unit tests in `tests/test_redmine_handler.py`
+4. **For `manage_X`-style tools** (multi-action CRUD), use the `@action_dispatch` decorator. See [Adding a new `manage_X` tool](#adding-a-new-manage_x-tool) earlier in this guide.
+
+5. **Test your tool**:
+   - Add unit tests in `tests/test_<resource>_tools.py` (or the matching existing file)
    - Add integration tests if it interacts with Redmine
    - Run tests: `python tests/run_tests.py --all`
 
-4. **Document your tool**:
+6. **Document your tool**:
    - Add entry to `docs/tool-reference.md`
    - Include parameters, returns, and examples
    - Update README tool count if needed

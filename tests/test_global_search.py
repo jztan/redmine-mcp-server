@@ -13,7 +13,7 @@ class TestResourceToDict:
 
     def test_issue_resource_conversion(self):
         """Test converting an issue resource to dict."""
-        from redmine_mcp_server.redmine_handler import _resource_to_dict
+        from redmine_mcp_server.tools.search import _resource_to_dict
 
         mock_issue = Mock()
         mock_issue.id = 123
@@ -40,9 +40,10 @@ class TestResourceToDict:
 
     def test_wiki_page_resource_conversion(self):
         """Test converting a wiki page resource to dict."""
-        from redmine_mcp_server.redmine_handler import _resource_to_dict
+        from redmine_mcp_server.tools.search import (
+            _resource_to_dict,
+        )  # Use spec to control which attributes exist
 
-        # Use spec to control which attributes exist
         mock_wiki = Mock(spec=["id", "title", "project", "updated_on", "text"])
         mock_wiki.id = None  # Wiki pages may not have id
         mock_wiki.title = "Installation Guide"
@@ -64,7 +65,7 @@ class TestResourceToDict:
 
     def test_missing_attributes_handled_gracefully(self):
         """Test that missing attributes don't cause errors."""
-        from redmine_mcp_server.redmine_handler import _resource_to_dict
+        from redmine_mcp_server.tools.search import _resource_to_dict
 
         mock_resource = Mock(spec=[])  # Empty spec = no attributes
         mock_resource.id = 456
@@ -117,12 +118,12 @@ class TestSearchEntireRedmine:
         }
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_API_KEY", "")
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_USERNAME", "")
-    @patch("redmine_mcp_server.redmine_handler.redmine", None)
+    @patch("redmine_mcp_server._client.REDMINE_API_KEY", "")
+    @patch("redmine_mcp_server._client.REDMINE_USERNAME", "")
+    @patch("redmine_mcp_server._client.redmine", None)
     async def test_search_no_client(self):
         """Test error when Redmine client is not initialized."""
-        from redmine_mcp_server.redmine_handler import search_entire_redmine
+        from redmine_mcp_server.tools.search import search_entire_redmine
 
         result = await search_entire_redmine(query="test")
 
@@ -130,13 +131,13 @@ class TestSearchEntireRedmine:
         assert result["error"]
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_search_success(
         self, mock_cleanup, mock_redmine, mock_search_results
     ):
         """Test successful search returns properly formatted results."""
-        from redmine_mcp_server.redmine_handler import search_entire_redmine
+        from redmine_mcp_server.tools.search import search_entire_redmine
 
         mock_redmine.search.return_value = mock_search_results
 
@@ -151,13 +152,14 @@ class TestSearchEntireRedmine:
         assert result["query"] == "test"
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_search_empty_results(self, mock_cleanup, mock_redmine):
         """Test search with no results returns empty structure."""
-        from redmine_mcp_server.redmine_handler import search_entire_redmine
+        from redmine_mcp_server.tools.search import (
+            search_entire_redmine,
+        )  # CRITICAL GOTCHA: redmine.search() returns None for empty results
 
-        # CRITICAL GOTCHA: redmine.search() returns None for empty results
         mock_redmine.search.return_value = None
 
         result = await search_entire_redmine(query="nonexistent")
@@ -168,11 +170,11 @@ class TestSearchEntireRedmine:
         assert result["query"] == "nonexistent"
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_search_with_resource_filter(self, mock_cleanup, mock_redmine):
         """Test search with resource type filtering."""
-        from redmine_mcp_server.redmine_handler import search_entire_redmine
+        from redmine_mcp_server.tools.search import search_entire_redmine
 
         mock_issue = Mock(
             spec=["id", "subject", "project", "status", "updated_on", "description"]
@@ -198,13 +200,13 @@ class TestSearchEntireRedmine:
         assert call_kwargs.get("resources") == ["issues"]
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_search_invalid_resource_types_filtered(
         self, mock_cleanup, mock_redmine
     ):
         """Test that invalid resource types are filtered out (v1.4 scope)."""
-        from redmine_mcp_server.redmine_handler import search_entire_redmine
+        from redmine_mcp_server.tools.search import search_entire_redmine
 
         mock_redmine.search.return_value = {"issues": []}
 
@@ -218,11 +220,11 @@ class TestSearchEntireRedmine:
         assert set(call_kwargs.get("resources", [])) == {"issues", "wiki_pages"}
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_search_default_resources(self, mock_cleanup, mock_redmine):
         """Test that default search includes both issues and wiki_pages."""
-        from redmine_mcp_server.redmine_handler import search_entire_redmine
+        from redmine_mcp_server.tools.search import search_entire_redmine
 
         mock_redmine.search.return_value = {}
 
@@ -232,11 +234,11 @@ class TestSearchEntireRedmine:
         assert set(call_kwargs.get("resources", [])) == {"issues", "wiki_pages"}
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_search_pagination(self, mock_cleanup, mock_redmine):
         """Test pagination parameters are passed correctly."""
-        from redmine_mcp_server.redmine_handler import search_entire_redmine
+        from redmine_mcp_server.tools.search import search_entire_redmine
 
         mock_redmine.search.return_value = {}
 
@@ -247,11 +249,11 @@ class TestSearchEntireRedmine:
         assert call_kwargs.get("offset") == 25
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_search_limit_capped(self, mock_cleanup, mock_redmine):
         """Test that limit is capped at 100 (Redmine API max)."""
-        from redmine_mcp_server.redmine_handler import search_entire_redmine
+        from redmine_mcp_server.tools.search import search_entire_redmine
 
         mock_redmine.search.return_value = {}
 
@@ -261,11 +263,11 @@ class TestSearchEntireRedmine:
         assert call_kwargs.get("limit") == 100  # Capped
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_search_version_mismatch(self, mock_cleanup, mock_redmine):
         """Test handling of VersionMismatchError (Redmine < 3.3.0)."""
-        from redmine_mcp_server.redmine_handler import search_entire_redmine
+        from redmine_mcp_server.tools.search import search_entire_redmine
         from redminelib.exceptions import VersionMismatchError
 
         mock_redmine.search.side_effect = VersionMismatchError("search")
@@ -276,11 +278,11 @@ class TestSearchEntireRedmine:
         assert "3.3.0" in result["error"]  # Must mention correct version
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_search_general_exception(self, mock_cleanup, mock_redmine):
         """Test handling of general exceptions."""
-        from redmine_mcp_server.redmine_handler import search_entire_redmine
+        from redmine_mcp_server.tools.search import search_entire_redmine
 
         mock_redmine.search.side_effect = Exception("Network error")
 
@@ -290,11 +292,11 @@ class TestSearchEntireRedmine:
         assert "Network error" in result["error"] or "failed" in result["error"].lower()
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_search_unknown_resources_ignored(self, mock_cleanup, mock_redmine):
         """Test that 'unknown' category from plugins is handled gracefully."""
-        from redmine_mcp_server.redmine_handler import search_entire_redmine
+        from redmine_mcp_server.tools.search import search_entire_redmine
 
         mock_issue = Mock(
             spec=["id", "subject", "project", "status", "updated_on", "description"]
@@ -347,10 +349,10 @@ class TestManageRedmineWikiPageGet:
         return mock_page
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine", None)
+    @patch("redmine_mcp_server._client.redmine", None)
     async def test_wiki_page_no_client(self):
         """Test error when Redmine client is not initialized."""
-        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
 
         result = await manage_redmine_wiki_page(
             action="get", project_id="my-project", wiki_page_title="Installation"
@@ -360,11 +362,11 @@ class TestManageRedmineWikiPageGet:
         assert result["error"]
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_wiki_page_success(self, mock_cleanup, mock_redmine, mock_wiki_page):
         """Test successful wiki page retrieval."""
-        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
 
         mock_redmine.wiki_page.get.return_value = mock_wiki_page
 
@@ -381,11 +383,11 @@ class TestManageRedmineWikiPageGet:
         assert result["project"]["name"] == "My Project"
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_wiki_page_not_found(self, mock_cleanup, mock_redmine):
         """Test handling of non-existent wiki page."""
-        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
 
         mock_redmine.wiki_page.get.side_effect = ResourceNotFoundError()
 
@@ -399,13 +401,13 @@ class TestManageRedmineWikiPageGet:
         assert "not found" in result["error"].lower()
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_wiki_page_specific_version(
         self, mock_cleanup, mock_redmine, mock_wiki_page
     ):
         """Test retrieving specific wiki page version."""
-        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
 
         mock_wiki_page.version = 3
         mock_redmine.wiki_page.get.return_value = mock_wiki_page
@@ -424,13 +426,13 @@ class TestManageRedmineWikiPageGet:
         assert result["version"] == 3
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_wiki_page_with_attachments(
         self, mock_cleanup, mock_redmine, mock_wiki_page
     ):
         """Test wiki page with attachments."""
-        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
 
         mock_attachment = Mock()
         mock_attachment.id = 456
@@ -456,13 +458,13 @@ class TestManageRedmineWikiPageGet:
         assert result["attachments"][0]["filename"] == "diagram.png"
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_wiki_page_without_attachments(
         self, mock_cleanup, mock_redmine, mock_wiki_page
     ):
         """Test excluding attachments from response."""
-        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
 
         mock_wiki_page.attachments = [Mock(id=1)]
         mock_redmine.wiki_page.get.return_value = mock_wiki_page
@@ -477,11 +479,11 @@ class TestManageRedmineWikiPageGet:
         assert "attachments" not in result
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_wiki_page_missing_attributes(self, mock_cleanup, mock_redmine):
         """Test handling of wiki page with missing optional attributes."""
-        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
 
         mock_page = Mock(spec=["title", "text", "version"])
         mock_page.title = "Simple Page"
@@ -500,13 +502,13 @@ class TestManageRedmineWikiPageGet:
         assert result.get("author") is None
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_wiki_page_integer_project_id(
         self, mock_cleanup, mock_redmine, mock_wiki_page
     ):
         """Test wiki page retrieval with integer project ID."""
-        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
 
         mock_redmine.wiki_page.get.return_value = mock_wiki_page
 
@@ -517,11 +519,11 @@ class TestManageRedmineWikiPageGet:
         mock_redmine.wiki_page.get.assert_called_once_with("Test", project_id=123)
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_wiki_page_general_exception(self, mock_cleanup, mock_redmine):
         """Test handling of general exceptions."""
-        from redmine_mcp_server.redmine_handler import manage_redmine_wiki_page
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
 
         mock_redmine.wiki_page.get.side_effect = Exception("Network error")
 
@@ -540,7 +542,7 @@ class TestGlobalSearchIntegration:
     @pytest.mark.asyncio
     async def test_search_entire_redmine_real_server(self):
         """Test search against real Redmine instance."""
-        from redmine_mcp_server.redmine_handler import search_entire_redmine
+        from redmine_mcp_server.tools.search import search_entire_redmine
 
         result = await search_entire_redmine(query="test")
 
@@ -553,11 +555,9 @@ class TestGlobalSearchIntegration:
     @pytest.mark.asyncio
     async def test_wiki_page_real_server(self):
         """Test wiki page retrieval by first discovering a wiki page via search."""
-        from redmine_mcp_server.redmine_handler import (
-            search_entire_redmine,
-            manage_redmine_wiki_page,
-            _get_redmine_client,
-        )
+        from redmine_mcp_server.tools.search import search_entire_redmine
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
+        from redmine_mcp_server._client import _get_redmine_client
 
         # First, search for any wiki page using common terms
         search_result = await search_entire_redmine(

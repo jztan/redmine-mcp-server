@@ -9,8 +9,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from redmine_mcp_server.redmine_handler import (  # noqa: E402
-    _is_crm_enabled,
+from redmine_mcp_server._env import _is_crm_enabled  # noqa: E402
+from redmine_mcp_server.tools.contacts import (  # noqa: E402
     manage_contact,
 )
 
@@ -61,8 +61,8 @@ class TestIsCrmEnabled:
 
 class TestManageContactList:
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_list_success(self, mock_redmine):
         mock_redmine.engine.request.return_value = {
             "contacts": [_make_contact(1), _make_contact(2, "Bob")]
@@ -81,8 +81,8 @@ class TestManageContactList:
         assert "<insecure-content-" in result[0]["first_name"]
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_filters_passed_to_api(self, mock_redmine):
         mock_redmine.engine.request.return_value = {"contacts": []}
         with patch.dict(os.environ, {"REDMINE_CRM_ENABLED": "true"}):
@@ -124,8 +124,8 @@ class TestManageContactList:
         assert "error" in result
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_clamps_limit_to_100(self, mock_redmine):
         """Redmine caps `limit` at 100 server-side; values above are clamped."""
         mock_redmine.engine.request.return_value = {"contacts": []}
@@ -136,8 +136,8 @@ class TestManageContactList:
         assert call_kwargs["params"]["limit"] == 100
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_slices_oversized_response(self, mock_redmine):
         """Defensive slice: even if Redmine returned more than `limit`, the
         tool truncates to `limit`."""
@@ -171,8 +171,8 @@ class TestManageContactList:
 
 class TestManageContactGet:
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_get_success(self, mock_redmine):
         mock_redmine.engine.request.return_value = {"contact": _make_contact(42)}
         with patch.dict(os.environ, {"REDMINE_CRM_ENABLED": "true"}):
@@ -181,8 +181,8 @@ class TestManageContactGet:
         assert result["address"]["city"] == "Boston"
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_includes_passed(self, mock_redmine):
         mock_redmine.engine.request.return_value = {"contact": _make_contact(1)}
         with patch.dict(os.environ, {"REDMINE_CRM_ENABLED": "true"}):
@@ -203,8 +203,8 @@ class TestManageContactGet:
         assert "error" in result
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_not_found(self, mock_redmine):
         mock_redmine.engine.request.return_value = {}
         with patch.dict(os.environ, {"REDMINE_CRM_ENABLED": "true"}):
@@ -220,8 +220,8 @@ class TestManageContactGet:
 
 class TestManageContactUpdate:
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_edit_success(self, mock_redmine):
         mock_redmine.engine.request.return_value = True
         with patch.dict(os.environ, {"REDMINE_CRM_ENABLED": "true"}):
@@ -234,8 +234,8 @@ class TestManageContactUpdate:
         assert set(result["updated_fields"]) == {"first_name", "email"}
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_filters_unknown_fields(self, mock_redmine):
         mock_redmine.engine.request.return_value = True
         with patch.dict(os.environ, {"REDMINE_CRM_ENABLED": "true"}):
@@ -283,8 +283,8 @@ class TestManageContactUpdate:
 
 class TestManageContactCreate:
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_create_success(self, mock_redmine):
         mock_redmine.engine.request.return_value = {"contact": _make_contact(99)}
         with patch.dict(os.environ, {"REDMINE_CRM_ENABLED": "true"}):
@@ -303,8 +303,8 @@ class TestManageContactCreate:
         assert body["contact"]["is_company"] is False
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_extra_fields_via_fields_param(self, mock_redmine):
         mock_redmine.engine.request.return_value = {"contact": _make_contact(1)}
         with patch.dict(os.environ, {"REDMINE_CRM_ENABLED": "true"}):
@@ -370,8 +370,8 @@ class TestManageContactCreate:
 
 class TestManageContactDelete:
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_delete_success(self, mock_redmine):
         mock_redmine.engine.request.return_value = True
         with patch.dict(os.environ, {"REDMINE_CRM_ENABLED": "true"}):
@@ -411,8 +411,8 @@ class TestManageContactDelete:
 
 class TestManageContactAssignToProject:
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_assign_success(self, mock_redmine):
         mock_redmine.engine.request.return_value = True
         with patch.dict(os.environ, {"REDMINE_CRM_ENABLED": "true"}):
@@ -454,8 +454,8 @@ class TestManageContactAssignToProject:
 
 class TestManageContactRemoveFromProject:
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_remove_success(self, mock_redmine):
         mock_redmine.engine.request.return_value = True
         with patch.dict(os.environ, {"REDMINE_CRM_ENABLED": "true"}):

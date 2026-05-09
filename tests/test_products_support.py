@@ -9,8 +9,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from redmine_mcp_server.redmine_handler import (  # noqa: E402
-    _is_products_enabled,
+from redmine_mcp_server._env import _is_products_enabled  # noqa: E402
+from redmine_mcp_server.tools.products import (  # noqa: E402
     manage_product,
 )
 
@@ -55,8 +55,8 @@ class TestIsProductsEnabled:
 
 class TestManageProductList:
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_list_all(self, mock_redmine):
         mock_redmine.engine.request.return_value = {
             "products": [_make_product(1), _make_product(2, "Gadget")]
@@ -76,8 +76,8 @@ class TestManageProductList:
         )
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_list_by_project(self, mock_redmine):
         mock_redmine.engine.request.return_value = {"products": []}
         with patch.dict(os.environ, {"REDMINE_PRODUCTS_ENABLED": "true"}):
@@ -105,8 +105,8 @@ class TestManageProductList:
         assert "error" in result
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_handles_api_error(self, mock_redmine):
         mock_redmine.engine.request.side_effect = Exception("boom")
         with patch.dict(os.environ, {"REDMINE_PRODUCTS_ENABLED": "true"}):
@@ -116,8 +116,8 @@ class TestManageProductList:
         assert "error" in result
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_clamps_limit_to_100(self, mock_redmine):
         """Redmine caps `limit` at 100 server-side; values above are clamped."""
         mock_redmine.engine.request.return_value = {"products": []}
@@ -128,8 +128,8 @@ class TestManageProductList:
         assert call_kwargs["params"]["limit"] == 100
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_slices_oversized_response(self, mock_redmine):
         """Defensive slice: even if Redmine returned more than `limit`, the
         tool truncates to `limit`."""
@@ -170,8 +170,8 @@ class TestManageProductList:
         assert "project_id" in result["error"]
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_accepts_valid_string_project_id(self, mock_redmine):
         mock_redmine.engine.request.return_value = {"products": []}
         with patch.dict(os.environ, {"REDMINE_PRODUCTS_ENABLED": "true"}):
@@ -179,8 +179,8 @@ class TestManageProductList:
         assert isinstance(result, list)
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_accepts_integer_project_id(self, mock_redmine):
         mock_redmine.engine.request.return_value = {"products": []}
         with patch.dict(os.environ, {"REDMINE_PRODUCTS_ENABLED": "true"}):
@@ -195,8 +195,8 @@ class TestManageProductList:
 
 class TestManageProductGet:
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_get_success(self, mock_redmine):
         mock_redmine.engine.request.return_value = {"product": _make_product(42)}
         with patch.dict(os.environ, {"REDMINE_PRODUCTS_ENABLED": "true"}):
@@ -217,8 +217,8 @@ class TestManageProductGet:
         assert "error" in result
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_not_found(self, mock_redmine):
         mock_redmine.engine.request.return_value = {}
         with patch.dict(os.environ, {"REDMINE_PRODUCTS_ENABLED": "true"}):
@@ -234,8 +234,8 @@ class TestManageProductGet:
 
 class TestManageProductCreate:
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_add_success(self, mock_redmine):
         mock_redmine.engine.request.return_value = {"product": _make_product(1)}
         with patch.dict(os.environ, {"REDMINE_PRODUCTS_ENABLED": "true"}):
@@ -310,8 +310,8 @@ class TestManageProductCreate:
 
 class TestManageProductUpdate:
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_edit_success(self, mock_redmine):
         mock_redmine.engine.request.return_value = True
         with patch.dict(os.environ, {"REDMINE_PRODUCTS_ENABLED": "true"}):
@@ -323,8 +323,8 @@ class TestManageProductUpdate:
         assert set(result["updated_fields"]) == {"name", "price"}
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_filters_unknown_fields(self, mock_redmine):
         mock_redmine.engine.request.return_value = True
         with patch.dict(os.environ, {"REDMINE_PRODUCTS_ENABLED": "true"}):

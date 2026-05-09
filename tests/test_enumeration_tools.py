@@ -17,7 +17,7 @@ from unittest.mock import Mock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from redmine_mcp_server.redmine_handler import (  # noqa: E402
+from redmine_mcp_server.tools.enumeration import (  # noqa: E402
     get_current_user,
     list_redmine_issue_priorities,
     list_redmine_issue_statuses,
@@ -43,7 +43,7 @@ def _mock_obj(**attrs):
 
 class TestListRedmineTrackers:
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_returns_trackers(self, mock_redmine):
         mock_redmine.tracker.all.return_value = [
             _mock_obj(id=1, name="Bug", description=""),
@@ -61,13 +61,13 @@ class TestListRedmineTrackers:
         mock_redmine.tracker.all.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_empty(self, mock_redmine):
         mock_redmine.tracker.all.return_value = []
         assert await list_redmine_trackers() == []
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_auth_error(self, mock_redmine):
         from redminelib.exceptions import AuthError
 
@@ -84,7 +84,7 @@ class TestListRedmineTrackers:
 
 class TestListRedmineIssueStatuses:
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_returns_statuses(self, mock_redmine):
         mock_redmine.issue_status.all.return_value = [
             _mock_obj(id=1, name="New", is_closed=False),
@@ -101,7 +101,7 @@ class TestListRedmineIssueStatuses:
         ]
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_is_closed_missing_defaults_false(self, mock_redmine):
         """When a status object doesn't expose is_closed, we default to False."""
         mock_redmine.issue_status.all.return_value = [
@@ -112,7 +112,7 @@ class TestListRedmineIssueStatuses:
         assert result[0]["is_closed"] is False
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_forbidden(self, mock_redmine):
         from redminelib.exceptions import ForbiddenError
 
@@ -129,7 +129,7 @@ class TestListRedmineIssueStatuses:
 
 class TestListRedmineIssuePriorities:
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_returns_priorities(self, mock_redmine):
         mock_redmine.enumeration.filter.return_value = [
             _mock_obj(id=1, name="Low", active=True, is_default=False),
@@ -152,7 +152,7 @@ class TestListRedmineIssuePriorities:
         )
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_empty(self, mock_redmine):
         mock_redmine.enumeration.filter.return_value = []
         assert await list_redmine_issue_priorities() == []
@@ -165,7 +165,7 @@ class TestListRedmineIssuePriorities:
 
 class TestListRedmineUsers:
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_basic_list(self, mock_redmine):
         mock_redmine.user.filter.return_value = [
             _mock_obj(
@@ -194,7 +194,7 @@ class TestListRedmineUsers:
         mock_redmine.user.filter.assert_called_once_with(limit=25, offset=0)
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_with_name_filter(self, mock_redmine):
         mock_redmine.user.filter.return_value = []
         await list_redmine_users(name="alice")
@@ -203,14 +203,14 @@ class TestListRedmineUsers:
         )
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_with_group_filter(self, mock_redmine):
         mock_redmine.user.filter.return_value = []
         await list_redmine_users(group_id=7)
         mock_redmine.user.filter.assert_called_once_with(limit=25, offset=0, group_id=7)
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_limit_clamped(self, mock_redmine):
         """Limit is clamped to the 1-100 range."""
         mock_redmine.user.filter.return_value = []
@@ -224,7 +224,7 @@ class TestListRedmineUsers:
         assert kwargs["limit"] == 1
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_forbidden(self, mock_redmine):
         """Non-admin users get 403 when listing all users."""
         from redminelib.exceptions import ForbiddenError
@@ -243,7 +243,7 @@ class TestListRedmineUsers:
 
 class TestGetCurrentUser:
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_returns_current_user(self, mock_redmine):
         mock_redmine.user.get.return_value = _mock_obj(
             id=5,
@@ -264,7 +264,7 @@ class TestGetCurrentUser:
         mock_redmine.user.get.assert_called_once_with("current")
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_admin_user(self, mock_redmine):
         mock_redmine.user.get.return_value = _mock_obj(
             id=1,
@@ -280,7 +280,7 @@ class TestGetCurrentUser:
         assert result["admin"] is True
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_auth_error(self, mock_redmine):
         from redminelib.exceptions import AuthError
 
@@ -296,7 +296,7 @@ class TestGetCurrentUser:
 
 class TestListRedmineQueries:
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_returns_queries(self, mock_redmine):
         mock_redmine.query.all.return_value = [
             _mock_obj(id=1, name="Open bugs", is_public=True, project_id=10),
@@ -311,13 +311,13 @@ class TestListRedmineQueries:
         ]
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_empty(self, mock_redmine):
         mock_redmine.query.all.return_value = []
         assert await list_redmine_queries() == []
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_missing_project_id(self, mock_redmine):
         """Some queries have no project scope — project_id should default
         to None."""
@@ -328,7 +328,7 @@ class TestListRedmineQueries:
         assert result[0]["project_id"] is None
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_forbidden(self, mock_redmine):
         from redminelib.exceptions import ForbiddenError
 

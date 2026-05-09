@@ -48,20 +48,20 @@ class TestManageRedmineVersionShared:
 
     @pytest.mark.asyncio
     async def test_invalid_action(self):
-        from redmine_mcp_server.redmine_handler import manage_redmine_version
+        from redmine_mcp_server.tools.projects import manage_redmine_version
 
         result = await manage_redmine_version(action="publish")
 
         assert "error" in result
         assert "publish" in result["error"]
-        assert "create, update, delete" in result["error"]
+        assert "create, delete, update" in result["error"]
 
     @pytest.mark.asyncio
     @patch.dict(os.environ, {"REDMINE_MCP_READ_ONLY": "true"})
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_read_only_blocks_create(self, mock_redmine, mock_cleanup):
-        from redmine_mcp_server.redmine_handler import manage_redmine_version
+        from redmine_mcp_server.tools.projects import manage_redmine_version
 
         result = await manage_redmine_version(
             action="create", project_id=1, name="v1.0"
@@ -73,10 +73,10 @@ class TestManageRedmineVersionShared:
 
     @pytest.mark.asyncio
     @patch.dict(os.environ, {"REDMINE_MCP_READ_ONLY": "true"})
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_read_only_blocks_update(self, mock_redmine, mock_cleanup):
-        from redmine_mcp_server.redmine_handler import manage_redmine_version
+        from redmine_mcp_server.tools.projects import manage_redmine_version
 
         result = await manage_redmine_version(
             action="update", version_id=1, name="v2.0"
@@ -88,10 +88,10 @@ class TestManageRedmineVersionShared:
 
     @pytest.mark.asyncio
     @patch.dict(os.environ, {"REDMINE_MCP_READ_ONLY": "true"})
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
-    @patch("redmine_mcp_server.redmine_handler.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_read_only_blocks_delete(self, mock_redmine, mock_cleanup):
-        from redmine_mcp_server.redmine_handler import manage_redmine_version
+        from redmine_mcp_server.tools.projects import manage_redmine_version
 
         result = await manage_redmine_version(action="delete", version_id=1)
 
@@ -106,10 +106,10 @@ class TestManageRedmineVersionShared:
 class TestManageRedmineVersionCreate:
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_create_success_all_fields(self, mock_cleanup, mock_redmine):
-        from redmine_mcp_server.redmine_handler import manage_redmine_version
+        from redmine_mcp_server.tools.projects import manage_redmine_version
 
         mock_version = create_mock_version(
             version_id=5,
@@ -139,11 +139,11 @@ class TestManageRedmineVersionCreate:
         mock_redmine.version.create.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_create_defaults_applied(self, mock_cleanup, mock_redmine):
         """Omitting status and sharing must apply status='open', sharing='none'."""
-        from redmine_mcp_server.redmine_handler import manage_redmine_version
+        from redmine_mcp_server.tools.projects import manage_redmine_version
 
         mock_version = create_mock_version(status="open", sharing="none")
         mock_redmine.version.create.return_value = mock_version
@@ -159,12 +159,12 @@ class TestManageRedmineVersionCreate:
         assert call_kwargs["sharing"] == "none"
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_create_success_required_fields_only(
         self, mock_cleanup, mock_redmine
     ):
-        from redmine_mcp_server.redmine_handler import manage_redmine_version
+        from redmine_mcp_server.tools.projects import manage_redmine_version
 
         mock_version = create_mock_version(version_id=3, name="v1.0")
         mock_redmine.version.create.return_value = mock_version
@@ -182,7 +182,7 @@ class TestManageRedmineVersionCreate:
 
     @pytest.mark.asyncio
     async def test_create_missing_project_id(self):
-        from redmine_mcp_server.redmine_handler import manage_redmine_version
+        from redmine_mcp_server.tools.projects import manage_redmine_version
 
         result = await manage_redmine_version(action="create", name="v1.0")
 
@@ -191,7 +191,7 @@ class TestManageRedmineVersionCreate:
 
     @pytest.mark.asyncio
     async def test_create_missing_name(self):
-        from redmine_mcp_server.redmine_handler import manage_redmine_version
+        from redmine_mcp_server.tools.projects import manage_redmine_version
 
         result = await manage_redmine_version(action="create", project_id=1)
 
@@ -200,7 +200,7 @@ class TestManageRedmineVersionCreate:
 
     @pytest.mark.asyncio
     async def test_create_invalid_status(self):
-        from redmine_mcp_server.redmine_handler import manage_redmine_version
+        from redmine_mcp_server.tools.projects import manage_redmine_version
 
         result = await manage_redmine_version(
             action="create", project_id=1, name="v1.0", status="done"
@@ -211,10 +211,10 @@ class TestManageRedmineVersionCreate:
         assert "open, locked, closed" in result["error"]
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_create_api_error(self, mock_cleanup, mock_redmine):
-        from redmine_mcp_server.redmine_handler import manage_redmine_version
+        from redmine_mcp_server.tools.projects import manage_redmine_version
 
         mock_redmine.version.create.side_effect = Exception("Connection refused")
 
@@ -231,10 +231,10 @@ class TestManageRedmineVersionCreate:
 class TestManageRedmineVersionUpdate:
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_update_single_field(self, mock_cleanup, mock_redmine):
-        from redmine_mcp_server.redmine_handler import manage_redmine_version
+        from redmine_mcp_server.tools.projects import manage_redmine_version
 
         mock_version = create_mock_version(version_id=1, status="closed")
         mock_redmine.version.get.return_value = mock_version
@@ -247,10 +247,10 @@ class TestManageRedmineVersionUpdate:
         mock_redmine.version.update.assert_called_once_with(1, status="closed")
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_update_multiple_fields(self, mock_cleanup, mock_redmine):
-        from redmine_mcp_server.redmine_handler import manage_redmine_version
+        from redmine_mcp_server.tools.projects import manage_redmine_version
 
         mock_version = create_mock_version(version_id=1, name="v1.1", status="locked")
         mock_redmine.version.get.return_value = mock_version
@@ -263,11 +263,11 @@ class TestManageRedmineVersionUpdate:
         assert result["status"] == "locked"
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_update_meta_params_excluded(self, mock_cleanup, mock_redmine):
         """action, project_id, version_id must NOT appear in version.update() kwargs."""
-        from redmine_mcp_server.redmine_handler import manage_redmine_version
+        from redmine_mcp_server.tools.projects import manage_redmine_version
 
         mock_version = create_mock_version(version_id=1, name="v2.0")
         mock_redmine.version.get.return_value = mock_version
@@ -284,7 +284,7 @@ class TestManageRedmineVersionUpdate:
 
     @pytest.mark.asyncio
     async def test_update_missing_version_id(self):
-        from redmine_mcp_server.redmine_handler import manage_redmine_version
+        from redmine_mcp_server.tools.projects import manage_redmine_version
 
         result = await manage_redmine_version(action="update", name="v2.0")
 
@@ -293,7 +293,7 @@ class TestManageRedmineVersionUpdate:
 
     @pytest.mark.asyncio
     async def test_update_no_fields(self):
-        from redmine_mcp_server.redmine_handler import manage_redmine_version
+        from redmine_mcp_server.tools.projects import manage_redmine_version
 
         result = await manage_redmine_version(action="update", version_id=1)
 
@@ -302,7 +302,7 @@ class TestManageRedmineVersionUpdate:
 
     @pytest.mark.asyncio
     async def test_update_invalid_status(self):
-        from redmine_mcp_server.redmine_handler import manage_redmine_version
+        from redmine_mcp_server.tools.projects import manage_redmine_version
 
         result = await manage_redmine_version(
             action="update", version_id=1, status="done"
@@ -313,10 +313,10 @@ class TestManageRedmineVersionUpdate:
         assert "open, locked, closed" in result["error"]
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_update_api_error(self, mock_cleanup, mock_redmine):
-        from redmine_mcp_server.redmine_handler import manage_redmine_version
+        from redmine_mcp_server.tools.projects import manage_redmine_version
 
         mock_redmine.version.update.side_effect = ResourceNotFoundError()
         mock_redmine.version.get.return_value = create_mock_version(version_id=999)
@@ -334,10 +334,10 @@ class TestManageRedmineVersionUpdate:
 class TestManageRedmineVersionDelete:
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_delete_success(self, mock_cleanup, mock_redmine):
-        from redmine_mcp_server.redmine_handler import manage_redmine_version
+        from redmine_mcp_server.tools.projects import manage_redmine_version
 
         result = await manage_redmine_version(action="delete", version_id=1)
 
@@ -348,7 +348,7 @@ class TestManageRedmineVersionDelete:
 
     @pytest.mark.asyncio
     async def test_delete_missing_version_id(self):
-        from redmine_mcp_server.redmine_handler import manage_redmine_version
+        from redmine_mcp_server.tools.projects import manage_redmine_version
 
         result = await manage_redmine_version(action="delete")
 
@@ -356,10 +356,10 @@ class TestManageRedmineVersionDelete:
         assert "version_id" in result["error"]
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server.redmine_handler.redmine")
-    @patch("redmine_mcp_server.redmine_handler._ensure_cleanup_started")
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_delete_api_error(self, mock_cleanup, mock_redmine):
-        from redmine_mcp_server.redmine_handler import manage_redmine_version
+        from redmine_mcp_server.tools.projects import manage_redmine_version
 
         mock_redmine.version.delete.side_effect = ForbiddenError()
 

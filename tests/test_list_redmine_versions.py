@@ -14,7 +14,7 @@ import sys
 # Add the src directory to the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from redmine_mcp_server.redmine_handler import (  # noqa: E402
+from redmine_mcp_server.tools.projects import (  # noqa: E402
     _version_to_dict,
     list_redmine_versions,
 )
@@ -141,7 +141,7 @@ class TestListRedmineVersions:
     @pytest.fixture
     def mock_redmine(self):
         """Create a mock Redmine client."""
-        with patch("redmine_mcp_server.redmine_handler.redmine") as mock:
+        with patch("redmine_mcp_server._client.redmine") as mock:
             yield mock
 
     @pytest.mark.asyncio
@@ -278,7 +278,7 @@ class TestListRedmineVersions:
     async def test_no_client_returns_error(self):
         """Test error when Redmine client is not initialized."""
         with patch(
-            "redmine_mcp_server.redmine_handler._get_redmine_client",
+            "redmine_mcp_server.tools.projects._get_redmine_client",
             side_effect=RuntimeError("No Redmine authentication available"),
         ):
             result = await list_redmine_versions(project_id=1)

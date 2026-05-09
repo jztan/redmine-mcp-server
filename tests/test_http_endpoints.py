@@ -34,7 +34,7 @@ class TestHealthEndpoint:
             transport=ASGITransport(app=app), base_url="http://test"
         ) as client:
             with patch(
-                "redmine_mcp_server.redmine_handler._ensure_cleanup_started",
+                "redmine_mcp_server._cleanup._ensure_cleanup_started",
                 new_callable=AsyncMock,
             ):
                 response = await client.get("/health")
@@ -48,7 +48,7 @@ class TestHealthEndpoint:
     async def test_health_check_initializes_cleanup(self, app):
         """Test that /health triggers cleanup initialization."""
         with patch(
-            "redmine_mcp_server.redmine_handler._ensure_cleanup_started",
+            "redmine_mcp_server._cleanup._ensure_cleanup_started",
             new_callable=AsyncMock,
         ) as mock_ensure:
             async with AsyncClient(
@@ -281,7 +281,7 @@ class TestCleanupStatusEndpoint:
     @pytest.mark.asyncio
     async def test_cleanup_status_with_manager_running(self, app):
         """Test cleanup status when manager is running."""
-        from redmine_mcp_server import redmine_handler
+        from redmine_mcp_server import _cleanup as redmine_handler
 
         mock_status = {
             "enabled": True,
