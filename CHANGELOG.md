@@ -7,6 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Security
+- Pin all GitHub Actions to immutable commit SHAs across all workflows to prevent supply chain attacks via tag hijacking (`actions/checkout`, `actions/setup-python`, `astral-sh/setup-uv`, `actions/github-script`, `codecov/codecov-action`). Version tags are preserved as inline comments.
+- Bump `fastmcp` from 3.2.0 to 3.2.4, patching three security issues: FileUpload now validates actual decoded base64 size instead of trusting client-reported size; proxy client no longer forwards inbound HTTP headers to unrelated remote servers; AuthKit auto-binds token audience to resource URL per RFC 8707, closing a token-reuse gap.
+- Bump `pytest` from 9.0.2 to 9.0.3, patching CVE-2025-71176 (insecure temporary directory usage).
+
+### CI
+- Bump `astral-sh/setup-uv` from v4 to v7 (node24, faster version resolution for `>=` specifiers)
+- Bump `actions/github-script` from v8 to v9
+- Bump `codecov/codecov-action` from v5 to v6
+
 ### Added
 - **`get_redmine_attachment`**: unified attachment retrieval tool that works in both HTTP and stdio deployments
   - Downloads the attachment to local disk and returns an HTTP URI (`uri_type: "http"`) when `PUBLIC_HOST` (or `SERVER_HOST`) resolves to an external hostname, or an absolute local `file_path` (`uri_type: "file"`) in stdio mode -- the model does not need to know which mode is active
