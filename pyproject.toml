@@ -31,6 +31,7 @@ dependencies = [
     "fastmcp>=3.0.0,<4",
     "python-redmine>=2.5.0,<3",
     "uvicorn>=0.24.0,<1",
+    "python-multipart>=0.0.27,<1",
 ]
 
 [project.urls]
