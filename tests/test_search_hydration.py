@@ -135,9 +135,7 @@ class TestSearchHydration:
             _sparse_search_issue(100, "match snippet")
         ]
 
-        result = await search_redmine_issues(
-            "bug", fields=["id", "description"]
-        )
+        result = await search_redmine_issues("bug", fields=["id", "description"])
 
         assert result[0]["id"] == 100
         assert "match snippet" in result[0]["description"]
@@ -247,9 +245,7 @@ class TestSearchHydration:
     async def test_hydration_batches_large_id_lists(self, mock_redmine):
         """ID list >100 must be split into batches to keep URLs sane."""
         ids = list(range(1, 151))
-        mock_redmine.issue.search.return_value = [
-            _sparse_search_issue(i) for i in ids
-        ]
+        mock_redmine.issue.search.return_value = [_sparse_search_issue(i) for i in ids]
         mock_redmine.issue.filter.side_effect = [
             [_full_issue(i) for i in ids[:100]],
             [_full_issue(i) for i in ids[100:]],
@@ -259,11 +255,11 @@ class TestSearchHydration:
 
         assert len(result) == 150
         assert mock_redmine.issue.filter.call_count == 2
-        first_call_ids = mock_redmine.issue.filter.call_args_list[0].kwargs[
-            "issue_id"
-        ].split(",")
-        second_call_ids = mock_redmine.issue.filter.call_args_list[1].kwargs[
-            "issue_id"
-        ].split(",")
+        first_call_ids = (
+            mock_redmine.issue.filter.call_args_list[0].kwargs["issue_id"].split(",")
+        )
+        second_call_ids = (
+            mock_redmine.issue.filter.call_args_list[1].kwargs["issue_id"].split(",")
+        )
         assert len(first_call_ids) == 100
         assert len(second_call_ids) == 50

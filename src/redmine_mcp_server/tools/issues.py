@@ -184,9 +184,7 @@ def _hydrate_search_results(search_results: List[Any]) -> List[Any]:
                 if full_id is not None:
                     hydrated_by_id[full_id] = full_issue
     except Exception as e:
-        logging.warning(
-            f"Failed to hydrate search results, returning sparse data: {e}"
-        )
+        logging.warning(f"Failed to hydrate search results, returning sparse data: {e}")
         return search_results
 
     return [
