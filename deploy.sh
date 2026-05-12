@@ -26,13 +26,13 @@ check_docker() {
 check_env_file() {
     if [ ! -f .env.docker ]; then
         echo "❌ .env.docker file not found"
-        echo "📋 Creating .env.docker from .env.example..."
-        if [ -f .env.example ]; then
-            cp .env.example .env.docker
+        echo "📋 Creating .env.docker from .env.docker.example..."
+        if [ -f .env.docker.example ]; then
+            cp .env.docker.example .env.docker
             echo "⚠️  Please edit .env.docker with your Redmine configuration before running again"
             exit 1
         else
-            echo "❌ .env.example not found. Please create .env.docker manually"
+            echo "❌ .env.docker.example not found. Please create .env.docker manually"
             exit 1
         fi
     fi

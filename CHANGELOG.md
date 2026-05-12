@@ -7,6 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- Renamed `.env.docker` (previously tracked-but-gitignored placeholder, which trapped local edits as ongoing "modified" status and risked accidental commit of real credentials) to `.env.docker.example`, matching the `.env.example` convention. Users now copy `.env.docker.example` to `.env.docker`, which stays untracked. `deploy.sh` and the README quick-start were updated to copy from the new template name.
+
 ### Fixed
 - **`search_redmine_issues`**: previously returned `null` for `subject`, `status`, `priority`, `project`, `assigned_to`, `author`, `created_on`, and `updated_on` regardless of what `fields` requested, because Redmine's `/search.json` endpoint only populates `id` and a description snippet. The tool now transparently hydrates each search hit via `/issues.json` (with `status_id="*"` so closed matches still hydrate), preserving search relevance order and falling back per-issue to the sparse search result for any id missing from the hydration response (e.g., deleted between calls). Hydration is skipped when `fields` only requests `id` and/or `description`, so the lightweight one-call path is still available. Hydration failures are logged and degrade gracefully to the previous sparse behavior rather than raising. Large id sets are batched at 100 ids per `/issues.json` call to stay within typical URL-length limits.
 

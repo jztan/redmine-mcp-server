@@ -510,7 +510,7 @@ This MCP server provides 43 tools for interacting with Redmine. For detailed doc
 
 ```bash
 # Configure environment
-cp .env.example .env.docker
+cp .env.docker.example .env.docker
 # Edit .env.docker with your Redmine settings
 
 # Run with docker-compose
