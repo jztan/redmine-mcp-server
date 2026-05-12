@@ -120,6 +120,81 @@ def _custom_fields_to_list(issue: Any) -> List[Dict[str, Any]]:
     return custom_fields
 
 
+# Fields that Redmine's /search.json endpoint actually populates.
+# Anything beyond these requires a follow-up /issues.json fetch.
+_SEARCH_API_NATIVE_FIELDS = frozenset({"id", "description"})
+
+# Batch size for /issues.json hydration. The Redmine `issue_id=` filter
+# accepts a comma-separated list; we cap each request to avoid URL-length
+# issues on servers/proxies with stricter limits.
+_HYDRATION_BATCH_SIZE = 100
+
+
+def _search_needs_hydration(fields: Optional[List[str]]) -> bool:
+    """Return True when the requested field set requires /issues.json data.
+
+    /search.json only returns id and description. Skip the extra request
+    when the caller doesn't ask for anything else.
+    """
+    if fields is None or fields == ["*"] or fields == ["all"]:
+        return True
+    if not fields:
+        return False
+    return any(f not in _SEARCH_API_NATIVE_FIELDS for f in fields)
+
+
+def _hydrate_search_results(search_results: List[Any]) -> List[Any]:
+    """Re-fetch search hits via /issues.json so structured fields populate.
+
+    The Redmine Search API returns only id/title/description snippets;
+    callers expect full issue records (status, priority, project,
+    assigned_to, author, timestamps). This calls /issues.json with the
+    matching ids and substitutes the full record where available.
+
+    Preserves the original search ordering. Falls back per-issue to the
+    sparse search result for any id missing from the hydration response.
+    On any unexpected error, returns the original list unchanged so the
+    caller never loses data.
+    """
+    if not search_results:
+        return search_results
+
+    ids: List[Any] = []
+    for issue in search_results:
+        issue_id = getattr(issue, "id", None)
+        if issue_id is not None:
+            ids.append(issue_id)
+
+    if not ids:
+        return search_results
+
+    hydrated_by_id: Dict[Any, Any] = {}
+    try:
+        for start in range(0, len(ids), _HYDRATION_BATCH_SIZE):
+            batch = ids[start : start + _HYDRATION_BATCH_SIZE]
+            id_str = ",".join(str(x) for x in batch)
+            # status_id="*" overrides /issues.json's default "open issues only"
+            # filter so closed issues that matched the search still hydrate.
+            page = _get_redmine_client().issue.filter(
+                issue_id=id_str,
+                status_id="*",
+            )
+            for full_issue in page:
+                full_id = getattr(full_issue, "id", None)
+                if full_id is not None:
+                    hydrated_by_id[full_id] = full_issue
+    except Exception as e:
+        logging.warning(
+            f"Failed to hydrate search results, returning sparse data: {e}"
+        )
+        return search_results
+
+    return [
+        hydrated_by_id.get(getattr(issue, "id", None), issue)
+        for issue in search_results
+    ]
+
+
 def _issue_to_dict(issue: Any, include_custom_fields: bool = False) -> Dict[str, Any]:
     """Convert a python-redmine Issue object to a serializable dict."""
     # Use getattr for all potentially missing attributes (search API may not return all)
@@ -722,7 +797,13 @@ async def search_redmine_issues(
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """Search Redmine issues matching a query string with pagination support.
 
-    Performs text search across issues using the Redmine Search API.
+    Performs text search across issues using the Redmine Search API
+    (/search.json), then transparently hydrates the matching ids via
+    /issues.json so structured fields (subject, status, priority, project,
+    assigned_to, author, timestamps) are populated in the response. The
+    follow-up fetch is skipped when ``fields`` only requests id and/or
+    description, which /search.json can serve on its own.
+
     Supports server-side pagination to prevent MCP token overflow.
 
     Args:
@@ -856,6 +937,15 @@ async def search_redmine_issues(
             f"Retrieved {len(issues_list)} issues with "
             f"offset={offset}, limit={limit}"
         )
+
+        # /search.json returns only id and description. Re-fetch via
+        # /issues.json so structured fields (subject, status, priority,
+        # project, assigned_to, author, timestamps) are populated.
+        if _search_needs_hydration(fields):
+            issues_list = _hydrate_search_results(issues_list)
+            logging.debug(
+                f"Hydrated {len(issues_list)} search results via /issues.json"
+            )
 
         # Convert to dictionaries with optional field selection
         result_issues = [

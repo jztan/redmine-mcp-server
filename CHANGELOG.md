@@ -7,6 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Fixed
+- **`search_redmine_issues`**: previously returned `null` for `subject`, `status`, `priority`, `project`, `assigned_to`, `author`, `created_on`, and `updated_on` regardless of what `fields` requested, because Redmine's `/search.json` endpoint only populates `id` and a description snippet. The tool now transparently hydrates each search hit via `/issues.json` (with `status_id="*"` so closed matches still hydrate), preserving search relevance order and falling back per-issue to the sparse search result for any id missing from the hydration response (e.g., deleted between calls). Hydration is skipped when `fields` only requests `id` and/or `description`, so the lightweight one-call path is still available. Hydration failures are logged and degrade gracefully to the previous sparse behavior rather than raising. Large id sets are batched at 100 ids per `/issues.json` call to stay within typical URL-length limits.
+
 ### Security
 - Pin all GitHub Actions to immutable commit SHAs across all workflows to prevent supply chain attacks via tag hijacking (`actions/checkout`, `actions/setup-python`, `astral-sh/setup-uv`, `actions/github-script`, `codecov/codecov-action`). Version tags are preserved as inline comments.
 - Bump `fastmcp` from 3.2.0 to 3.2.4, patching three security issues: FileUpload now validates actual decoded base64 size instead of trusting client-reported size; proxy client no longer forwards inbound HTTP headers to unrelated remote servers; AuthKit auto-binds token audience to resource URL per RFC 8707, closing a token-reuse gap.
