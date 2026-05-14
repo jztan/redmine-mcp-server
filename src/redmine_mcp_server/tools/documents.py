@@ -65,36 +65,76 @@ _DMSF_UPLOAD_MAX_SIZE_BYTES = 50 * 1024 * 1024
 def _document_to_dict(node: Dict[str, Any]) -> Dict[str, Any]:
     """Serialize a DMSF API node (file / folder / link) into a stable dict.
 
+    DMSF returns two different shapes for the same logical document depending
+    on the endpoint:
+
+    - ``GET /projects/{id}/dmsf.json`` (list) returns flat nodes:
+      ``{"id", "type", "filename", "title", ...}``
+    - ``GET /dmsf_files/{id}.json`` (single) nests current metadata under the
+      latest entry of ``dmsf_file_revisions``: most fields (``description``,
+      ``size``, ``mime_type``, ``user_id``, ``created_at``, ``updated_at``)
+      live there, and the filename is exposed as ``name`` (not ``filename``).
+
+    This serializer merges both shapes into one stable representation, falling
+    back to the latest revision when a field is missing at the top level.
+
     User-controlled fields (``title``, ``name``, ``description``, ``filename``)
     are wrapped in ``<insecure-content>`` boundary tags because they may
     contain prompt-injection payloads.
     """
     if not isinstance(node, dict):
         return {}
-    raw_author = node.get("author")
-    author = raw_author if isinstance(raw_author, dict) else {}
+
+    # The latest revision is the highest-id entry; DMSF returns them in
+    # ascending order so the last element is the current one. Fall back to
+    # max-by-id when the order can't be assumed.
+    revisions = node.get("dmsf_file_revisions")
+    if isinstance(revisions, list) and revisions:
+        latest = revisions[-1]
+        if not isinstance(latest, dict):
+            latest = {}
+    else:
+        latest = {}
+
+    # Author can arrive as a nested dict (list endpoint) or as a bare user_id
+    # on the latest revision (single endpoint). Normalize to either a
+    # ``{"id", "name"}`` dict or ``None``.
+    raw_author = node.get("author") or latest.get("author")
+    if isinstance(raw_author, dict):
+        author: Optional[Dict[str, Any]] = {
+            "id": raw_author.get("id"),
+            "name": wrap_insecure_content(raw_author.get("name", "")),
+        }
+    elif latest.get("user_id") is not None:
+        author = {"id": latest.get("user_id"), "name": None}
+    else:
+        author = None
+
+    filename = node.get("filename") or node.get("name") or ""
+
     return {
         "id": node.get("id"),
         "type": node.get("type"),
-        "filename": wrap_insecure_content(node.get("filename", "")),
-        "title": wrap_insecure_content(node.get("title", "")),
+        "filename": wrap_insecure_content(filename),
+        "title": wrap_insecure_content(node.get("title") or latest.get("title") or ""),
         "name": wrap_insecure_content(node.get("name", "")),
-        "description": wrap_insecure_content(node.get("description", "")),
-        "version": node.get("version"),
-        "size": node.get("size"),
-        "content_type": node.get("content_type"),
+        "description": wrap_insecure_content(
+            node.get("description") or latest.get("description") or ""
+        ),
+        "version": node.get("version") or latest.get("version"),
+        "size": (
+            node.get("size") if node.get("size") is not None else latest.get("size")
+        ),
+        "content_type": node.get("content_type") or latest.get("mime_type"),
         "folder_id": node.get("folder_id"),
         "project_id": node.get("project_id"),
-        "author": (
-            {
-                "id": author.get("id"),
-                "name": wrap_insecure_content(author.get("name", "")),
-            }
-            if author
-            else None
+        "author": author,
+        "created_on": _safe_isoformat(
+            node.get("created_on") or latest.get("created_at")
         ),
-        "created_on": _safe_isoformat(node.get("created_on")),
-        "updated_on": _safe_isoformat(node.get("updated_on")),
+        "updated_on": _safe_isoformat(
+            node.get("updated_on") or latest.get("updated_at")
+        ),
     }
 
 

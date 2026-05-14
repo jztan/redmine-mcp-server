@@ -283,6 +283,122 @@ class TestManageDocumentGet:
         assert result["id"] == 8
 
     @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_get_real_dmsf_shape_merges_revision(self, mock_redmine):
+        """Regression: DMSF's GET /dmsf_files/{id}.json wraps the document
+        in ``{"dmsf_file": {...}}`` and nests almost all metadata
+        (``description``, ``size``, ``mime_type``, ``user_id``,
+        ``created_at``, ``updated_at``) under the latest entry of
+        ``dmsf_file_revisions``. The filename is exposed as ``name``,
+        not ``filename``.
+
+        Earlier serializer read everything as flat top-level keys and
+        silently dropped description, version, size, content_type,
+        author, and timestamps. This test asserts that all of those
+        fields surface correctly when given the real shape."""
+        real_dmsf_response = {
+            "dmsf_file": {
+                "id": 1,
+                "title": "first-file",
+                "name": "ai-366-plan.md",
+                "project_id": 1,
+                "dmsf_file_revisions": [
+                    {
+                        "id": 1,
+                        "version": "0.1",
+                        "size": 13005,
+                        "description": "File number one!",
+                        "mime_type": "text/markdown",
+                        "user_id": 1,
+                        "created_at": "2026-05-12T10:00:00Z",
+                        "updated_at": "2026-05-12T10:05:00Z",
+                    }
+                ],
+            }
+        }
+        mock_redmine.engine.request.return_value = real_dmsf_response
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(action="get", document_id=1)
+
+        assert result["id"] == 1
+        assert "first-file" in result["title"]
+        # Filename surfaces from `name` (DMSF get shape, not `filename`)
+        assert "ai-366-plan.md" in result["filename"]
+        assert "ai-366-plan.md" in result["name"]
+        # Metadata pulled from latest revision
+        assert "File number one!" in result["description"]
+        assert result["version"] == "0.1"
+        assert result["size"] == 13005
+        assert result["content_type"] == "text/markdown"
+        # Author is reconstructed from user_id when no nested dict is present
+        assert result["author"] == {"id": 1, "name": None}
+        # Timestamps come from revision's created_at / updated_at
+        assert result["created_on"] == "2026-05-12T10:00:00Z"
+        assert result["updated_on"] == "2026-05-12T10:05:00Z"
+        assert result["project_id"] == 1
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_get_uses_latest_revision_when_multiple(self, mock_redmine):
+        """When a document has several revisions, the latest one (last in
+        the array per DMSF's ascending order) supplies the current
+        metadata."""
+        response = {
+            "dmsf_file": {
+                "id": 5,
+                "title": "spec",
+                "name": "spec.pdf",
+                "project_id": 1,
+                "dmsf_file_revisions": [
+                    {
+                        "id": 1,
+                        "version": "0.1",
+                        "size": 100,
+                        "description": "initial draft",
+                        "mime_type": "application/pdf",
+                        "user_id": 1,
+                        "created_at": "2026-05-10T10:00:00Z",
+                        "updated_at": "2026-05-10T10:00:00Z",
+                    },
+                    {
+                        "id": 2,
+                        "version": "1.0",
+                        "size": 200,
+                        "description": "release version",
+                        "mime_type": "application/pdf",
+                        "user_id": 2,
+                        "created_at": "2026-05-12T10:00:00Z",
+                        "updated_at": "2026-05-12T10:00:00Z",
+                    },
+                ],
+            }
+        }
+        mock_redmine.engine.request.return_value = response
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(action="get", document_id=5)
+
+        assert result["version"] == "1.0"
+        assert result["size"] == 200
+        assert "release version" in result["description"]
+        assert result["author"]["id"] == 2
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_get_no_revisions_field_still_works(self, mock_redmine):
+        """If a response somehow has no ``dmsf_file_revisions`` (e.g.,
+        the mock fixture in existing tests), the serializer must still
+        return the top-level fields without crashing."""
+        mock_redmine.engine.request.return_value = {"dmsf_file": _make_doc(99)}
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(action="get", document_id=99)
+        assert result["id"] == 99
+        # Top-level fields from the flat fixture still surface
+        assert "spec.pdf" in result["filename"]
+
+    @pytest.mark.asyncio
     async def test_rejects_invalid_document_id(self):
         with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
             result = await manage_document(action="get", document_id=-1)
