@@ -8,16 +8,36 @@ system that exposes a REST API.
 Endpoints used (DMSF plugin REST API):
 
 - ``GET  /projects/{id}/dmsf.json`` — list (folder via ``folder_id``)
-- ``GET  /dmsf_files/{id}.json`` — get metadata
+- ``GET  /dmsf_files/{id}.json`` — get metadata (legacy route preserved
+  for show)
 - ``POST /uploads.json`` — upload binary, returns token (core endpoint)
-- ``POST /projects/{id}/dmsf/commit_files.json`` — finalize upload
-- ``POST /dmsf_files/{id}/revision/create.json`` — update (new revision)
+- ``POST /projects/{id}/dmsf/commit.json`` — finalize upload as a DMSF
+  document (controller action ``dmsf_upload#commit``; reads
+  ``params[:attachments][:uploaded_file]`` and ``[:folder_id]``)
+- ``POST /dmsf/files/{id}/revision/create.json`` — update by creating a
+  new revision. Note the slash form (``dmsf/files``), not the legacy
+  underscore form (``dmsf_files``) which only exists for the show route.
 
 DMSF design notes:
 
 - Every update creates a **new revision**; there is no in-place mutation.
-- Filenames are **immutable**. To replace content, upload a new revision
-  with the same filename.
+- ``title`` and ``name`` are **required** by ``create_revision`` (the
+  controller calls ``.scrub.strip`` on both unconditionally). When the
+  caller omits either, ``_update_document_action`` pre-fetches the
+  current document and uses the existing values.
+- ``name`` is the document filename, and DMSF supports renaming via
+  revisions: when a revision's ``name`` differs from the parent file,
+  the controller assigns it back onto the file. (Earlier docs claiming
+  "filenames are immutable" were wrong.)
+- The caller's ``custom_fields`` parameter maps to DMSF's
+  ``custom_field_values`` key in both the commit and revision-create
+  request bodies.
+- DMSF's commit response is intentionally sparse:
+  ``{"dmsf_files": [{"id": N, "name": "..."}], "total_count": N}``.
+  Follow up with ``action="get"`` for full metadata.
+- Document version bumping (``version_major`` / ``version_minor`` /
+  ``version_patch``) is not exposed by this tool; DMSF auto-increments
+  the patch version on each new revision.
 - DMSF replaces the built-in Documents module rather than complementing it.
   Existing native documents are not accessible via DMSF until migrated
   with ``rake redmine:dmsf_convert_documents`` on the server.
@@ -51,8 +71,15 @@ _DMSF_DISABLED_ERROR = {
 
 # Fields the caller may update on an existing document via a new revision.
 # Unknown keys are silently filtered out before reaching the API.
+#
+# Note: ``name`` is included intentionally — DMSF supports renaming a
+# document by creating a new revision with a different ``name``
+# (``dmsf_files_controller#create_revision`` assigns it back to the
+# parent ``DmsfFile``). The caller's ``custom_fields`` key is mapped to
+# DMSF's ``custom_field_values`` in the request body.
 _DOCUMENT_WRITABLE_FIELDS = {
     "title",
+    "name",
     "description",
     "comment",
     "custom_fields",
@@ -274,7 +301,6 @@ async def _create_document_action(
     description: Optional[str] = None,
     comment: Optional[str] = None,
     folder_id: Optional[int] = None,
-    version: Optional[str] = None,
     custom_fields: Optional[List[Dict[str, Any]]] = None,
     **_: Any,
 ) -> Dict[str, Any]:
@@ -305,41 +331,72 @@ async def _create_document_action(
         # DMSF accepts the same token mechanism as core file uploads.
         token = client.upload(io.BytesIO(content_bytes), filename=filename)["token"]
 
-        # Step 2: commit the upload with metadata via the DMSF endpoint.
-        commit_url = (
-            f"{_client.REDMINE_URL}/projects/{project_id}/dmsf/commit_files.json"
-        )
-        commit_body: Dict[str, Any] = {
+        # Step 2: POST /projects/{id}/dmsf/commit.json (DMSF's REST commit
+        # action `dmsf_upload#commit`). The controller reads
+        # ``params[:attachments]``, picks the entries keyed ``uploaded_file``,
+        # and uses ``params[:attachments][:folder_id]`` for folder targeting.
+        # ``custom_field_values`` is the key the upload helper reads (NOT
+        # ``custom_fields``).
+        commit_url = f"{_client.REDMINE_URL}/projects/{project_id}/dmsf/commit.json"
+        uploaded_file: Dict[str, Any] = {
             "token": token,
             "filename": filename,
         }
         if title is not None:
-            commit_body["title"] = title
+            uploaded_file["title"] = title
         if description is not None:
-            commit_body["description"] = description
+            uploaded_file["description"] = description
         if comment is not None:
-            commit_body["comment"] = comment
-        if folder_id is not None:
-            commit_body["folder_id"] = folder_id
-        if version is not None:
-            commit_body["version"] = version
+            uploaded_file["comment"] = comment
         if custom_fields is not None:
-            commit_body["custom_fields"] = custom_fields
+            uploaded_file["custom_field_values"] = custom_fields
+
+        attachments_body: Dict[str, Any] = {"uploaded_file": uploaded_file}
+        if folder_id is not None:
+            attachments_body["folder_id"] = folder_id
 
         payload = client.engine.request(
             "post",
             commit_url,
             headers={"Content-Type": "application/json"},
-            data=json.dumps({"dmsf_file": commit_body}),
+            data=json.dumps({"attachments": attachments_body}),
         )
-        doc = _extract_dmsf_single_doc(payload)
-        return _document_to_dict(doc) if doc else {"success": True}
+
+        # DMSF's commit response is intentionally sparse: each entry is
+        # ``{"id": N, "name": "..."}`` (no description / size / mime /
+        # timestamps). Callers who need full metadata should follow up
+        # with action="get".
+        files = payload.get("dmsf_files", []) if isinstance(payload, dict) else []
+        if not files or not isinstance(files[0], dict):
+            return {"success": True}
+        created = _document_to_dict(files[0])
+        created["note"] = (
+            "DMSF's commit response only includes id + name. "
+            "Call action='get' with the returned id for full metadata "
+            "(description, size, version, timestamps, etc.)."
+        )
+        return created
     except Exception as e:
         return _handle_redmine_error(
             e,
             f"creating DMSF document '{filename}' in project {project_id}",
             {"resource_type": "document", "resource_id": filename},
         )
+
+
+def _fetch_current_dmsf_doc(document_id: int) -> Dict[str, Any]:
+    """Fetch the current document via the show endpoint and return the
+    raw (unwrapped) dict. Used by ``_update_document_action`` to obtain
+    the required ``title`` and ``name`` when the caller has not supplied
+    overrides (``dmsf_files_controller#create_revision`` calls
+    ``.scrub.strip`` on both unconditionally, so nil values crash the
+    server)."""
+    from .. import _client
+
+    client = _get_redmine_client()
+    url = f"{_client.REDMINE_URL}/dmsf_files/{document_id}.json"
+    payload = client.engine.request("get", url)
+    return _extract_dmsf_single_doc(payload)
 
 
 async def _update_document_action(
@@ -356,22 +413,43 @@ async def _update_document_action(
         return {
             "error": (
                 "No writable fields provided. Allowed fields: "
-                f"{sorted(_DOCUMENT_WRITABLE_FIELDS)}. "
-                "Note: DMSF filenames are immutable; to replace content, "
-                "create a new revision via the create action with the same "
-                "filename."
+                f"{sorted(_DOCUMENT_WRITABLE_FIELDS)}."
             )
         }
     from .. import _client
 
     try:
+        # `title` and `name` are required by DMSF's create_revision action
+        # (the controller does .scrub.strip on both unconditionally). When
+        # the caller omits either, pull the current value from the show
+        # endpoint so we don't 500 the server.
+        current = _fetch_current_dmsf_doc(document_id)
+        if not current:
+            return {"error": f"Document {document_id} not found."}
+
+        revision_body: Dict[str, Any] = {
+            "title": filtered.get("title", current.get("title") or ""),
+            "name": filtered.get("name", current.get("name") or ""),
+        }
+        if "description" in filtered:
+            revision_body["description"] = filtered["description"]
+        if "comment" in filtered:
+            revision_body["comment"] = filtered["comment"]
+        if "custom_fields" in filtered:
+            # DMSF reads this key, not "custom_fields", in both
+            # commit and create_revision paths.
+            revision_body["custom_field_values"] = filtered["custom_fields"]
+
         client = _get_redmine_client()
-        url = f"{_client.REDMINE_URL}/dmsf_files/{document_id}/revision/create.json"
+        # Canonical route is /dmsf/files/:id/revision/create (with slash);
+        # the underscore form /dmsf_files/:id/... only exists for GET-show
+        # legacy compatibility and 404s on this POST.
+        url = f"{_client.REDMINE_URL}/dmsf/files/{document_id}/revision/create.json"
         client.engine.request(
             "post",
             url,
             headers={"Content-Type": "application/json"},
-            data=json.dumps({"dmsf_file_revision": filtered}),
+            data=json.dumps({"dmsf_file_revision": revision_body}),
         )
         return {
             "success": True,
@@ -419,7 +497,6 @@ async def manage_document(
     title: Optional[str] = None,
     description: Optional[str] = None,
     comment: Optional[str] = None,
-    version: Optional[str] = None,
     custom_fields: Optional[List[Dict[str, Any]]] = None,
     fields: Optional[Dict[str, Any]] = None,
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
@@ -432,14 +509,17 @@ async def manage_document(
         * ``get``     — fetch a single document's metadata by ID.
         * ``create``  — upload a new document. Two-step under the hood:
                         ``POST /uploads.json`` → token, then
-                        ``POST /projects/{id}/dmsf/commit_files.json``.
-                        Accepts file content as ``content_base64``.
-                        Capped at 50 MiB decoded.
+                        ``POST /projects/{id}/dmsf/commit.json``. Accepts
+                        file content as ``content_base64`` (capped at
+                        50 MiB decoded). DMSF's commit response only
+                        includes ``id`` + ``name``; call ``get`` with the
+                        returned id for full metadata.
         * ``update``  — update document metadata. **Creates a new revision**
                         (DMSF is versioned; in-place mutation is not
-                        supported). DMSF filenames are immutable — to
-                        replace content, ``create`` a new revision with
-                        the same filename.
+                        supported). Supports renaming via the ``name``
+                        field in ``fields``. Required fields (``title``,
+                        ``name``) are auto-populated from the current
+                        document when not supplied.
 
     Args:
         action: One of ``list``, ``get``, ``create``, ``update``.
@@ -448,23 +528,33 @@ async def manage_document(
         folder_id: Optional DMSF folder ID for ``list`` and ``create``.
         limit: Max results for ``list`` (1-100, default 100).
         document_id: Required for ``get`` and ``update``.
-        filename: Required for ``create``. Becomes the immutable filename
-            for all future revisions.
+        filename: Required for ``create``. Used as the initial filename;
+            can be changed later by passing ``name`` in ``update``'s
+            ``fields`` dict.
         content_base64: Required for ``create``. Raw file bytes as base64.
         title: Optional human-readable title (``create``).
         description: Optional description (``create``).
         comment: Optional revision comment (``create``).
-        version: Optional version label (``create``).
         custom_fields: Optional list of ``{"id": N, "value": ...}`` dicts.
-        fields: For ``update``: dict of metadata to update. Allowed keys:
-            ``title``, ``description``, ``comment``, ``custom_fields``.
-            Unknown keys are silently filtered.
+            Sent to DMSF as ``custom_field_values``.
+        fields: For ``update``: dict of metadata to change. Allowed keys:
+            ``title``, ``name`` (rename), ``description``, ``comment``,
+            ``custom_fields``. Unknown keys are silently filtered.
 
     Returns:
         For ``list``: list of document metadata dicts.
-        For ``get`` / ``create``: a single document metadata dict.
-        For ``update``: success dict with ``updated_fields``.
+        For ``get``: a single document metadata dict.
+        For ``create``: a sparse dict (``id`` + ``name`` only) plus a
+            ``note`` pointing at ``action="get"`` for full metadata —
+            DMSF's commit endpoint deliberately returns just the id+name.
+        For ``update``: success dict with ``updated_fields`` and a ``note``
+            confirming a new revision was created.
         On any failure: ``{"error": "..."}``.
+
+    Limitations:
+        Document version bumping (major/minor/patch on a new revision) is
+        not exposed by this tool; DMSF auto-increments the patch version
+        on commit. Use the Redmine web UI for explicit version control.
     """
     if not _is_dmsf_enabled():
         return dict(_DMSF_DISABLED_ERROR)
@@ -479,7 +569,6 @@ async def manage_document(
         title=title,
         description=description,
         comment=comment,
-        version=version,
         custom_fields=custom_fields,
         fields=fields,
     )

@@ -1970,22 +1970,23 @@ Combined DMSF CRUD tool. **Action-dispatched** — pass `action="list"|"get"|"cr
 |---|---|---|
 | `list` | `project_id` | `folder_id`, `limit` (1–100) |
 | `get` | `document_id` | – |
-| `create` | `project_id`, `filename`, `content_base64` | `title`, `description`, `comment`, `folder_id`, `version`, `custom_fields` |
+| `create` | `project_id`, `filename`, `content_base64` | `title`, `description`, `comment`, `folder_id`, `custom_fields` |
 | `update` | `document_id`, `fields` | – |
 
 **Common parameter types:**
 
 - `project_id`: `int` or `string` (Redmine project identifier).
 - `folder_id`, `document_id`: positive `int`.
-- `filename`: `string` (becomes the **immutable** filename for all future revisions of the document).
+- `filename`: `string`. Used as the initial filename on `create`; can be changed later by passing `name` in `update`'s `fields` (DMSF renames the parent file when a revision's `name` differs).
 - `content_base64`: `string` (raw file bytes encoded as base64). Decoded payload is capped at **50 MiB**.
-- `fields` (for `update`): dict with any subset of the writable keys: `title`, `description`, `comment`, `custom_fields`. Unknown keys (including `filename`) are silently filtered out.
+- `custom_fields`: list of `{"id": N, "value": ...}` dicts. Sent to DMSF as `custom_field_values` (the API's internal key).
+- `fields` (for `update`): dict with any subset of the writable keys: `title`, `name` (rename), `description`, `comment`, `custom_fields`. Unknown keys are silently filtered out.
 
 **Returns:**
 
 - `list`: list of node dicts. Each node has `id`, `type` (`file` / `folder` / `file-link` / `folder-link`), `filename`, `title`, `name`, `description`, `version`, `size`, `content_type`, `folder_id`, `project_id`, `author` (`{id, name}`), `created_on`, `updated_on`.
-- `get`: a single node dict with the same shape.
-- `create`: the created document dict, or `{"success": True}` on a 204 / empty response.
+- `get`: a single node dict with the same shape. Most metadata (`description`, `size`, `version`, `mime_type`, `user_id`, timestamps) is pulled from the latest entry of `dmsf_file_revisions[]` — see the design notes below.
+- `create`: a **sparse** dict containing only `id` + `name` (plus a `note` pointing at `action="get"` for full metadata). DMSF's commit endpoint deliberately returns id + name only; call `get` if you need description/size/version/timestamps. Returns `{"success": True}` if the response is unexpectedly empty.
 - `update`: `{"success": True, "document_id": N, "updated_fields": [...], "note": "DMSF created a new revision; previous revisions remain accessible via the document's revision history."}`.
 - Any failure: `{"error": "..."}`.
 
@@ -2020,14 +2021,29 @@ manage_document(
     document_id=42,
     fields={"title": "Specification v2", "description": "Updated draft"},
 )
+
+# Rename a document (DMSF assigns the revision's `name` back to the parent file)
+manage_document(
+    action="update",
+    document_id=42,
+    fields={"name": "spec-v2.pdf"},
+)
 ```
 
-**DMSF design notes (read these before reporting bugs):**
+**DMSF design notes:**
 
 - **Every update creates a new revision.** DMSF is a versioned document system — there is no in-place mutation. Previous revisions remain accessible via the document's revision history in the Redmine UI.
-- **Filenames are immutable.** To change the file content, call `action="create"` again with the same `filename`; DMSF will add the new content as a new revision under the existing document. To rename, you must recreate the document (and update any external references manually).
+- **Required-field auto-population on `update`.** DMSF's revision-create controller crashes (`NoMethodError` on `nil.scrub`) if either `title` or `name` is missing. To make `update` ergonomic when the caller only wants to change `description`, the tool pre-fetches the current document via `GET /dmsf_files/{id}.json` and uses the existing `title`/`name` as defaults. The caller's overrides take precedence.
+- **Renaming.** Set `fields["name"]` on `update` to rename the document; DMSF propagates the new name to the parent file. The list-shape `filename` field cannot be used in `update` — only the canonical `name` key.
+- **Sparse `create` response.** The commit endpoint intentionally returns only `id` + `name` (plus a `total_count`). For full metadata, follow up with `action="get"` using the returned `id`.
+- **Two response shapes for the same document.** `list` returns flat nodes; `get` nests most metadata under `dmsf_file_revisions[]`. The serializer merges both into one stable representation.
+- **Version bumping not exposed.** DMSF's `create_revision` accepts `version_major` / `version_minor` / `version_patch` top-level ints; this tool does not surface those — DMSF auto-increments the patch version on each new revision. Use the Redmine web UI if you need explicit semantic version control.
 - **DMSF replaces the built-in Documents module** rather than complementing it. If your Redmine instance has existing native documents, the server admin must run `rake redmine:dmsf_convert_documents` to migrate them before they're accessible here.
-- **HTTP endpoint paths used** (visible in raw error messages): `GET /projects/{id}/dmsf.json` (list), `GET /dmsf_files/{id}.json` (get), `POST /uploads.json` + `POST /projects/{id}/dmsf/commit_files.json` (create), `POST /dmsf_files/{id}/revision/create.json` (update).
+- **HTTP endpoint paths used** (visible in raw error messages):
+  - `GET /projects/{id}/dmsf.json` — list
+  - `GET /dmsf_files/{id}.json` — get (legacy path is preserved for show)
+  - `POST /uploads.json` then `POST /projects/{id}/dmsf/commit.json` — create
+  - `POST /dmsf/files/{id}/revision/create.json` — update (note slash, not underscore: `dmsf/files`, not `dmsf_files`)
 - If you see a 404 on these endpoints, the `redmine_dmsf` plugin is not installed (or is too old to expose the REST API); double-check the server with `bundle exec rake redmine:plugins:migrate RAILS_ENV=production` after installation.
 
 **Notes:**

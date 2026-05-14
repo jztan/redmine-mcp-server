@@ -419,10 +419,25 @@ class TestManageDocumentCreate:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
     @patch("redmine_mcp_server._client.redmine")
-    async def test_create_success(self, mock_redmine):
-        # Step 1 (client.upload) returns {"token": ...}; Step 2 returns dmsf_file
+    async def test_create_real_dmsf_shape(self, mock_redmine):
+        """Regression: verify the request and response shapes match the
+        actual ``redmine_dmsf`` plugin.
+
+        - URL is ``POST /projects/{id}/dmsf/commit.json`` (NOT
+          ``commit_files.json`` — that route doesn't exist).
+        - Body is wrapped as ``{"attachments": {"uploaded_file": {...},
+          "folder_id": N}}``; the controller selects entries keyed
+          ``uploaded_file`` and reads ``folder_id`` at the attachments
+          level.
+        - Response is sparse: ``{"dmsf_files": [{"id": N, "name": "..."}],
+          "total_count": N}`` — no description / size / mime / timestamps.
+        """
         mock_redmine.upload.return_value = {"token": "tok-abc"}
-        mock_redmine.engine.request.return_value = {"dmsf_file": _make_doc(99)}
+        # Real DMSF commit response shape (verified against live instance)
+        mock_redmine.engine.request.return_value = {
+            "dmsf_files": [{"id": 99, "name": "spec.pdf"}],
+            "total_count": 1,
+        }
 
         with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
             result = await manage_document(
@@ -432,20 +447,82 @@ class TestManageDocumentCreate:
                 content_base64=_b64(b"%PDF-fake-content"),
                 title="Spec",
                 description="The spec",
+                comment="Initial upload",
+                folder_id=7,
             )
 
-        assert result["id"] == 99
-        # Step 1: upload called
+        # Step 1: upload binary
         assert mock_redmine.upload.called
-        # Step 2: POST to dmsf/commit_files.json with token + filename
+
+        # Step 2: POST to /projects/{id}/dmsf/commit.json
         call_args = mock_redmine.engine.request.call_args
         assert call_args.args[0] == "post"
-        assert call_args.args[1].endswith("/projects/proj/dmsf/commit_files.json")
+        assert (
+            call_args.args[1] == "http://localhost:3000/projects/proj/dmsf/commit.json"
+        )
+
+        # Body has the attachments → uploaded_file shape
         body = json.loads(call_args.kwargs["data"])
-        assert body["dmsf_file"]["token"] == "tok-abc"
-        assert body["dmsf_file"]["filename"] == "spec.pdf"
-        assert body["dmsf_file"]["title"] == "Spec"
-        assert body["dmsf_file"]["description"] == "The spec"
+        assert "attachments" in body
+        assert body["attachments"]["folder_id"] == 7
+        uploaded = body["attachments"]["uploaded_file"]
+        assert uploaded["token"] == "tok-abc"
+        assert uploaded["filename"] == "spec.pdf"
+        assert uploaded["title"] == "Spec"
+        assert uploaded["description"] == "The spec"
+        assert uploaded["comment"] == "Initial upload"
+        # No "dmsf_file" wrapper (that was the old wrong shape)
+        assert "dmsf_file" not in body
+
+        # Response surfaces id + name from dmsf_files[0]
+        assert result["id"] == 99
+        assert "spec.pdf" in result["filename"]  # filename falls back from `name`
+        # ... and a `note` pointing the caller at action="get" for full metadata
+        assert "note" in result
+        assert "action='get'" in result["note"]
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_create_maps_custom_fields_to_custom_field_values(self, mock_redmine):
+        """Caller passes ``custom_fields``; DMSF reads ``custom_field_values``."""
+        mock_redmine.upload.return_value = {"token": "tok-xyz"}
+        mock_redmine.engine.request.return_value = {
+            "dmsf_files": [{"id": 1, "name": "f.pdf"}],
+            "total_count": 1,
+        }
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            await manage_document(
+                action="create",
+                project_id="proj",
+                filename="f.pdf",
+                content_base64=_b64(b"x"),
+                custom_fields=[{"id": 5, "value": "hello"}],
+            )
+        body = json.loads(mock_redmine.engine.request.call_args.kwargs["data"])
+        uploaded = body["attachments"]["uploaded_file"]
+        # Key must be the DMSF-expected name
+        assert "custom_field_values" in uploaded
+        assert uploaded["custom_field_values"] == [{"id": 5, "value": "hello"}]
+        assert "custom_fields" not in uploaded
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_create_empty_response(self, mock_redmine):
+        """If the commit response is unexpectedly empty (no ``dmsf_files``
+        key, or empty list), return ``{"success": True}`` so the caller
+        knows the upload didn't outright fail."""
+        mock_redmine.upload.return_value = {"token": "tok"}
+        mock_redmine.engine.request.return_value = {"dmsf_files": []}
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(
+                action="create",
+                project_id="proj",
+                filename="f.txt",
+                content_base64=_b64(b"x"),
+            )
+        assert result == {"success": True}
 
     @pytest.mark.asyncio
     async def test_blocked_in_read_only_mode(self):
@@ -538,40 +615,169 @@ class TestManageDocumentCreate:
 # ---------------------------------------------------------------------------
 
 
+def _real_dmsf_get_response(
+    doc_id: int = 42, title: str = "first-file", name: str = "spec.pdf"
+) -> dict:
+    """Build a response in the real DMSF GET /dmsf_files/{id}.json shape."""
+    return {
+        "dmsf_file": {
+            "id": doc_id,
+            "title": title,
+            "name": name,
+            "project_id": 1,
+            "dmsf_file_revisions": [
+                {
+                    "id": 1,
+                    "version": "0.1",
+                    "size": 100,
+                    "description": "initial",
+                    "mime_type": "application/pdf",
+                    "user_id": 1,
+                    "created_at": "2026-05-12T10:00:00Z",
+                    "updated_at": "2026-05-12T10:00:00Z",
+                }
+            ],
+        }
+    }
+
+
 class TestManageDocumentUpdate:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
     @patch("redmine_mcp_server._client.redmine")
-    async def test_update_success(self, mock_redmine):
-        mock_redmine.engine.request.return_value = True
+    async def test_update_uses_canonical_url_and_real_body(self, mock_redmine):
+        """Regression: verify the request hits the canonical revision-create
+        URL (``/dmsf/files/{id}/revision/create.json`` with a slash, not
+        ``/dmsf_files/...`` which doesn't exist for this POST) and that
+        the body wraps fields under ``dmsf_file_revision``.
+
+        Also verifies the auto-fetch behavior: when the caller updates
+        only ``description``, the tool pre-fetches the current document
+        to populate the required ``title`` and ``name`` fields (DMSF's
+        controller crashes on nil for either)."""
+        # First request: GET /dmsf_files/42.json (auto-fetch current state).
+        # Second request: POST /dmsf/files/42/revision/create.json.
+        mock_redmine.engine.request.side_effect = [
+            _real_dmsf_get_response(42, title="first-file", name="spec.pdf"),
+            True,
+        ]
         with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
             result = await manage_document(
                 action="update",
                 document_id=42,
-                fields={"title": "New", "description": "Updated"},
+                fields={"description": "Updated description"},
             )
+
         assert result["success"] is True
-        assert set(result["updated_fields"]) == {"title", "description"}
-        call_args = mock_redmine.engine.request.call_args
-        assert call_args.args[0] == "post"
-        assert call_args.args[1].endswith("/dmsf_files/42/revision/create.json")
+        assert result["updated_fields"] == ["description"]
+
+        # Two HTTP calls: pre-fetch GET and revision-create POST
+        assert mock_redmine.engine.request.call_count == 2
+        get_call, post_call = mock_redmine.engine.request.call_args_list
+
+        # Pre-fetch GET uses the underscore (legacy) show route
+        assert get_call.args[0] == "get"
+        assert get_call.args[1].endswith("/dmsf_files/42.json")
+
+        # POST uses the canonical /dmsf/files/.../revision/create route
+        assert post_call.args[0] == "post"
+        assert post_call.args[1] == (
+            "http://localhost:3000/dmsf/files/42/revision/create.json"
+        )
+
+        body = json.loads(post_call.kwargs["data"])
+        rev = body["dmsf_file_revision"]
+        # Required fields auto-populated from the current document
+        assert rev["title"] == "first-file"
+        assert rev["name"] == "spec.pdf"
+        # Caller's update
+        assert rev["description"] == "Updated description"
+        # No legacy "dmsf_files" URL or wrong key
+        assert "comment" not in rev
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
     @patch("redmine_mcp_server._client.redmine")
-    async def test_filters_unknown_fields(self, mock_redmine):
-        mock_redmine.engine.request.return_value = True
+    async def test_update_caller_can_override_title_and_name(self, mock_redmine):
+        """If the caller supplies ``title`` or ``name`` in ``fields``, that
+        value takes precedence over the current document's values."""
+        mock_redmine.engine.request.side_effect = [
+            _real_dmsf_get_response(1, title="old-title", name="old.pdf"),
+            True,
+        ]
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(
+                action="update",
+                document_id=1,
+                fields={"title": "new-title", "name": "new.pdf"},
+            )
+        assert set(result["updated_fields"]) == {"title", "name"}
+        body = json.loads(mock_redmine.engine.request.call_args_list[1].kwargs["data"])
+        assert body["dmsf_file_revision"]["title"] == "new-title"
+        assert body["dmsf_file_revision"]["name"] == "new.pdf"
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_update_maps_custom_fields_to_custom_field_values(self, mock_redmine):
+        """Caller passes ``custom_fields``; DMSF reads ``custom_field_values``."""
+        mock_redmine.engine.request.side_effect = [
+            _real_dmsf_get_response(),
+            True,
+        ]
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            await manage_document(
+                action="update",
+                document_id=42,
+                fields={"custom_fields": [{"id": 5, "value": "foo"}]},
+            )
+        body = json.loads(mock_redmine.engine.request.call_args_list[1].kwargs["data"])
+        rev = body["dmsf_file_revision"]
+        # Key must be the DMSF-expected name
+        assert rev["custom_field_values"] == [{"id": 5, "value": "foo"}]
+        assert "custom_fields" not in rev
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_update_filters_unknown_and_immutable_keys(self, mock_redmine):
+        """Unknown keys and DMSF-immutable keys (``filename``, ``id``, etc.)
+        are silently filtered. ``name`` is the canonical mutable-filename
+        key and is accepted; ``filename`` (the list-shape synonym) is NOT
+        accepted for updates."""
+        mock_redmine.engine.request.side_effect = [
+            _real_dmsf_get_response(),
+            True,
+        ]
         with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
             result = await manage_document(
                 action="update",
                 document_id=42,
                 fields={"title": "New", "evil": "bad", "filename": "x"},
             )
-        # filename should be filtered (immutable in DMSF)
+        # Only "title" is writable; "evil" and "filename" are filtered out
         assert result["updated_fields"] == ["title"]
-        body = json.loads(mock_redmine.engine.request.call_args.kwargs["data"])
-        assert "evil" not in body["dmsf_file_revision"]
-        assert "filename" not in body["dmsf_file_revision"]
+        body = json.loads(mock_redmine.engine.request.call_args_list[1].kwargs["data"])
+        rev = body["dmsf_file_revision"]
+        assert "evil" not in rev
+        assert "filename" not in rev
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_update_returns_error_when_document_not_found(self, mock_redmine):
+        """If the pre-fetch finds no document, return a clean not-found
+        error instead of trying to POST the revision (which would fail
+        with the same 404 anyway, but less clearly)."""
+        mock_redmine.engine.request.return_value = {}  # empty payload from GET
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(
+                action="update", document_id=999, fields={"title": "X"}
+            )
+        assert "error" in result
+        assert "not found" in result["error"]
+        # We should NOT have attempted the POST after a failed pre-fetch
+        assert mock_redmine.engine.request.call_count == 1
 
     @pytest.mark.asyncio
     async def test_blocked_in_read_only_mode(self):
