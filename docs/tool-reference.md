@@ -1970,15 +1970,16 @@ Combined DMSF CRUD tool. **Action-dispatched** — pass `action="list"|"get"|"cr
 |---|---|---|
 | `list` | `project_id` | `folder_id`, `limit` (1–100) |
 | `get` | `document_id` | – |
-| `create` | `project_id`, `filename`, `content_base64` | `title`, `description`, `comment`, `folder_id`, `custom_fields` |
+| `create` | `project_id`, `filename`, `content_base64` | `title`, `description`, `comment`, `folder_id`, `version`, `custom_fields` |
 | `update` | `document_id`, `fields` | – |
 
 **Common parameter types:**
 
 - `project_id`: `int` or `string` (Redmine project identifier).
 - `folder_id`, `document_id`: positive `int`.
-- `filename`: `string`. Used as the initial filename on `create`; can be changed later by passing `name` in `update`'s `fields` (DMSF renames the parent file when a revision's `name` differs).
+- `filename`: `string`. Used as the initial filename on `create`; can be changed later by passing `name` in `update`'s `fields` (DMSF renames the parent file when a revision's `name` differs). **Sent to DMSF as the `name` key** inside `attachments.uploaded_file` — the upload helper reads `committed_file[:name]`, not `[:filename]`.
 - `content_base64`: `string` (raw file bytes encoded as base64). Decoded payload is capped at **50 MiB**.
+- `version` (for `create`): semantic version string for the new revision, e.g. `"1.0"` or `"1.2.3"`. Accepts `"X"`, `"X.Y"`, or `"X.Y.Z"`; missing parts are padded with `"0"`. Each part must be a non-negative integer. DMSF stores `major_version` / `minor_version` / `patch_version` as separate integer columns; the tool splits on `.` before sending.
 - `custom_fields`: list of `{"id": N, "value": ...}` dicts. Sent to DMSF as `custom_field_values` (the API's internal key).
 - `fields` (for `update`): dict with any subset of the writable keys: `title`, `name` (rename), `description`, `comment`, `custom_fields`. Unknown keys are silently filtered out.
 
@@ -2002,17 +2003,18 @@ manage_document(action="list", project_id="docs", folder_id=12)
 # Get metadata for one document
 manage_document(action="get", document_id=42)
 
-# Upload a new document
+# Upload a new document with an explicit initial version
 import base64
 content_b64 = base64.b64encode(open("spec.pdf", "rb").read()).decode()
 manage_document(
     action="create",
     project_id="docs",
-    filename="spec.pdf",
+    filename="spec.pdf",       # sent to DMSF as `name` (the helper reads :name)
     content_base64=content_b64,
     title="Specification",
     description="Initial draft",
     comment="Created from CLI",
+    version="0.1",             # split into version_major / version_minor / version_patch
 )
 
 # Update metadata (creates a new revision — DMSF is versioned)
@@ -2037,7 +2039,7 @@ manage_document(
 - **Renaming.** Set `fields["name"]` on `update` to rename the document; DMSF propagates the new name to the parent file. The list-shape `filename` field cannot be used in `update` — only the canonical `name` key.
 - **Sparse `create` response.** The commit endpoint intentionally returns only `id` + `name` (plus a `total_count`). For full metadata, follow up with `action="get"` using the returned `id`.
 - **Two response shapes for the same document.** `list` returns flat nodes; `get` nests most metadata under `dmsf_file_revisions[]`. The serializer merges both into one stable representation.
-- **Version bumping not exposed.** DMSF's `create_revision` accepts `version_major` / `version_minor` / `version_patch` top-level ints; this tool does not surface those — DMSF auto-increments the patch version on each new revision. Use the Redmine web UI if you need explicit semantic version control.
+- **Version on `create`, not on `update`.** Pass a semantic `version` string (e.g. `"1.2.3"`) on `create` to set the initial revision's version. The tool splits the string into `version_major` / `version_minor` / `version_patch` and nests them inside `attachments.uploaded_file` (where DMSF's commit helper reads them). `update` does **not** expose version control — DMSF auto-increments the patch version when a new revision is created via `dmsf_files#create_revision`. Use the Redmine web UI if you need explicit semantic version control on existing documents. (Why the asymmetry? DMSF's two endpoints read the version fields from different places: `commit` reads them nested inside `uploaded_file`, while `create_revision` reads them from top-level `params`. The MCP tool covers the more common case — version-at-upload-time.)
 - **DMSF replaces the built-in Documents module** rather than complementing it. If your Redmine instance has existing native documents, the server admin must run `rake redmine:dmsf_convert_documents` to migrate them before they're accessible here.
 - **HTTP endpoint paths used** (visible in raw error messages):
   - `GET /projects/{id}/dmsf.json` — list

@@ -25,19 +25,30 @@ DMSF design notes:
   controller calls ``.scrub.strip`` on both unconditionally). When the
   caller omits either, ``_update_document_action`` pre-fetches the
   current document and uses the existing values.
+- The caller-facing ``filename`` parameter on ``create`` is sent to DMSF
+  as the ``name`` key inside ``attachments.uploaded_file``. The upload
+  helper reads ``committed_file[:name]`` (not ``[:filename]``) and
+  assigns it to both ``DmsfFile.name`` and ``DmsfFileRevision.name``.
 - ``name`` is the document filename, and DMSF supports renaming via
-  revisions: when a revision's ``name`` differs from the parent file,
-  the controller assigns it back onto the file. (Earlier docs claiming
-  "filenames are immutable" were wrong.)
+  revisions: when an update's ``name`` differs from the parent file's
+  current name, the controller assigns the new name back onto the
+  ``DmsfFile``. (Earlier docs claiming "filenames are immutable" were
+  wrong.)
 - The caller's ``custom_fields`` parameter maps to DMSF's
   ``custom_field_values`` key in both the commit and revision-create
   request bodies.
 - DMSF's commit response is intentionally sparse:
   ``{"dmsf_files": [{"id": N, "name": "..."}], "total_count": N}``.
   Follow up with ``action="get"`` for full metadata.
-- Document version bumping (``version_major`` / ``version_minor`` /
-  ``version_patch``) is not exposed by this tool; DMSF auto-increments
-  the patch version on each new revision.
+- A caller-supplied ``version`` string on ``create`` (e.g. ``"1.2.3"``)
+  is split into ``version_major`` / ``version_minor`` / ``version_patch``
+  and nested inside ``attachments.uploaded_file`` (where DMSF's commit
+  helper reads them). ``update`` does **not** expose version control —
+  DMSF auto-increments the patch version on each new revision. Note the
+  asymmetry: ``commit`` reads version fields nested inside the uploaded
+  file dict, whereas ``create_revision`` reads them from top-level
+  ``params``. The MCP tool covers the more common case
+  (version-at-upload-time).
 - DMSF replaces the built-in Documents module rather than complementing it.
   Existing native documents are not accessible via DMSF until migrated
   with ``rake redmine:dmsf_convert_documents`` on the server.
@@ -293,6 +304,30 @@ def _decode_content_base64(content_base64: str) -> Union[bytes, Dict[str, str]]:
     return content_bytes
 
 
+def _split_dmsf_version(version: str) -> Union[Dict[str, str], Dict[str, str]]:
+    """Split a caller-supplied version string into DMSF's three-part shape.
+
+    Accepts ``"X"``, ``"X.Y"``, or ``"X.Y.Z"`` and pads missing parts with
+    ``"0"``. Each part must be a non-negative integer; non-numeric input
+    is rejected with an error dict (the marker key is ``"error"``, so the
+    caller can distinguish success from failure).
+    """
+    parts = (str(version).split(".") + ["0", "0", "0"])[:3]
+    for part in parts:
+        if not part.isdigit():
+            return {
+                "error": (
+                    f"Invalid version '{version}'. Expected 'X', 'X.Y', "
+                    "or 'X.Y.Z' where each part is a non-negative integer."
+                )
+            }
+    return {
+        "version_major": parts[0],
+        "version_minor": parts[1],
+        "version_patch": parts[2],
+    }
+
+
 async def _create_document_action(
     project_id: Optional[Union[str, int]] = None,
     filename: Optional[str] = None,
@@ -301,6 +336,7 @@ async def _create_document_action(
     description: Optional[str] = None,
     comment: Optional[str] = None,
     folder_id: Optional[int] = None,
+    version: Optional[str] = None,
     custom_fields: Optional[List[Dict[str, Any]]] = None,
     **_: Any,
 ) -> Dict[str, Any]:
@@ -317,6 +353,14 @@ async def _create_document_action(
         return {"error": "content_base64 is required and must be a non-empty string."}
     if folder_id is not None and not _is_positive_int(folder_id):
         return {"error": "folder_id must be a positive integer."}
+
+    # Pre-validate version splitting before the network round-trip.
+    version_parts: Optional[Dict[str, str]] = None
+    if version is not None:
+        split = _split_dmsf_version(version)
+        if "error" in split:
+            return split
+        version_parts = split
 
     decoded = _decode_content_base64(content_base64)
     if isinstance(decoded, dict):
@@ -335,12 +379,22 @@ async def _create_document_action(
         # action `dmsf_upload#commit`). The controller reads
         # ``params[:attachments]``, picks the entries keyed ``uploaded_file``,
         # and uses ``params[:attachments][:folder_id]`` for folder targeting.
-        # ``custom_field_values`` is the key the upload helper reads (NOT
-        # ``custom_fields``).
+        #
+        # Body shape verified against ``dmsf_upload_helper.rb`` (which the
+        # commit action calls into):
+        #   - key for the filename is ``name`` (NOT ``filename``) — the helper
+        #     does ``committed_file[:name]`` and assigns it to both
+        #     ``DmsfFile.name`` and ``DmsfFileRevision.name``
+        #   - version is split into ``version_major`` / ``version_minor`` /
+        #     ``version_patch``, nested inside the uploaded_file dict (the
+        #     ``create_revision`` controller for updates reads these
+        #     top-level instead — different convention per endpoint)
+        #   - custom fields key is ``custom_field_values`` (NOT
+        #     ``custom_fields``)
         commit_url = f"{_client.REDMINE_URL}/projects/{project_id}/dmsf/commit.json"
         uploaded_file: Dict[str, Any] = {
             "token": token,
-            "filename": filename,
+            "name": filename,
         }
         if title is not None:
             uploaded_file["title"] = title
@@ -348,6 +402,8 @@ async def _create_document_action(
             uploaded_file["description"] = description
         if comment is not None:
             uploaded_file["comment"] = comment
+        if version_parts is not None:
+            uploaded_file.update(version_parts)
         if custom_fields is not None:
             uploaded_file["custom_field_values"] = custom_fields
 
@@ -497,6 +553,7 @@ async def manage_document(
     title: Optional[str] = None,
     description: Optional[str] = None,
     comment: Optional[str] = None,
+    version: Optional[str] = None,
     custom_fields: Optional[List[Dict[str, Any]]] = None,
     fields: Optional[Dict[str, Any]] = None,
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
@@ -530,11 +587,19 @@ async def manage_document(
         document_id: Required for ``get`` and ``update``.
         filename: Required for ``create``. Used as the initial filename;
             can be changed later by passing ``name`` in ``update``'s
-            ``fields`` dict.
+            ``fields`` dict. Sent to DMSF as the ``name`` key inside
+            ``attachments.uploaded_file`` (the upload helper reads
+            ``committed_file[:name]``, not ``[:filename]``).
         content_base64: Required for ``create``. Raw file bytes as base64.
         title: Optional human-readable title (``create``).
         description: Optional description (``create``).
         comment: Optional revision comment (``create``).
+        version: Optional semantic version label for the new revision on
+            ``create`` (e.g. ``"1.0"``, ``"1.2.3"``). Accepts ``"X"``,
+            ``"X.Y"``, or ``"X.Y.Z"`` and pads missing parts with ``"0"``.
+            DMSF stores major/minor/patch as separate integer columns;
+            the tool splits the string on ``.`` before sending. Each part
+            must be a non-negative integer.
         custom_fields: Optional list of ``{"id": N, "value": ...}`` dicts.
             Sent to DMSF as ``custom_field_values``.
         fields: For ``update``: dict of metadata to change. Allowed keys:
@@ -552,9 +617,12 @@ async def manage_document(
         On any failure: ``{"error": "..."}``.
 
     Limitations:
-        Document version bumping (major/minor/patch on a new revision) is
-        not exposed by this tool; DMSF auto-increments the patch version
-        on commit. Use the Redmine web UI for explicit version control.
+        Setting a custom revision version on ``update`` is not exposed by
+        this tool — DMSF auto-increments the patch version when a new
+        revision is created. ``create`` supports a ``version`` string
+        (e.g. ``"1.0"`` / ``"1.2.3"``), but ``update`` does not. Use the
+        Redmine web UI if you need explicit version control on existing
+        documents.
     """
     if not _is_dmsf_enabled():
         return dict(_DMSF_DISABLED_ERROR)
@@ -569,6 +637,7 @@ async def manage_document(
         title=title,
         description=description,
         comment=comment,
+        version=version,
         custom_fields=custom_fields,
         fields=fields,
     )

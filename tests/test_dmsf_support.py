@@ -467,7 +467,13 @@ class TestManageDocumentCreate:
         assert body["attachments"]["folder_id"] == 7
         uploaded = body["attachments"]["uploaded_file"]
         assert uploaded["token"] == "tok-abc"
-        assert uploaded["filename"] == "spec.pdf"
+        # DMSF's commit_files_internal helper reads ``committed_file[:name]``
+        # (and assigns it to BOTH DmsfFile.name and DmsfFileRevision.name).
+        # Earlier the body sent ``filename`` instead and DMSF crashed in
+        # its filename validator with ``nil#extname``. Regression: ensure
+        # we send the right key.
+        assert uploaded["name"] == "spec.pdf"
+        assert "filename" not in uploaded
         assert uploaded["title"] == "Spec"
         assert uploaded["description"] == "The spec"
         assert uploaded["comment"] == "Initial upload"
@@ -480,6 +486,78 @@ class TestManageDocumentCreate:
         # ... and a `note` pointing the caller at action="get" for full metadata
         assert "note" in result
         assert "action='get'" in result["note"]
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_create_splits_version_into_major_minor_patch(self, mock_redmine):
+        """DMSF stores major/minor/patch as separate integer columns and
+        reads them as separate keys on the uploaded_file dict (the helper
+        does ``committed_file[:version_major]`` etc.). The tool accepts a
+        caller-friendly ``"X.Y.Z"`` / ``"X.Y"`` / ``"X"`` string and splits
+        it before sending."""
+        mock_redmine.upload.return_value = {"token": "tok"}
+        mock_redmine.engine.request.return_value = {
+            "dmsf_files": [{"id": 1, "name": "f.pdf"}],
+            "total_count": 1,
+        }
+
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            await manage_document(
+                action="create",
+                project_id="proj",
+                filename="f.pdf",
+                content_base64=_b64(b"x"),
+                version="1.2.3",
+            )
+
+        uploaded = json.loads(mock_redmine.engine.request.call_args.kwargs["data"])[
+            "attachments"
+        ]["uploaded_file"]
+        assert uploaded["version_major"] == "1"
+        assert uploaded["version_minor"] == "2"
+        assert uploaded["version_patch"] == "3"
+        # The single-string ``version`` key must NOT be sent — DMSF doesn't
+        # read it; only the three split keys.
+        assert "version" not in uploaded
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_create_pads_short_version(self, mock_redmine):
+        """``"1"`` and ``"1.2"`` pad missing parts with ``"0"``."""
+        mock_redmine.upload.return_value = {"token": "tok"}
+        mock_redmine.engine.request.return_value = {
+            "dmsf_files": [{"id": 1, "name": "f.pdf"}],
+            "total_count": 1,
+        }
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            await manage_document(
+                action="create",
+                project_id="proj",
+                filename="f.pdf",
+                content_base64=_b64(b"x"),
+                version="2",
+            )
+        uploaded = json.loads(mock_redmine.engine.request.call_args.kwargs["data"])[
+            "attachments"
+        ]["uploaded_file"]
+        assert uploaded["version_major"] == "2"
+        assert uploaded["version_minor"] == "0"
+        assert uploaded["version_patch"] == "0"
+
+    @pytest.mark.asyncio
+    async def test_create_rejects_invalid_version(self):
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(
+                action="create",
+                project_id="proj",
+                filename="f.pdf",
+                content_base64=_b64(b"x"),
+                version="1.x.0",
+            )
+        assert "error" in result
+        assert "Invalid version" in result["error"]
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
