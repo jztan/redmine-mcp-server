@@ -1953,3 +1953,83 @@ manage_contact(action="remove_from_project", contact_id=42, project_id="support"
 **Notes:**
 - `list` and `get` are allowed in read-only mode; `create`, `update`, `delete`, `assign_to_project`, and `remove_from_project` are blocked when `REDMINE_MCP_READ_ONLY=true`.
 - **PII handling:** contact `email`, `phone`, `address`, `birthday`, `website` are returned as-is to the caller; the module never logs them. Error messages reference only `contact_id`. User-controlled display fields (`first_name`, `last_name`, `middle_name`, `company`, `job_title`, `background`, `assigned_to.name`) are wrapped in `<insecure-content>` boundary tags so downstream LLMs treat them as untrusted data.
+
+---
+
+## Documents (DMSF plugin)
+
+This section requires the **`redmine_dmsf`** plugin (GPL v2, open-source) installed on the Redmine server, and `REDMINE_DMSF_ENABLED=true`. DMSF *replaces* Redmine's built-in (web-UI-only) Documents module with a full document-management system that exposes a REST API.
+
+### `manage_document`
+
+Combined DMSF CRUD tool. **Action-dispatched** — pass `action="list"|"get"|"create"|"update"`.
+
+**Parameters (per action):**
+
+| Action | Required | Optional |
+|---|---|---|
+| `list` | `project_id` | `folder_id`, `limit` (1–100) |
+| `get` | `document_id` | – |
+| `create` | `project_id`, `filename`, `content_base64` | `title`, `description`, `comment`, `folder_id`, `version`, `custom_fields` |
+| `update` | `document_id`, `fields` | – |
+
+**Common parameter types:**
+
+- `project_id`: `int` or `string` (Redmine project identifier).
+- `folder_id`, `document_id`: positive `int`.
+- `filename`: `string` (becomes the **immutable** filename for all future revisions of the document).
+- `content_base64`: `string` (raw file bytes encoded as base64). Decoded payload is capped at **50 MiB**.
+- `fields` (for `update`): dict with any subset of the writable keys: `title`, `description`, `comment`, `custom_fields`. Unknown keys (including `filename`) are silently filtered out.
+
+**Returns:**
+
+- `list`: list of node dicts. Each node has `id`, `type` (`file` / `folder` / `file-link` / `folder-link`), `filename`, `title`, `name`, `description`, `version`, `size`, `content_type`, `folder_id`, `project_id`, `author` (`{id, name}`), `created_on`, `updated_on`.
+- `get`: a single node dict with the same shape.
+- `create`: the created document dict, or `{"success": True}` on a 204 / empty response.
+- `update`: `{"success": True, "document_id": N, "updated_fields": [...], "note": "DMSF created a new revision; previous revisions remain accessible via the document's revision history."}`.
+- Any failure: `{"error": "..."}`.
+
+**Examples:**
+
+```python
+# List documents in a project
+manage_document(action="list", project_id="docs", limit=50)
+
+# List documents inside a specific DMSF folder
+manage_document(action="list", project_id="docs", folder_id=12)
+
+# Get metadata for one document
+manage_document(action="get", document_id=42)
+
+# Upload a new document
+import base64
+content_b64 = base64.b64encode(open("spec.pdf", "rb").read()).decode()
+manage_document(
+    action="create",
+    project_id="docs",
+    filename="spec.pdf",
+    content_base64=content_b64,
+    title="Specification",
+    description="Initial draft",
+    comment="Created from CLI",
+)
+
+# Update metadata (creates a new revision — DMSF is versioned)
+manage_document(
+    action="update",
+    document_id=42,
+    fields={"title": "Specification v2", "description": "Updated draft"},
+)
+```
+
+**DMSF design notes (read these before reporting bugs):**
+
+- **Every update creates a new revision.** DMSF is a versioned document system — there is no in-place mutation. Previous revisions remain accessible via the document's revision history in the Redmine UI.
+- **Filenames are immutable.** To change the file content, call `action="create"` again with the same `filename`; DMSF will add the new content as a new revision under the existing document. To rename, you must recreate the document (and update any external references manually).
+- **DMSF replaces the built-in Documents module** rather than complementing it. If your Redmine instance has existing native documents, the server admin must run `rake redmine:dmsf_convert_documents` to migrate them before they're accessible here.
+- **HTTP endpoint paths used** (visible in raw error messages): `GET /projects/{id}/dmsf.json` (list), `GET /dmsf_files/{id}.json` (get), `POST /uploads.json` + `POST /projects/{id}/dmsf/commit_files.json` (create), `POST /dmsf_files/{id}/revision/create.json` (update).
+- If you see a 404 on these endpoints, the `redmine_dmsf` plugin is not installed (or is too old to expose the REST API); double-check the server with `bundle exec rake redmine:plugins:migrate RAILS_ENV=production` after installation.
+
+**Notes:**
+- `list` and `get` are allowed in read-only mode; `create` and `update` are blocked when `REDMINE_MCP_READ_ONLY=true`.
+- User-controlled fields (`filename`, `title`, `name`, `description`, plus nested `author.name`) are wrapped in `<insecure-content>` boundary tags.

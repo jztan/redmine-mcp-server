@@ -1,10 +1,11 @@
 """MCP tool implementations, grouped by Redmine resource.
 
-Importing this package triggers ``@mcp.tool()`` registration for all 43 tools.
+Importing this package triggers ``@mcp.tool()`` registration for all tools.
 """
 
 from . import checklists  # noqa: F401  -- triggers @mcp.tool() registration
 from . import contacts  # noqa: F401  -- triggers @mcp.tool() registration
+from . import documents  # noqa: F401  -- triggers @mcp.tool() registration
 from . import enumeration  # noqa: F401  -- triggers @mcp.tool() registration
 from . import files  # noqa: F401  -- triggers @mcp.tool() registration
 from . import gantt  # noqa: F401  -- triggers @mcp.tool() registration

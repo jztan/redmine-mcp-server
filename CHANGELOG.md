@@ -7,6 +7,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- **`manage_document`** (gated by `REDMINE_DMSF_ENABLED=true`): single MCP tool covering DMSF (Document Management System for Files) plugin operations via an `action` parameter. Requires the `redmine_dmsf` plugin (GPL v2) on the Redmine server.
+  - `action="list"`: list documents in a project (or a specific DMSF folder via `folder_id`); supports `limit` (capped at Redmine's server-side 100/request)
+  - `action="get"`: fetch a single document's metadata by `document_id`
+  - `action="create"`: upload a new document — two-step under the hood (`POST /uploads.json` to get a token, then `POST /projects/{id}/dmsf/commit_files.json` with metadata). Accepts `content_base64` (raw bytes as base64), `filename`, `title`, `description`, `comment`, `folder_id`, `version`, `custom_fields`. Decoded payload capped at 50 MiB.
+  - `action="update"`: update metadata fields (`title`, `description`, `comment`, `custom_fields`) by creating a **new revision** — DMSF is versioned and does not support in-place mutation. DMSF filenames are immutable; to replace file content, `create` a new revision with the same filename.
+  - User-controlled fields (`filename`, `title`, `description`, `name`, plus nested `author.name`) wrapped in `<insecure-content>` boundary tags
+  - Write actions respect `REDMINE_MCP_READ_ONLY` and require `_is_valid_project_id` / `_is_positive_int` validation on path parameters
+  - Whitelist filtering on `update` rejects unknown / immutable keys (e.g., `filename`) with a clear error pointing at the create-new-revision workaround
+  - 31 new unit tests covering feature-flag gating, all four actions, read-only mode, validation paths, base64 decoding errors, size-cap rejection, response shape variants (`{dmsf: [...]}` vs bare list)
+- `REDMINE_DMSF_ENABLED` environment variable (default `false`) documented in `.env.example`, `.env.docker.example`, and README
+- `_is_dmsf_enabled()` helper in `_env.py`
+
 ### Changed
 - Renamed `.env.docker` (previously tracked-but-gitignored placeholder, which trapped local edits as ongoing "modified" status and risked accidental commit of real credentials) to `.env.docker.example`, matching the `.env.example` convention. Users now copy `.env.docker.example` to `.env.docker`, which stays untracked. `deploy.sh` and the README quick-start were updated to copy from the new template name.
 

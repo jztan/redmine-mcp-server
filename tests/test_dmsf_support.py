@@ -1,0 +1,427 @@
+"""Unit tests for the DMSF (redmine_dmsf plugin) `manage_document` tool."""
+
+import base64
+import json
+import os
+import sys
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+
+from redmine_mcp_server._env import _is_dmsf_enabled  # noqa: E402
+from redmine_mcp_server.tools.documents import manage_document  # noqa: E402
+
+
+def _make_doc(doc_id: int = 1, filename: str = "spec.pdf") -> dict:
+    return {
+        "id": doc_id,
+        "type": "file",
+        "filename": filename,
+        "title": f"Title {doc_id}",
+        "name": filename,
+        "description": "A document",
+        "version": "1.0",
+        "size": 1234,
+        "content_type": "application/pdf",
+        "folder_id": None,
+        "project_id": 5,
+        "author": {"id": 7, "name": "Alice"},
+        "created_on": "2026-05-01T10:00:00Z",
+        "updated_on": "2026-05-02T11:00:00Z",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Feature flag
+# ---------------------------------------------------------------------------
+
+
+class TestIsDmsfEnabled:
+    def test_false_by_default(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("REDMINE_DMSF_ENABLED", None)
+            assert _is_dmsf_enabled() is False
+
+    def test_true_when_env_set(self):
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            assert _is_dmsf_enabled() is True
+
+
+# ---------------------------------------------------------------------------
+# Dispatch + feature flag gating
+# ---------------------------------------------------------------------------
+
+
+class TestManageDocumentDispatch:
+    @pytest.mark.asyncio
+    async def test_disabled_returns_error(self):
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "false"}):
+            result = await manage_document(action="list", project_id="proj")
+        assert "error" in result
+        assert "REDMINE_DMSF_ENABLED" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_invalid_action(self):
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(action="bogus", project_id="proj")
+        assert "error" in result
+        assert "Invalid action" in result["error"]
+
+
+# ---------------------------------------------------------------------------
+# list
+# ---------------------------------------------------------------------------
+
+
+class TestManageDocumentList:
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_list_success(self, mock_redmine):
+        mock_redmine.engine.request.return_value = {
+            "dmsf": [_make_doc(1), _make_doc(2, "design.pdf")]
+        }
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(action="list", project_id="proj")
+
+        assert isinstance(result, list)
+        assert len(result) == 2
+        assert "spec.pdf" in result[0]["filename"]
+        # User-controlled field wrapped in insecure-content boundary tags
+        assert "<insecure-content-" in result[0]["filename"]
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_list_with_folder_filter(self, mock_redmine):
+        mock_redmine.engine.request.return_value = {"dmsf": []}
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            await manage_document(
+                action="list", project_id="proj", folder_id=42, limit=25
+            )
+
+        call_kwargs = mock_redmine.engine.request.call_args.kwargs
+        assert call_kwargs["params"]["folder_id"] == 42
+        assert call_kwargs["params"]["limit"] == 25
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_list_handles_bare_array_response(self, mock_redmine):
+        """Some DMSF versions may return a bare list instead of {dmsf: [...]}.."""
+        mock_redmine.engine.request.return_value = [_make_doc(1)]
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(action="list", project_id="proj")
+        assert isinstance(result, list)
+        assert len(result) == 1
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_clamps_limit_to_100(self, mock_redmine):
+        mock_redmine.engine.request.return_value = {"dmsf": []}
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            await manage_document(action="list", project_id="proj", limit=500)
+        call_kwargs = mock_redmine.engine.request.call_args.kwargs
+        assert call_kwargs["params"]["limit"] == 100
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_slices_oversized_response(self, mock_redmine):
+        many = [_make_doc(i) for i in range(200)]
+        mock_redmine.engine.request.return_value = {"dmsf": many}
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(action="list", project_id="proj", limit=50)
+        assert len(result) == 50
+
+    @pytest.mark.asyncio
+    async def test_rejects_missing_project_id(self):
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(action="list")
+        assert "error" in result
+        assert "project_id" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_rejects_empty_project_id(self):
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(action="list", project_id="")
+        assert "error" in result
+        assert "project_id" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_rejects_invalid_folder_id(self):
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(
+                action="list", project_id="proj", folder_id=-1
+            )
+        assert "error" in result
+        assert "folder_id" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_rejects_invalid_limit(self):
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(action="list", project_id="proj", limit=0)
+        assert "error" in result
+        assert "limit" in result["error"]
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_handles_api_error(self, mock_redmine):
+        mock_redmine.engine.request.side_effect = Exception("boom")
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(action="list", project_id="proj")
+        assert "error" in result
+
+
+# ---------------------------------------------------------------------------
+# get
+# ---------------------------------------------------------------------------
+
+
+class TestManageDocumentGet:
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_get_success(self, mock_redmine):
+        mock_redmine.engine.request.return_value = {"dmsf_file": _make_doc(42)}
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(action="get", document_id=42)
+        assert result["id"] == 42
+        assert "spec.pdf" in result["filename"]
+        mock_redmine.engine.request.assert_called_once_with(
+            "get", "http://localhost:3000/dmsf_files/42.json"
+        )
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_get_not_found(self, mock_redmine):
+        mock_redmine.engine.request.return_value = {}
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(action="get", document_id=999)
+        assert "error" in result
+        assert "not found" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_rejects_invalid_document_id(self):
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(action="get", document_id=-1)
+        assert "error" in result
+        assert "document_id" in result["error"]
+
+
+# ---------------------------------------------------------------------------
+# create
+# ---------------------------------------------------------------------------
+
+
+def _b64(content: bytes) -> str:
+    return base64.b64encode(content).decode("ascii")
+
+
+class TestManageDocumentCreate:
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_create_success(self, mock_redmine):
+        # Step 1 (client.upload) returns {"token": ...}; Step 2 returns dmsf_file
+        mock_redmine.upload.return_value = {"token": "tok-abc"}
+        mock_redmine.engine.request.return_value = {"dmsf_file": _make_doc(99)}
+
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(
+                action="create",
+                project_id="proj",
+                filename="spec.pdf",
+                content_base64=_b64(b"%PDF-fake-content"),
+                title="Spec",
+                description="The spec",
+            )
+
+        assert result["id"] == 99
+        # Step 1: upload called
+        assert mock_redmine.upload.called
+        # Step 2: POST to dmsf/commit_files.json with token + filename
+        call_args = mock_redmine.engine.request.call_args
+        assert call_args.args[0] == "post"
+        assert call_args.args[1].endswith("/projects/proj/dmsf/commit_files.json")
+        body = json.loads(call_args.kwargs["data"])
+        assert body["dmsf_file"]["token"] == "tok-abc"
+        assert body["dmsf_file"]["filename"] == "spec.pdf"
+        assert body["dmsf_file"]["title"] == "Spec"
+        assert body["dmsf_file"]["description"] == "The spec"
+
+    @pytest.mark.asyncio
+    async def test_blocked_in_read_only_mode(self):
+        with patch.dict(
+            os.environ,
+            {"REDMINE_MCP_READ_ONLY": "true", "REDMINE_DMSF_ENABLED": "true"},
+        ):
+            result = await manage_document(
+                action="create",
+                project_id="proj",
+                filename="f.txt",
+                content_base64=_b64(b"x"),
+            )
+        assert "error" in result
+        assert "read-only" in result["error"].lower()
+
+    @pytest.mark.asyncio
+    async def test_rejects_missing_filename(self):
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(
+                action="create",
+                project_id="proj",
+                content_base64=_b64(b"x"),
+            )
+        assert "error" in result
+        assert "filename" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_rejects_missing_content(self):
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(
+                action="create",
+                project_id="proj",
+                filename="f.txt",
+            )
+        assert "error" in result
+        assert "content_base64" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_rejects_invalid_base64(self):
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(
+                action="create",
+                project_id="proj",
+                filename="f.txt",
+                content_base64="!!! not base64 !!!",
+            )
+        assert "error" in result
+        assert "base64" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_rejects_empty_decoded_content(self):
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(
+                action="create",
+                project_id="proj",
+                filename="f.txt",
+                content_base64=_b64(b""),
+            )
+        assert "error" in result
+        assert "empty" in result["error"].lower()
+
+    @pytest.mark.asyncio
+    async def test_rejects_oversized_content(self):
+        big = b"x" * (50 * 1024 * 1024 + 1)
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(
+                action="create",
+                project_id="proj",
+                filename="f.bin",
+                content_base64=_b64(big),
+            )
+        assert "error" in result
+        assert "too large" in result["error"].lower()
+
+    @pytest.mark.asyncio
+    async def test_rejects_missing_project_id(self):
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(
+                action="create",
+                filename="f.txt",
+                content_base64=_b64(b"x"),
+            )
+        assert "error" in result
+        assert "project_id" in result["error"]
+
+
+# ---------------------------------------------------------------------------
+# update
+# ---------------------------------------------------------------------------
+
+
+class TestManageDocumentUpdate:
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_update_success(self, mock_redmine):
+        mock_redmine.engine.request.return_value = True
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(
+                action="update",
+                document_id=42,
+                fields={"title": "New", "description": "Updated"},
+            )
+        assert result["success"] is True
+        assert set(result["updated_fields"]) == {"title", "description"}
+        call_args = mock_redmine.engine.request.call_args
+        assert call_args.args[0] == "post"
+        assert call_args.args[1].endswith("/dmsf_files/42/revision/create.json")
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_filters_unknown_fields(self, mock_redmine):
+        mock_redmine.engine.request.return_value = True
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(
+                action="update",
+                document_id=42,
+                fields={"title": "New", "evil": "bad", "filename": "x"},
+            )
+        # filename should be filtered (immutable in DMSF)
+        assert result["updated_fields"] == ["title"]
+        body = json.loads(mock_redmine.engine.request.call_args.kwargs["data"])
+        assert "evil" not in body["dmsf_file_revision"]
+        assert "filename" not in body["dmsf_file_revision"]
+
+    @pytest.mark.asyncio
+    async def test_blocked_in_read_only_mode(self):
+        with patch.dict(
+            os.environ,
+            {"REDMINE_MCP_READ_ONLY": "true", "REDMINE_DMSF_ENABLED": "true"},
+        ):
+            result = await manage_document(
+                action="update", document_id=1, fields={"title": "X"}
+            )
+        assert "error" in result
+        assert "read-only" in result["error"].lower()
+
+    @pytest.mark.asyncio
+    async def test_rejects_invalid_document_id(self):
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(
+                action="update", document_id=-1, fields={"title": "X"}
+            )
+        assert "error" in result
+        assert "document_id" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_rejects_empty_fields(self):
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(action="update", document_id=1, fields={})
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_rejects_no_writable_fields(self):
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(
+                action="update",
+                document_id=1,
+                fields={"filename": "X", "rogue": "y"},
+            )
+        assert "error" in result
+        assert "writable" in result["error"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Suppress unused-mock warning when MagicMock isn't actually referenced below
+# ---------------------------------------------------------------------------
+
+_ = MagicMock
