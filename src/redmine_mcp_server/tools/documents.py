@@ -98,6 +98,34 @@ def _document_to_dict(node: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _extract_dmsf_single_doc(payload: Any) -> Dict[str, Any]:
+    """Pull a single DMSF document dict out of any of the response shapes.
+
+    Variants we tolerate:
+      - ``{"dmsf_file": {...}}``           -- most common single-resource shape
+      - ``{"document": {...}}``            -- older / alternate plugin builds
+      - ``{"dmsf": {"dmsf_file": {...}}}`` -- defensive: same outer wrapping
+        as the list endpoint, in case a plugin version applies it to
+        single resources too
+
+    Returns ``{}`` when no recognized shape is found, so callers can
+    distinguish missing/unparseable payloads from real data.
+    """
+    if not isinstance(payload, dict):
+        return {}
+    for key in ("dmsf_file", "document"):
+        node = payload.get(key)
+        if isinstance(node, dict):
+            return node
+    wrapper = payload.get("dmsf")
+    if isinstance(wrapper, dict):
+        for key in ("dmsf_file", "document"):
+            node = wrapper.get(key)
+            if isinstance(node, dict):
+                return node
+    return {}
+
+
 async def _list_documents_action(
     project_id: Optional[Union[str, int]] = None,
     folder_id: Optional[int] = None,
@@ -125,11 +153,22 @@ async def _list_documents_action(
         if folder_id is not None:
             params["folder_id"] = folder_id
         payload = client.engine.request("get", url, params=params)
-        # DMSF responses commonly wrap items under "dmsf" or return a list.
+        # DMSF's actual list response is:
+        #   {"dmsf": {"dmsf_nodes": [...], "total_count": N}}
+        # i.e. payload["dmsf"] is a *dict* (not a list). Earlier code
+        # assumed payload["dmsf"] was a list and silently emptied the
+        # result. Be defensive: also accept a bare list (older versions
+        # observed in the wild) and the legacy "nodes" key.
         if isinstance(payload, list):
             raw: List[Dict[str, Any]] = payload
         elif isinstance(payload, dict):
-            raw = payload.get("dmsf") or payload.get("nodes") or []
+            dmsf_wrapper = payload.get("dmsf")
+            if isinstance(dmsf_wrapper, dict):
+                raw = dmsf_wrapper.get("dmsf_nodes") or dmsf_wrapper.get("nodes") or []
+            elif isinstance(dmsf_wrapper, list):
+                raw = dmsf_wrapper
+            else:
+                raw = payload.get("nodes") or []
             if not isinstance(raw, list):
                 raw = []
         else:
@@ -155,11 +194,7 @@ async def _get_document_action(
         client = _get_redmine_client()
         url = f"{_client.REDMINE_URL}/dmsf_files/{document_id}.json"
         payload = client.engine.request("get", url)
-        doc = (
-            payload.get("dmsf_file") or payload.get("document") or {}
-            if isinstance(payload, dict)
-            else {}
-        )
+        doc = _extract_dmsf_single_doc(payload)
         if not doc:
             return {"error": f"Document {document_id} not found."}
         return _document_to_dict(doc)
@@ -257,11 +292,7 @@ async def _create_document_action(
             headers={"Content-Type": "application/json"},
             data=json.dumps({"dmsf_file": commit_body}),
         )
-        doc = (
-            payload.get("dmsf_file") or payload.get("document") or {}
-            if isinstance(payload, dict)
-            else {}
-        )
+        doc = _extract_dmsf_single_doc(payload)
         return _document_to_dict(doc) if doc else {"success": True}
     except Exception as e:
         return _handle_redmine_error(

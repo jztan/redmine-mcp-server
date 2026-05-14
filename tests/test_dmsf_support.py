@@ -75,14 +75,32 @@ class TestManageDocumentDispatch:
 # ---------------------------------------------------------------------------
 
 
+def _dmsf_list_response(*docs: dict, total_count: int = None) -> dict:
+    """Build a response in the **real** DMSF list shape, as verified
+    against a live `redmine_dmsf` instance:
+
+        {"dmsf": {"dmsf_nodes": [...], "total_count": N}}
+
+    The previous test fixtures used ``{"dmsf": [...]}`` and missed a
+    real-world bug where the inner ``dmsf`` value is a *dict*, not a
+    list, and our parser silently emptied the result.
+    """
+    return {
+        "dmsf": {
+            "dmsf_nodes": list(docs),
+            "total_count": total_count if total_count is not None else len(docs),
+        }
+    }
+
+
 class TestManageDocumentList:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
     @patch("redmine_mcp_server._client.redmine")
     async def test_list_success(self, mock_redmine):
-        mock_redmine.engine.request.return_value = {
-            "dmsf": [_make_doc(1), _make_doc(2, "design.pdf")]
-        }
+        mock_redmine.engine.request.return_value = _dmsf_list_response(
+            _make_doc(1), _make_doc(2, "design.pdf")
+        )
         with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
             result = await manage_document(action="list", project_id="proj")
 
@@ -95,8 +113,32 @@ class TestManageDocumentList:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
     @patch("redmine_mcp_server._client.redmine")
+    async def test_list_regression_real_dmsf_shape(self, mock_redmine):
+        """Regression test for the bug where ``payload["dmsf"]`` is a dict
+        (the real DMSF shape) but the parser assumed a list and emptied
+        the result. Verifies that both documents survive parsing."""
+        mock_redmine.engine.request.return_value = {
+            "dmsf": {
+                "dmsf_nodes": [_make_doc(1, "spec.pdf"), _make_doc(2, "design.pdf")],
+                "total_count": 2,
+            }
+        }
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(action="list", project_id="web")
+
+        assert isinstance(result, list)
+        assert len(result) == 2, (
+            "Both documents must be returned. If only 0 are returned, the "
+            "parser is silently dropping the real DMSF response shape."
+        )
+        assert "spec.pdf" in result[0]["filename"]
+        assert "design.pdf" in result[1]["filename"]
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_list_with_folder_filter(self, mock_redmine):
-        mock_redmine.engine.request.return_value = {"dmsf": []}
+        mock_redmine.engine.request.return_value = _dmsf_list_response()
         with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
             await manage_document(
                 action="list", project_id="proj", folder_id=42, limit=25
@@ -110,7 +152,7 @@ class TestManageDocumentList:
     @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
     @patch("redmine_mcp_server._client.redmine")
     async def test_list_handles_bare_array_response(self, mock_redmine):
-        """Some DMSF versions may return a bare list instead of {dmsf: [...]}.."""
+        """Some DMSF versions may return a bare list at the top level."""
         mock_redmine.engine.request.return_value = [_make_doc(1)]
         with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
             result = await manage_document(action="list", project_id="proj")
@@ -120,8 +162,20 @@ class TestManageDocumentList:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
     @patch("redmine_mcp_server._client.redmine")
+    async def test_list_handles_dmsf_value_as_list(self, mock_redmine):
+        """Defensive: older plugin builds may put a bare list directly
+        under the ``dmsf`` key. Tolerate both shapes."""
+        mock_redmine.engine.request.return_value = {"dmsf": [_make_doc(1)]}
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(action="list", project_id="proj")
+        assert isinstance(result, list)
+        assert len(result) == 1
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
     async def test_clamps_limit_to_100(self, mock_redmine):
-        mock_redmine.engine.request.return_value = {"dmsf": []}
+        mock_redmine.engine.request.return_value = _dmsf_list_response()
         with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
             await manage_document(action="list", project_id="proj", limit=500)
         call_kwargs = mock_redmine.engine.request.call_args.kwargs
@@ -132,7 +186,7 @@ class TestManageDocumentList:
     @patch("redmine_mcp_server._client.redmine")
     async def test_slices_oversized_response(self, mock_redmine):
         many = [_make_doc(i) for i in range(200)]
-        mock_redmine.engine.request.return_value = {"dmsf": many}
+        mock_redmine.engine.request.return_value = _dmsf_list_response(*many)
         with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
             result = await manage_document(action="list", project_id="proj", limit=50)
         assert len(result) == 50
@@ -205,6 +259,28 @@ class TestManageDocumentGet:
             result = await manage_document(action="get", document_id=999)
         assert "error" in result
         assert "not found" in result["error"]
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_get_handles_nested_dmsf_wrapper(self, mock_redmine):
+        """Defensive: tolerate ``{"dmsf": {"dmsf_file": {...}}}`` in case a
+        plugin version applies the same outer wrapping to single-resource
+        responses that it does to list responses."""
+        mock_redmine.engine.request.return_value = {"dmsf": {"dmsf_file": _make_doc(7)}}
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(action="get", document_id=7)
+        assert result["id"] == 7
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_get_handles_document_key_variant(self, mock_redmine):
+        """Defensive: tolerate ``{"document": {...}}`` from older builds."""
+        mock_redmine.engine.request.return_value = {"document": _make_doc(8)}
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(action="get", document_id=8)
+        assert result["id"] == 8
 
     @pytest.mark.asyncio
     async def test_rejects_invalid_document_id(self):
