@@ -57,7 +57,7 @@ def _time_entry_to_dict(time_entry: Any) -> Dict[str, Any]:
 async def list_time_entries(
     project_id: Optional[Union[str, int]] = None,
     issue_id: Optional[int] = None,
-    user_id: Optional[Union[str, int]] = None,
+    user_id: Optional[Union[int, Literal["me"]]] = None,
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
     limit: Annotated[int, Field(ge=1, le=100)] = 25,

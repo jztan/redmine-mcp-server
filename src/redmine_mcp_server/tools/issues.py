@@ -570,7 +570,7 @@ async def list_redmine_issues(
     project_id: Optional[Union[int, str]] = None,
     status_id: Optional[Union[int, Literal["open", "closed", "*"]]] = None,
     tracker_id: Optional[int] = None,
-    assigned_to_id: Optional[Union[int, str]] = None,
+    assigned_to_id: Optional[Union[int, Literal["me"]]] = None,
     priority_id: Optional[int] = None,
     fixed_version_id: Optional[int] = None,
     sort: Optional[str] = None,
