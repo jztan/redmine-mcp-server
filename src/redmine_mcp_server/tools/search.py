@@ -1,7 +1,8 @@
 """Global search tool spanning issues, projects, wiki pages, news, etc."""
 
-from typing import Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Optional
 
+from pydantic import Field
 from redminelib.exceptions import VersionMismatchError
 
 from .._cleanup import _ensure_cleanup_started
@@ -94,8 +95,8 @@ def _resource_to_dict(resource: Any, resource_type: str) -> Dict[str, Any]:
 async def search_entire_redmine(
     query: str,
     resources: Optional[List[str]] = None,
-    limit: int = 100,
-    offset: int = 0,
+    limit: Annotated[int, Field(ge=1, le=100)] = 100,
+    offset: Annotated[int, Field(ge=0)] = 0,
 ) -> Dict[str, Any]:
     """
     Search for issues and wiki pages across the Redmine instance.

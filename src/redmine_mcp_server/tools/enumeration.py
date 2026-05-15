@@ -5,7 +5,9 @@ statuses, priorities, users, queries) before calling create/update tools
 that require those IDs.
 """
 
-from typing import Any, Dict, List, Optional, Union
+from typing import Annotated, Any, Dict, List, Optional, Union
+
+from pydantic import Field
 
 from .._client import _get_redmine_client
 from .._errors import _handle_redmine_error
@@ -126,8 +128,8 @@ async def list_redmine_issue_priorities() -> (
 async def list_redmine_users(
     name: Optional[str] = None,
     group_id: Optional[int] = None,
-    limit: int = 25,
-    offset: int = 0,
+    limit: Annotated[int, Field(ge=1, le=100)] = 25,
+    offset: Annotated[int, Field(ge=0)] = 0,
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """List Redmine users with optional filtering.
 

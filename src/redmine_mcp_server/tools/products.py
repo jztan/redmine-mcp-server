@@ -1,7 +1,9 @@
 """RedmineUP Products plugin tool (REDMINE_PRODUCTS_ENABLED gated)."""
 
 import json
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Annotated, Any, Dict, List, Literal, Optional, Union
+
+from pydantic import Field
 
 from .._client import _get_redmine_client
 from .._decorators import ActionMode, action_dispatch
@@ -258,7 +260,7 @@ async def _manage_product_dispatch(action: str, **kwargs: Any) -> Any:
 async def manage_product(
     action: Literal["list", "get", "create", "update"],
     project_id: Optional[Union[str, int]] = None,
-    limit: int = 100,
+    limit: Annotated[int, Field(ge=1, le=100)] = 100,
     product_id: Optional[int] = None,
     name: Optional[str] = None,
     status_id: int = 1,

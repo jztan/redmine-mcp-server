@@ -4,8 +4,9 @@ relations, watchers, notes, and categories.
 
 import json
 import logging
-from typing import Any, Dict, List, Literal, Optional, Set, Union
+from typing import Annotated, Any, Dict, List, Literal, Optional, Set, Union
 
+from pydantic import Field
 from redminelib.exceptions import ValidationError
 
 from .._cleanup import _ensure_cleanup_started
@@ -441,8 +442,8 @@ async def get_redmine_issue(
     include_journals: bool = True,
     include_attachments: bool = True,
     include_custom_fields: bool = True,
-    journal_limit: Optional[int] = None,
-    journal_offset: int = 0,
+    journal_limit: Annotated[Optional[int], Field(ge=1, le=1000)] = None,
+    journal_offset: Annotated[int, Field(ge=0)] = 0,
     include_watchers: bool = False,
     include_relations: bool = False,
     include_children: bool = False,
@@ -572,8 +573,8 @@ async def list_redmine_issues(
     priority_id: Optional[int] = None,
     fixed_version_id: Optional[int] = None,
     sort: Optional[str] = None,
-    limit: Optional[int] = 25,
-    offset: int = 0,
+    limit: Annotated[int, Field(ge=1, le=1000)] = 25,
+    offset: Annotated[int, Field(ge=0)] = 0,
     include_pagination_info: bool = False,
     fields: Optional[List[str]] = None,
     filters: Optional[Dict[str, Any]] = None,
@@ -793,8 +794,8 @@ async def list_redmine_issues(
 @mcp.tool()
 async def search_redmine_issues(
     query: str,
-    limit: Optional[int] = 25,
-    offset: int = 0,
+    limit: Annotated[int, Field(ge=1, le=1000)] = 25,
+    offset: Annotated[int, Field(ge=0)] = 0,
     include_pagination_info: bool = False,
     fields: Optional[List[str]] = None,
     scope: Optional[str] = None,

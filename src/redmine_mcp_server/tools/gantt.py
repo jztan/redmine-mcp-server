@@ -1,6 +1,8 @@
 """Gantt chart tool — composite read tool for project timeline data."""
 
-from typing import Any, Dict, List, Optional, Union
+from typing import Annotated, Any, Dict, List, Optional, Union
+
+from pydantic import Field
 
 from .._client import _get_redmine_client
 from .._errors import _handle_redmine_error
@@ -75,7 +77,7 @@ async def get_gantt_chart(
     start_date_after: Optional[str] = None,
     due_date_before: Optional[str] = None,
     include_closed: bool = False,
-    limit: int = 250,
+    limit: Annotated[int, Field(ge=1, le=500)] = 250,
 ) -> Dict[str, Any]:
     """Retrieve project timeline (Gantt) data: issues with dates, dependencies,
     and milestones.

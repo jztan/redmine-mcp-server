@@ -1,7 +1,9 @@
 """RedmineUP CRM (Contacts) plugin tool (REDMINE_CRM_ENABLED gated)."""
 
 import json
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Annotated, Any, Dict, List, Literal, Optional, Union
+
+from pydantic import Field
 
 from .._client import _get_redmine_client
 from .._decorators import ActionMode, action_dispatch
@@ -407,7 +409,7 @@ async def manage_contact(
     search: Optional[str] = None,
     tags: Optional[str] = None,
     assigned_to_id: Optional[int] = None,
-    limit: int = 100,
+    limit: Annotated[int, Field(ge=1, le=100)] = 100,
     contact_id: Optional[int] = None,
     include: Optional[str] = None,
     first_name: Optional[str] = None,

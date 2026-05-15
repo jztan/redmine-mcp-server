@@ -2,7 +2,9 @@
 
 import asyncio
 import json
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Annotated, Any, Dict, List, Literal, Optional, Union
+
+from pydantic import Field
 
 from .._client import _get_redmine_client, logger
 from .._decorators import ActionMode, action_dispatch
@@ -58,8 +60,8 @@ async def list_time_entries(
     user_id: Optional[Union[str, int]] = None,
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
-    limit: int = 25,
-    offset: int = 0,
+    limit: Annotated[int, Field(ge=1, le=100)] = 25,
+    offset: Annotated[int, Field(ge=0)] = 0,
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """List time entries from Redmine with filtering and pagination.
 
