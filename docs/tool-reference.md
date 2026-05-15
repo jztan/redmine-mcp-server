@@ -1953,3 +1953,101 @@ manage_contact(action="remove_from_project", contact_id=42, project_id="support"
 **Notes:**
 - `list` and `get` are allowed in read-only mode; `create`, `update`, `delete`, `assign_to_project`, and `remove_from_project` are blocked when `REDMINE_MCP_READ_ONLY=true`.
 - **PII handling:** contact `email`, `phone`, `address`, `birthday`, `website` are returned as-is to the caller; the module never logs them. Error messages reference only `contact_id`. User-controlled display fields (`first_name`, `last_name`, `middle_name`, `company`, `job_title`, `background`, `assigned_to.name`) are wrapped in `<insecure-content>` boundary tags so downstream LLMs treat them as untrusted data.
+
+---
+
+## Documents (DMSF plugin)
+
+This section requires the **`redmine_dmsf`** plugin (GPL v2, open-source) installed on the Redmine server, and `REDMINE_DMSF_ENABLED=true`. DMSF *replaces* Redmine's built-in (web-UI-only) Documents module with a full document-management system that exposes a REST API.
+
+### `manage_document`
+
+Combined DMSF CRUD tool. **Action-dispatched** — pass `action="list"|"get"|"create"|"update"`.
+
+**Parameters (per action):**
+
+| Action | Required | Optional |
+|---|---|---|
+| `list` | `project_id` | `folder_id`, `limit` (1–100) |
+| `get` | `document_id` | – |
+| `create` | `project_id`, `filename`, `content_base64` | `title`, `description`, `comment`, `folder_id`, `version`, `custom_fields` |
+| `update` | `document_id`, `fields` | – |
+
+**Common parameter types:**
+
+- `project_id`: `int` or `string` (Redmine project identifier).
+- `folder_id`, `document_id`: positive `int`.
+- `filename`: `string`. Used as the initial filename on `create`; can be changed later by passing `name` in `update`'s `fields` (DMSF renames the parent file when a revision's `name` differs). **Sent to DMSF as the `name` key** inside `attachments.uploaded_file` — the upload helper reads `committed_file[:name]`, not `[:filename]`.
+- `content_base64`: `string` (raw file bytes encoded as base64). Decoded payload is capped at **50 MiB**.
+- `version` (for `create`): semantic version string for the new revision, e.g. `"1.0"` or `"1.2.3"`. Accepts `"X"`, `"X.Y"`, or `"X.Y.Z"`; missing parts are padded with `"0"`. Each part must be a non-negative integer. DMSF stores `major_version` / `minor_version` / `patch_version` as separate integer columns; the tool splits on `.` before sending.
+- `custom_fields`: list of `{"id": N, "value": ...}` dicts. Sent to DMSF as `custom_field_values` (the API's internal key).
+- `fields` (for `update`): dict with any subset of the writable keys: `title`, `name` (rename), `description`, `comment`, `custom_fields`. Unknown keys are silently filtered out.
+
+**Returns:**
+
+- `list`: list of node dicts. Each node has `id`, `type` (`file` / `folder` / `file-link` / `folder-link`), `filename`, `title`, `name`, `description`, `version`, `size`, `content_type`, `folder_id`, `project_id`, `author` (`{id, name}`), `created_on`, `updated_on`.
+- `get`: a single node dict with the same shape. Most metadata (`description`, `size`, `version`, `mime_type`, `user_id`, timestamps) is pulled from the latest entry of `dmsf_file_revisions[]` — see the design notes below.
+- `create`: a **sparse** dict containing only `id` + `name` (plus a `note` pointing at `action="get"` for full metadata). DMSF's commit endpoint deliberately returns id + name only; call `get` if you need description/size/version/timestamps. Returns `{"success": True}` if the response is unexpectedly empty.
+- `update`: `{"success": True, "document_id": N, "updated_fields": [...], "note": "DMSF created a new revision; previous revisions remain accessible via the document's revision history."}`.
+- Any failure: `{"error": "..."}`.
+
+**Examples:**
+
+```python
+# List documents in a project
+manage_document(action="list", project_id="docs", limit=50)
+
+# List documents inside a specific DMSF folder
+manage_document(action="list", project_id="docs", folder_id=12)
+
+# Get metadata for one document
+manage_document(action="get", document_id=42)
+
+# Upload a new document with an explicit initial version
+import base64
+content_b64 = base64.b64encode(open("spec.pdf", "rb").read()).decode()
+manage_document(
+    action="create",
+    project_id="docs",
+    filename="spec.pdf",       # sent to DMSF as `name` (the helper reads :name)
+    content_base64=content_b64,
+    title="Specification",
+    description="Initial draft",
+    comment="Created from CLI",
+    version="0.1",             # split into version_major / version_minor / version_patch
+)
+
+# Update metadata (creates a new revision — DMSF is versioned)
+manage_document(
+    action="update",
+    document_id=42,
+    fields={"title": "Specification v2", "description": "Updated draft"},
+)
+
+# Rename a document (DMSF assigns the revision's `name` back to the parent file)
+manage_document(
+    action="update",
+    document_id=42,
+    fields={"name": "spec-v2.pdf"},
+)
+```
+
+**DMSF design notes:**
+
+- **Every update creates a new revision.** DMSF is a versioned document system — there is no in-place mutation. Previous revisions remain accessible via the document's revision history in the Redmine UI.
+- **Required-field auto-population on `update`.** DMSF's revision-create controller crashes (`NoMethodError` on `nil.scrub`) if either `title` or `name` is missing. To make `update` ergonomic when the caller only wants to change `description`, the tool pre-fetches the current document via `GET /dmsf_files/{id}.json` and uses the existing `title`/`name` as defaults. The caller's overrides take precedence.
+- **Renaming.** Set `fields["name"]` on `update` to rename the document; DMSF propagates the new name to the parent file. The list-shape `filename` field cannot be used in `update` — only the canonical `name` key.
+- **Sparse `create` response.** The commit endpoint intentionally returns only `id` + `name` (plus a `total_count`). For full metadata, follow up with `action="get"` using the returned `id`.
+- **Two response shapes for the same document.** `list` returns flat nodes; `get` nests most metadata under `dmsf_file_revisions[]`. The serializer merges both into one stable representation.
+- **Version on `create`, not on `update`.** Pass a semantic `version` string (e.g. `"1.2.3"`) on `create` to set the initial revision's version. The tool splits the string into `version_major` / `version_minor` / `version_patch` and nests them inside `attachments.uploaded_file` (where DMSF's commit helper reads them). `update` does **not** expose version control — DMSF auto-increments the patch version when a new revision is created via `dmsf_files#create_revision`. Use the Redmine web UI if you need explicit semantic version control on existing documents. (Why the asymmetry? DMSF's two endpoints read the version fields from different places: `commit` reads them nested inside `uploaded_file`, while `create_revision` reads them from top-level `params`. The MCP tool covers the more common case — version-at-upload-time.)
+- **DMSF replaces the built-in Documents module** rather than complementing it. If your Redmine instance has existing native documents, the server admin must run `rake redmine:dmsf_convert_documents` to migrate them before they're accessible here.
+- **HTTP endpoint paths used** (visible in raw error messages):
+  - `GET /projects/{id}/dmsf.json` — list
+  - `GET /dmsf_files/{id}.json` — get (legacy path is preserved for show)
+  - `POST /uploads.json` then `POST /projects/{id}/dmsf/commit.json` — create
+  - `POST /dmsf/files/{id}/revision/create.json` — update (note slash, not underscore: `dmsf/files`, not `dmsf_files`)
+- If you see a 404 on these endpoints, the `redmine_dmsf` plugin is not installed (or is too old to expose the REST API); double-check the server with `bundle exec rake redmine:plugins:migrate RAILS_ENV=production` after installation.
+
+**Notes:**
+- `list` and `get` are allowed in read-only mode; `create` and `update` are blocked when `REDMINE_MCP_READ_ONLY=true`.
+- User-controlled fields (`filename`, `title`, `name`, `description`, plus nested `author.name`) are wrapped in `<insecure-content>` boundary tags.

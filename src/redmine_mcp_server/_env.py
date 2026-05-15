@@ -33,6 +33,11 @@ def _is_crm_enabled() -> bool:
     return _is_true_env("REDMINE_CRM_ENABLED", "false")
 
 
+def _is_dmsf_enabled() -> bool:
+    """Check if DMSF (document management) plugin support is enabled."""
+    return _is_true_env("REDMINE_DMSF_ENABLED", "false")
+
+
 def _get_int_env(var_name: str, default: int) -> int:
     """Parse an integer environment variable, falling back to default."""
     try:
