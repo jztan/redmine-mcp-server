@@ -38,6 +38,19 @@ def _is_dmsf_enabled() -> bool:
     return _is_true_env("REDMINE_DMSF_ENABLED", "false")
 
 
+def _admin_tools_enabled() -> bool:
+    """Check if operator-facing admin tools are exposed on the MCP surface.
+
+    Default ``False``. When unset, admin/cron-style tools
+    (``cleanup_attachment_files`` and any future maintenance helpers)
+    are not registered at import time and do not appear in
+    ``tools/list``. Operators who want to drive cleanup through the
+    MCP surface set ``REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`` to opt in;
+    the underlying background cleanup task runs regardless of this flag.
+    """
+    return _is_true_env("REDMINE_MCP_EXPOSE_ADMIN_TOOLS", "false")
+
+
 def _get_int_env(var_name: str, default: int) -> int:
     """Parse an integer environment variable, falling back to default."""
     try:

@@ -16,7 +16,7 @@ from redminelib.exceptions import ResourceNotFoundError
 
 from .._cleanup import _ensure_cleanup_started
 from .._client import _get_redmine_client, logger
-from .._env import _get_int_env, _is_read_only_mode
+from .._env import _admin_tools_enabled, _get_int_env, _is_read_only_mode
 from .._errors import _READ_ONLY_ERROR, _handle_redmine_error
 from .._serialization import (
     _iter_capped,
@@ -587,9 +587,18 @@ async def delete_file(
         )
 
 
-@mcp.tool()
 async def cleanup_attachment_files() -> Dict[str, Any]:
     """Clean up expired attachment files and return storage statistics.
+
+    **Operator tool, gated by REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true.**
+
+    The background cleanup task in ``_cleanup.py`` already runs this
+    on the configured interval (``CLEANUP_INTERVAL_MINUTES``, default
+    10), so an LLM agent should almost never need to invoke it.
+    Gating it off the default MCP surface removes a piece of
+    discovery-noise that an agent could waste a turn investigating.
+    To expose it (for operators driving cleanup via the MCP surface),
+    set ``REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true``.
 
     Returns:
         A dictionary containing cleanup statistics and current storage usage.
@@ -605,3 +614,11 @@ async def cleanup_attachment_files() -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error during attachment cleanup: {e}")
         return {"error": f"An error occurred during cleanup: {str(e)}"}
+
+
+# Register cleanup_attachment_files on the MCP surface only when the
+# admin-tools flag is set. Direct Python callers can still invoke the
+# function via its import path regardless -- gating only affects
+# tool discoverability (tools/list) and routing via call_tool.
+if _admin_tools_enabled():
+    cleanup_attachment_files = mcp.tool()(cleanup_attachment_files)

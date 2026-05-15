@@ -438,7 +438,7 @@ curl http://localhost:8000/health
 
 ## Available Tools
 
-This MCP server provides 45 tools for interacting with Redmine. For detailed documentation, see [Tool Reference](./docs/tool-reference.md).
+This MCP server provides 45 tools for interacting with Redmine (plus 1 operator tool exposed by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`). For detailed documentation, see [Tool Reference](./docs/tool-reference.md).
 
 - **Project Management** (9 tools)
   - [`list_redmine_projects`](docs/tool-reference.md#list_redmine_projects) - List all accessible projects
@@ -484,12 +484,12 @@ This MCP server provides 45 tools for interacting with Redmine. For detailed doc
   - [`search_entire_redmine`](docs/tool-reference.md#search_entire_redmine) - Global search across issues and wiki pages (Redmine 3.3.0+)
   - [`manage_redmine_wiki_page`](docs/tool-reference.md#manage_redmine_wiki_page) - List, get, create, update, delete, or rename wiki pages
 
-- **File Operations** (5 tools)
+- **File Operations** (4 tools, plus 1 admin-gated)
   - [`list_files`](docs/tool-reference.md#list_files) - List files uploaded to a project's Files section
   - [`upload_file`](docs/tool-reference.md#upload_file) - Upload a new file (base64 content) to a project, optionally tied to a version
   - [`delete_file`](docs/tool-reference.md#delete_file) - Delete a file from a project
   - [`get_redmine_attachment`](docs/tool-reference.md#get_redmine_attachment) - Download an attachment (works in both HTTP and stdio mode)
-  - [`cleanup_attachment_files`](docs/tool-reference.md#cleanup_attachment_files) - Clean up expired attachment files
+  - [`cleanup_attachment_files`](docs/tool-reference.md#cleanup_attachment_files) - Clean up expired attachment files (operator-gated by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`; the background cleanup task runs automatically regardless)
 
 - **Checklists** (2 tools, requires `REDMINE_CHECKLISTS_ENABLED=true` + RedmineUP Checklists Pro plugin)
   - [`get_checklist`](docs/tool-reference.md#get_checklist) - Retrieve all checklist items for an issue
