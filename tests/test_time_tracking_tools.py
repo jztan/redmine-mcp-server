@@ -254,20 +254,15 @@ class TestImportTimeEntries:
         assert mock_redmine.time_entry.create.call_count == 2
 
     @pytest.mark.asyncio
-    @patch("redmine_mcp_server._client.redmine")
-    async def test_accepts_json_string(self, mock_redmine):
-        mock_redmine.time_entry.create.return_value = _mock_time_entry()
-
+    async def test_rejects_string_input(self):
+        # The JSON-string variant was dropped in #114 -- direct Python
+        # callers passing a string now hit the defense-in-depth guard.
+        # MCP-boundary callers hit FastMCP's argument validation
+        # (INVALID_ARGUMENTS envelope from #108) instead, before this
+        # function is ever called.
         result = await import_time_entries('[{"hours": 1.0, "issue_id": 123}]')
-
-        assert result["total"] == 1
-        assert result["succeeded"] == 1
-
-    @pytest.mark.asyncio
-    async def test_invalid_json_string(self):
-        result = await import_time_entries("not-json")
         assert "error" in result
-        assert "Invalid entries payload" in result["error"]
+        assert "list" in result["error"].lower()
 
     @pytest.mark.asyncio
     async def test_non_list_input(self):

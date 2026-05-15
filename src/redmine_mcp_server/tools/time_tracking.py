@@ -1,7 +1,6 @@
 """Time tracking tools: list, manage (create/update), activities, bulk import."""
 
 import asyncio
-import json
 from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 
 from pydantic import Field
@@ -344,7 +343,7 @@ async def list_time_entry_activities(
 
 @mcp.tool()
 async def import_time_entries(
-    entries: Union[List[Dict[str, Any]], str],
+    entries: List[Dict[str, Any]],
     stop_on_error: bool = False,
 ) -> Dict[str, Any]:
     """Bulk import multiple time entries in a single call.
@@ -370,16 +369,15 @@ async def import_time_entries(
     Per-entry errors are captured and returned alongside successes so a
     partial import still yields useful feedback.
 
-    Each entry must be a dict (or JSON object) with the standard
+    Each entry must be a dict with the standard
     ``manage_time_entry(action="create")`` fields: ``hours`` (required),
     plus at least one of ``project_id``/``issue_id``. Optional fields:
     ``user_id`` (to log on behalf of a teammate), ``activity_id``,
     ``comments``, ``spent_on``.
 
     Args:
-        entries: List of time entry dicts, OR a JSON array string. Capped
-            at 500 entries per call — split larger imports into multiple
-            invocations.
+        entries: List of time entry dicts. Capped at 500 entries per
+            call -- split larger imports into multiple invocations.
             Example: ``[{"hours": 1.5, "issue_id": 123, "comments": "..."}]``
         stop_on_error: When ``True``, abort the import on the first error.
             When ``False`` (default), continue past errors and report all
@@ -404,29 +402,19 @@ async def import_time_entries(
     if _is_read_only_mode():
         return dict(_READ_ONLY_ERROR)
 
-    # Parse input: accept either a list or a JSON array string.
-    if isinstance(entries, str):
-        try:
-            parsed = json.loads(entries.strip())
-        except Exception as e:
-            return {
-                "error": (
-                    "Invalid entries payload. Expected a list of dicts or "
-                    "a JSON array string."
-                ),
-                "details": str(e),
-            }
-        entries_list = parsed
-    else:
-        entries_list = entries
-
-    if not isinstance(entries_list, list):
+    # The MCP schema constrains `entries` to `List[Dict[str, Any]]`, so
+    # FastMCP rejects scalar / dict / string payloads at the boundary
+    # with the INVALID_ARGUMENTS envelope from #108. Direct Python
+    # callers can still pass garbage, so keep the isinstance() guard
+    # as defense-in-depth.
+    if not isinstance(entries, list):
         return {
             "error": (
                 "entries must be a list of time entry dicts, not "
-                f"{type(entries_list).__name__}."
+                f"{type(entries).__name__}."
             )
         }
+    entries_list = entries
 
     if len(entries_list) > _IMPORT_TIME_ENTRIES_MAX_BATCH:
         return {
