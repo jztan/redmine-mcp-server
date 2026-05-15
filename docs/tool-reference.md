@@ -249,6 +249,14 @@ List issue custom fields configured for a project, including allowed values and 
 list_project_issue_custom_fields(project_id="pipeline", tracker_id=5)
 ```
 
+**⚠️ `is_required` caveat (#119):** the underlying `GET /custom_fields.json` only exposes the flag set on the custom field *definition*. Workflow rules, role-based field permissions, and tracker-bound required-field settings can still cause `create_redmine_issue` / `update_redmine_issue` to reject with `"<field> cannot be blank"` for a field that this tool returns with `is_required: false`. No general-purpose Redmine API exposes the "effective" required state.
+
+When a create or update rejects with that error, the response envelope is augmented with `missing_required_fields` (parsed names) and a `hint` that lists the three recovery paths:
+
+1. **Name-keyed shortcut** — pass the rejected field by name directly: `fields={"Department": "Engineering"}` on either `create_redmine_issue` or `update_redmine_issue`. The tool resolves the name to a `custom_fields` id automatically. Ambiguous names (two fields normalized identically) raise.
+2. **Explicit id form** — `extra_fields={"custom_fields": [{"id": N, "value": "..."}]}` with `N` from this tool. Use when the name is ambiguous or the value type is awkward (multi-value, complex serializations).
+3. **Autofill** — set `REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true` to have the server retry once with values from each field's `default_value` or the `REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS` env map.
+
 ---
 
 ### `summarize_project_status`
@@ -519,6 +527,8 @@ Retrieve detailed information about a specific Redmine issue.
 
 **Returns:** Issue dictionary with details, journals, and attachments. When `REDMINE_AGILE_ENABLED=true`, also includes `story_points`, `agile_sprint_id`, and `agile_position` from the RedmineUP Agile plugin.
 
+**Attachment URLs (#110, #118):** each entry under `attachments` carries the canonical shape `{id, filename, filesize, content_type, description, content_url, author, created_on}` — identical to what `manage_redmine_wiki_page(action="get", include_attachments=True)` returns. When `REDMINE_PUBLIC_URL` is set, any `content_url` whose scheme+host+port matches `REDMINE_URL`'s origin is rewritten to use the public origin (preserving path, query, fragment, and any reverse-proxy subpath). When unset, the raw URL Redmine echoes back is returned — callers can fall back to [`get_redmine_attachment`](#get_redmine_attachment) for a sandbox-safe download URL via the MCP server's proxy.
+
 **Example:**
 ```json
 {
@@ -778,7 +788,30 @@ Creates a new issue in the specified project. Blocked when `REDMINE_MCP_READ_ONL
 
 **Returns:** Created issue dictionary
 
-**Behavior note:** If `REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true` and Redmine returns relevant custom-field validation errors (for example `<Field Name> cannot be blank` or `<Field Name> is not included in the list`), the server fetches project custom fields, auto-fills missing/invalid required custom fields from Redmine `default_value` or `REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS`, and retries once.
+**Name-keyed custom fields (#123):** `fields` accepts custom-field *names* directly. The tool resolves the name to a `custom_fields` entry via `list_project_issue_custom_fields` and rewrites the payload before sending it to Redmine. Ambiguous names (two custom fields that normalize to the same name) raise with an explicit error pointing at the id form.
+
+```python
+# Name-keyed -- the tool resolves "Department" to its custom_field id
+create_redmine_issue(
+    project_id=1,
+    subject="...",
+    fields={"Department": "Engineering"},
+)
+
+# Explicit id form -- use when names collide or value types are awkward
+create_redmine_issue(
+    project_id=1,
+    subject="...",
+    extra_fields={"custom_fields": [{"id": 2, "value": "Engineering"}]},
+)
+```
+
+**Validation-error envelope (#119):** when Redmine rejects with `"<field> cannot be blank"` / `"is not included in the list"` / `"is invalid"`, the returned envelope includes:
+
+- `missing_required_fields` (list of parsed field names)
+- `hint` — a tailored recovery message that branches on whether the missing fields look like standard Redmine fields (Subject / Priority / Tracker / etc.) or custom fields, calling out the `is_required` caveat for the latter (see [`list_project_issue_custom_fields`](#list_project_issue_custom_fields) for the underlying limitation).
+
+**Autofill retry:** if `REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true` is set and Redmine returns relevant custom-field validation errors, the server fetches project custom fields, auto-fills missing/invalid required custom fields from Redmine `default_value` or `REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS`, and retries once.
 
 **Example:**
 ```python
@@ -845,6 +878,81 @@ update_redmine_issue(
         "story_points": 8
     }
 )
+```
+
+---
+
+### `manage_issue`
+
+Manage an issue's lifecycle. Currently exposes a single action: `delete` — hard-delete an issue via `DELETE /issues/{id}.json`. Blocked when `REDMINE_MCP_READ_ONLY=true`.
+
+Issue deletion in Redmine is **irreversible** and cascades to subtasks, journals (comments), attachments, time entries, and inbound relations from issues that referenced this one. To prevent accidental destruction, the tool refuses unless `confirm_delete=True`, and refuses *again* when the issue has subtasks unless `confirm_delete_with_children=True` is also passed.
+
+For other lifecycle operations, use [`create_redmine_issue`](#create_redmine_issue), [`update_redmine_issue`](#update_redmine_issue), [`copy_issue`](#copy_issue), or [`get_redmine_issue`](#get_redmine_issue).
+
+**Parameters:**
+- `action` (string, required): `"delete"`. The only action currently exposed; new actions (archive / restore / merge) may land under this tool in the future.
+- `issue_id` (integer, required): ID of the issue to delete. Must be a positive integer.
+- `confirm_delete` (boolean, optional): When `False` (default), the tool refuses and returns an impact preview. Pass `True` to actually delete.
+- `confirm_delete_with_children` (boolean, optional): When the issue has subtasks, `confirm_delete=True` alone refuses with code `CHILDREN_PRESENT`. Pass this flag too to opt in to cascade-deleting the subtasks.
+
+**Refusal envelope (default):**
+```json
+{
+    "error": "Refusing to delete issue 42 without explicit confirmation.",
+    "code": "CONFIRMATION_REQUIRED",
+    "hint": "Issue deletion in Redmine is irreversible ...",
+    "impact": {
+        "issue_id": 42,
+        "subject": "...",
+        "children_count": 0,
+        "journals_count": 0,
+        "attachments_count": 0,
+        "relations_count": 0,
+        "time_entries_count": 0
+    }
+}
+```
+
+**Success envelope:**
+```json
+{
+    "success": true,
+    "deleted_issue_id": 42,
+    "cascade_deleted": {
+        "issue_id": 42,
+        "subject": "...",
+        "children_count": 0,
+        "journals_count": 0,
+        "attachments_count": 0,
+        "relations_count": 0,
+        "time_entries_count": 0
+    }
+}
+```
+
+**Error codes:** `CONFIRMATION_REQUIRED`, `CHILDREN_PRESENT`, `NOT_FOUND` (with `upstream_status: 404`).
+
+**Examples:**
+```python
+# Preview what would be deleted
+manage_issue(action="delete", issue_id=42)
+# -> {"code": "CONFIRMATION_REQUIRED", "impact": {...}, ...}
+
+# Explicit delete
+manage_issue(action="delete", issue_id=42, confirm_delete=True)
+# -> {"success": True, "deleted_issue_id": 42, ...}
+
+# Subtasks present -> double-confirm
+manage_issue(action="delete", issue_id=42, confirm_delete=True)
+# -> {"code": "CHILDREN_PRESENT", ...}
+manage_issue(
+    action="delete",
+    issue_id=42,
+    confirm_delete=True,
+    confirm_delete_with_children=True,
+)
+# -> {"success": True, "cascade_deleted": {"children_count": 3, ...}}
 ```
 
 ---
@@ -1325,7 +1433,7 @@ List all saved custom queries (saved issue filters) visible to the current user.
 Bulk-import multiple time entries via sequential API calls. Redmine has no native bulk-import endpoint, so each entry is POSTed individually. Per-entry errors are captured so a partial import still yields useful feedback.
 
 **Parameters:**
-- `entries` (array of objects or JSON string, required): List of time entry dicts. Each entry accepts: `hours` (required), plus at least one of `project_id`/`issue_id`. Optional: `user_id` (log on behalf of a teammate), `activity_id`, `comments`, `spent_on`.
+- `entries` (array of objects, required): List of time entry dicts. Each entry accepts: `hours` (required), plus at least one of `project_id`/`issue_id`. Optional: `user_id` (log on behalf of a teammate), `activity_id`, `comments`, `spent_on`. Capped at 500 entries per call -- split larger imports into multiple invocations. (The JSON-string variant was dropped in #114; passing a string is rejected at the FastMCP boundary with the `INVALID_ARGUMENTS` envelope.)
 - `stop_on_error` (boolean, optional): Abort on the first error. Default: `false` (continue past errors).
 
 **Returns:** Dictionary with:
@@ -1631,12 +1739,12 @@ Download a Redmine attachment and return a usable reference to it. Works in both
 **Parameters:**
 - `attachment_id` (integer, required): The ID of the attachment to retrieve
 
-**Returns (HTTP mode** — `PUBLIC_HOST` or `SERVER_HOST` resolves to an external hostname):
+**Returns (HTTP mode** — any explicit `PUBLIC_HOST`, or a non-loopback `SERVER_HOST`):
 ```json
 {
     "uri": "http://my-server.example.com:8000/files/12345678-1234-5678-9abc-123456789012",
     "uri_type": "http",
-    "filename": "<insecure-content-...>document.pdf</insecure-content-...>",
+    "filename": "document.pdf",
     "content_type": "application/pdf",
     "size": 1024,
     "expires_at": "2026-05-09T14:00:00Z",
@@ -1644,12 +1752,12 @@ Download a Redmine attachment and return a usable reference to it. Works in both
 }
 ```
 
-**Returns (stdio mode** — no reachable HTTP server):
+**Returns (stdio mode** — neither `PUBLIC_HOST` nor a non-loopback `SERVER_HOST` set):
 ```json
 {
     "file_path": "/absolute/local/path/uuid/document.pdf",
     "uri_type": "file",
-    "filename": "<insecure-content-...>document.pdf</insecure-content-...>",
+    "filename": "document.pdf",
     "content_type": "application/pdf",
     "size": 1024,
     "expires_at": "2026-05-09T14:00:00Z",
@@ -1657,16 +1765,21 @@ Download a Redmine attachment and return a usable reference to it. Works in both
 }
 ```
 
-Callers distinguish the two shapes via `uri_type`: `"http"` or `"file"`.
+Callers distinguish the two shapes via `uri_type`: `"http"` or `"file"`. Per the #109 wrap policy, `filename` is structured metadata and is returned verbatim (not wrapped in `<insecure-content>` tags).
 
-**Mode detection:** Host is resolved via `PUBLIC_HOST` → `SERVER_HOST` → `localhost`. If the resolved host is loopback (`localhost`, `127.0.0.1`, `0.0.0.0`), stdio mode is used and `file_path` is returned. Otherwise HTTP mode is used and `uri` is returned. Port is resolved via `PUBLIC_PORT` → `SERVER_PORT` → `8000`.
+**Mode detection (post-#105):**
+- An **explicit `PUBLIC_HOST`** (any value, including `localhost` / `127.0.0.1`) selects HTTP mode. This is the correct behavior for Docker port-forwarded deployments where `localhost` on the host actually does reach the container's HTTP server.
+- Otherwise, `SERVER_HOST` is consulted; non-loopback values promote to HTTP mode. Loopback values (`localhost`, `127.0.0.1`, `0.0.0.0`) keep stdio mode because `SERVER_HOST` is the bind address and `0.0.0.0` is not a reachable URL host.
+- Otherwise stdio mode is used and `file_path` is returned.
+- Port is resolved via `PUBLIC_PORT` → `SERVER_PORT` → `8000`.
+
+**Note (#110):** this tool returns its own MCP-proxy URL (HTTP mode) or local file path (stdio), so it is NOT affected by `REDMINE_PUBLIC_URL`. That env var rewrites `content_url` values returned by other tools (`get_redmine_issue.attachments[*].content_url`, `list_files`, etc.) from the internal Redmine origin to the configured public origin — see [`get_redmine_issue`](#get_redmine_issue).
 
 **Security features:**
 - Downloads capped at `ATTACHMENT_MAX_DOWNLOAD_BYTES` (default 200 MB). Exceeding the cap aborts the download and deletes the partial file.
 - Streaming download with byte counter — cap is enforced even when Redmine's reported file size is missing or understated.
 - Filename sanitized to basename before writing to disk (path traversal protection).
 - UUID-based storage directories prevent filename collisions and enumeration.
-- `filename` in the response is wrapped in `<insecure-content>` boundary tags (attacker-controlled field).
 - `file_path` is always an absolute path (resolved via `Path.resolve()`).
 - Files are cleaned up automatically by the background cleanup manager on the same schedule as other attachments.
 
@@ -1692,6 +1805,8 @@ if result["uri_type"] == "http":
 ---
 
 ### `cleanup_attachment_files`
+
+**Operator tool, gated by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true` (#115).** Not registered on the default MCP surface — the background cleanup task already runs on the `CLEANUP_INTERVAL_MINUTES` schedule (default 10 min), so an LLM agent should almost never need to invoke this directly. Operators driving cleanup through the MCP surface set the flag to opt in; the underlying background cleanup runs regardless.
 
 Removes expired attachment files and provides cleanup statistics.
 
@@ -2050,4 +2165,43 @@ manage_document(
 
 **Notes:**
 - `list` and `get` are allowed in read-only mode; `create` and `update` are blocked when `REDMINE_MCP_READ_ONLY=true`.
-- User-controlled fields (`filename`, `title`, `name`, `description`, plus nested `author.name`) are wrapped in `<insecure-content>` boundary tags.
+- Per the #109 wrap policy, `description` is free-text and is wrapped in `<insecure-content>` boundary tags; `filename`, `name`, `title`, and `author.name` are structured metadata and are returned verbatim.
+
+---
+
+## Meta
+
+### `get_mcp_server_info`
+
+Return the MCP server's version and enabled-feature flags. Use this tool to detect deployment lag (the running server may be behind a recently-shipped patch) before relying on a fix that landed on `develop` — compare `server_version` against the release / commit you expect.
+
+**Parameters:** None
+
+**Returns:**
+- `server_version` (string): the deployed package version (from `importlib.metadata`). The literal `"0.0.0+unknown"` when the package metadata is unavailable (rare; source-tree runs without an editable install).
+- `read_only_mode` (boolean): whether `REDMINE_MCP_READ_ONLY` is enabled. When `True`, all write tools refuse with the standard read-only error.
+- `auth_mode` (string): `"oauth"` or `"legacy"`.
+- `plugin_flags` (dict): which plugin-gated tool families are enabled. Keys: `agile`, `checklists`, `products`, `crm`, `dmsf`. `True` means the corresponding `manage_*` / `get_*` tools are routable and will reach the underlying plugin endpoints; `False` means they will return a "feature disabled" error envelope.
+
+The response intentionally excludes credentials, internal hostnames, file-system paths, and any other operator config that a caller doesn't need to know to choose its call shape. Only flags that change *call shape* are surfaced.
+
+**Example:**
+```json
+{
+    "server_version": "1.3.0",
+    "read_only_mode": false,
+    "auth_mode": "legacy",
+    "plugin_flags": {
+        "agile": false,
+        "checklists": false,
+        "products": false,
+        "crm": false,
+        "dmsf": true
+    }
+}
+```
+
+**When to call:**
+- Before re-probing a recently-shipped fix to confirm the deployment has caught up.
+- Before relying on a plugin-gated tool (`manage_contact`, `manage_product`, `manage_document`, `get_checklist`, etc.) — `plugin_flags` tells you whether the call will succeed or return "feature disabled".
+- Before adapting to `auth_mode` if your caller has different code paths for OAuth vs legacy.

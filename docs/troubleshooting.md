@@ -463,6 +463,41 @@ This guide covers common issues and solutions for the Redmine MCP Server.
    ATTACHMENT_EXPIRES_MINUTES=120  # Increase expiry time
    ```
 
+4. **Download Cap Exceeded**
+   ```
+   {"error": "Attachment N exceeds the 209715200-byte download limit."}
+   ```
+   Default 200 MB cap. Bump for known-large files:
+   ```bash
+   ATTACHMENT_MAX_DOWNLOAD_BYTES=524288000  # 500 MB
+   ```
+   The cap is enforced mid-stream and the partial file is deleted on abort, so a too-large attachment doesn't leak storage.
+
+### Attachment `content_url` Returns Unreachable Internal Hostname
+
+**Symptoms:**
+- `get_redmine_issue(include_attachments=True)` returns `content_url` like `http://redmine:3000/attachments/...`
+- The URL is unreachable from your MCP client (host or open internet)
+- Agent may waste a turn `web_fetch`-ing the unreachable URL
+
+**Cause:** Redmine echoes back URLs built from its own configured hostname, which in Docker / reverse-proxy deployments is typically the internal service name. The bare API can't see your public hostname.
+
+**Solution:** set `REDMINE_PUBLIC_URL` to the publicly-reachable URL of your Redmine instance. When set, attachment `content_url` values whose origin matches `REDMINE_URL` are rewritten to the public origin (preserving path / query / fragment / reverse-proxy subpath).
+
+```bash
+# In .env file
+REDMINE_URL=http://redmine:3000              # internal, used by MCP server
+REDMINE_PUBLIC_URL=https://redmine.example.com  # public, returned to clients
+```
+
+For subpath-mounted Redmine (`https://example.com/redmine/...`), pass the full URL including the prefix:
+
+```bash
+REDMINE_PUBLIC_URL=https://example.com/redmine
+```
+
+**Alternative:** if you can't configure a public URL, call `get_redmine_attachment(attachment_id=N)` instead. That tool downloads the bytes server-side and returns either an HTTP URL on the MCP server's own proxy (HTTP mode) or a local file path (stdio mode) — both reachable from your client regardless of Redmine's hostname configuration.
+
 ### Agile Fields Missing from Issue Results
 
 **Symptoms:**
@@ -603,6 +638,45 @@ Find the field ID via `list_project_issue_custom_fields(project_id)`.
 3. **Reload Client Configuration**
    - Run MCP client's reload/refresh command
    - Reconnect to server
+
+### Deployment Lag — Recently-shipped Tool or Fix Doesn't Appear
+
+**Symptoms:**
+- You merged a fix to `develop` (or pulled a release) but the running MCP server still returns the old behavior
+- A newly-added tool isn't in the MCP client's tool list
+- A docker container shows the right version in `--version` but exposes the old surface
+
+**Cause:** new MCP tools are registered at server *startup* via `@mcp.tool()` decorators, which only run when the Python process loads the module. Behavior changes inside existing tools usually propagate without a restart (the function references in the module are the same), but **new tool registrations require restarting the server process**. In Docker, a bare `docker container restart` re-runs the same image — it doesn't pick up code changes; you need a rebuild.
+
+**Diagnosis:** call `get_mcp_server_info` to read the deployed package version:
+
+```python
+get_mcp_server_info()
+# -> {"server_version": "1.3.0", "read_only_mode": false, "auth_mode": "legacy",
+#     "plugin_flags": {...}}
+```
+
+Compare `server_version` against the release / commit you expect. If they don't match, the deployment is stale.
+
+**Solutions:**
+
+1. **Docker (recommended path):** run `./deploy.sh` from the repo root. It rebuilds the image with current source, removes the old container, and starts a fresh one with the correct port mapping (`-p 8000:8000`) and env-file.
+
+   ```bash
+   ./deploy.sh
+   ```
+
+2. **Docker without the script:**
+   ```bash
+   docker compose down
+   docker compose up -d --build   # --build is the important flag
+   ```
+
+   Without `--build`, Docker reuses the cached image, which still has the old code baked in.
+
+3. **Local Python process:** stop the running `redmine-mcp-server` / `uv run python -m redmine_mcp_server.main` and start it again. Editable installs (`uv pip install -e .`) reflect source changes on the next process start.
+
+4. **After restart, reconnect from the client.** In Claude Code, the `/mcp` command refreshes the tool list. Without that step, the client may still show the stale schema even after the server picked up the new code.
 
 ### HTTP Transport Errors
 
