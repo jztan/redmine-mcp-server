@@ -84,11 +84,25 @@ def _rewrite_to_public_url(url: Any) -> Any:
     if parsed.scheme != internal.scheme or parsed.netloc != internal.netloc:
         return url
 
+    # Some deployments reverse-proxy Redmine under a subpath
+    # (e.g. ``REDMINE_PUBLIC_URL=https://example.com/redmine``). Merge
+    # the public URL's path prefix into the rewritten URL so an input
+    # of ``http://redmine:3000/attachments/download/72/spec.pdf``
+    # becomes ``https://example.com/redmine/attachments/download/72/spec.pdf``
+    # rather than dropping the ``/redmine`` mount point.
+    public_prefix = public.path.rstrip("/")
+    if public_prefix:
+        merged_path = public_prefix + (
+            parsed.path if parsed.path.startswith("/") else "/" + parsed.path
+        )
+    else:
+        merged_path = parsed.path
+
     return urlunsplit(
         (
             public.scheme or parsed.scheme,
             public.netloc or parsed.netloc,
-            parsed.path,
+            merged_path,
             parsed.query,
             parsed.fragment,
         )

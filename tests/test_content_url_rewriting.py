@@ -78,6 +78,39 @@ class TestRewriteToPublicUrl:
         second = _rewrite_to_public_url(first)
         assert first == second == ("https://redmine.example.com/attachments/3")
 
+    def test_subpath_prefix_is_merged(self, monkeypatch):
+        # When Redmine is reverse-proxied under a subpath, the public
+        # URL's path prefix must be merged into the rewritten URL --
+        # otherwise the mount point is silently dropped and the
+        # resulting URL 404s on the public side.
+        monkeypatch.setenv("REDMINE_URL", "http://redmine:3000")
+        monkeypatch.setenv("REDMINE_PUBLIC_URL", "https://example.com/redmine")
+        url = "http://redmine:3000/attachments/download/72/spec.pdf"
+        assert _rewrite_to_public_url(url) == (
+            "https://example.com/redmine/attachments/download/72/spec.pdf"
+        )
+
+    def test_subpath_prefix_trailing_slash_normalized(self, monkeypatch):
+        # Operators commonly write the public URL with a trailing
+        # slash. That must not produce a double slash in the merged
+        # path.
+        monkeypatch.setenv("REDMINE_URL", "http://redmine:3000")
+        monkeypatch.setenv("REDMINE_PUBLIC_URL", "https://example.com/redmine/")
+        url = "http://redmine:3000/attachments/3"
+        assert _rewrite_to_public_url(url) == (
+            "https://example.com/redmine/attachments/3"
+        )
+
+    def test_subpath_no_double_rewrite(self, monkeypatch):
+        # Same idempotency property holds with a subpath: rewriting
+        # the already-rewritten URL must be a no-op.
+        monkeypatch.setenv("REDMINE_URL", "http://redmine:3000")
+        monkeypatch.setenv("REDMINE_PUBLIC_URL", "https://example.com/redmine")
+        url = "http://redmine:3000/attachments/3"
+        first = _rewrite_to_public_url(url)
+        second = _rewrite_to_public_url(first)
+        assert first == second
+
 
 class TestSerializersUseRewriter:
     """End-to-end: the user-visible serializers must route through
