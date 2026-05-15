@@ -1124,10 +1124,9 @@ class TestListRedmineVersionsIntegration:
 
         result = await list_redmine_versions(project_id=1, status_filter="invalid")
 
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert "error" in result[0]
-        assert "invalid" in result[0]["error"].lower()
+        assert isinstance(result, dict)
+        assert "error" in result
+        assert "invalid" in result["error"].lower()
 
     @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
     @pytest.mark.integration
@@ -1142,9 +1141,8 @@ class TestListRedmineVersionsIntegration:
 
         result = await list_redmine_versions(project_id=999999)
 
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert "error" in result[0]
+        assert isinstance(result, dict)
+        assert "error" in result
 
 
 class TestListProjectMembersIntegration:
@@ -1240,9 +1238,8 @@ class TestListProjectMembersIntegration:
 
         result = await list_project_members(project_id=999999)
 
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert "error" in result[0]
+        assert isinstance(result, dict)
+        assert "error" in result
 
 
 class TestTimeEntriesIntegration:
@@ -1562,9 +1559,8 @@ class TestListProjectIssueCustomFieldsIntegration:
             project_id="nonexistent-project-xyz-99999"
         )
 
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert "error" in result[0]
+        assert isinstance(result, dict)
+        assert "error" in result
 
 
 class TestSearchRedmineIssuesIntegration:
