@@ -107,6 +107,21 @@ class TestListRedmineIssues:
         assert call_kwargs.get("project_id") == 1
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("sentinel", ["open", "closed", "*"])
+    async def test_list_issues_status_id_accepts_redmine_sentinels(
+        self, mock_redmine, sentinel
+    ):
+        """Test status_id accepts Redmine's open/closed/* sentinels (#107)."""
+        mock_redmine.issue.filter.return_value = self.create_mock_issues(1)
+
+        await list_redmine_issues(project_id=1, status_id=sentinel)
+
+        call_kwargs = mock_redmine.issue.filter.call_args[1]
+        # Sentinel must pass through unchanged so Redmine's /issues.json
+        # interprets it as the documented status filter shape.
+        assert call_kwargs.get("status_id") == sentinel
+
+    @pytest.mark.asyncio
     async def test_list_issues_with_assigned_to_filter(self, mock_redmine):
         """Test listing issues filtered by assigned_to_id."""
         mock_issues = self.create_mock_issues(3)

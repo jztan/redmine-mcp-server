@@ -9,4 +9,7 @@ Importing this module does NOT register any tools -- only `tools/__init__.py`
 
 from fastmcp import FastMCP
 
+from ._tool_error_middleware import CleanValidationErrorMiddleware
+
 mcp = FastMCP("redmine_mcp_tools")
+mcp.add_middleware(CleanValidationErrorMiddleware())

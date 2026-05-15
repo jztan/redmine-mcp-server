@@ -882,4 +882,14 @@ class TestGetRedmineAttachment:
 
         result = await get_redmine_attachment(9999)
 
+        # The 404 path now returns an envelope that distinguishes
+        # "truly missing" from "permission/disk failure that the embed
+        # path may still surface" -- see issue #106.
         assert "error" in result
+        assert result.get("code") == "ATTACHMENT_UNAVAILABLE"
+        assert result.get("upstream_status") == 404
+        assert result.get("attachment_id") == 9999
+        assert "hint" in result
+        # Hint must mention the embed workaround so an LLM caller can
+        # recover without an additional round-trip on the wrong tool.
+        assert "include_attachments" in result["hint"]

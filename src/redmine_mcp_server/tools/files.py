@@ -12,6 +12,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
+from redminelib.exceptions import ResourceNotFoundError
+
 from .._cleanup import _ensure_cleanup_started
 from .._client import _get_redmine_client, logger
 from .._env import _get_int_env, _is_read_only_mode
@@ -104,7 +106,39 @@ async def get_redmine_attachment(
 
     try:
         client = _get_redmine_client()
-        attachment = client.attachment.get(attachment_id)
+        try:
+            attachment = client.attachment.get(attachment_id)
+        except ResourceNotFoundError:
+            # Redmine's GET /attachments/{id}.json returns 404 in three
+            # situations and does not distinguish between them:
+            #   1. the attachment row truly does not exist;
+            #   2. the caller lacks view permission on the container
+            #      (Redmine collapses 403 -> 404 to avoid leaking
+            #      existence of attachments the user cannot see);
+            #   3. the underlying file is unreadable on the Redmine
+            #      server's filesystem (orphan metadata).
+            # The embed path used by get_redmine_issue(include_attachments)
+            # surfaces (3) and sometimes (2), which is why callers see
+            # the attachment via one tool but get "not found" here.
+            return {
+                "error": (
+                    f"Attachment {attachment_id} could not be fetched "
+                    f"from /attachments/{attachment_id}.json (HTTP 404)."
+                ),
+                "code": "ATTACHMENT_UNAVAILABLE",
+                "upstream_status": 404,
+                "hint": (
+                    "Redmine returns 404 here for missing attachments, "
+                    "for callers who lack view permission on the "
+                    "container, and for attachments whose underlying "
+                    "file is missing on the Redmine server's disk. If "
+                    "get_redmine_issue(include_attachments=True) lists "
+                    "this attachment, it exists but is either "
+                    "permission-restricted or orphaned on disk -- "
+                    "contact the Redmine administrator."
+                ),
+                "attachment_id": attachment_id,
+            }
 
         # Sanitize filename: basename only (path traversal protection)
         raw_filename = getattr(attachment, "filename", "") or ""

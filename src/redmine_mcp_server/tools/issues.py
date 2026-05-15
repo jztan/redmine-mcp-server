@@ -4,7 +4,7 @@ relations, watchers, notes, and categories.
 
 import json
 import logging
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, Literal, Optional, Set, Union
 
 from redminelib.exceptions import ValidationError
 
@@ -563,7 +563,7 @@ async def get_redmine_issue(
 @mcp.tool()
 async def list_redmine_issues(
     project_id: Optional[Union[int, str]] = None,
-    status_id: Optional[int] = None,
+    status_id: Optional[Union[int, Literal["open", "closed", "*"]]] = None,
     tracker_id: Optional[int] = None,
     assigned_to_id: Optional[Union[int, str]] = None,
     priority_id: Optional[int] = None,
@@ -584,7 +584,12 @@ async def list_redmine_issues(
 
     Args:
         project_id: Filter by project (ID or string identifier).
-        status_id: Filter by status ID.
+        status_id: Filter by status. Accepts a numeric status ID, or one
+            of the Redmine sentinel strings: ``"open"`` (all open
+            statuses, the API default when no filter is given),
+            ``"closed"`` (all closed statuses), or ``"*"`` (all
+            statuses, including closed). Use ``list_redmine_issue_statuses``
+            to discover specific numeric IDs.
         tracker_id: Filter by tracker ID.
         assigned_to_id: Filter by assignee. Use a numeric user ID or the
             special value 'me' to retrieve issues assigned to the currently
