@@ -106,9 +106,9 @@ class TestManageDocumentList:
 
         assert isinstance(result, list)
         assert len(result) == 2
-        assert "spec.pdf" in result[0]["filename"]
-        # User-controlled field wrapped in insecure-content boundary tags
-        assert "<insecure-content-" in result[0]["filename"]
+        # filename is structured metadata, returned verbatim (#109).
+        assert result[0]["filename"] == "spec.pdf"
+        assert not result[0]["filename"].startswith("<insecure-content-")
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")

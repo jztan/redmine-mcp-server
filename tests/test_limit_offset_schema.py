@@ -36,6 +36,7 @@ EXPECTED_BOUNDS = [
     ("search_entire_redmine", "offset", 0, None, 0),
     ("search_redmine_issues", "limit", 1, 1000, 25),
     ("search_redmine_issues", "offset", 0, None, 0),
+    ("manage_document", "limit", 1, 100, 100),
 ]
 
 

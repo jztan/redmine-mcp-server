@@ -41,6 +41,7 @@ EXPECTED_ACTIONS = {
         "delete",
         "rename",
     },
+    "manage_document": {"list", "get", "create", "update"},
 }
 
 

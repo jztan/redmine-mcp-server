@@ -85,6 +85,28 @@ class TestStructuredFieldsAreVerbatim:
         cat = SimpleNamespace(id=1, name=_PAYLOAD, project=None, assigned_to=None)
         assert _issue_category_to_dict(cat)["name"] == _PAYLOAD
 
+    def test_dmsf_document_filename_name_title_author_are_verbatim(self):
+        """DMSF documents (`manage_document`) must obey the same wrap
+        policy as the rest of the server: structured-metadata fields
+        verbatim, description wrapped. Initial PR #104 wrapped all of
+        these; corrected in the #122 follow-up."""
+        from redmine_mcp_server.tools.documents import _document_to_dict
+
+        node = {
+            "id": 7,
+            "type": "file",
+            "filename": _PAYLOAD,
+            "name": _PAYLOAD,
+            "title": _PAYLOAD,
+            "description": _PAYLOAD,
+            "author": {"id": 1, "name": _PAYLOAD},
+        }
+        out = _document_to_dict(node)
+        assert out["filename"] == _PAYLOAD
+        assert out["name"] == _PAYLOAD
+        assert out["title"] == _PAYLOAD
+        assert out["author"]["name"] == _PAYLOAD
+
 
 class TestFreeTextFieldsRemainWrapped:
     """Free-text fields must keep the boundary-tag wrapping."""
@@ -124,6 +146,12 @@ class TestFreeTextFieldsRemainWrapped:
         )
         out = _attachments_to_list(SimpleNamespace(attachments=[att]))
         assert _wrapped(out[0]["description"])
+
+    def test_dmsf_document_description_is_wrapped(self):
+        from redmine_mcp_server.tools.documents import _document_to_dict
+
+        out = _document_to_dict({"id": 7, "filename": "x.pdf", "description": _PAYLOAD})
+        assert _wrapped(out["description"])
 
     @pytest.mark.asyncio
     async def test_journal_notes_are_wrapped(self):

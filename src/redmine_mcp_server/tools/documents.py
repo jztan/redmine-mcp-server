@@ -58,7 +58,9 @@ import base64
 import binascii
 import io
 import json
-from typing import Any, Dict, List, Optional, Union
+from typing import Annotated, Any, Dict, List, Literal, Optional, Union
+
+from pydantic import Field
 
 from .._client import _get_redmine_client
 from .._decorators import ActionMode, action_dispatch
@@ -116,9 +118,11 @@ def _document_to_dict(node: Dict[str, Any]) -> Dict[str, Any]:
     This serializer merges both shapes into one stable representation, falling
     back to the latest revision when a field is missing at the top level.
 
-    User-controlled fields (``title``, ``name``, ``description``, ``filename``)
-    are wrapped in ``<insecure-content>`` boundary tags because they may
-    contain prompt-injection payloads.
+    Per the wrap policy in #109: free-text fields (``description``) are
+    wrapped in ``<insecure-content>`` boundary tags; structured-metadata
+    fields (``filename``, ``name``, ``title``, ``author.name``) are
+    returned verbatim because they are consumed downstream as paths,
+    URLs, and identifiers rather than as prose.
     """
     if not isinstance(node, dict):
         return {}
@@ -136,12 +140,16 @@ def _document_to_dict(node: Dict[str, Any]) -> Dict[str, Any]:
 
     # Author can arrive as a nested dict (list endpoint) or as a bare user_id
     # on the latest revision (single endpoint). Normalize to either a
-    # ``{"id", "name"}`` dict or ``None``.
+    # ``{"id", "name"}`` dict or ``None``. Display names are returned
+    # verbatim per #109 (the codebase-wide ``_named_ref`` helper operates
+    # on python-redmine resource objects with attribute access, so we
+    # mirror its post-#109 shape inline here for the dict-typed payloads
+    # this tool receives from ``client.engine.request``).
     raw_author = node.get("author") or latest.get("author")
     if isinstance(raw_author, dict):
         author: Optional[Dict[str, Any]] = {
             "id": raw_author.get("id"),
-            "name": wrap_insecure_content(raw_author.get("name", "")),
+            "name": raw_author.get("name", ""),
         }
     elif latest.get("user_id") is not None:
         author = {"id": latest.get("user_id"), "name": None}
@@ -153,9 +161,9 @@ def _document_to_dict(node: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "id": node.get("id"),
         "type": node.get("type"),
-        "filename": wrap_insecure_content(filename),
-        "title": wrap_insecure_content(node.get("title") or latest.get("title") or ""),
-        "name": wrap_insecure_content(node.get("name", "")),
+        "filename": filename,
+        "title": node.get("title") or latest.get("title") or "",
+        "name": node.get("name", ""),
         "description": wrap_insecure_content(
             node.get("description") or latest.get("description") or ""
         ),
@@ -543,10 +551,10 @@ async def _manage_document_dispatch(action: str, **kwargs: Any) -> Any:
 
 @mcp.tool()
 async def manage_document(
-    action: str,
+    action: Literal["list", "get", "create", "update"],
     project_id: Optional[Union[str, int]] = None,
     folder_id: Optional[int] = None,
-    limit: int = 100,
+    limit: Annotated[int, Field(ge=1, le=100)] = 100,
     document_id: Optional[int] = None,
     filename: Optional[str] = None,
     content_base64: Optional[str] = None,
