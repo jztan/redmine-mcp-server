@@ -57,7 +57,7 @@ def _time_entry_to_dict(time_entry: Any) -> Dict[str, Any]:
 async def list_time_entries(
     project_id: Optional[Union[str, int]] = None,
     issue_id: Optional[int] = None,
-    user_id: Optional[Union[str, int]] = None,
+    user_id: Optional[Union[int, Literal["me"]]] = None,
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
     limit: Annotated[int, Field(ge=1, le=100)] = 25,
@@ -71,7 +71,10 @@ async def list_time_entries(
     Args:
         project_id: Filter by project (ID number or string identifier).
         issue_id: Filter by issue ID.
-        user_id: Filter by user ID. Use "me" for current user.
+        user_id: Filter by user ID. Accepts a numeric user ID or the
+            literal string ``"me"`` (retrieves the currently authenticated
+            user's entries). Arbitrary strings are rejected at the
+            FastMCP boundary.
         from_date: Start date filter (YYYY-MM-DD format).
         to_date: End date filter (YYYY-MM-DD format).
         limit: Maximum number of entries to return (default: 25, max: 100).

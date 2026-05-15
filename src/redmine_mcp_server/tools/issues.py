@@ -570,7 +570,7 @@ async def list_redmine_issues(
     project_id: Optional[Union[int, str]] = None,
     status_id: Optional[Union[int, Literal["open", "closed", "*"]]] = None,
     tracker_id: Optional[int] = None,
-    assigned_to_id: Optional[Union[int, str]] = None,
+    assigned_to_id: Optional[Union[int, Literal["me"]]] = None,
     priority_id: Optional[int] = None,
     fixed_version_id: Optional[int] = None,
     sort: Optional[str] = None,
@@ -596,9 +596,10 @@ async def list_redmine_issues(
             statuses, including closed). Use ``list_redmine_issue_statuses``
             to discover specific numeric IDs.
         tracker_id: Filter by tracker ID.
-        assigned_to_id: Filter by assignee. Use a numeric user ID or the
-            special value 'me' to retrieve issues assigned to the currently
-            authenticated user.
+        assigned_to_id: Filter by assignee. Accepts a numeric user ID or
+            the literal string ``"me"`` (the only valid string sentinel,
+            retrieves issues assigned to the currently authenticated
+            user). Arbitrary strings are rejected at the FastMCP boundary.
         priority_id: Filter by priority ID.
         fixed_version_id: Filter by target version/milestone ID.
         sort: Sort order (e.g., "updated_on:desc").
