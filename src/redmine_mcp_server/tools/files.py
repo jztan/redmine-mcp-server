@@ -78,11 +78,14 @@ async def get_redmine_attachment(
     absolute local file path (in stdio mode). The caller does not need to
     know which mode is active.
 
-    **HTTP mode** (PUBLIC_HOST or SERVER_HOST resolves to an external hostname):
-    Returns a dict with ``uri``, ``uri_type: "http"``, filename, content_type,
-    size, expires_at, and attachment_id.
+    **HTTP mode** (any explicit ``PUBLIC_HOST``, or a non-loopback
+    ``SERVER_HOST``): Returns a dict with ``uri``, ``uri_type: "http"``,
+    filename, content_type, size, expires_at, and attachment_id. An
+    explicit ``PUBLIC_HOST=localhost`` also selects this mode so Docker
+    port-forwarded deployments produce a URL the host can reach.
 
-    **stdio mode** (no reachable HTTP server):
+    **stdio mode** (neither variable set, or only ``SERVER_HOST`` set to
+    a loopback bind address):
     Returns a dict with ``file_path`` (absolute), ``uri_type: "file"``,
     filename, content_type, size, expires_at, and attachment_id.
     The path can be passed directly to Claude Code's ``Read`` tool or pdf-mcp.
@@ -183,14 +186,32 @@ async def get_redmine_attachment(
                 pass
             return {"error": f"Failed to save metadata: {exc}"}
 
-        # Mode detection: PUBLIC_HOST -> SERVER_HOST -> "localhost"
-        public_host = os.getenv("PUBLIC_HOST", os.getenv("SERVER_HOST", "localhost"))
+        # Mode detection:
+        # - Explicit PUBLIC_HOST always selects HTTP mode (respect user
+        #   intent, e.g. Docker port-forward where localhost is reachable
+        #   on the host).
+        # - Otherwise, SERVER_HOST promotes to HTTP mode only when it
+        #   names a non-loopback host (SERVER_HOST is the bind address
+        #   and is commonly "0.0.0.0", which is not reachable as a URL).
+        # - Otherwise, fall back to stdio/file mode.
+        public_host_env = os.environ.get("PUBLIC_HOST")
+        server_host_env = os.environ.get("SERVER_HOST")
+        if public_host_env is not None:
+            public_host = public_host_env
+            use_file_mode = False
+        elif server_host_env and server_host_env not in _LOOPBACK_HOSTS:
+            public_host = server_host_env
+            use_file_mode = False
+        else:
+            public_host = "localhost"
+            use_file_mode = True
+
         public_port = os.getenv("PUBLIC_PORT", os.getenv("SERVER_PORT", "8000"))
 
         expires_str = expires_at.isoformat()
         safe_filename = wrap_insecure_content(original_filename)
 
-        if public_host in _LOOPBACK_HOSTS:
+        if use_file_mode:
             return {
                 "file_path": absolute_path,
                 "uri_type": "file",

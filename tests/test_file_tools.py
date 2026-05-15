@@ -755,6 +755,49 @@ class TestGetRedmineAttachment:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.redmine")
     @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    async def test_explicit_public_host_localhost_uses_http_mode(
+        self, mock_cleanup, mock_redmine, tmp_path, monkeypatch
+    ):
+        # Docker port-forward case: PUBLIC_HOST=localhost is reachable on
+        # the host, so it must select HTTP mode rather than file mode.
+        monkeypatch.setenv("ATTACHMENTS_DIR", str(tmp_path))
+        monkeypatch.setenv("PUBLIC_HOST", "localhost")
+        monkeypatch.setenv("PUBLIC_PORT", "8000")
+
+        mock_redmine.attachment.get.return_value = _mock_attachment()
+        mock_redmine.download.return_value = _mock_stream()
+
+        result = await get_redmine_attachment(1)
+
+        assert "error" not in result
+        assert result.get("uri_type") == "http"
+        assert result["uri"].startswith("http://localhost:8000/files/")
+        assert "file_path" not in result
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    async def test_loopback_server_host_falls_back_to_file_mode(
+        self, mock_cleanup, mock_redmine, tmp_path, monkeypatch
+    ):
+        # SERVER_HOST is a bind address; "0.0.0.0" is not a reachable URL
+        # host, so without an explicit PUBLIC_HOST we must use file mode.
+        monkeypatch.setenv("ATTACHMENTS_DIR", str(tmp_path))
+        monkeypatch.delenv("PUBLIC_HOST", raising=False)
+        monkeypatch.setenv("SERVER_HOST", "0.0.0.0")
+
+        mock_redmine.attachment.get.return_value = _mock_attachment()
+        mock_redmine.download.return_value = _mock_stream()
+
+        result = await get_redmine_attachment(1)
+
+        assert "error" not in result
+        assert result.get("uri_type") == "file"
+        assert "uri" not in result
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_file_path_is_absolute(
         self, mock_cleanup, mock_redmine, tmp_path, monkeypatch
     ):
