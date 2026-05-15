@@ -1489,22 +1489,64 @@ async def list_subtasks(
         )
 
 
-async def _delete_issue_action(
+@mcp.tool()
+async def delete_redmine_issue(
     issue_id: Optional[int] = None,
     confirm_delete: bool = False,
     confirm_delete_with_children: bool = False,
-    **_: Any,
 ) -> Dict[str, Any]:
-    """Delete an issue, with a confirmation gate and cascade preview.
+    """Hard-delete an issue via ``DELETE /issues/{id}.json``.
 
-    Mirrors ``delete_file``'s ``confirm_delete_any_attachment`` safety
-    pattern: without ``confirm_delete=True`` the tool refuses and
-    returns a structured impact preview instead so the caller (or its
-    user) can decide whether to proceed. With ``confirm_delete=True``
-    the issue and its cascading children are removed via Redmine's
-    ``DELETE /issues/{id}.json``.
+    Issue deletion in Redmine is **irreversible** and cascades to the
+    issue's children (subtasks), journals (comments), attachments,
+    time entries, and inbound relations from issues that referenced
+    it. To prevent accidental destruction, this tool refuses unless
+    the caller passes ``confirm_delete=True``; the refusal envelope
+    includes a structured ``impact`` preview (counts of cascaded
+    items) so a caller can decide whether to proceed.
+
+    If the issue has subtasks, ``confirm_delete=True`` alone is not
+    enough -- the tool also requires ``confirm_delete_with_children=True``
+    so the cascade-delete of subtasks is opt-in twice. This is the
+    case most likely to surprise a caller.
+
+    For other lifecycle operations on an issue, use:
+
+    - ``create_redmine_issue`` to create
+    - ``update_redmine_issue`` to edit fields (including status,
+      priority, custom fields)
+    - ``copy_issue`` to duplicate
+    - ``get_redmine_issue`` to read
+
+    Args:
+        issue_id: ID of the issue to delete. Must be a positive
+            integer.
+        confirm_delete: When ``False`` (default), the tool refuses
+            and returns an impact preview. Pass ``True`` to actually
+            delete.
+        confirm_delete_with_children: When the issue has subtasks,
+            ``confirm_delete=True`` alone refuses with
+            ``CHILDREN_PRESENT``. Pass this flag too to opt in to
+            cascade-deleting the subtasks.
+
+    Returns:
+        On refusal: an error envelope with ``code``
+        (``CONFIRMATION_REQUIRED`` or ``CHILDREN_PRESENT``),
+        ``hint``, and ``impact`` (counts of cascaded items).
+
+        On success: ``{"success": True, "deleted_issue_id": N,
+        "cascade_deleted": {...counts}}``.
+
+        On 404: ``{"error", "code": "NOT_FOUND", "upstream_status":
+        404, "issue_id"}``.
+
+        Blocked in read-only mode (``REDMINE_MCP_READ_ONLY=true``).
     """
     from redminelib.exceptions import ResourceNotFoundError
+
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+    await _ensure_cleanup_started()
 
     if not _is_positive_int(issue_id):
         return {"error": "issue_id must be a positive integer."}
@@ -1602,70 +1644,6 @@ async def _delete_issue_action(
         "success": True,
         "deleted_issue_id": issue_id,
         "cascade_deleted": impact,
-    }
-
-
-@mcp.tool()
-@action_dispatch({"delete": ActionMode.WRITE})
-async def manage_issue(
-    action: Literal["delete"],
-    issue_id: Optional[int] = None,
-    confirm_delete: bool = False,
-    confirm_delete_with_children: bool = False,
-) -> Dict[str, Any]:
-    """Manage an issue's lifecycle. Currently exposes a single action:
-    ``delete`` -- hard-delete an issue via
-    ``DELETE /issues/{id}.json``.
-
-    Issue deletion in Redmine is **irreversible** and cascades to the
-    issue's children (subtasks), journals (comments), attachments,
-    time entries, and inbound relations from issues that referenced
-    it. To prevent accidental destruction, this tool refuses unless
-    the caller passes ``confirm_delete=True``; the refusal envelope
-    includes a structured ``impact`` preview (counts of cascaded
-    items) so a caller can decide whether to proceed.
-
-    If the issue has subtasks, ``confirm_delete=True`` alone is not
-    enough -- the tool also requires ``confirm_delete_with_children=True``
-    so the cascade-delete of subtasks is opt-in twice. This is the
-    case most likely to surprise a caller.
-
-    For other lifecycle operations on an issue, use:
-
-    - ``create_redmine_issue`` to create
-    - ``update_redmine_issue`` to edit fields (including status,
-      priority, custom fields)
-    - ``copy_issue`` to duplicate
-    - ``get_redmine_issue`` to read
-
-    Args:
-        action: ``"delete"`` (only action currently exposed).
-        issue_id: ID of the issue to delete. Must be a positive
-            integer.
-        confirm_delete: When ``False`` (default), the tool refuses
-            and returns an impact preview. Pass ``True`` to actually
-            delete.
-        confirm_delete_with_children: When the issue has subtasks,
-            ``confirm_delete=True`` alone refuses with
-            ``CHILDREN_PRESENT``. Pass this flag too to opt in to
-            cascade-deleting the subtasks.
-
-    Returns:
-        On refusal: an error envelope with ``code``
-        (``CONFIRMATION_REQUIRED`` or ``CHILDREN_PRESENT``),
-        ``hint``, and ``impact`` (counts of cascaded items).
-
-        On success: ``{"success": True, "deleted_issue_id": N,
-        "cascade_deleted": {...counts}}``.
-
-        On 404: ``{"error", "code": "NOT_FOUND", "upstream_status":
-        404, "issue_id"}``.
-
-        Blocked in read-only mode (``REDMINE_MCP_READ_ONLY=true``)
-        by the ``@action_dispatch`` decorator.
-    """
-    return {
-        "delete": _delete_issue_action,
     }
 
 

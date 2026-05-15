@@ -460,7 +460,7 @@ This MCP server provides 46 tools for interacting with Redmine (plus 1 operator 
   - [`search_redmine_issues`](docs/tool-reference.md#search_redmine_issues) - Search issues by text query
   - [`create_redmine_issue`](docs/tool-reference.md#create_redmine_issue) - Create new issues
   - [`update_redmine_issue`](docs/tool-reference.md#update_redmine_issue) - Update existing issues
-  - [`manage_issue`](docs/tool-reference.md#manage_issue) - Issue lifecycle. Currently exposes `action="delete"` with required confirmation flags and a cascade-impact preview before irreversible deletion.
+  - [`delete_redmine_issue`](docs/tool-reference.md#delete_redmine_issue) - Hard-delete an issue with required confirmation flags and a cascade-impact preview before irreversible deletion.
   - [`copy_issue`](docs/tool-reference.md#copy_issue) - Duplicate an existing issue with optional field overrides
   - [`list_subtasks`](docs/tool-reference.md#list_subtasks) - List subtasks (child issues) of a given parent
   - [`get_private_notes`](docs/tool-reference.md#get_private_notes) - Retrieve private notes on an issue

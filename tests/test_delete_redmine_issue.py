@@ -1,4 +1,4 @@
-"""Tests for manage_issue(action="delete") (#120).
+"""Tests for delete_redmine_issue (#120).
 
 Issue deletion is irreversible and cascades to subtasks, journals,
 attachments, time entries, and inbound relations. The tool gates the
@@ -12,7 +12,7 @@ from unittest.mock import patch
 import pytest
 from redminelib.exceptions import ResourceNotFoundError
 
-from redmine_mcp_server.tools.issues import manage_issue
+from redmine_mcp_server.tools.issues import delete_redmine_issue
 
 
 def _make_issue(issue_id: int = 1, children=(), **extras) -> SimpleNamespace:
@@ -32,7 +32,7 @@ class TestConfirmationGate:
     @patch("redmine_mcp_server._client.redmine")
     async def test_refuses_without_confirm_delete(self, mock_redmine):
         mock_redmine.issue.get.return_value = _make_issue(1)
-        result = await manage_issue(action="delete", issue_id=1)
+        result = await delete_redmine_issue(issue_id=1)
 
         assert result["code"] == "CONFIRMATION_REQUIRED"
         assert "irreversible" in result["hint"].lower()
@@ -49,7 +49,7 @@ class TestConfirmationGate:
         mock_redmine.issue.get.return_value = _make_issue(1)
         mock_redmine.issue.delete.return_value = True
 
-        result = await manage_issue(action="delete", issue_id=1, confirm_delete=True)
+        result = await delete_redmine_issue(issue_id=1, confirm_delete=True)
 
         assert result["success"] is True
         assert result["deleted_issue_id"] == 1
@@ -68,7 +68,7 @@ class TestCascadeChildrenGate:
             1, children=[SimpleNamespace(id=2), SimpleNamespace(id=3)]
         )
 
-        result = await manage_issue(action="delete", issue_id=1, confirm_delete=True)
+        result = await delete_redmine_issue(issue_id=1, confirm_delete=True)
 
         assert result["code"] == "CHILDREN_PRESENT"
         assert "2 subtask" in result["error"]
@@ -83,8 +83,7 @@ class TestCascadeChildrenGate:
         )
         mock_redmine.issue.delete.return_value = True
 
-        result = await manage_issue(
-            action="delete",
+        result = await delete_redmine_issue(
             issue_id=1,
             confirm_delete=True,
             confirm_delete_with_children=True,
@@ -112,7 +111,7 @@ class TestImpactPreview:
             ],
         )
 
-        result = await manage_issue(action="delete", issue_id=42)
+        result = await delete_redmine_issue(issue_id=42)
 
         preview = result["impact"]
         assert preview["children_count"] == 2
@@ -126,7 +125,7 @@ class TestErrorPaths:
     @pytest.mark.asyncio
     async def test_invalid_issue_id_returns_error(self):
         for bogus in (None, -1, 0, "abc", 1.5):
-            result = await manage_issue(action="delete", issue_id=bogus)
+            result = await delete_redmine_issue(issue_id=bogus)
             assert "error" in result
             assert "positive integer" in result["error"]
 
@@ -134,7 +133,7 @@ class TestErrorPaths:
     @patch("redmine_mcp_server._client.redmine")
     async def test_not_found_returns_404_envelope(self, mock_redmine):
         mock_redmine.issue.get.side_effect = ResourceNotFoundError()
-        result = await manage_issue(action="delete", issue_id=999)
+        result = await delete_redmine_issue(issue_id=999)
         assert result["code"] == "NOT_FOUND"
         assert result["upstream_status"] == 404
         assert result["issue_id"] == 999
@@ -146,7 +145,7 @@ class TestErrorPaths:
         # surface the upstream 404 cleanly rather than crashing.
         mock_redmine.issue.get.return_value = _make_issue(1)
         mock_redmine.issue.delete.side_effect = ResourceNotFoundError()
-        result = await manage_issue(action="delete", issue_id=1, confirm_delete=True)
+        result = await delete_redmine_issue(issue_id=1, confirm_delete=True)
         assert result["code"] == "NOT_FOUND"
 
 
@@ -154,8 +153,8 @@ class TestReadOnlyMode:
     @pytest.mark.asyncio
     async def test_blocked_in_read_only_mode(self, monkeypatch):
         monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "true")
-        result = await manage_issue(action="delete", issue_id=1, confirm_delete=True)
-        # The @action_dispatch decorator surfaces the standard
-        # read-only envelope before the action handler runs.
+        result = await delete_redmine_issue(issue_id=1, confirm_delete=True)
+        # The standard read-only envelope is returned before any
+        # Redmine call.
         assert "error" in result
         assert "read-only" in result["error"].lower()

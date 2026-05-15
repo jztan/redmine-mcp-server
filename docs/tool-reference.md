@@ -160,6 +160,7 @@ When enabled, the following tools return an error instead of executing
 **Fully blocked (all actions are writes):**
 - `create_redmine_issue`
 - `update_redmine_issue`
+- `delete_redmine_issue`
 - `manage_project_member` — all actions
 - `manage_issue_watcher` — all actions
 - `manage_issue_note` — all actions
@@ -882,16 +883,15 @@ update_redmine_issue(
 
 ---
 
-### `manage_issue`
+### `delete_redmine_issue`
 
-Manage an issue's lifecycle. Currently exposes a single action: `delete` — hard-delete an issue via `DELETE /issues/{id}.json`. Blocked when `REDMINE_MCP_READ_ONLY=true`.
+Hard-delete an issue via `DELETE /issues/{id}.json`. Blocked when `REDMINE_MCP_READ_ONLY=true`.
 
 Issue deletion in Redmine is **irreversible** and cascades to subtasks, journals (comments), attachments, time entries, and inbound relations from issues that referenced this one. To prevent accidental destruction, the tool refuses unless `confirm_delete=True`, and refuses *again* when the issue has subtasks unless `confirm_delete_with_children=True` is also passed.
 
 For other lifecycle operations, use [`create_redmine_issue`](#create_redmine_issue), [`update_redmine_issue`](#update_redmine_issue), [`copy_issue`](#copy_issue), or [`get_redmine_issue`](#get_redmine_issue).
 
 **Parameters:**
-- `action` (string, required): `"delete"`. The only action currently exposed; new actions (archive / restore / merge) may land under this tool in the future.
 - `issue_id` (integer, required): ID of the issue to delete. Must be a positive integer.
 - `confirm_delete` (boolean, optional): When `False` (default), the tool refuses and returns an impact preview. Pass `True` to actually delete.
 - `confirm_delete_with_children` (boolean, optional): When the issue has subtasks, `confirm_delete=True` alone refuses with code `CHILDREN_PRESENT`. Pass this flag too to opt in to cascade-deleting the subtasks.
@@ -936,18 +936,17 @@ For other lifecycle operations, use [`create_redmine_issue`](#create_redmine_iss
 **Examples:**
 ```python
 # Preview what would be deleted
-manage_issue(action="delete", issue_id=42)
+delete_redmine_issue(issue_id=42)
 # -> {"code": "CONFIRMATION_REQUIRED", "impact": {...}, ...}
 
 # Explicit delete
-manage_issue(action="delete", issue_id=42, confirm_delete=True)
+delete_redmine_issue(issue_id=42, confirm_delete=True)
 # -> {"success": True, "deleted_issue_id": 42, ...}
 
 # Subtasks present -> double-confirm
-manage_issue(action="delete", issue_id=42, confirm_delete=True)
+delete_redmine_issue(issue_id=42, confirm_delete=True)
 # -> {"code": "CHILDREN_PRESENT", ...}
-manage_issue(
-    action="delete",
+delete_redmine_issue(
     issue_id=42,
     confirm_delete=True,
     confirm_delete_with_children=True,
