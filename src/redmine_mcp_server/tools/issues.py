@@ -450,7 +450,16 @@ async def get_redmine_issue(
     include_relations: bool = False,
     include_children: bool = False,
 ) -> Dict[str, Any]:
-    """Retrieve a specific Redmine issue by ID.
+    """Retrieve a specific Redmine issue by ID. Fetch issue details,
+    view a ticket, show a bug report, get issue with comments,
+    journals, attachments, or related metadata.
+
+    Use this tool to pull a single issue with full context: comments
+    (journals), attachments, custom fields, watchers, relations,
+    subtasks/children, and (when ``REDMINE_AGILE_ENABLED=true``) agile
+    metadata. For listing or filtering across multiple issues see
+    ``list_redmine_issues``; for text search across issues see
+    ``search_redmine_issues``.
 
     Args:
         issue_id: The ID of the issue to retrieve
@@ -1001,7 +1010,16 @@ async def create_redmine_issue(
     fields: Optional[Union[Dict[str, Any], str]] = None,
     extra_fields: Optional[Union[Dict[str, Any], str]] = None,
 ) -> Dict[str, Any]:
-    """Create a new issue in Redmine.
+    """Create a new issue in Redmine. Open a ticket, file a bug,
+    submit a feature request, log a support case, or report a task.
+
+    Use this tool to create a single issue with a subject and optional
+    description, plus any standard or custom fields (``tracker_id``,
+    ``status_id``, ``priority_id``, ``assigned_to_id``,
+    ``fixed_version_id``, ``parent_issue_id``, ``start_date``,
+    ``due_date``, custom field values, etc.). For duplicating an
+    existing issue see ``copy_issue``; for editing an existing issue
+    see ``update_redmine_issue``.
 
     Compatibility notes:
     - Supports serialized ``fields`` payload (JSON object string)
