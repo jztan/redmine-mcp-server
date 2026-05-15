@@ -177,6 +177,102 @@ def _extract_missing_required_field_names(error_message: str) -> List[str]:
     return missing_names
 
 
+# Display names of Redmine's standard issue fields. Validation errors that
+# name one of these in "X cannot be blank" / "is not included in the list"
+# do NOT involve the #119 discovery-mismatch path -- they're caller-side
+# missing-parameter bugs. The hint should steer the caller toward
+# top-level/standard-key recovery rather than the custom-fields machinery.
+_STANDARD_FIELD_DISPLAY_NAMES: Set[str] = {
+    "Subject",
+    "Description",
+    "Project",
+    "Tracker",
+    "Status",
+    "Priority",
+    "Assignee",
+    "Author",
+    "Category",
+    "Target version",
+    "Fixed version",
+    "Parent task",
+    "Parent issue",
+    "Start date",
+    "Due date",
+    "Estimated time",
+    "Done ratio",
+    "Done %",
+    "Is private",
+    "Watchers",
+}
+
+
+def _augment_validation_error_with_field_hint(
+    envelope: Dict[str, Any], error_message: str
+) -> Dict[str, Any]:
+    """Enrich a Redmine validation-error envelope with recovery context.
+
+    When the underlying error message names one or more fields as
+    required (``"X cannot be blank"`` / ``"is not included in the list"``
+    / ``"is invalid"``), augment the envelope with:
+
+    - ``missing_required_fields``: the parsed field names.
+    - ``hint``: a recovery message whose specificity depends on whether
+      the failing field names are Redmine standard fields or look like
+      custom fields. Mixed cases get both halves of the guidance.
+
+    The hint always includes the #119 caveat for custom fields:
+    ``list_project_issue_custom_fields`` only exposes the field-definition
+    ``is_required`` flag and cannot see workflow / role / tracker-bound
+    required-field rules, so a field with ``is_required: false`` can
+    still trigger this error path at create/update time.
+
+    Returns a new dict (does not mutate the input).
+    """
+    missing = _extract_missing_required_field_names(error_message)
+    if not missing:
+        return envelope
+
+    augmented = dict(envelope)
+    augmented["missing_required_fields"] = missing
+
+    has_standard = any(name in _STANDARD_FIELD_DISPLAY_NAMES for name in missing)
+    has_custom = any(name not in _STANDARD_FIELD_DISPLAY_NAMES for name in missing)
+
+    parts: List[str] = [
+        "Redmine rejected one or more required fields (see " "missing_required_fields)."
+    ]
+    if has_standard:
+        parts.append(
+            "Standard fields (Subject / Priority / Tracker / Status / etc.) "
+            "are passed as top-level parameters on create_redmine_issue "
+            "(e.g. subject=...) or as keys in the `fields` parameter on "
+            'update_redmine_issue (e.g. fields={"status_name": "Closed", '
+            '"priority_id": 3}). Use list_redmine_issue_priorities / '
+            "list_redmine_issue_statuses / list_redmine_trackers to "
+            "discover the numeric IDs."
+        )
+    if has_custom:
+        parts.append(
+            'Custom-looking fields: pass extra_fields={"custom_fields": '
+            '[{"id": N, "value": "..."}]} on create_redmine_issue, '
+            "with N from list_project_issue_custom_fields. (On "
+            "update_redmine_issue you may instead pass the custom field "
+            'by name directly in `fields`, e.g. fields={"Department": '
+            '"Engineering"} -- create_redmine_issue does NOT yet support '
+            "that shape; use the id form.) Note the #119 caveat: "
+            "is_required=false from the discovery tool only reflects the "
+            "field-definition flag; workflow rules, role-based field "
+            "permissions, and tracker-bound required-field settings can "
+            "still require a field at create/update time. Setting "
+            "REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true lets the server "
+            "retry with values from each custom field's `default_value` "
+            "or the REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS env map."
+        )
+
+    augmented["hint"] = " ".join(parts)
+    return augmented
+
+
 def _is_missing_custom_field_value(value: Any) -> bool:
     """Return True when a custom field value should be treated as missing."""
     if value is None:

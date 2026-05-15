@@ -238,6 +238,36 @@ async def list_project_issue_custom_fields(
     Returns:
         A list of custom field metadata dictionaries. On failure a list containing
         a single dictionary with an ``"error"`` key is returned.
+
+    **``is_required`` caveat (#119):** Redmine's
+    ``GET /custom_fields.json`` -- the underlying API -- only exposes the
+    flag set on the custom field *definition*. Required-ness can also be
+    imposed by **workflow rules**, **role-based field permissions**, or
+    **tracker-bound required-field settings**, none of which are
+    reflected in this field. A custom field with
+    ``is_required: false`` here can still cause
+    ``create_redmine_issue`` / ``update_redmine_issue`` to reject with
+    ``"<field name> cannot be blank"``.
+
+    No general-purpose API exists for the "effective" required state.
+    Recovery when the create/update call rejects:
+
+    1. **On ``create_redmine_issue``:** pass the rejected field via
+       ``extra_fields={"custom_fields": [{"id": N, "value": "..."}]}``
+       using the ID from this tool. (Name-keyed shortcut is not yet
+       supported on create; see #120 -- track separately.)
+    2. **On ``update_redmine_issue``:** the custom field can be passed
+       by name directly, e.g. ``fields={"Department": "Engineering"}``.
+       The tool resolves the name to a custom_fields entry.
+    3. **Either path:** set
+       ``REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true`` to have the
+       server retry once with values from each field's ``default_value``
+       or the ``REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS`` map.
+
+    ``create_redmine_issue`` and ``update_redmine_issue`` augment their
+    validation error envelope with ``missing_required_fields`` and a
+    matching ``hint`` when this pattern fires, so a caller hitting the
+    error gets recovery context inline.
     """
 
     parsed_tracker_id: Optional[int] = None

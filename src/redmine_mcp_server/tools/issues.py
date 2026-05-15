@@ -13,6 +13,7 @@ from .._cleanup import _ensure_cleanup_started
 from .._client import _get_redmine_client, logger
 from .._custom_fields import (
     _augment_fields_with_required_custom_fields,
+    _augment_validation_error_with_field_hint,
     _extract_missing_required_field_names,
     _is_required_custom_field_autofill_enabled,
     _map_named_custom_fields_for_update,
@@ -1045,11 +1046,17 @@ async def create_redmine_issue(
         return _issue_to_dict(issue)
     except ValidationError as e:
         if not _is_required_custom_field_autofill_enabled():
-            return _handle_redmine_error(e, f"creating issue in project {project_id}")
+            return _augment_validation_error_with_field_hint(
+                _handle_redmine_error(e, f"creating issue in project {project_id}"),
+                str(e),
+            )
 
         missing_names = _extract_missing_required_field_names(str(e))
         if not missing_names:
-            return _handle_redmine_error(e, f"creating issue in project {project_id}")
+            return _augment_validation_error_with_field_hint(
+                _handle_redmine_error(e, f"creating issue in project {project_id}"),
+                str(e),
+            )
 
         try:
             retry_fields = _augment_fields_with_required_custom_fields(
@@ -1060,8 +1067,9 @@ async def create_redmine_issue(
 
             # Retry only when we have actually augmented payload.
             if retry_fields == issue_fields:
-                return _handle_redmine_error(
-                    e, f"creating issue in project {project_id}"
+                return _augment_validation_error_with_field_hint(
+                    _handle_redmine_error(e, f"creating issue in project {project_id}"),
+                    str(e),
                 )
 
             logger.info(
@@ -1076,8 +1084,14 @@ async def create_redmine_issue(
             )
             return _issue_to_dict(issue)
         except Exception as retry_error:
-            return _handle_redmine_error(
-                retry_error, f"creating issue in project {project_id}"
+            # The retry failure may also be a ValidationError; surface the
+            # field hint when applicable so the caller still gets recovery
+            # context even when autofill couldn't satisfy all required fields.
+            return _augment_validation_error_with_field_hint(
+                _handle_redmine_error(
+                    retry_error, f"creating issue in project {project_id}"
+                ),
+                str(retry_error),
             )
     except Exception as e:
         return _handle_redmine_error(e, f"creating issue in project {project_id}")
@@ -1148,18 +1162,24 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
         return _issue_to_dict(updated_issue, include_custom_fields=True)
     except ValidationError as e:
         if not _is_required_custom_field_autofill_enabled():
-            return _handle_redmine_error(
-                e,
-                f"updating issue {issue_id}",
-                {"resource_type": "issue", "resource_id": issue_id},
+            return _augment_validation_error_with_field_hint(
+                _handle_redmine_error(
+                    e,
+                    f"updating issue {issue_id}",
+                    {"resource_type": "issue", "resource_id": issue_id},
+                ),
+                str(e),
             )
 
         missing_names = _extract_missing_required_field_names(str(e))
         if not missing_names:
-            return _handle_redmine_error(
-                e,
-                f"updating issue {issue_id}",
-                {"resource_type": "issue", "resource_id": issue_id},
+            return _augment_validation_error_with_field_hint(
+                _handle_redmine_error(
+                    e,
+                    f"updating issue {issue_id}",
+                    {"resource_type": "issue", "resource_id": issue_id},
+                ),
+                str(e),
             )
 
         try:
@@ -1167,10 +1187,13 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
             project = getattr(issue, "project", None)
             project_id = getattr(project, "id", None)
             if project_id is None:
-                return _handle_redmine_error(
-                    e,
-                    f"updating issue {issue_id}",
-                    {"resource_type": "issue", "resource_id": issue_id},
+                return _augment_validation_error_with_field_hint(
+                    _handle_redmine_error(
+                        e,
+                        f"updating issue {issue_id}",
+                        {"resource_type": "issue", "resource_id": issue_id},
+                    ),
+                    str(e),
                 )
 
             retry_fields = _augment_fields_with_required_custom_fields(
@@ -1181,10 +1204,13 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
 
             # Retry only when we have actually augmented payload.
             if retry_fields == update_fields:
-                return _handle_redmine_error(
-                    e,
-                    f"updating issue {issue_id}",
-                    {"resource_type": "issue", "resource_id": issue_id},
+                return _augment_validation_error_with_field_hint(
+                    _handle_redmine_error(
+                        e,
+                        f"updating issue {issue_id}",
+                        {"resource_type": "issue", "resource_id": issue_id},
+                    ),
+                    str(e),
                 )
 
             logger.info(
@@ -1204,10 +1230,13 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
             updated_issue = _get_redmine_client().issue.get(issue_id)
             return _issue_to_dict(updated_issue, include_custom_fields=True)
         except Exception as retry_error:
-            return _handle_redmine_error(
-                retry_error,
-                f"updating issue {issue_id}",
-                {"resource_type": "issue", "resource_id": issue_id},
+            return _augment_validation_error_with_field_hint(
+                _handle_redmine_error(
+                    retry_error,
+                    f"updating issue {issue_id}",
+                    {"resource_type": "issue", "resource_id": issue_id},
+                ),
+                str(retry_error),
             )
     except Exception as e:
         return _handle_redmine_error(
