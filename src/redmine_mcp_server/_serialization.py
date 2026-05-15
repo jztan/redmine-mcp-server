@@ -1,8 +1,10 @@
 """Serialization and pagination helpers used across MCP tools."""
 
+import os
 import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlsplit, urlunsplit
 
 # Default cap on list_* tool results. Unbounded iteration over resource
 # sets can OOM the server on large projects. Applies when the tool has
@@ -34,6 +36,62 @@ def wrap_insecure_content(content: Any) -> Any:
     boundary = uuid.uuid4().hex[:16]
     return (
         f"<insecure-content-{boundary}>\n{content}\n" f"</insecure-content-{boundary}>"
+    )
+
+
+def _rewrite_to_public_url(url: Any) -> Any:
+    """Rewrite an internal Redmine URL to the publicly-reachable one.
+
+    The Redmine API echoes back URLs (e.g. attachment ``content_url``)
+    that point at the hostname Redmine itself was configured with --
+    in containerized deployments that is typically the *internal*
+    service hostname (``http://redmine:3000/...``), which is
+    unreachable from MCP clients on the host or the open internet.
+    A less careful agent may also ``web_fetch`` it and waste a turn.
+
+    When ``REDMINE_PUBLIC_URL`` is set, this helper rewrites any URL
+    whose scheme+host+port matches the configured ``REDMINE_URL``
+    origin to use the public origin instead, preserving the path,
+    query string and fragment. The substitution is done on
+    scheme/netloc only so a future change to the public URL's path
+    prefix is also honored.
+
+    If ``REDMINE_PUBLIC_URL`` is unset, the URL is returned unchanged
+    -- callers fall back to ``get_redmine_attachment`` for a
+    sandbox-safe download URL on the MCP server's own proxy.
+
+    Non-string and empty inputs are returned unchanged, matching the
+    pass-through style of the other serializer helpers.
+    """
+    if not isinstance(url, str) or not url:
+        return url
+
+    public_url = os.environ.get("REDMINE_PUBLIC_URL")
+    redmine_url = os.environ.get("REDMINE_URL")
+    if not public_url or not redmine_url:
+        return url
+
+    try:
+        parsed = urlsplit(url)
+        internal = urlsplit(redmine_url)
+        public = urlsplit(public_url)
+    except ValueError:
+        return url
+
+    # Only rewrite URLs that point at the configured internal Redmine
+    # origin. Foreign URLs (e.g. a CDN-hosted asset, an explicit
+    # workaround value pre-rewritten by the operator) are left alone.
+    if parsed.scheme != internal.scheme or parsed.netloc != internal.netloc:
+        return url
+
+    return urlunsplit(
+        (
+            public.scheme or parsed.scheme,
+            public.netloc or parsed.netloc,
+            parsed.path,
+            parsed.query,
+            parsed.fragment,
+        )
     )
 
 

@@ -25,6 +25,7 @@ from .._serialization import (
     _coerce_json_safe,
     _iter_capped,
     _named_ref,
+    _rewrite_to_public_url,
     _safe_isoformat,
     wrap_insecure_content,
 )
@@ -377,7 +378,9 @@ def _attachments_to_list(issue: Any) -> List[Dict[str, Any]]:
                 "description": wrap_insecure_content(
                     getattr(attachment, "description", "")
                 ),
-                "content_url": getattr(attachment, "content_url", ""),
+                "content_url": _rewrite_to_public_url(
+                    getattr(attachment, "content_url", "")
+                ),
                 "author": _named_ref(getattr(attachment, "author", None)),
                 "created_on": _safe_isoformat(getattr(attachment, "created_on", None)),
             }

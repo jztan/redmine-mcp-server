@@ -21,6 +21,7 @@ from .._errors import _READ_ONLY_ERROR, _handle_redmine_error
 from .._serialization import (
     _iter_capped,
     _named_ref,
+    _rewrite_to_public_url,
     _safe_isoformat,
     wrap_insecure_content,
 )
@@ -55,7 +56,7 @@ def _file_to_dict(file_obj: Any) -> Dict[str, Any]:
         "filesize": getattr(file_obj, "filesize", 0),
         "content_type": getattr(file_obj, "content_type", ""),
         "description": wrap_insecure_content(getattr(file_obj, "description", "")),
-        "content_url": getattr(file_obj, "content_url", ""),
+        "content_url": _rewrite_to_public_url(getattr(file_obj, "content_url", "")),
         "digest": getattr(file_obj, "digest", ""),
         "downloads": getattr(file_obj, "downloads", 0),
         "author": _named_ref(getattr(file_obj, "author", None)),
