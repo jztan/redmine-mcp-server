@@ -382,8 +382,10 @@ def extract_changelog_section(project_root: Path, version: str) -> str:
         line = line.strip()
         if not line.startswith("- "):
             continue
-        # Format: "- @username — description ([#PR](url))"
-        author_match = re.match(r"-\s+(@\S+)\s*[—–-]\s*(.*)", line)
+        # Format: "- @username: description ([#PR](url))"
+        # Accept colon (current style, per the no-em-dash writing rule), as well
+        # as em dash / en dash / hyphen for older CHANGELOG entries.
+        author_match = re.match(r"-\s+(@\S+)\s*[—–\-:]\s*(.*)", line)
         if author_match:
             author = author_match.group(1)
             desc = author_match.group(2).strip()
