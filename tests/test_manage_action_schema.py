@@ -42,6 +42,7 @@ EXPECTED_ACTIONS = {
         "rename",
     },
     "manage_document": {"list", "get", "create", "update"},
+    "manage_issue": {"delete"},
 }
 
 
@@ -54,14 +55,22 @@ async def test_manage_tool_action_is_json_schema_enum(tool_name, expected):
 
     schema = listed[tool_name].inputSchema or {}
     action_prop = schema.get("properties", {}).get("action", {})
-    enum_values = action_prop.get("enum")
 
-    assert enum_values is not None, (
-        f"{tool_name}.action must surface as a JSON-schema enum "
-        "(declare it as Literal[...] on the function signature). "
-        f"Got: {action_prop}"
-    )
-    assert set(enum_values) == expected, (
-        f"{tool_name}.action enum drifted from the dispatch spec. "
-        f"Expected {expected}, got {set(enum_values)}."
+    # Pydantic renders Literal["x", "y"] as `enum: [...]` but a
+    # single-value Literal["only"] as `const: "only"`. Accept either
+    # shape and reduce to a set of allowed values for the comparison.
+    if "enum" in action_prop:
+        allowed = set(action_prop["enum"])
+    elif "const" in action_prop:
+        allowed = {action_prop["const"]}
+    else:
+        raise AssertionError(
+            f"{tool_name}.action must surface as a JSON-schema enum or "
+            "const (declare it as Literal[...] on the function "
+            f"signature). Got: {action_prop}"
+        )
+
+    assert allowed == expected, (
+        f"{tool_name}.action allowed values drifted from the dispatch "
+        f"spec. Expected {expected}, got {allowed}."
     )

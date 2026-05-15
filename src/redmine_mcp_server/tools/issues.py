@@ -1489,6 +1489,186 @@ async def list_subtasks(
         )
 
 
+async def _delete_issue_action(
+    issue_id: Optional[int] = None,
+    confirm_delete: bool = False,
+    confirm_delete_with_children: bool = False,
+    **_: Any,
+) -> Dict[str, Any]:
+    """Delete an issue, with a confirmation gate and cascade preview.
+
+    Mirrors ``delete_file``'s ``confirm_delete_any_attachment`` safety
+    pattern: without ``confirm_delete=True`` the tool refuses and
+    returns a structured impact preview instead so the caller (or its
+    user) can decide whether to proceed. With ``confirm_delete=True``
+    the issue and its cascading children are removed via Redmine's
+    ``DELETE /issues/{id}.json``.
+    """
+    from redminelib.exceptions import ResourceNotFoundError
+
+    if not _is_positive_int(issue_id):
+        return {"error": "issue_id must be a positive integer."}
+
+    # Fetch the issue + lightweight cascade hints. The include flags
+    # below are cheap (Redmine returns them inline on the issue
+    # response) and let us populate a preview without separate API
+    # round-trips. Subtask count is best-effort: when present,
+    # ``children`` is included by Redmine; otherwise we treat
+    # children-count as 0 for the preview (the actual delete still
+    # cascades the same way regardless).
+    try:
+        issue = _get_redmine_client().issue.get(
+            issue_id,
+            include="journals,attachments,relations,children",
+        )
+    except ResourceNotFoundError:
+        return {
+            "error": f"Issue {issue_id} not found.",
+            "code": "NOT_FOUND",
+            "upstream_status": 404,
+            "issue_id": issue_id,
+        }
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"fetching issue {issue_id} for delete",
+            {"resource_type": "issue", "resource_id": issue_id},
+        )
+
+    children = list(getattr(issue, "children", None) or [])
+    journals = list(getattr(issue, "journals", None) or [])
+    attachments = list(getattr(issue, "attachments", None) or [])
+    relations = list(getattr(issue, "relations", None) or [])
+    time_entries = list(getattr(issue, "time_entries", None) or [])
+
+    impact: Dict[str, Any] = {
+        "issue_id": issue_id,
+        "subject": getattr(issue, "subject", ""),
+        "children_count": len(children),
+        "journals_count": len(journals),
+        "attachments_count": len(attachments),
+        "relations_count": len(relations),
+        "time_entries_count": len(time_entries),
+    }
+
+    if not confirm_delete:
+        return {
+            "error": (
+                f"Refusing to delete issue {issue_id} without " "explicit confirmation."
+            ),
+            "code": "CONFIRMATION_REQUIRED",
+            "hint": (
+                "Issue deletion in Redmine is irreversible and cascades "
+                "to children, journals, attachments, time entries, and "
+                "inbound relations from issues that reference this one. "
+                "Re-invoke with confirm_delete=True to proceed."
+            ),
+            "impact": impact,
+        }
+
+    if children and not confirm_delete_with_children:
+        return {
+            "error": (
+                f"Refusing to delete issue {issue_id}: it has "
+                f"{len(children)} subtask(s) which would be "
+                "cascade-deleted by Redmine."
+            ),
+            "code": "CHILDREN_PRESENT",
+            "hint": (
+                "Re-invoke with confirm_delete_with_children=True to "
+                "proceed with the cascade, or reassign / delete the "
+                "children first if you want to keep them."
+            ),
+            "impact": impact,
+        }
+
+    try:
+        _get_redmine_client().issue.delete(issue_id)
+    except ResourceNotFoundError:
+        return {
+            "error": f"Issue {issue_id} not found.",
+            "code": "NOT_FOUND",
+            "upstream_status": 404,
+            "issue_id": issue_id,
+        }
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"deleting issue {issue_id}",
+            {"resource_type": "issue", "resource_id": issue_id},
+        )
+
+    return {
+        "success": True,
+        "deleted_issue_id": issue_id,
+        "cascade_deleted": impact,
+    }
+
+
+@mcp.tool()
+@action_dispatch({"delete": ActionMode.WRITE})
+async def manage_issue(
+    action: Literal["delete"],
+    issue_id: Optional[int] = None,
+    confirm_delete: bool = False,
+    confirm_delete_with_children: bool = False,
+) -> Dict[str, Any]:
+    """Manage an issue's lifecycle. Currently exposes a single action:
+    ``delete`` -- hard-delete an issue via
+    ``DELETE /issues/{id}.json``.
+
+    Issue deletion in Redmine is **irreversible** and cascades to the
+    issue's children (subtasks), journals (comments), attachments,
+    time entries, and inbound relations from issues that referenced
+    it. To prevent accidental destruction, this tool refuses unless
+    the caller passes ``confirm_delete=True``; the refusal envelope
+    includes a structured ``impact`` preview (counts of cascaded
+    items) so a caller can decide whether to proceed.
+
+    If the issue has subtasks, ``confirm_delete=True`` alone is not
+    enough -- the tool also requires ``confirm_delete_with_children=True``
+    so the cascade-delete of subtasks is opt-in twice. This is the
+    case most likely to surprise a caller.
+
+    For other lifecycle operations on an issue, use:
+
+    - ``create_redmine_issue`` to create
+    - ``update_redmine_issue`` to edit fields (including status,
+      priority, custom fields)
+    - ``copy_issue`` to duplicate
+    - ``get_redmine_issue`` to read
+
+    Args:
+        action: ``"delete"`` (only action currently exposed).
+        issue_id: ID of the issue to delete. Must be a positive
+            integer.
+        confirm_delete: When ``False`` (default), the tool refuses
+            and returns an impact preview. Pass ``True`` to actually
+            delete.
+        confirm_delete_with_children: When the issue has subtasks,
+            ``confirm_delete=True`` alone refuses with
+            ``CHILDREN_PRESENT``. Pass this flag too to opt in to
+            cascade-deleting the subtasks.
+
+    Returns:
+        On refusal: an error envelope with ``code``
+        (``CONFIRMATION_REQUIRED`` or ``CHILDREN_PRESENT``),
+        ``hint``, and ``impact`` (counts of cascaded items).
+
+        On success: ``{"success": True, "deleted_issue_id": N,
+        "cascade_deleted": {...counts}}``.
+
+        On 404: ``{"error", "code": "NOT_FOUND", "upstream_status":
+        404, "issue_id"}``.
+
+        Blocked in read-only mode (``REDMINE_MCP_READ_ONLY=true``)
+        by the ``@action_dispatch`` decorator.
+    """
+    return {
+        "delete": _delete_issue_action,
+    }
+
+
 async def _add_issue_watcher_action(
     issue_id: Optional[int] = None,
     user_id: Optional[int] = None,
