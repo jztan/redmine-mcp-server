@@ -16,6 +16,7 @@ from .._custom_fields import (
     _augment_validation_error_with_field_hint,
     _extract_missing_required_field_names,
     _is_required_custom_field_autofill_enabled,
+    _map_named_custom_fields_for_create,
     _map_named_custom_fields_for_update,
     _parse_create_issue_fields,
     _parse_optional_object_payload,
@@ -1053,6 +1054,14 @@ async def create_redmine_issue(
     issue_fields.pop("subject", None)
     issue_fields.pop("description", None)
     issue_fields.pop("extra_fields", None)
+
+    # Resolve name-keyed custom fields (e.g. fields={"Department": "..."})
+    # to id-keyed custom_fields entries Redmine expects. See #123 for
+    # the cross-tool parity rationale.
+    try:
+        issue_fields = _map_named_custom_fields_for_create(project_id, issue_fields)
+    except ValueError as e:
+        return {"error": str(e)}
 
     try:
         issue = _get_redmine_client().issue.create(

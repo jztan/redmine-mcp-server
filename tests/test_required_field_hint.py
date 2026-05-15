@@ -35,19 +35,21 @@ class TestAugmentValidationErrorHelper:
 
     def test_custom_field_hint_names_custom_recovery(self):
         # Department is not in _STANDARD_FIELD_DISPLAY_NAMES -- treated
-        # as a custom field. The hint must point at the working
-        # extra_fields shape and the autofill env var, NOT at the
-        # broken "custom-field-name lookup on create" shape.
+        # as a custom field. Post-#123 the hint promotes the name-keyed
+        # shortcut (which now works on both create and update) and
+        # keeps the explicit id form + autofill env var as fallbacks.
         out = _augment_validation_error_with_field_hint(
             {"error": "Validation failed: Department cannot be blank"},
             "Department cannot be blank",
         )
         assert out["missing_required_fields"] == ["Department"]
         hint = out["hint"]
+        # Name-keyed shortcut now works on both paths -- no asymmetry caveat.
+        assert '"Department": "Engineering"' in hint or "name lookup" in hint
+        assert "create_redmine_issue does NOT yet support" not in hint
+        # Explicit id form still surfaced as fallback.
         assert "extra_fields" in hint
         assert "custom_fields" in hint
-        # Honest about the asymmetry between create and update.
-        assert "create_redmine_issue does NOT yet support" in hint
         assert "REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS" in hint
         assert "list_project_issue_custom_fields" in hint or "#119" in hint
 
@@ -125,12 +127,12 @@ class TestCreateIssueEnrichesValidationEnvelope:
         assert result.get("missing_required_fields") == ["Department"]
         assert "hint" in result
         hint = result["hint"]
-        # Recovery shape that actually works on create.
+        # Post-#123: name-keyed shortcut works on both create and update.
+        # Hint promotes it and keeps the explicit id form as fallback.
+        assert '"Department": "Engineering"' in hint or "name lookup" in hint
+        assert "create_redmine_issue does NOT yet support" not in hint
         assert "extra_fields" in hint
         assert "custom_fields" in hint
-        # Honest about the create-path asymmetry surfaced in
-        # verification round 8.
-        assert "create_redmine_issue does NOT yet support" in hint
         assert "REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS" in hint
 
     @pytest.mark.asyncio

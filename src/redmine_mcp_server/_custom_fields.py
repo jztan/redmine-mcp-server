@@ -253,20 +253,23 @@ def _augment_validation_error_with_field_hint(
         )
     if has_custom:
         parts.append(
-            'Custom-looking fields: pass extra_fields={"custom_fields": '
-            '[{"id": N, "value": "..."}]} on create_redmine_issue, '
-            "with N from list_project_issue_custom_fields. (On "
-            "update_redmine_issue you may instead pass the custom field "
-            'by name directly in `fields`, e.g. fields={"Department": '
-            '"Engineering"} -- create_redmine_issue does NOT yet support '
-            "that shape; use the id form.) Note the #119 caveat: "
-            "is_required=false from the discovery tool only reflects the "
-            "field-definition flag; workflow rules, role-based field "
-            "permissions, and tracker-bound required-field settings can "
-            "still require a field at create/update time. Setting "
-            "REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true lets the server "
-            "retry with values from each custom field's `default_value` "
-            "or the REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS env map."
+            "Custom-looking fields: pass the custom field by name "
+            'directly in `fields`, e.g. fields={"Department": '
+            '"Engineering"}, on either create_redmine_issue or '
+            "update_redmine_issue (the tool resolves the name to a "
+            "custom_fields id; ambiguous names raise). The explicit "
+            'id form -- extra_fields={"custom_fields": '
+            '[{"id": N, "value": "..."}]} with N from '
+            "list_project_issue_custom_fields -- also works on either "
+            "tool. Note the #119 caveat: is_required=false from the "
+            "discovery tool only reflects the field-definition flag; "
+            "workflow rules, role-based field permissions, and "
+            "tracker-bound required-field settings can still require "
+            "a field at create/update time. Setting "
+            "REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true lets the "
+            "server retry with values from each custom field's "
+            "`default_value` or the "
+            "REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS env map."
         )
 
     augmented["hint"] = " ".join(parts)
@@ -442,21 +445,57 @@ def _resolve_project_issue_custom_fields(issue_id: int) -> List[Any]:
     return list(getattr(project_obj, "issue_custom_fields", None) or [])
 
 
+def _project_issue_custom_fields_by_project_id(
+    project_id: Union[int, str],
+) -> List[Any]:
+    """Load project custom-field definitions for a given project id.
+
+    Mirrors ``_resolve_project_issue_custom_fields`` but skips the
+    issue-id-to-project-id lookup hop that the update path needs.
+    Used by the create path where ``project_id`` is already known.
+    """
+    if project_id is None:
+        return []
+    project_obj = _get_redmine_client().project.get(
+        project_id, include="issue_custom_fields"
+    )
+    return list(getattr(project_obj, "issue_custom_fields", None) or [])
+
+
 def _is_standard_issue_update_key(field_name: str) -> bool:
     """Return True when a field name should be passed through unchanged."""
     return field_name in _STANDARD_ISSUE_UPDATE_FIELDS
 
 
-def _map_named_custom_fields_for_update(
-    issue_id: int, update_fields: Dict[str, Any]
+def _resolve_named_custom_fields(
+    payload: Dict[str, Any], project_custom_fields: List[Any]
 ) -> Dict[str, Any]:
-    """Map named custom fields in an update payload to custom_fields entries."""
-    if not update_fields:
-        return update_fields
+    """Map name-keyed custom-field entries in ``payload`` to ``custom_fields``.
+
+    Shared helper called from both ``create_redmine_issue`` (via
+    ``_map_named_custom_fields_for_create``) and
+    ``update_redmine_issue`` (via ``_map_named_custom_fields_for_update``).
+    The two call sites differ only in how they fetch
+    ``project_custom_fields``; the lookup, ambiguity handling,
+    possible-values validation, and merging logic live here so a
+    future "we changed name lookup behavior" change touches one site.
+
+    Mutates and returns ``payload``: name-keyed entries (anything not
+    in ``_STANDARD_ISSUE_UPDATE_FIELDS``) that match a known custom
+    field get popped, validated against ``possible_values`` if any,
+    and merged into the ``custom_fields`` list using the field's
+    numeric id. Caller-provided ``custom_fields`` entries are
+    preserved alongside name-based mappings.
+
+    Raises ``ValueError`` on ambiguous names (two custom fields share
+    a normalized name) or invalid values (not in ``possible_values``).
+    """
+    if not payload:
+        return payload
 
     # Keep caller-provided custom_fields and merge name-based mappings into it.
     missing = object()
-    custom_fields_raw = update_fields.pop("custom_fields", missing)
+    custom_fields_raw = payload.pop("custom_fields", missing)
     custom_fields_provided = (
         custom_fields_raw is not missing and custom_fields_raw is not None
     )
@@ -466,15 +505,14 @@ def _map_named_custom_fields_for_update(
 
     named_candidates = [
         field_name
-        for field_name in update_fields.keys()
+        for field_name in payload.keys()
         if not _is_standard_issue_update_key(field_name)
     ]
     if not named_candidates:
         if custom_fields_provided:
-            update_fields["custom_fields"] = merged_custom_fields
-        return update_fields
+            payload["custom_fields"] = merged_custom_fields
+        return payload
 
-    project_custom_fields = _resolve_project_issue_custom_fields(issue_id)
     by_normalized_name: Dict[str, Dict[str, Any]] = {}
     ambiguous_names: Set[str] = set()
 
@@ -511,7 +549,7 @@ def _map_named_custom_fields_for_update(
         if match is None:
             continue
 
-        value = update_fields.pop(candidate)
+        value = payload.pop(candidate)
         possible_values = match["possible_values"]
         if not _is_missing_custom_field_value(
             value
@@ -523,6 +561,61 @@ def _map_named_custom_fields_for_update(
         _upsert_custom_field_entry(merged_custom_fields, match["id"], value)
 
     if merged_custom_fields or custom_fields_provided:
-        update_fields["custom_fields"] = merged_custom_fields
+        payload["custom_fields"] = merged_custom_fields
 
-    return update_fields
+    return payload
+
+
+def _payload_has_named_candidates(payload: Dict[str, Any]) -> bool:
+    """Return True when the payload has any key that could be a custom-field name.
+
+    Skipping the project-custom-field fetch when the payload contains
+    only standard keys avoids a wasted round-trip on the hot path
+    (``update_redmine_issue`` with no custom-field changes is the
+    common case).
+    """
+    return any(
+        not _is_standard_issue_update_key(k) and k != "custom_fields"
+        for k in payload.keys()
+    )
+
+
+def _map_named_custom_fields_for_update(
+    issue_id: int, update_fields: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Map named custom fields in an update payload to custom_fields entries.
+
+    Skips the project-custom-field network fetch when the payload
+    carries no name-keyed candidates -- the common case for an update
+    that only touches standard fields. The shared helper still runs
+    so caller-provided ``custom_fields`` (including a ``None`` clear)
+    is normalized consistently.
+    """
+    if not update_fields:
+        return update_fields
+    project_custom_fields = (
+        _resolve_project_issue_custom_fields(issue_id)
+        if _payload_has_named_candidates(update_fields)
+        else []
+    )
+    return _resolve_named_custom_fields(update_fields, project_custom_fields)
+
+
+def _map_named_custom_fields_for_create(
+    project_id: Union[int, str], create_fields: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Map named custom fields in a create payload to custom_fields entries.
+
+    Sibling of ``_map_named_custom_fields_for_update`` that takes
+    ``project_id`` directly (no parent-issue lookup needed). Backbone
+    logic lives in ``_resolve_named_custom_fields``; both wrappers
+    differ only in how they fetch ``project_custom_fields``. See #123.
+    """
+    if not create_fields:
+        return create_fields
+    project_custom_fields = (
+        _project_issue_custom_fields_by_project_id(project_id)
+        if _payload_has_named_candidates(create_fields)
+        else []
+    )
+    return _resolve_named_custom_fields(create_fields, project_custom_fields)

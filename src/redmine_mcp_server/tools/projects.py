@@ -252,14 +252,18 @@ async def list_project_issue_custom_fields(
     No general-purpose API exists for the "effective" required state.
     Recovery when the create/update call rejects:
 
-    1. **On ``create_redmine_issue``:** pass the rejected field via
+    1. **Name-keyed shortcut (preferred):** pass the rejected field by
+       name directly, e.g.
+       ``fields={"Department": "Engineering"}``, on either
+       ``create_redmine_issue`` or ``update_redmine_issue``. Both tools
+       resolve the name to a ``custom_fields`` id; ambiguous names
+       raise.
+    2. **Explicit id form:** pass
        ``extra_fields={"custom_fields": [{"id": N, "value": "..."}]}``
-       using the ID from this tool. (Name-keyed shortcut is not yet
-       supported on create; see #120 -- track separately.)
-    2. **On ``update_redmine_issue``:** the custom field can be passed
-       by name directly, e.g. ``fields={"Department": "Engineering"}``.
-       The tool resolves the name to a custom_fields entry.
-    3. **Either path:** set
+       using the numeric ID from this tool. Works on either path; use
+       when the name lookup is ambiguous or the value type is awkward
+       (multi-value fields, complex serializations).
+    3. **Autofill:** set
        ``REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true`` to have the
        server retry once with values from each field's ``default_value``
        or the ``REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS`` map.
