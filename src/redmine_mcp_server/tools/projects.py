@@ -203,7 +203,7 @@ def _membership_to_dict(membership: Any) -> Dict[str, Any]:
 
 
 @mcp.tool()
-async def list_redmine_projects() -> List[Dict[str, Any]]:
+async def list_redmine_projects() -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """
     Lists all accessible projects in Redmine.
     Returns:
@@ -222,13 +222,13 @@ async def list_redmine_projects() -> List[Dict[str, Any]]:
             for project in projects
         ]
     except Exception as e:
-        return [_handle_redmine_error(e, "listing projects")]
+        return _handle_redmine_error(e, "listing projects")
 
 
 @mcp.tool()
 async def list_project_issue_custom_fields(
     project_id: Union[str, int], tracker_id: Optional[Union[str, int]] = None
-) -> List[Dict[str, Any]]:
+) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """List issue custom fields configured for a project.
 
     Args:
@@ -236,8 +236,10 @@ async def list_project_issue_custom_fields(
         tracker_id: Optional tracker ID to filter custom fields by applicability.
 
     Returns:
-        A list of custom field metadata dictionaries. On failure a list containing
-        a single dictionary with an ``"error"`` key is returned.
+        A list of custom field metadata dictionaries. On failure, a
+        dict with an ``"error"`` key is returned (callers should check
+        ``isinstance(result, dict)`` to distinguish failure from an
+        empty list).
 
     **``is_required`` caveat (#119):** Redmine's
     ``GET /custom_fields.json`` -- the underlying API -- only exposes the
@@ -279,14 +281,12 @@ async def list_project_issue_custom_fields(
         try:
             parsed_tracker_id = int(tracker_id)
         except (TypeError, ValueError):
-            return [
-                {
-                    "error": (
-                        f"Invalid tracker_id '{tracker_id}'. "
-                        "Expected an integer tracker ID."
-                    )
-                }
-            ]
+            return {
+                "error": (
+                    f"Invalid tracker_id '{tracker_id}'. "
+                    "Expected an integer tracker ID."
+                )
+            }
 
     await _ensure_cleanup_started()
 
@@ -304,20 +304,18 @@ async def list_project_issue_custom_fields(
 
         return result
     except Exception as e:
-        return [
-            _handle_redmine_error(
-                e,
-                f"listing issue custom fields for project {project_id}",
-                {"resource_type": "project", "resource_id": project_id},
-            )
-        ]
+        return _handle_redmine_error(
+            e,
+            f"listing issue custom fields for project {project_id}",
+            {"resource_type": "project", "resource_id": project_id},
+        )
 
 
 @mcp.tool()
 async def list_redmine_versions(
     project_id: Union[str, int],
     status_filter: Optional[str] = None,
-) -> List[Dict[str, Any]]:
+) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """List versions (roadmap milestones) for a Redmine project.
 
     Args:
@@ -327,8 +325,10 @@ async def list_redmine_versions(
             When None, all versions are returned.
 
     Returns:
-        A list of version dictionaries. On failure a list containing
-        a single dictionary with an ``"error"`` key is returned.
+        A list of version dictionaries. On failure, a dict with an
+        ``"error"`` key is returned (callers should check
+        ``isinstance(result, dict)`` to distinguish failure from an
+        empty list).
     """
 
     # Validate status_filter before making API call
@@ -336,14 +336,12 @@ async def list_redmine_versions(
     if status_filter is not None:
         status_filter = str(status_filter).lower()
         if status_filter not in valid_statuses:
-            return [
-                {
-                    "error": (
-                        f"Invalid status_filter '{status_filter}'. "
-                        f"Allowed values: open, locked, closed"
-                    )
-                }
-            ]
+            return {
+                "error": (
+                    f"Invalid status_filter '{status_filter}'. "
+                    f"Allowed values: open, locked, closed"
+                )
+            }
 
     await _ensure_cleanup_started()
     try:
@@ -356,13 +354,11 @@ async def list_redmine_versions(
             result.append(_version_to_dict(version))
         return result
     except Exception as e:
-        return [
-            _handle_redmine_error(
-                e,
-                f"listing versions for project {project_id}",
-                {"resource_type": "project", "resource_id": project_id},
-            )
-        ]
+        return _handle_redmine_error(
+            e,
+            f"listing versions for project {project_id}",
+            {"resource_type": "project", "resource_id": project_id},
+        )
 
 
 _VALID_VERSION_STATUSES = {"open", "locked", "closed"}
@@ -621,7 +617,7 @@ async def summarize_project_status(project_id: int, days: int = 30) -> Dict[str,
 @mcp.tool()
 async def list_project_members(
     project_id: Union[str, int],
-) -> List[Dict[str, Any]]:
+) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """List members of a Redmine project.
 
     Returns all users and groups that are members of the specified project,
@@ -632,7 +628,9 @@ async def list_project_members(
 
     Returns:
         A list of membership dictionaries containing user/group info and roles.
-        On failure, a list containing a single dictionary with an "error" key.
+        On failure, a dict with an ``"error"`` key is returned (callers
+        should check ``isinstance(result, dict)`` to distinguish failure
+        from an empty list).
 
     Examples:
         >>> await list_project_members("my-project")
@@ -653,13 +651,11 @@ async def list_project_members(
         )
         return [_membership_to_dict(m) for m in memberships]
     except Exception as e:
-        return [
-            _handle_redmine_error(
-                e,
-                f"listing members for project {project_id}",
-                {"resource_type": "project", "resource_id": project_id},
-            )
-        ]
+        return _handle_redmine_error(
+            e,
+            f"listing members for project {project_id}",
+            {"resource_type": "project", "resource_id": project_id},
+        )
 
 
 @mcp.tool()

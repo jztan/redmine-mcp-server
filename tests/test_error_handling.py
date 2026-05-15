@@ -213,8 +213,8 @@ class TestToolErrorIntegration:
         mock_redmine.project.all.side_effect = ForbiddenError()
         result = await list_redmine_projects()
 
-        assert len(result) == 1
-        assert "Access denied" in result[0]["error"]
+        assert isinstance(result, dict)
+        assert "Access denied" in result["error"]
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.redmine")

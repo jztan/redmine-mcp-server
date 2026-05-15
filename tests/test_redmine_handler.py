@@ -323,7 +323,7 @@ class TestRedmineHandler:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.redmine")
     async def test_list_redmine_projects_error(self, mock_redmine):
-        """Test error handling in project listing."""
+        """Error path returns the standard dict envelope (#117)."""
         # Setup
         mock_redmine.project.all.side_effect = Exception("Connection error")
 
@@ -332,12 +332,11 @@ class TestRedmineHandler:
 
         # Verify
         assert result is not None
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert "error" in result[0]
+        assert isinstance(result, dict)
+        assert "error" in result
         # New error format includes operation and error message
-        assert "listing projects" in result[0]["error"]
-        assert "Connection error" in result[0]["error"]
+        assert "listing projects" in result["error"]
+        assert "Connection error" in result["error"]
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client._legacy_client", None)
@@ -345,15 +344,14 @@ class TestRedmineHandler:
     @patch("redmine_mcp_server._client.REDMINE_USERNAME", "")
     @patch("redmine_mcp_server._client.redmine", None)
     async def test_list_redmine_projects_no_client(self):
-        """Test project listing when Redmine client is not initialized."""
+        """Error path returns the standard dict envelope (#117)."""
         # Execute
         result = await list_redmine_projects()
 
         # Verify
         assert result is not None
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert "error" in result[0]
+        assert isinstance(result, dict)
+        assert "error" in result
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.redmine")

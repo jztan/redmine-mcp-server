@@ -265,57 +265,57 @@ class TestListRedmineVersions:
 
     @pytest.mark.asyncio
     async def test_invalid_status_filter_returns_error(self, mock_redmine):
-        """Test that invalid status_filter returns error dict."""
+        """Test that invalid status_filter returns error dict (#117)."""
         result = await list_redmine_versions(project_id=1, status_filter="invalid")
 
-        assert len(result) == 1
-        assert "error" in result[0]
-        assert "invalid" in result[0]["error"].lower()
+        assert isinstance(result, dict)
+        assert "error" in result
+        assert "invalid" in result["error"].lower()
 
     # ── Cycle 4: Error handling ─────────────────────────────────────
 
     @pytest.mark.asyncio
     async def test_no_client_returns_error(self):
-        """Test error when Redmine client is not initialized."""
+        """Test error when Redmine client is not initialized (#117 envelope shape)."""
         with patch(
             "redmine_mcp_server.tools.projects._get_redmine_client",
             side_effect=RuntimeError("No Redmine authentication available"),
         ):
             result = await list_redmine_versions(project_id=1)
 
-        assert isinstance(result, list)
-        assert "error" in result[0]
+        assert isinstance(result, dict)
+        assert "error" in result
 
     @pytest.mark.asyncio
     async def test_api_error_returns_error(self, mock_redmine):
-        """Test error handling when API call fails."""
+        """Test error handling when API call fails (#117 envelope shape)."""
         mock_redmine.version.filter.side_effect = Exception("Connection refused")
 
         result = await list_redmine_versions(project_id=1)
 
-        assert isinstance(result, list)
-        assert "error" in result[0]
+        assert isinstance(result, dict)
+        assert "error" in result
 
     @pytest.mark.asyncio
     async def test_project_not_found_error(self, mock_redmine):
-        """Test error handling when project doesn't exist."""
+        """Test error handling when project doesn't exist (#117 envelope shape)."""
         from redminelib.exceptions import ResourceNotFoundError
 
         mock_redmine.version.filter.side_effect = ResourceNotFoundError()
 
         result = await list_redmine_versions(project_id=999)
 
-        assert isinstance(result, list)
-        assert "error" in result[0]
+        assert isinstance(result, dict)
+        assert "error" in result
 
     @pytest.mark.asyncio
     async def test_forbidden_error(self, mock_redmine):
-        """Test error handling when user lacks permission."""
+        """Test error handling when user lacks permission (#117 envelope shape)."""
         from redminelib.exceptions import ForbiddenError
 
         mock_redmine.version.filter.side_effect = ForbiddenError()
 
         result = await list_redmine_versions(project_id=1)
 
-        assert isinstance(result, list)
-        assert "error" in result[0]
+        assert isinstance(result, dict)
+        assert "error" in result

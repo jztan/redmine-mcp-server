@@ -781,7 +781,7 @@ async def list_redmine_issues(
         return result_issues
 
     except Exception as e:
-        return [_handle_redmine_error(e, "listing issues")]
+        return _handle_redmine_error(e, "listing issues")
 
 
 @mcp.tool()

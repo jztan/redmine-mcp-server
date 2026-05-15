@@ -56,21 +56,23 @@ class TestListTimeEntryActivities:
 
     @pytest.mark.asyncio
     async def test_list_activities_client_not_initialized(self, mock_redmine):
+        """Error path returns the standard dict envelope (#117)."""
         mock_redmine.enumeration.filter.side_effect = RuntimeError(
             "No Redmine authentication available."
         )
         result = await list_time_entry_activities()
-        assert len(result) == 1
-        assert "error" in result[0]
+        assert isinstance(result, dict)
+        assert "error" in result
 
     @pytest.mark.asyncio
     async def test_list_activities_forbidden(self, mock_redmine):
+        """Error path returns the standard dict envelope (#117)."""
         from redminelib.exceptions import ForbiddenError
 
         mock_redmine.enumeration.filter.side_effect = ForbiddenError()
         result = await list_time_entry_activities()
-        assert len(result) == 1
-        assert "error" in result[0]
+        assert isinstance(result, dict)
+        assert "error" in result
 
 
 class TestListTimeEntryActivitiesProjectScoped:
@@ -173,9 +175,8 @@ class TestListTimeEntryActivitiesProjectScoped:
         ):
             result = await list_time_entry_activities(project_id="nonexistent")
 
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert "error" in result[0]
+        assert isinstance(result, dict)
+        assert "error" in result
 
     @pytest.mark.asyncio
     async def test_project_scoped_forbidden_returns_error(self):
@@ -190,9 +191,8 @@ class TestListTimeEntryActivitiesProjectScoped:
         ):
             result = await list_time_entry_activities(project_id="secret-project")
 
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert "error" in result[0]
+        assert isinstance(result, dict)
+        assert "error" in result
 
     @pytest.mark.asyncio
     async def test_project_scoped_missing_attribute_returns_empty(self):

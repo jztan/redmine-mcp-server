@@ -152,27 +152,27 @@ class TestListProjectIssueCustomFields:
     async def test_list_project_issue_custom_fields_invalid_tracker_id(
         self, mock_redmine
     ):
-        """Invalid tracker IDs should return a clear validation error."""
+        """Invalid tracker IDs return a clear validation error (#117)."""
         result = await list_project_issue_custom_fields(project_id=41, tracker_id="abc")
 
-        assert len(result) == 1
-        assert "error" in result[0]
-        assert "Invalid tracker_id" in result[0]["error"]
+        assert isinstance(result, dict)
+        assert "error" in result
+        assert "Invalid tracker_id" in result["error"]
         mock_redmine.project.get.assert_not_called()
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.redmine", None)
     async def test_list_project_issue_custom_fields_no_client(self):
-        """Returns initialization error when Redmine client is unavailable."""
+        """Standard dict envelope when Redmine client is unavailable (#117)."""
         result = await list_project_issue_custom_fields(project_id=41)
-        assert isinstance(result, list) and "error" in result[0]
+        assert isinstance(result, dict) and "error" in result
 
     @pytest.mark.asyncio
     async def test_list_project_issue_custom_fields_error(self, mock_redmine):
-        """API errors are returned in standard error format."""
+        """API errors are returned in the standard dict envelope (#117)."""
         mock_redmine.project.get.side_effect = Exception("Boom")
 
         result = await list_project_issue_custom_fields(project_id=41)
 
-        assert len(result) == 1
-        assert "error" in result[0]
+        assert isinstance(result, dict)
+        assert "error" in result

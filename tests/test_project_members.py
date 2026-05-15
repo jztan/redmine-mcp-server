@@ -223,43 +223,40 @@ class TestListProjectMembers:
 
     @pytest.mark.asyncio
     async def test_list_members_redmine_not_initialized(self):
-        """Test error when Redmine client is not initialized."""
+        """Error path returns the standard dict envelope (#117)."""
         with patch(
             "redmine_mcp_server._client._get_redmine_client",
             side_effect=RuntimeError("No Redmine authentication available"),
         ):
             result = await list_project_members(project_id=10)
 
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert "error" in result[0]
+        assert isinstance(result, dict)
+        assert "error" in result
 
     @pytest.mark.asyncio
     async def test_list_members_project_not_found(self, mock_redmine):
-        """Test error when project is not found."""
+        """Error path returns the standard dict envelope (#117)."""
         from redminelib.exceptions import ResourceNotFoundError
 
         mock_redmine.project_membership.filter.side_effect = ResourceNotFoundError()
 
         result = await list_project_members(project_id=999)
 
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert "error" in result[0]
+        assert isinstance(result, dict)
+        assert "error" in result
 
     @pytest.mark.asyncio
     async def test_list_members_forbidden(self, mock_redmine):
-        """Test error when user lacks permission."""
+        """Error path returns the standard dict envelope (#117)."""
         from redminelib.exceptions import ForbiddenError
 
         mock_redmine.project_membership.filter.side_effect = ForbiddenError()
 
         result = await list_project_members(project_id=10)
 
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert "error" in result[0]
-        assert "Access denied" in result[0]["error"]
+        assert isinstance(result, dict)
+        assert "error" in result
+        assert "Access denied" in result["error"]
 
     @pytest.mark.asyncio
     async def test_list_members_includes_roles(self, mock_redmine):

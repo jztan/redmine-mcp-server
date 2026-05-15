@@ -443,37 +443,37 @@ class TestListRedmineIssues:
 
     @pytest.mark.asyncio
     async def test_no_client_returns_error(self):
-        """Test error when Redmine client is not initialized."""
+        """Error path returns the standard dict envelope (#117)."""
         with patch(
             "redmine_mcp_server.tools.issues._get_redmine_client",
             side_effect=RuntimeError("No Redmine authentication available"),
         ):
             result = await list_redmine_issues(project_id=1)
 
-            assert isinstance(result, list)
-            assert "error" in result[0]
+            assert isinstance(result, dict)
+            assert "error" in result
 
     @pytest.mark.asyncio
     async def test_api_error_returns_error(self, mock_redmine):
-        """Test error handling when API call fails."""
+        """Error path returns the standard dict envelope (#117)."""
         mock_redmine.issue.filter.side_effect = Exception("Connection refused")
 
         result = await list_redmine_issues(project_id=1)
 
-        assert isinstance(result, list)
-        assert "error" in result[0]
+        assert isinstance(result, dict)
+        assert "error" in result
 
     @pytest.mark.asyncio
     async def test_resource_not_found_error(self, mock_redmine):
-        """Test error handling for ResourceNotFoundError."""
+        """Error path returns the standard dict envelope (#117)."""
         from redminelib.exceptions import ResourceNotFoundError
 
         mock_redmine.issue.filter.side_effect = ResourceNotFoundError()
 
         result = await list_redmine_issues(project_id=999)
 
-        assert isinstance(result, list)
-        assert "error" in result[0]
+        assert isinstance(result, dict)
+        assert "error" in result
 
     # --- MCP parameter unwrapping ---
 

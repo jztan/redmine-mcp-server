@@ -243,16 +243,15 @@ class TestListTimeEntries:
 
     @pytest.mark.asyncio
     async def test_list_time_entries_redmine_not_initialized(self):
-        """Test error when Redmine client is not initialized."""
+        """Error path returns the standard dict envelope (#117)."""
         with patch(
             "redmine_mcp_server.tools.time_tracking._get_redmine_client",
             side_effect=RuntimeError("No Redmine authentication available"),
         ):
             result = await list_time_entries()
 
-        assert isinstance(result, list)
-        assert len(result) == 1
-        assert "error" in result[0]
+        assert isinstance(result, dict)
+        assert "error" in result
 
     @pytest.mark.asyncio
     async def test_list_time_entries_empty_result(self, mock_redmine):

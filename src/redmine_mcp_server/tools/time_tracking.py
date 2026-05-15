@@ -115,7 +115,7 @@ async def list_time_entries(
         return [_time_entry_to_dict(te) for te in time_entries]
 
     except Exception as e:
-        return [_handle_redmine_error(e, "listing time entries")]
+        return _handle_redmine_error(e, "listing time entries")
 
 
 async def _create_time_entry_action(
@@ -315,13 +315,11 @@ async def list_time_entry_activities(
                 )
             return result
         except Exception as e:
-            return [
-                _handle_redmine_error(
-                    e,
-                    f"listing time entry activities for project {project_id}",
-                    {"resource_type": "project", "resource_id": project_id},
-                )
-            ]
+            return _handle_redmine_error(
+                e,
+                f"listing time entry activities for project {project_id}",
+                {"resource_type": "project", "resource_id": project_id},
+            )
 
     try:
         activities = _get_redmine_client().enumeration.filter(
@@ -338,7 +336,7 @@ async def list_time_entry_activities(
         ]
 
     except Exception as e:
-        return [_handle_redmine_error(e, "listing time entry activities")]
+        return _handle_redmine_error(e, "listing time entry activities")
 
 
 @mcp.tool()
