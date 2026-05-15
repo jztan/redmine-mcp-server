@@ -438,7 +438,7 @@ curl http://localhost:8000/health
 
 ## Available Tools
 
-This MCP server provides 44 tools for interacting with Redmine. For detailed documentation, see [Tool Reference](./docs/tool-reference.md).
+This MCP server provides 45 tools for interacting with Redmine. For detailed documentation, see [Tool Reference](./docs/tool-reference.md).
 
 - **Project Management** (9 tools)
   - [`list_redmine_projects`](docs/tool-reference.md#list_redmine_projects) - List all accessible projects
@@ -506,6 +506,9 @@ This MCP server provides 44 tools for interacting with Redmine. For detailed doc
 
 - **Documents (DMSF)** (1 tool, requires `REDMINE_DMSF_ENABLED=true` + `redmine_dmsf` plugin)
   - [`manage_document`](docs/tool-reference.md#manage_document) - List, get, create (upload), or update (new revision) DMSF documents
+
+- **Meta** (1 tool)
+  - [`get_mcp_server_info`](docs/tool-reference.md#get_mcp_server_info) - Report server version, auth mode, read-only state, and which plugin-gated tool families are enabled. Use to detect deployment lag before relying on a recently-shipped fix.
 
 
 ## Docker Deployment

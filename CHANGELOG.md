@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- **`get_mcp_server_info`** (no args, always callable): returns `{server_version, read_only_mode, auth_mode, plugin_flags: {agile, checklists, products, crm, dmsf}}`. Surfaced as an MCP tool so an LLM caller can detect deployment lag before relying on a recently-shipped fix -- compare `server_version` against the release / commit you expect. The response intentionally excludes credentials, internal hostnames, and file-system paths; only flags that change *call shape* are surfaced. Package version is sourced from installed metadata via `importlib.metadata`. Drift-guard: a regression test pins the exact set of returned keys plus the plugin-flag inventory so a future leak of `REDMINE_URL` / `REDMINE_API_KEY` / `PUBLIC_HOST` into this response would fail CI loudly ([#124](https://github.com/jztan/redmine-mcp-server/issues/124)). Tool count: 44 → 45.
 - **`manage_document`** (gated by `REDMINE_DMSF_ENABLED=true`): single MCP tool covering DMSF (Document Management System for Files) plugin operations via an `action` parameter. Requires the `redmine_dmsf` plugin (GPL v2) on the Redmine server.
   - `action="list"`: list documents in a project (or a specific DMSF folder via `folder_id`); supports `limit` (capped at Redmine's server-side 100/request)
   - `action="get"`: fetch a single document's metadata by `document_id`

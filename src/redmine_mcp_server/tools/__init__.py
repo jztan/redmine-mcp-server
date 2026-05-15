@@ -10,6 +10,7 @@ from . import enumeration  # noqa: F401  -- triggers @mcp.tool() registration
 from . import files  # noqa: F401  -- triggers @mcp.tool() registration
 from . import gantt  # noqa: F401  -- triggers @mcp.tool() registration
 from . import issues  # noqa: F401  -- triggers @mcp.tool() registration
+from . import meta  # noqa: F401  -- triggers @mcp.tool() registration
 from . import products  # noqa: F401  -- triggers @mcp.tool() registration
 from . import projects  # noqa: F401  -- triggers @mcp.tool() registration
 from . import search  # noqa: F401  -- triggers @mcp.tool() registration
