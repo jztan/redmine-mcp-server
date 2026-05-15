@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [2.0.0] - 2026-05-16
 ### Added
 - **`delete_redmine_issue`**: new tool exposing irreversible issue deletion via Redmine's `DELETE /issues/{id}.json`. The MCP surface previously had `create_redmine_issue` / `update_redmine_issue` / `copy_issue` / `get_redmine_issue` but no way to delete, so operators had to drop to the Redmine UI or python-redmine directly. Named to sit alongside the other `*_redmine_issue` lifecycle tools rather than under the `manage_X(action=...)` pattern, since there is only one verb. Mirrors the `delete_file` safety pattern: refuses unless `confirm_delete=True`, with a structured `impact` preview (cascade counts for children, journals, attachments, time entries, inbound relations) in the refusal envelope. Subtask cascade requires a second opt-in (`confirm_delete_with_children=True`) so silent subtask destruction can't happen on a single misclick. Read-only mode blocks the call before any Redmine round-trip. Structured for the agent path (clear error codes `CONFIRMATION_REQUIRED` / `CHILDREN_PRESENT` / `NOT_FOUND`) and the operator path (explicit cascade preview). 14 tests in `tests/test_delete_redmine_issue.py` cover the gate, the cascade preview, 404 handling at fetch and at delete time, invalid input, and read-only blocking ([#120](https://github.com/jztan/redmine-mcp-server/issues/120)). Tool count: 45 → 46.
 - **`get_mcp_server_info`** (no args, always callable): returns `{server_version, read_only_mode, auth_mode, plugin_flags: {agile, checklists, products, crm, dmsf}}`. Surfaced as an MCP tool so an LLM caller can detect deployment lag before relying on a recently-shipped fix -- compare `server_version` against the release / commit you expect. The response intentionally excludes credentials, internal hostnames, and file-system paths; only flags that change *call shape* are surfaced. Package version is sourced from installed metadata via `importlib.metadata`. Drift-guard: a regression test pins the exact set of returned keys plus the plugin-flag inventory so a future leak of `REDMINE_URL` / `REDMINE_API_KEY` / `PUBLIC_HOST` into this response would fail CI loudly ([#124](https://github.com/jztan/redmine-mcp-server/issues/124)). Tool count: 44 → 45.
@@ -790,6 +792,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive authentication support (username/password and API key)
 - Docker containerization support
 
+[2.0.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.0.0
 [1.3.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v1.3.0
 [1.2.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v1.2.0
 [1.1.2]: https://github.com/jztan/redmine-mcp-server/releases/tag/v1.1.2
