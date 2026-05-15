@@ -32,6 +32,7 @@ dependencies = [
     "python-redmine>=2.5.0,<3",
     "uvicorn>=0.24.0,<1",
     "python-multipart>=0.0.27,<1",
+    "urllib3>=2.7.0,<3",
 ]
 
 [project.urls]

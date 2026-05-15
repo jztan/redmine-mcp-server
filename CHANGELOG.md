@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Security
+- Bump `urllib3` from 2.6.3 to 2.7.0, patching CVE-2026-44431 and CVE-2026-44432; added explicit lower-bound constraint (`urllib3>=2.7.0,<3`) in `pyproject.toml` to prevent silent regression to vulnerable versions (urllib3 is a transitive dep via `requests` / `python-redmine`, so it had no direct floor before this).
 
 ## [2.0.0] - 2026-05-16
 ### Added
