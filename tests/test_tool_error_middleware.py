@@ -1,6 +1,7 @@
 """Tests for the Pydantic-validation-error boundary middleware (#108)."""
 
 import json
+from typing import Any, Dict, List, Literal, Optional, Union
 
 import pytest
 from fastmcp import Client, FastMCP
@@ -24,6 +25,15 @@ def server():
         status_id: int | str | None = None,
     ) -> dict:
         return {"status_id": status_id}
+
+    # Mirrors the real list_redmine_issues return type, which is what
+    # triggered the "Output validation error: 'result' is a required
+    # property" regression reported during verification of #108.
+    @mcp.tool()
+    async def union_return(
+        status_id: Optional[Union[int, Literal["open", "closed", "*"]]] = None,
+    ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+        return [{"status_id": status_id}]
 
     return mcp
 
@@ -64,3 +74,66 @@ class TestCleanValidationErrorMiddleware:
         # envelope, not a half-empty response.
         assert result.structured_content is not None
         assert result.structured_content["code"] == "INVALID_ARGUMENTS"
+
+    @pytest.mark.asyncio
+    async def test_union_literal_mismatch_returns_envelope_not_output_error(
+        self, server
+    ):
+        """Regression test for the #108 follow-up bug.
+
+        A value that fails BOTH branches of an
+        ``Optional[Union[int, Literal[...]]]`` argument used to bypass
+        the middleware envelope and surface as
+        ``Output validation error: 'result' is a required property``,
+        because tools returning ``Union[List, Dict]`` get an output
+        schema marked ``x-fastmcp-wrap-result: True`` and the
+        middleware wasn't honoring the wrap convention.
+        """
+        async with Client(server) as client:
+            result = await client.call_tool(
+                "union_return", {"status_id": "notavalidsentinel"}
+            )
+
+        # The "result is a required property" string MUST NOT appear:
+        # that was the user-visible regression.
+        text = result.content[0].text
+        assert "result" not in text or "required property" not in text
+        assert "Output validation error" not in text
+
+        payload = result.data
+        assert payload is not None
+        assert payload["code"] == "INVALID_ARGUMENTS"
+        # The envelope should mention BOTH branches of the union --
+        # int and the literal sentinels -- not just the int complaint.
+        assert "integer" in payload["error"].lower()
+        assert "open" in payload["error"] or "literal" in payload["error"].lower()
+        # Hint must accurately echo the offending value.
+        assert "notavalidsentinel" in payload["hint"]
+
+    @pytest.mark.asyncio
+    async def test_union_literal_valid_sentinel_still_passes(self, server):
+        """Valid sentinels keep working after the wrap-result fix."""
+        async with Client(server) as client:
+            result = await client.call_tool("union_return", {"status_id": "open"})
+        # data unwraps to the actual list-of-dict return value.
+        assert result.data == [{"status_id": "open"}]
+
+    @pytest.mark.asyncio
+    async def test_missing_required_argument_names_the_parameter(self, server):
+        """Missing-required errors must say WHICH parameter is missing.
+
+        Pydantic surfaces the whole args dict as ``input_value`` for
+        missing-argument errors, which used to produce a misleading
+        "Got {} (type=dict)" hint. The middleware now special-cases
+        this so the LLM sees the parameter name.
+        """
+        async with Client(server) as client:
+            result = await client.call_tool("needs_int", {})
+
+        payload = result.structured_content
+        assert payload["code"] == "INVALID_ARGUMENTS"
+        assert "'x'" in payload["error"]
+        assert "missing" in payload["error"].lower()
+        # Must NOT echo the whole args dict back to the caller.
+        assert "Got {}" not in payload["hint"]
+        assert "Got {} " not in payload["hint"]
