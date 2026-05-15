@@ -3,7 +3,7 @@ roles, modules, status summaries.
 """
 
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from redminelib.exceptions import ResourceNotFoundError
 
@@ -448,7 +448,7 @@ async def _delete_redmine_version_action(
     }
 )
 async def manage_redmine_version(
-    action: str,
+    action: Literal["create", "update", "delete"],
     project_id: Optional[Union[str, int]] = None,
     version_id: Optional[int] = None,
     name: Optional[str] = None,
@@ -839,7 +839,7 @@ async def _remove_project_member_action(
     }
 )
 async def manage_project_member(
-    action: str,
+    action: Literal["add", "update", "remove"],
     project_id: Optional[Union[str, int]] = None,
     membership_id: Optional[int] = None,
     user_id: Optional[int] = None,

@@ -1381,7 +1381,7 @@ async def _delete_issue_relation_action(
     }
 )
 async def manage_issue_relation(
-    action: str,
+    action: Literal["list", "create", "delete"],
     issue_id: Optional[int] = None,
     issue_to_id: Optional[int] = None,
     relation_id: Optional[int] = None,
@@ -1499,7 +1499,7 @@ async def _remove_issue_watcher_action(
     }
 )
 async def manage_issue_watcher(
-    action: str,
+    action: Literal["add", "remove"],
     issue_id: int,
     user_id: int,
 ) -> Dict[str, Any]:
@@ -1581,7 +1581,7 @@ async def _set_private_issue_note_action(
     }
 )
 async def manage_issue_note(
-    action: str,
+    action: Literal["edit", "set_private"],
     journal_id: int,
     notes: Optional[str] = None,
     private_notes: Optional[bool] = None,
@@ -1772,7 +1772,7 @@ async def _delete_issue_category_action(
     }
 )
 async def manage_issue_category(
-    action: str,
+    action: Literal["list", "create", "update", "delete"],
     project_id: Optional[Union[str, int]] = None,
     category_id: Optional[int] = None,
     name: Optional[str] = None,

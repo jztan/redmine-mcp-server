@@ -1,7 +1,7 @@
 """RedmineUP CRM (Contacts) plugin tool (REDMINE_CRM_ENABLED gated)."""
 
 import json
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from .._client import _get_redmine_client
 from .._decorators import ActionMode, action_dispatch
@@ -394,7 +394,15 @@ async def _manage_contact_dispatch(action: str, **kwargs: Any) -> Any:
 
 @mcp.tool()
 async def manage_contact(
-    action: str,
+    action: Literal[
+        "list",
+        "get",
+        "create",
+        "update",
+        "delete",
+        "assign_to_project",
+        "remove_from_project",
+    ],
     project_id: Optional[Union[str, int]] = None,
     search: Optional[str] = None,
     tags: Optional[str] = None,

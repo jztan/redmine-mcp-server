@@ -1,7 +1,7 @@
 """RedmineUP Products plugin tool (REDMINE_PRODUCTS_ENABLED gated)."""
 
 import json
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from .._client import _get_redmine_client
 from .._decorators import ActionMode, action_dispatch
@@ -256,7 +256,7 @@ async def _manage_product_dispatch(action: str, **kwargs: Any) -> Any:
 
 @mcp.tool()
 async def manage_product(
-    action: str,
+    action: Literal["list", "get", "create", "update"],
     project_id: Optional[Union[str, int]] = None,
     limit: int = 100,
     product_id: Optional[int] = None,

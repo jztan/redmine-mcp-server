@@ -1,6 +1,6 @@
 """Wiki page tool: list/get/create/update/delete/rename actions."""
 
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from .._client import _get_redmine_client
 from .._decorators import ActionMode, action_dispatch
@@ -304,7 +304,7 @@ async def _rename_wiki_page_action(
     }
 )
 async def manage_redmine_wiki_page(
-    action: str,
+    action: Literal["list", "get", "create", "update", "delete", "rename"],
     project_id: Union[str, int],
     wiki_page_title: Optional[str] = None,
     version: Optional[int] = None,
