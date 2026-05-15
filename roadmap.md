@@ -2,12 +2,12 @@
 
 ## 🎯 Project Status
 
-**Current Version:** v1.3.0 (released 2026-05-06)
-**Next Release:** v2.0.0 (tool consolidation — breaking; designed)
+**Current Version:** v2.0.0 (released 2026-05-16)
+**Next Release:** TBD (post-v2.0 hardening + native FastMCP v3 auth migration on deck)
 **MCP Registry Status:** Published
 
-**Test Suite:** 1118 tests passing (1042 unit + 76 integration; 4 skipped behind `REDMINE_AGILE_ENABLED`)
-**Total MCP Tools:** 69 (will reduce to ~43 in v2.0)
+**Test Suite:** 1339 tests passing (1259 unit + 80 integration; 4 skipped behind `REDMINE_AGILE_ENABLED`)
+**Total MCP Tools:** 46 (43 after the v2.0 consolidation, plus `delete_redmine_issue`, `get_mcp_server_info`, `manage_document`)
 
 ---
 
@@ -15,7 +15,23 @@
 
 For per-release detail, parameter changes, and contributor credits, see [CHANGELOG.md](CHANGELOG.md).
 
-### v1.3.0 — 2026-05-06 (current)
+### v2.0.0 — 2026-05-16 (current)
+Major release. Structural consolidation, schema-tightening sweep, and LLM-eval-driven usability work. Tool count goes from 69 to 46 (35 single-verb tools folded into 9 `manage_X(action=...)` tools, plus 3 new tools added). See [CHANGELOG.md](CHANGELOG.md) for the full list; full release notes at the [v2.0.0 release page](https://github.com/jztan/redmine-mcp-server/releases/tag/v2.0.0).
+
+- **9 new `manage_X(action=...)` tools** replace 35 single-verb tools (full mapping below in the historical v2.0 plan).
+- **3 new tools**: `delete_redmine_issue` (with confirmation gate and cascade preview), `get_mcp_server_info` (deployment-lag detection), `manage_document` (DMSF plugin support, gated by `REDMINE_DMSF_ENABLED`).
+- **Schema tightening**: `manage_*.action` is a JSON-schema enum; `limit`/`offset` carry explicit bounds; `list_redmine_issues.status_id` accepts `"open"`/`"closed"`/`"*"`; `assigned_to_id` / `user_id` reject arbitrary strings; new `CleanValidationErrorMiddleware` turns Pydantic dumps into the project's standard `INVALID_ARGUMENTS` envelope.
+- **`get_redmine_attachment`** replaces the removed `get_redmine_attachment_download_url`; works in both HTTP and stdio deployments with streaming download, byte-cap abort, and path-traversal protection.
+- **`REDMINE_PUBLIC_URL`** rewriter fixes Docker-internal `content_url` values in attachment metadata.
+- **`<insecure-content>` wrap policy** tightened: free-text fields stay wrapped, structured metadata (filenames, display names, codes) is returned verbatim.
+- **Error envelope consistency**: list/search tools return flat `{"error": ...}` on failure (was sometimes `[{"error": ...}]`); 404s on `get_redmine_attachment` carry `ATTACHMENT_UNAVAILABLE` + hint; create/update validation errors carry `missing_required_fields` + tailored recovery hints.
+- **`search_redmine_issues` hydration**: results now carry full issue metadata via a follow-up `/issues.json` call instead of returning `null` fields.
+- **Internal refactor**: 6591-line `redmine_handler.py` split into a `tools/` package and flat `_X.py` helpers. Public MCP surface unchanged; **breaking for any consumer importing from internal paths**.
+- **Security**: GitHub Actions pinned to commit SHAs; `fastmcp` bumped to 3.2.4 (three patches); `pytest` to 9.0.3 (CVE-2025-71176); `python-multipart` to 0.0.27 (CVE-2026-42561) with explicit lower-bound constraint.
+
+**Tool count:** 69 → 46.
+
+### v1.3.0 — 2026-05-06
 Large feature drop. 34 new MCP tools added; 1031 → 1042 unit tests.
 
 - 14 issue-tracking tools: `copy_issue`, `list_subtasks`, issue relations, watchers, journal notes, issue categories
@@ -62,33 +78,7 @@ GA release. Prompt injection protection with `<insecure-content>` boundary tags;
 
 ## 📅 Planned Releases
 
-### v2.0.0 — Tool Consolidation (next)
-*Priority: High | Effort: Medium | Status: Implementation complete on `refactor/tool-consolidation` branch; pending merge to `develop` and release*
-
-Reduce tool count from 69 to 43 by folding CRUD-style tools into `manage_X(action=...)` tools following the `manage_redmine_version` pattern. No functionality is lost; old tool names are removed.
-
-**The 9 new `manage_X` tools** (replacing 35 existing tools):
-
-| New tool | Replaces |
-|---|---|
-| `manage_project_member` | `add_project_member`, `update_project_member`, `remove_project_member` |
-| `manage_issue_category` | `list_issue_categories`, `create_issue_category`, `update_issue_category`, `delete_issue_category` |
-| `manage_issue_relation` | `list_issue_relations`, `create_issue_relation`, `delete_issue_relation` |
-| `manage_issue_watcher` | `add_watcher`, `remove_watcher` |
-| `manage_issue_note` | `edit_note`, `set_note_private` |
-| `manage_time_entry` | `create_time_entry`, `update_time_entry`, `log_time_for_user` |
-| `manage_redmine_wiki_page` | `get_redmine_wiki_page`, `create_redmine_wiki_page`, `update_redmine_wiki_page`, `delete_redmine_wiki_page`, `list_wiki_pages`, `rename_wiki_page` |
-| `manage_product` | `list_products`, `get_product`, `add_product`, `edit_product` |
-| `manage_contact` | `list_contacts`, `get_contact`, `create_contact`, `edit_contact`, `delete_contact`, `assign_contact_to_project`, `remove_contact_from_project` |
-
-**Tasks:**
-- [x] Land 9 `manage_X` implementations behind a feature branch off post-v1.3 `develop`
-- [x] Reorganize per-tool tests into per-`manage_X` test classes
-- [x] Drop `mark_checklist_done` (use `update_checklist_item(is_done=True)` directly)
-- [x] Update `docs/tool-reference.md`, `README.md`, `CHANGELOG.md` with migration guide
-- [ ] Open public heads-up issue before merging
-
-**What stays the same:** the four most-used issue tools (`get_redmine_issue`, `list_redmine_issues`, `create_redmine_issue`, `update_redmine_issue`), `get_gantt_chart`, `get_private_notes`, all discovery/enumeration tools, all file operations, auth, SSL, plugin gating.
+*No specific version planned yet — v2.0.0 just shipped. Likely next-cut candidates are tracked in [🔮 Future](#-future-post-v20) below.*
 
 ---
 
@@ -122,4 +112,4 @@ Reduce tool count from 69 to 43 by folding CRUD-style tools into `manage_X(actio
 
 ---
 
-**Last Updated:** 2026-05-06 (v1.3.0 released; v2.0.0 consolidation designed and ready to start)
+**Last Updated:** 2026-05-16 (v2.0.0 released)
