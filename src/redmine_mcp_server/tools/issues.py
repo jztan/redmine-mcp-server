@@ -25,10 +25,10 @@ from .._decorators import ActionMode, action_dispatch
 from .._env import _is_agile_enabled, _is_read_only_mode
 from .._errors import _READ_ONLY_ERROR, _handle_redmine_error
 from .._serialization import (
+    _attachment_to_dict,
     _coerce_json_safe,
     _iter_capped,
     _named_ref,
-    _rewrite_to_public_url,
     _safe_isoformat,
     wrap_insecure_content,
 )
@@ -368,27 +368,7 @@ def _attachments_to_list(issue: Any) -> List[Dict[str, Any]]:
         return []
 
     for attachment in iterator:
-        attachments.append(
-            {
-                "id": attachment.id,
-                # description is attacker-controllable free text -- wrap
-                # in <insecure-content> tags. filename is structured
-                # metadata (callers use it for paths, URLs, identifiers)
-                # so wrapping created downstream friction without
-                # materially mitigating short-label injection. See #109.
-                "filename": getattr(attachment, "filename", ""),
-                "filesize": getattr(attachment, "filesize", 0),
-                "content_type": getattr(attachment, "content_type", ""),
-                "description": wrap_insecure_content(
-                    getattr(attachment, "description", "")
-                ),
-                "content_url": _rewrite_to_public_url(
-                    getattr(attachment, "content_url", "")
-                ),
-                "author": _named_ref(getattr(attachment, "author", None)),
-                "created_on": _safe_isoformat(getattr(attachment, "created_on", None)),
-            }
-        )
+        attachments.append(_attachment_to_dict(attachment))
     return attachments
 
 

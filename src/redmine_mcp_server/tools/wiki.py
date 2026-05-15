@@ -6,6 +6,7 @@ from .._client import _get_redmine_client
 from .._decorators import ActionMode, action_dispatch
 from .._errors import _handle_redmine_error
 from .._serialization import (
+    _attachment_to_dict,
     _iter_capped,
     _safe_isoformat,
     wrap_insecure_content,
@@ -60,23 +61,14 @@ def _wiki_page_to_dict(
             "name": wiki_page.project.name,
         }
 
-    # Process attachments if requested
+    # Process attachments if requested. Routes through the shared
+    # _attachment_to_dict helper so wiki and issue attachments produce
+    # identical shapes (content_url + author + REDMINE_PUBLIC_URL
+    # rewriting are now in the wiki response too -- closes #118).
     if include_attachments and hasattr(wiki_page, "attachments"):
-        result["attachments"] = []
-        for attachment in wiki_page.attachments:
-            att_dict = {
-                "id": attachment.id,
-                "filename": attachment.filename,
-                "filesize": attachment.filesize,
-                "content_type": attachment.content_type,
-                "description": getattr(attachment, "description", ""),
-                "created_on": (
-                    str(attachment.created_on)
-                    if hasattr(attachment, "created_on") and attachment.created_on
-                    else None
-                ),
-            }
-            result["attachments"].append(att_dict)
+        result["attachments"] = [
+            _attachment_to_dict(att) for att in wiki_page.attachments
+        ]
 
     return result
 

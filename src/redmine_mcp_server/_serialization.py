@@ -128,6 +128,42 @@ def _iter_capped(resources: Any, cap: int = _DEFAULT_LIST_RESULT_CAP) -> List[An
     return out
 
 
+def _attachment_to_dict(attachment: Any) -> Dict[str, Any]:
+    """Serialize a Redmine attachment object to a stable dict.
+
+    Single source of truth for attachment serialization across the
+    server. Used by ``_attachments_to_list`` (issue attachments) and
+    ``_wiki_page_to_dict`` (wiki page attachments). Before #118 these
+    two paths had divergent shapes: the wiki path omitted
+    ``content_url`` and ``author``, which made cross-tool consumption
+    awkward (an agent that handled an issue attachment had to learn
+    a different shape for a wiki attachment).
+
+    Wrap policy (per #109): ``description`` is free-text and stays
+    wrapped in ``<insecure-content>`` boundary tags; ``filename`` is
+    structured metadata (used as path / URL / identifier downstream)
+    and is returned verbatim. ``author`` flows through
+    ``_named_ref`` which post-#109 also returns the display name
+    verbatim.
+
+    ``content_url`` is routed through ``_rewrite_to_public_url`` (#110)
+    so attachments hosted on the configured internal Redmine origin
+    get rewritten to the public origin when ``REDMINE_PUBLIC_URL`` is
+    set. Foreign URLs (CDN-hosted, pre-rewritten by the operator) are
+    left untouched.
+    """
+    return {
+        "id": getattr(attachment, "id", None),
+        "filename": getattr(attachment, "filename", ""),
+        "filesize": getattr(attachment, "filesize", 0),
+        "content_type": getattr(attachment, "content_type", ""),
+        "description": wrap_insecure_content(getattr(attachment, "description", "")),
+        "content_url": _rewrite_to_public_url(getattr(attachment, "content_url", "")),
+        "author": _named_ref(getattr(attachment, "author", None)),
+        "created_on": _safe_isoformat(getattr(attachment, "created_on", None)),
+    }
+
+
 def _named_ref(obj: Any) -> Optional[Dict[str, Any]]:
     """Serialize a Redmine object with `id` + `name` to a dict.
 
