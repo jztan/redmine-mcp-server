@@ -104,20 +104,19 @@ class TestFileToDict:
         )
         result = _file_to_dict(f)
         assert result["id"] == 42
-        # filename and description are wrapped in <insecure-content> to
+        # description is free text -> wrapped in <insecure-content> to
         # neutralise prompt-injection payloads embedded by uploaders.
-        assert "spec.pdf" in result["filename"]
-        assert result["filename"].startswith("<insecure-content-")
+        # filename, author.name, version.name are structured metadata
+        # (see #109) -> returned verbatim.
+        assert result["filename"] == "spec.pdf"
         assert result["filesize"] == 125678
         assert result["content_type"] == "application/pdf"
         assert "Design spec" in result["description"]
         assert result["description"].startswith("<insecure-content-")
-        # author.name and version.name are also wrapped (display names
-        # are user-controlled).
         assert result["author"]["id"] == 5
-        assert "Alice" in result["author"]["name"]
+        assert result["author"]["name"] == "Alice"
         assert result["version"]["id"] == 3
-        assert "Release 1.0" in result["version"]["name"]
+        assert result["version"]["name"] == "Release 1.0"
 
     def test_no_version(self):
         f = _mock_file(with_version=False)
@@ -156,9 +155,9 @@ class TestListFiles:
         result = await list_files(project_id="web")
 
         assert len(result) == 2
-        # Filenames are wrapped in <insecure-content> — assert substring match.
-        assert "a.pdf" in result[0]["filename"]
-        assert "b.png" in result[1]["filename"]
+        # filename is structured metadata, returned verbatim (#109).
+        assert result[0]["filename"] == "a.pdf"
+        assert result[1]["filename"] == "b.png"
         mock_redmine.file.filter.assert_called_once_with(project_id="web")
 
     @pytest.mark.asyncio
@@ -228,11 +227,11 @@ class TestUploadFile:
 
         # Full metadata should be returned, not just {"id": 100, ...blanks}.
         assert result["id"] == 100
-        # Filename is wrapped in <insecure-content> boundary tags.
-        assert "hello.txt" in result["filename"]
+        # filename and author.name are structured metadata, verbatim (#109).
+        assert result["filename"] == "hello.txt"
         assert result["filesize"] == 1024
         assert result["author"]["id"] == 5
-        assert "Alice" in result["author"]["name"]
+        assert result["author"]["name"] == "Alice"
 
         # Verify upload was called with a BytesIO containing the decoded bytes
         mock_redmine.upload.assert_called_once()
@@ -365,8 +364,8 @@ class TestUploadFile:
 
         assert "error" not in result
         assert result["id"] == 200
-        # Filename is wrapped in <insecure-content> boundary tags.
-        assert "hello.txt" in result["filename"]
+        # filename is structured metadata, returned verbatim (#109).
+        assert result["filename"] == "hello.txt"
 
         # Verify the bytes that got uploaded match what we streamed
         stream = mock_redmine.upload.call_args.args[0]
@@ -815,9 +814,12 @@ class TestGetRedmineAttachment:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.redmine")
     @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
-    async def test_filename_wrapped_in_insecure_content(
+    async def test_filename_returned_verbatim(
         self, mock_cleanup, mock_redmine, tmp_path, monkeypatch
     ):
+        # filename is structured metadata (used for paths, URLs,
+        # identifiers); not wrapped per #109. Path-traversal sanitization
+        # still runs via os.path.basename() before this point.
         monkeypatch.setenv("ATTACHMENTS_DIR", str(tmp_path))
         monkeypatch.delenv("PUBLIC_HOST", raising=False)
 
@@ -828,8 +830,8 @@ class TestGetRedmineAttachment:
 
         result = await get_redmine_attachment(1)
 
-        assert "invoice.pdf" in result["filename"]
-        assert result["filename"].startswith("<insecure-content-")
+        assert result["filename"] == "invoice.pdf"
+        assert not result["filename"].startswith("<insecure-content-")
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.redmine")

@@ -77,8 +77,9 @@ class TestManageContactList:
         # PII (email, phone) returned as-is
         assert result[0]["email"] == "alice@example.com"
         assert result[0]["phone"] == "+1-555-0100"
-        # First name is wrapped in insecure-content
-        assert "<insecure-content-" in result[0]["first_name"]
+        # First name is structured metadata, returned verbatim (#109).
+        assert result[0]["first_name"] == "Alice"
+        assert "<insecure-content-" not in result[0]["first_name"]
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")

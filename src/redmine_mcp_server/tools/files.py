@@ -45,14 +45,15 @@ def _file_to_dict(file_obj: Any) -> Dict[str, Any]:
     Returns standard metadata (id, filename, size, content_type, description,
     download URL, author, dates). Used by list_files and upload_file.
 
-    ``filename`` and ``description`` are attacker-controllable (anyone who
-    can upload to a project can set them). They are wrapped in
-    ``<insecure-content>`` boundary tags so downstream LLMs treat them as
-    untrusted data rather than instructions.
+    ``description`` is attacker-controllable free text and is wrapped in
+    ``<insecure-content>`` boundary tags so downstream LLMs treat it as
+    untrusted data. ``filename`` is structured metadata (callers use it
+    for paths, URLs, identifiers) so it is returned verbatim -- see #109
+    for the rationale.
     """
     return {
         "id": getattr(file_obj, "id", None),
-        "filename": wrap_insecure_content(getattr(file_obj, "filename", "")),
+        "filename": getattr(file_obj, "filename", ""),
         "filesize": getattr(file_obj, "filesize", 0),
         "content_type": getattr(file_obj, "content_type", ""),
         "description": wrap_insecure_content(getattr(file_obj, "description", "")),
@@ -244,7 +245,10 @@ async def get_redmine_attachment(
         public_port = os.getenv("PUBLIC_PORT", os.getenv("SERVER_PORT", "8000"))
 
         expires_str = expires_at.isoformat()
-        safe_filename = wrap_insecure_content(original_filename)
+        # filename is structured metadata (used for paths, URLs,
+        # identifiers); not wrapped per #109. Path-traversal sanitization
+        # already ran above via os.path.basename().
+        safe_filename = original_filename
 
         if use_file_mode:
             return {

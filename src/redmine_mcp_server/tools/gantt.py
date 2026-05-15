@@ -11,7 +11,6 @@ from .._serialization import (
     _iter_capped,
     _named_ref,
     _safe_isoformat,
-    wrap_insecure_content,
 )
 from .._validation import _is_valid_project_id
 from ..server import mcp
@@ -31,7 +30,7 @@ def _gantt_issue_to_dict(issue: Any) -> Dict[str, Any]:
 
     out: Dict[str, Any] = {
         "id": getattr(issue, "id", None),
-        "subject": wrap_insecure_content(getattr(issue, "subject", "")),
+        "subject": getattr(issue, "subject", ""),
         "tracker": _named_ref(getattr(issue, "tracker", None)),
         "status": _named_ref(getattr(issue, "status", None)),
         "assigned_to": _named_ref(getattr(issue, "assigned_to", None)),
@@ -65,7 +64,7 @@ def _gantt_issue_to_dict(issue: Any) -> Dict[str, Any]:
 def _gantt_version_to_dict(version: Any) -> Dict[str, Any]:
     return {
         "id": getattr(version, "id", None),
-        "name": wrap_insecure_content(getattr(version, "name", "")),
+        "name": getattr(version, "name", ""),
         "due_date": _safe_isoformat(getattr(version, "due_date", None)),
         "status": getattr(version, "status", None),
     }

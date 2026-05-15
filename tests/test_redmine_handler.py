@@ -144,9 +144,8 @@ class TestRedmineHandler:
         assert "First comment" in result["journals"][0]["notes"]
 
         assert isinstance(result.get("attachments"), list)
-        # Filename is wrapped in <insecure-content> boundary tags —
-        # attachment filenames are attacker-controllable.
-        assert "test.txt" in result["attachments"][0]["filename"]
+        # filename is structured metadata, returned verbatim (#109).
+        assert result["attachments"][0]["filename"] == "test.txt"
 
         # Verify the mock was called correctly
         mock_redmine.issue.get.assert_called_once_with(

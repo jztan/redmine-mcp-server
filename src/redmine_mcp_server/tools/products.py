@@ -53,16 +53,16 @@ def _product_to_dict(product: Dict[str, Any]) -> Dict[str, Any]:
     category = raw_category if isinstance(raw_category, dict) else {}
     return {
         "id": product.get("id"),
-        "name": wrap_insecure_content(product.get("name", "")),
+        "name": product.get("name", ""),
         "description": wrap_insecure_content(product.get("description", "")),
-        "code": wrap_insecure_content(product.get("code", "")),
+        "code": product.get("code", ""),
         "price": product.get("price"),
         "currency": product.get("currency"),
         "status_id": product.get("status_id"),
         "project": (
             {
                 "id": project.get("id"),
-                "name": wrap_insecure_content(project.get("name", "")),
+                "name": project.get("name", ""),
             }
             if project
             else None
@@ -70,7 +70,7 @@ def _product_to_dict(product: Dict[str, Any]) -> Dict[str, Any]:
         "category": (
             {
                 "id": category.get("id"),
-                "name": wrap_insecure_content(category.get("name", "")),
+                "name": category.get("name", ""),
             }
             if category
             else None

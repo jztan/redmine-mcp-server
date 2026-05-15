@@ -132,10 +132,17 @@ def _named_ref(obj: Any) -> Optional[Dict[str, Any]]:
     """Serialize a Redmine object with `id` + `name` to a dict.
 
     Used for author/user/group/version/project refs that appear inside
-    larger tool-output dicts. The ``name`` field is wrapped in
-    ``<insecure-content>`` boundary tags because display names are user-
-    controlled (a malicious user can set their name to a prompt-injection
-    payload).
+    larger tool-output dicts. Display names are structured-metadata
+    fields: they are short, label-shaped, and almost always rendered
+    as identifiers by downstream consumers (UI rows, "the project is
+    X", "assigned to Y"). The prompt-injection wrapping that applies
+    to free-text fields (``description``, ``notes``, journal
+    entries, ``excerpt``) is intentionally NOT applied here -- the
+    wrapping adds friction (callers had to strip it before passing
+    the value back into create/update calls, paths, or URLs) without
+    materially raising the bar against short-label injection.
+
+    See issue #109 for the policy decision.
 
     Returns ``None`` when ``obj`` is ``None``.
     """
@@ -143,7 +150,7 @@ def _named_ref(obj: Any) -> Optional[Dict[str, Any]]:
         return None
     return {
         "id": getattr(obj, "id", None),
-        "name": wrap_insecure_content(getattr(obj, "name", "")),
+        "name": getattr(obj, "name", ""),
     }
 
 

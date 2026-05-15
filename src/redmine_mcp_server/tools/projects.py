@@ -186,14 +186,14 @@ def _membership_to_dict(membership: Any) -> Dict[str, Any]:
                 result["roles"].append(
                     {
                         "id": role.get("id"),
-                        "name": wrap_insecure_content(role.get("name", "")),
+                        "name": role.get("name", ""),
                     }
                 )
             else:
                 result["roles"].append(
                     {
                         "id": getattr(role, "id", None),
-                        "name": wrap_insecure_content(getattr(role, "name", "")),
+                        "name": getattr(role, "name", ""),
                     }
                 )
     except TypeError:

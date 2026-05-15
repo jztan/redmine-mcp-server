@@ -369,11 +369,12 @@ def _attachments_to_list(issue: Any) -> List[Dict[str, Any]]:
         attachments.append(
             {
                 "id": attachment.id,
-                # filename and description are attacker-controllable
-                # (anyone who can attach to an issue sets them). Wrap
-                # them in <insecure-content> boundary tags — matches the
-                # treatment in _file_to_dict for project files.
-                "filename": wrap_insecure_content(getattr(attachment, "filename", "")),
+                # description is attacker-controllable free text -- wrap
+                # in <insecure-content> tags. filename is structured
+                # metadata (callers use it for paths, URLs, identifiers)
+                # so wrapping created downstream friction without
+                # materially mitigating short-label injection. See #109.
+                "filename": getattr(attachment, "filename", ""),
                 "filesize": getattr(attachment, "filesize", 0),
                 "content_type": getattr(attachment, "content_type", ""),
                 "description": wrap_insecure_content(
@@ -406,7 +407,7 @@ def _issue_category_to_dict(category: Any) -> Dict[str, Any]:
     assigned_to = getattr(category, "assigned_to", None)
     return {
         "id": getattr(category, "id", None),
-        "name": wrap_insecure_content(getattr(category, "name", "")),
+        "name": getattr(category, "name", ""),
         "project": _named_ref(project),
         "assigned_to": _named_ref(assigned_to),
     }

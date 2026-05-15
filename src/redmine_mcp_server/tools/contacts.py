@@ -62,11 +62,11 @@ def _contact_to_dict(contact: Dict[str, Any]) -> Dict[str, Any]:
     address = raw_address if isinstance(raw_address, dict) else {}
     return {
         "id": contact.get("id"),
-        "first_name": wrap_insecure_content(contact.get("first_name", "")),
-        "last_name": wrap_insecure_content(contact.get("last_name", "")),
-        "middle_name": wrap_insecure_content(contact.get("middle_name", "")),
-        "company": wrap_insecure_content(contact.get("company", "")),
-        "job_title": wrap_insecure_content(contact.get("job_title", "")),
+        "first_name": contact.get("first_name", ""),
+        "last_name": contact.get("last_name", ""),
+        "middle_name": contact.get("middle_name", ""),
+        "company": contact.get("company", ""),
+        "job_title": contact.get("job_title", ""),
         "phone": contact.get("phone"),
         "email": contact.get("email"),
         "website": contact.get("website"),
@@ -91,7 +91,7 @@ def _contact_to_dict(contact: Dict[str, Any]) -> Dict[str, Any]:
         "assigned_to": (
             {
                 "id": assigned.get("id"),
-                "name": wrap_insecure_content(assigned.get("name", "")),
+                "name": assigned.get("name", ""),
             }
             if assigned
             else None
