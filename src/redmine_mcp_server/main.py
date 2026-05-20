@@ -31,6 +31,7 @@ from . import tools  # noqa: E402,F401  -- triggers @mcp.tool registration
 from . import _http_routes  # noqa: E402,F401  -- registers HTTP custom routes
 from .server import mcp  # noqa: E402
 from .oauth_middleware import RedmineOAuthMiddleware  # noqa: E402
+from .oauth_scopes import advertised_scopes  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -53,13 +54,14 @@ def get_version() -> str:
 
 
 async def oauth_protected_resource(request: Request):
-    """RFC 8707 — Protected Resource Metadata."""
+    """RFC 9728: Protected Resource Metadata."""
     return JSONResponse(
         {
             "resource": f"{REDMINE_MCP_BASE_URL}/mcp",
             "authorization_servers": [REDMINE_MCP_BASE_URL],
             "bearer_methods_supported": ["header"],
             "resource_name": "Redmine MCP Server",
+            "scopes_supported": advertised_scopes(),
         }
     )
 
@@ -86,6 +88,7 @@ async def oauth_authorization_server(request: Request):
                 "client_secret_post",
                 "client_secret_basic",
             ],
+            "scopes_supported": advertised_scopes(),
         }
     )
 

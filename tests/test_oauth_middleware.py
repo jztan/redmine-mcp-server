@@ -465,6 +465,61 @@ class TestWellKnownEndpoints:
         assert "admin" not in scopes
 
     @pytest.mark.asyncio
+    async def test_discovery_docs_advertise_same_scope_list(self, app):
+        """Both endpoints advertise the same scopes_supported value."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            pr = await client.get("/.well-known/oauth-protected-resource")
+            asd = await client.get("/.well-known/oauth-authorization-server")
+
+        assert pr.json()["scopes_supported"] == asd.json()["scopes_supported"]
+
+    @pytest.mark.asyncio
+    async def test_read_only_mode_hides_write_scopes_in_discovery(
+        self, app, monkeypatch
+    ):
+        """When REDMINE_MCP_READ_ONLY=true, write scopes are not advertised."""
+        from redmine_mcp_server.oauth_scopes import WRITE_SCOPES
+
+        monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "true")
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            pr = await client.get("/.well-known/oauth-protected-resource")
+            asd = await client.get("/.well-known/oauth-authorization-server")
+
+        for endpoint_name, response in (("PR", pr), ("AS", asd)):
+            scopes = response.json()["scopes_supported"]
+            for w in WRITE_SCOPES:
+                assert (
+                    w not in scopes
+                ), f"{endpoint_name} leaked write scope {w} in RO mode"
+
+    @pytest.mark.asyncio
+    async def test_read_only_mode_off_advertises_write_scopes_in_discovery(
+        self, app, monkeypatch
+    ):
+        """Symmetric counterpart: write scopes ARE advertised when RO unset."""
+        from redmine_mcp_server.oauth_scopes import WRITE_SCOPES
+
+        monkeypatch.delenv("REDMINE_MCP_READ_ONLY", raising=False)
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            pr = await client.get("/.well-known/oauth-protected-resource")
+            asd = await client.get("/.well-known/oauth-authorization-server")
+
+        for endpoint_name, response in (("PR", pr), ("AS", asd)):
+            scopes = response.json()["scopes_supported"]
+            for w in WRITE_SCOPES:
+                assert (
+                    w in scopes
+                ), f"{endpoint_name} missing write scope {w} when RO off"
+
+    @pytest.mark.asyncio
     async def test_well_known_accessible_without_auth_in_oauth_mode(self):
         """Discovery endpoints must be reachable without a Bearer token even in oauth mode."""  # noqa: E501
         import os
