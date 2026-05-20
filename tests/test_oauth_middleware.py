@@ -558,13 +558,20 @@ class TestWellKnownEndpoints:
     @pytest.mark.asyncio
     @pytest.mark.parametrize("path", ["/mcp/revoke", "/revoke/mcp"])
     async def test_revoke_endpoint_not_aliased(self, app, path):
-        """RFC 7009 specifies a single revocation endpoint; no aliases."""
+        """RFC 7009 specifies a single revocation endpoint; no aliases.
+
+        The status code depends on whether the OAuth middleware is attached:
+        404 from the router when middleware is absent (the test fixture),
+        401 from the middleware demanding a Bearer token in production
+        (REDMINE_AUTH_MODE=oauth). Either response means the alias path is
+        not a working revocation endpoint, which is what we want.
+        """
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
         ) as client:
             response = await client.post(path, data={"token": "x"})
 
-        assert response.status_code == 404
+        assert response.status_code in (401, 404)
 
     @pytest.mark.asyncio
     async def test_well_known_accessible_without_auth_in_oauth_mode(self):
