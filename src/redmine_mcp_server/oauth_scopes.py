@@ -35,7 +35,11 @@ READ_SCOPES: list[str] = [
     "view_issues",  # list_redmine_issues, get_redmine_issue,
     # list_subtasks, get_gantt_chart,
     # list_redmine_queries, list_redmine_versions,
-    # summarize_project_status (issue queries)
+    # summarize_project_status (issue queries).
+    # Note: list_redmine_versions uses view_issues
+    # because Redmine gates GET /projects/.../versions.json
+    # on view_issues, not manage_versions (which is
+    # a write permission).
     "view_documents",  # manage_document(action=list|get)
     "view_files",  # get_redmine_attachment, list_files
     "view_wiki_pages",  # manage_redmine_wiki_page(action=get|list)

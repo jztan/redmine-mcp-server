@@ -97,8 +97,8 @@ class TestOAuthMiddlewareSkipPaths:
     @pytest.mark.parametrize(
         "path",
         [
-            "/.well-known/oauth-protected-resource",
-            "/.well-known/oauth-authorization-server",
+            *PROTECTED_RESOURCE_PATHS,
+            *AUTHORIZATION_SERVER_PATHS,
             "/health",
             "/revoke",
         ],

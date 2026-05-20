@@ -38,6 +38,8 @@ SKIP_AUTH_PATHS = {
     "/revoke",
 }
 
+# WWW-Authenticate header always points to the canonical path per RFC 9728,
+# even though the discovery doc is also served at the path-aliased forms.
 RESOURCE_METADATA_URL = f"{REDMINE_MCP_BASE_URL}/.well-known/oauth-protected-resource"
 
 
