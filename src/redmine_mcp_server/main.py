@@ -30,7 +30,11 @@ logging.basicConfig(
 from . import tools  # noqa: E402,F401  -- triggers @mcp.tool registration
 from . import _http_routes  # noqa: E402,F401  -- registers HTTP custom routes
 from .server import mcp  # noqa: E402
-from .oauth_middleware import RedmineOAuthMiddleware  # noqa: E402
+from .oauth_middleware import (  # noqa: E402
+    AUTHORIZATION_SERVER_PATHS,
+    PROTECTED_RESOURCE_PATHS,
+    RedmineOAuthMiddleware,
+)
 from .oauth_scopes import advertised_scopes  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -168,17 +172,21 @@ async def revoke_token(request: Request):
 
 
 def register_oauth_routes(target_app):
-    """Register OAuth2 discovery and revocation routes on a Starlette app."""
-    target_app.add_route(
-        "/.well-known/oauth-protected-resource",
-        oauth_protected_resource,
-        methods=["GET"],
-    )
-    target_app.add_route(
-        "/.well-known/oauth-authorization-server",
-        oauth_authorization_server,
-        methods=["GET"],
-    )
+    """Register OAuth2 discovery and revocation routes on a Starlette app.
+
+    Discovery documents are served at three path aliases each so MCP
+    clients that fetch /mcp/.well-known/... or /.well-known/.../mcp
+    (rather than the server root) can bootstrap OAuth. RFC 9728 §3.1
+    specifies the path-prefix form for non-root-mounted resources.
+
+    The /revoke endpoint is NOT aliased. RFC 7009 specifies a single
+    revocation endpoint; clients learn its location from the
+    authorization-server discovery doc.
+    """
+    for path in PROTECTED_RESOURCE_PATHS:
+        target_app.add_route(path, oauth_protected_resource, methods=["GET"])
+    for path in AUTHORIZATION_SERVER_PATHS:
+        target_app.add_route(path, oauth_authorization_server, methods=["GET"])
     target_app.add_route("/revoke", revoke_token, methods=["POST"])
 
 
