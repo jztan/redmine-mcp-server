@@ -419,6 +419,52 @@ class TestWellKnownEndpoints:
         assert "S256" in response.json()["code_challenge_methods_supported"]
 
     @pytest.mark.asyncio
+    async def test_authorization_server_advertises_scopes_supported(self, app):
+        """Repro for issue #130: AS discovery doc must advertise scopes_supported.
+
+        Without this field, MCP clients don't request specific scopes in the
+        authorization URL, so Redmine grants only Doorkeeper's defaults
+        (view_project, search_project, view_members). Tools needing other
+        permissions (view_issues, view_time_entries, ...) then 403.
+        """
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.get("/.well-known/oauth-authorization-server")
+
+        data = response.json()
+        assert "scopes_supported" in data, (
+            "RFC 8414 scopes_supported missing; clients fall back to "
+            "Doorkeeper defaults and tools 403"
+        )
+        scopes = data["scopes_supported"]
+        assert isinstance(scopes, list) and len(scopes) > 0
+        assert (
+            "view_issues" in scopes
+        ), "view_issues must be advertised so list_redmine_issues works"
+        assert "admin" not in scopes, "admin scope must not be advertised by default"
+
+    @pytest.mark.asyncio
+    async def test_protected_resource_advertises_scopes_supported(self, app):
+        """Repro for issue #130: PR discovery doc should also advertise scopes.
+
+        RFC 9728 defines scopes_supported on the protected resource metadata
+        too; some clients inspect this endpoint rather than the AS one.
+        """
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.get("/.well-known/oauth-protected-resource")
+
+        data = response.json()
+        assert (
+            "scopes_supported" in data
+        ), "RFC 9728 scopes_supported missing on protected resource metadata"
+        scopes = data["scopes_supported"]
+        assert isinstance(scopes, list) and len(scopes) > 0
+        assert "admin" not in scopes
+
+    @pytest.mark.asyncio
     async def test_well_known_accessible_without_auth_in_oauth_mode(self):
         """Discovery endpoints must be reachable without a Bearer token even in oauth mode."""  # noqa: E501
         import os
