@@ -22,6 +22,14 @@ jobs:
       - name: Set up environment
         run: |
           uv sync --locked --extra test
+      - name: Install pip-audit
+        run: pip install pip-audit
+      - name: Audit dependencies for known vulnerabilities
+        # Ignore list lives in scripts/audit.sh so local preflight and CI stay in sync.
+        # Gates publish on a clean audit so a transitive vuln cannot ship after tag push.
+        run: |
+          uv export --no-hashes --no-emit-project > /tmp/requirements-audit.txt
+          bash scripts/audit.sh -r /tmp/requirements-audit.txt --strict
       - name: Generate test SSL certificates
         run: bash tests/fixtures/ssl/generate-test-certs.sh
       - name: Run tests with coverage
