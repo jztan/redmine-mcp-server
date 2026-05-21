@@ -1,6 +1,19 @@
 """Unit tests for src/redmine_mcp_server/oauth_scopes.py."""
 
+from pathlib import Path
+
 import pytest
+
+_PERMS_FIXTURE = Path(__file__).parent / "fixtures" / "redmine_6_permissions.txt"
+
+
+def _load_redmine_permissions() -> set[str]:
+    return {
+        line.strip()
+        for line in _PERMS_FIXTURE.read_text().splitlines()
+        if line.strip() and not line.startswith("#")
+    }
+
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -66,6 +79,31 @@ class TestScopeConstants:
         combined = set(READ_SCOPES) | set(WRITE_SCOPES)
         leaked = combined & vendor_scopes
         assert not leaked, f"vendor scopes leaked: {leaked}"
+
+    def test_advertised_scopes_are_real_redmine_permissions(self):
+        """Every advertised scope must be a real Redmine permission.
+
+        Regression guard for issue #130 follow-up: the original fix shipped
+        ``manage_documents`` (inferred from the ``manage_X`` pattern), but
+        Redmine's document permissions are actually
+        ``add_documents`` / ``edit_documents`` / ``delete_documents``.
+        Doorkeeper's ``enforce_configured_scopes`` rejects unknown scopes
+        with ``invalid_scope`` at the ``/oauth/authorize`` step, breaking
+        the entire consent flow.
+
+        The fixture is a snapshot of ``Redmine::AccessControl.permissions``
+        from a stock Redmine 6.x install (plus whatever plugin permissions
+        the snapshot host happens to load -- treated as a superset).
+        """
+        from redmine_mcp_server.oauth_scopes import READ_SCOPES, WRITE_SCOPES
+
+        valid = _load_redmine_permissions()
+        invalid = [s for s in (*READ_SCOPES, *WRITE_SCOPES) if s not in valid]
+        assert not invalid, (
+            "advertised scope(s) not present in Redmine::AccessControl.permissions; "
+            "Doorkeeper will reject them with invalid_scope at /oauth/authorize: "
+            f"{invalid}"
+        )
 
     def test_view_private_notes_is_a_read_scope(self):
         """Regression pin: view_private_notes was once miscategorized as write."""

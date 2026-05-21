@@ -66,7 +66,9 @@ WRITE_SCOPES: list[str] = [
     "manage_categories",  # manage_issue_category
     "manage_wiki",  # manage_redmine_wiki_page(action=create|update|delete)
     "edit_wiki_pages",  # manage_redmine_wiki_page(action=update)
-    "manage_documents",  # manage_document(action=create|update|delete)
+    "add_documents",  # manage_document(action=create)
+    "edit_documents",  # manage_document(action=update)
+    "delete_documents",  # manage_document(action=delete)
     "manage_files",  # upload_file, delete_file
     "manage_members",  # manage_project_member
 ]
