@@ -13,13 +13,14 @@ Examples:
 
 Gitflow:
     1. Start from develop branch
-    2. Create release/vX.Y.Z branch
-    3. Bump versions on release branch
-    4. Merge to master and tag
-    5. Create GitHub release (triggers PyPI publish)
-    6. Publish to MCP Registry
-    7. Merge back to develop
-    8. Delete release branch
+    2. Pre-flight: clean tree, tests pass, dependency audit clean
+    3. Create release/vX.Y.Z branch and bump versions
+    4. Merge to master, push tag (triggers publish-pypi.yml)
+    5. Wait for publish-pypi workflow to finish (poll gh run status)
+    6. Wait for the version to appear on PyPI (JSON API)
+    7. Create GitHub release (only after `pip install` will actually work)
+    8. Publish to MCP Registry
+    9. Merge back to develop, delete release branch
 """
 
 import argparse
@@ -190,6 +191,40 @@ def preflight_checks(config: ReleaseConfig) -> None:
         sys.exit(1)
     print("  ✓ All tests pass")
 
+    # Dependency audit -- same script CI runs (dependency-audit.yml and the
+    # publish-pypi.yml pre-test step both call scripts/audit.sh). A green
+    # preflight means a green publish-pypi audit step, so we catch the
+    # failure mode where pip-audit blocks the release after the tag has
+    # already been pushed.
+    print("Auditing dependencies...")
+    audit_script = config.project_root / "scripts" / "audit.sh"
+    requirements_path = "/tmp/requirements-audit.txt"
+    export_result = run_command(
+        ["uv", "export", "--no-hashes", "--no-emit-project"],
+        check=False,
+        capture_output=True,
+    )
+    if export_result.returncode != 0:
+        print("Error: uv export failed; cannot run dependency audit.")
+        print(export_result.stdout)
+        print(export_result.stderr)
+        sys.exit(1)
+    Path(requirements_path).write_text(export_result.stdout)
+    result = run_command(
+        ["bash", str(audit_script), "-r", requirements_path, "--strict"],
+        check=False,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        print(
+            "Error: Dependency audit failed. "
+            "Fix or update the ignore list in scripts/audit.sh before releasing."
+        )
+        print(result.stdout)
+        print(result.stderr)
+        sys.exit(1)
+    print("  ✓ No vulnerabilities (or all are in the ignore list)")
+
     # Check gh CLI is available and authenticated
     print("Checking gh CLI...")
     result = run_command(["which", "gh"], check=False)
@@ -274,35 +309,49 @@ def update_server_json(project_root: Path, new_version: str, dry_run: bool) -> N
 
 
 def update_changelog(project_root: Path, new_version: str, dry_run: bool) -> None:
-    """Update CHANGELOG.md: convert [Unreleased] to new version with date."""
+    """Update CHANGELOG.md: convert [Unreleased] to new version with date.
+
+    Requires an [Unreleased] section with real content. Auto-stamping a
+    "Version bump" placeholder produces vacuous GitHub release notes; fail
+    loud instead so the user fills it in before the release goes out.
+    """
     changelog = project_root / "CHANGELOG.md"
     content = changelog.read_text()
     today = date.today().strftime("%Y-%m-%d")
 
-    # Check if there's an [Unreleased] section to convert
-    unreleased_pattern = r"## \[Unreleased\]\s*\n"
-    if re.search(unreleased_pattern, content, re.IGNORECASE):
-        # Replace [Unreleased] with new version, add fresh [Unreleased] above
-        new_content = re.sub(
-            unreleased_pattern,
-            f"## [Unreleased]\n\n## [{new_version}] - {today}\n",
-            content,
-            flags=re.IGNORECASE,
+    # Require an [Unreleased] section that exists and has real content.
+    unreleased_body_pattern = r"## \[Unreleased\]\s*\n(.*?)(?=^## \[|\Z)"
+    body_match = re.search(
+        unreleased_body_pattern, content, re.IGNORECASE | re.DOTALL | re.MULTILINE
+    )
+    if not body_match:
+        print(
+            "Error: CHANGELOG.md has no [Unreleased] section.\n"
+            "Add one with the changes for this release before running the script."
         )
-    else:
-        # No Unreleased section -- add new version after header
-        first_version_match = re.search(r"^## \[\d+\.\d+\.\d+\]", content, re.MULTILINE)
-        if first_version_match:
-            insert_pos = first_version_match.start()
-            new_section = (
-                f"## [Unreleased]\n\n"
-                f"## [{new_version}] - {today}\n\n"
-                f"### Changed\n- Version bump\n\n"
-            )
-            new_content = content[:insert_pos] + new_section + content[insert_pos:]
-        else:
-            print("Error: Could not find where to insert new version in CHANGELOG.md")
-            sys.exit(1)
+        sys.exit(1)
+
+    unreleased_body = body_match.group(1).strip()
+    if not unreleased_body or unreleased_body in (
+        "### Changed",
+        "### Added",
+        "### Fixed",
+        "### Security",
+    ):
+        print(
+            "Error: [Unreleased] section in CHANGELOG.md is empty.\n"
+            "Document the changes for this release before running the script."
+        )
+        sys.exit(1)
+
+    # Replace [Unreleased] with new version, add fresh [Unreleased] above.
+    new_content = re.sub(
+        r"## \[Unreleased\]\s*\n",
+        f"## [Unreleased]\n\n## [{new_version}] - {today}\n",
+        content,
+        count=1,
+        flags=re.IGNORECASE,
+    )
 
     # Append reference link at the bottom if not already present
     ref_link = (
@@ -540,22 +589,151 @@ pip install {PACKAGE_NAME}=={new_version}
         print(f"  ✓ Created GitHub release: {tag}")
 
 
-def wait_for_pypi(new_version: str, max_wait: int = 300) -> bool:
-    """Wait for package to be available on PyPI."""
+def wait_for_publish_workflow(new_version: str, max_wait: int = 900) -> bool:
+    """Poll the publish-pypi.yml run triggered by the tag push.
+
+    Returns True only if the workflow run on the tag's SHA completes with
+    conclusion=success. Returns False on any other terminal conclusion or
+    on timeout. Prints the run URL so a failure is easy to investigate.
+    """
+    tag = f"v{new_version}"
+    print("\n=== Publish Workflow ===\n")
+
+    # CRITICAL: annotated tags (git tag -a) have their own object SHA;
+    # GitHub Actions reports the commit SHA in headSha. Dereference with
+    # ^{commit} so the match works. Comparing the raw tag SHA never
+    # matches and the poller spins forever.
+    sha_result = run_command(["git", "rev-parse", f"{tag}^{{commit}}"])
+    tag_sha = sha_result.stdout.strip()
+    print(f"  Watching publish-pypi.yml for tag {tag} ({tag_sha[:7]})...")
+
+    start_time = time.time()
+    check_interval = 15
+    last_status: str | None = None
+
+    while time.time() - start_time < max_wait:
+        elapsed = int(time.time() - start_time)
+        result = run_command(
+            [
+                "gh",
+                "run",
+                "list",
+                "--workflow=publish-pypi.yml",
+                "--limit",
+                "10",
+                "--json",
+                "databaseId,status,conclusion,headSha,url",
+            ],
+            check=False,
+        )
+        if result.returncode != 0:
+            print(f"  ⚠ gh run list failed: {result.stderr.strip()}; retrying...")
+            time.sleep(check_interval)
+            continue
+
+        try:
+            runs = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            time.sleep(check_interval)
+            continue
+
+        match = next((r for r in runs if r.get("headSha") == tag_sha), None)
+        if match is None:
+            print(f"  Run not yet registered... ({elapsed}s elapsed)")
+            time.sleep(10)
+            continue
+
+        status = match.get("status")
+        conclusion = match.get("conclusion")
+        url = match.get("url", "")
+        run_id = match.get("databaseId")
+
+        if status == "completed":
+            if conclusion == "success":
+                print(f"  ✓ publish-pypi run succeeded ({url})")
+                return True
+            print(f"  ✗ publish-pypi run finished with conclusion={conclusion}")
+            print(f"    URL: {url}")
+            print(f"    Logs: gh run view {run_id} --log-failed")
+            return False
+
+        if status != last_status:
+            print(f"  Run {run_id} status={status}... ({elapsed}s elapsed)")
+            last_status = status
+        else:
+            print(f"  Still {status}... ({elapsed}s elapsed)")
+        time.sleep(check_interval)
+
+    print(f"  ⚠ Timeout after {max_wait}s waiting for publish-pypi workflow")
+    return False
+
+
+def print_recovery_instructions(
+    new_version: str, release_branch: str, hotfix: bool
+) -> None:
+    """Print actionable recovery steps when publish fails after tagging."""
+    tag = f"v{new_version}"
+    branch_kind = "hotfix" if hotfix else "release"
+    print("\n" + "=" * 60)
+    print(f"  RELEASE {tag} INCOMPLETE")
+    print("=" * 60)
+    print()
+    print("  Current state:")
+    print(f"    - Tag {tag} is pushed to origin")
+    print(f"    - master has the version-bump commit for {tag}")
+    print("    - GitHub release was NOT created")
+    print("    - MCP Registry was NOT updated")
+    print(
+        f"    - develop is unchanged; {branch_kind} branch "
+        f"{release_branch} still exists locally"
+    )
+    print()
+    print("  Investigate:")
+    print("    gh run list --workflow=publish-pypi.yml --limit 5")
+    print("    gh run view <run-id> --log-failed")
+    print()
+    print("  After diagnosing, choose one:")
+    print("    A) Fix the cause on develop, then rerun the existing tag's workflow:")
+    print("         gh run rerun <run-id>")
+    print("       On success, finish the remaining steps manually:")
+    print(f"         gh release create {tag} --title {tag} --notes-file <notes.md>")
+    print("         mcp-publisher publish")
+    print(f"         git checkout develop && git merge {release_branch} && git push")
+    print(f"         git branch -d {release_branch}")
+    print("    B) Burn this version and ship the next patch from develop")
+    print("       (requires deleting tag + reverting the master commit -- destructive,")
+    print(f"        only do this if nobody has pulled {tag}).")
+    print("=" * 60)
+
+
+def wait_for_pypi(new_version: str, max_wait: int = 600) -> bool:
+    """Wait for package to be available on PyPI.
+
+    Checks the JSON API endpoint that the MCP Registry actually validates
+    against. ``pip index versions`` can return false positives because the
+    simple index updates before the JSON API does, and MCP publish would
+    then fail with a not-found error.
+    """
+    import urllib.error
+    import urllib.request
+
     print("\n=== Waiting for PyPI ===\n")
 
+    url = f"https://pypi.org/pypi/{PACKAGE_NAME}/{new_version}/json"
     start_time = time.time()
     check_interval = 15
 
     while time.time() - start_time < max_wait:
-        result = run_command(
-            ["pip", "index", "versions", PACKAGE_NAME],
-            check=False,
-            capture_output=True,
-        )
-        if new_version in result.stdout:
-            print(f"  ✓ Version {new_version} is available on PyPI")
-            return True
+        try:
+            with urllib.request.urlopen(url, timeout=10) as resp:
+                if resp.status == 200:
+                    print(f"  ✓ Version {new_version} is available on PyPI")
+                    return True
+        except urllib.error.HTTPError as e:
+            if e.code != 404:
+                print(f"  Unexpected status {e.code}, retrying...")
+        except urllib.error.URLError as e:
+            print(f"  Network error: {e.reason}, retrying...")
 
         elapsed = int(time.time() - start_time)
         print(f"  Waiting for PyPI... ({elapsed}s elapsed)")
@@ -743,26 +921,38 @@ Gitflow:
     # Step 5: Commit version bump on release branch
     commit_version_bump(config, new_version)
 
-    # Step 6: Merge to master and tag
+    # Step 6: Merge to master and tag (this push triggers publish-pypi.yml)
     merge_to_master_and_tag(config, new_version, release_branch)
 
-    # Step 7: Create GitHub release
-    create_github_release(config, new_version)
-
-    # Step 8: Wait for PyPI and publish to MCP Registry
+    # Step 7: Watch the publish-pypi workflow, then wait for PyPI to expose
+    # the version via its JSON API. The GitHub release is created AFTER both
+    # confirm -- otherwise the release notes would ship a `pip install` line
+    # that does not yet (or may never) work.
     if not config.dry_run:
-        if wait_for_pypi(new_version):
-            publish_mcp_registry(config)
-        else:
-            print("\n  ⚠ Skipping MCP Registry (PyPI not ready)")
-            print("  Run manually later: mcp-publisher publish")
+        if not wait_for_publish_workflow(new_version):
+            print_recovery_instructions(new_version, release_branch, config.hotfix)
+            sys.exit(1)
+
+        if not wait_for_pypi(new_version):
+            print_recovery_instructions(new_version, release_branch, config.hotfix)
+            sys.exit(1)
     else:
+        print("\n=== Publish Workflow ===\n")
+        print("  [DRY-RUN] Would poll publish-pypi.yml run to completion")
         print("\n=== Waiting for PyPI ===\n")
         print("  [DRY-RUN] Would wait for PyPI availability")
+
+    # Step 8: Create GitHub release -- now safe to advertise the PyPI install
+    create_github_release(config, new_version)
+
+    # Step 9: Publish to MCP Registry
+    if not config.dry_run:
+        publish_mcp_registry(config)
+    else:
         print("\n=== MCP Registry ===\n")
         print("  [DRY-RUN] Would run: mcp-publisher publish")
 
-    # Step 9: Merge back to develop and cleanup
+    # Step 10: Merge back to develop and cleanup
     merge_back_to_develop(config, release_branch)
 
     # Done!

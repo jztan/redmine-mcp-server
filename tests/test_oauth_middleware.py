@@ -17,6 +17,10 @@ os.environ.setdefault("REDMINE_MCP_BASE_URL", "http://localhost:3040")
 import pytest  # noqa: E402
 from unittest.mock import patch, AsyncMock, MagicMock  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
+from redmine_mcp_server.oauth_middleware import (  # noqa: E402
+    AUTHORIZATION_SERVER_PATHS,
+    PROTECTED_RESOURCE_PATHS,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -93,8 +97,8 @@ class TestOAuthMiddlewareSkipPaths:
     @pytest.mark.parametrize(
         "path",
         [
-            "/.well-known/oauth-protected-resource",
-            "/.well-known/oauth-authorization-server",
+            *PROTECTED_RESOURCE_PATHS,
+            *AUTHORIZATION_SERVER_PATHS,
             "/health",
             "/revoke",
         ],
@@ -419,38 +423,190 @@ class TestWellKnownEndpoints:
         assert "S256" in response.json()["code_challenge_methods_supported"]
 
     @pytest.mark.asyncio
+    async def test_authorization_server_advertises_scopes_supported(self, app):
+        """Repro for issue #130: AS discovery doc must advertise scopes_supported.
+
+        Without this field, MCP clients don't request specific scopes in the
+        authorization URL, so Redmine grants only Doorkeeper's defaults
+        (view_project, search_project, view_members). Tools needing other
+        permissions (view_issues, view_time_entries, ...) then 403.
+        """
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.get("/.well-known/oauth-authorization-server")
+
+        data = response.json()
+        assert "scopes_supported" in data, (
+            "RFC 8414 scopes_supported missing; clients fall back to "
+            "Doorkeeper defaults and tools 403"
+        )
+        scopes = data["scopes_supported"]
+        assert isinstance(scopes, list) and len(scopes) > 0
+        assert (
+            "view_issues" in scopes
+        ), "view_issues must be advertised so list_redmine_issues works"
+        assert "admin" not in scopes, "admin scope must not be advertised by default"
+
+    @pytest.mark.asyncio
+    async def test_protected_resource_advertises_scopes_supported(self, app):
+        """Repro for issue #130: PR discovery doc should also advertise scopes.
+
+        RFC 9728 defines scopes_supported on the protected resource metadata
+        too; some clients inspect this endpoint rather than the AS one.
+        """
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.get("/.well-known/oauth-protected-resource")
+
+        data = response.json()
+        assert (
+            "scopes_supported" in data
+        ), "RFC 9728 scopes_supported missing on protected resource metadata"
+        scopes = data["scopes_supported"]
+        assert isinstance(scopes, list) and len(scopes) > 0
+        assert "admin" not in scopes
+
+    @pytest.mark.asyncio
+    async def test_discovery_docs_advertise_same_scope_list(self, app):
+        """Both endpoints advertise the same scopes_supported value."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            pr = await client.get("/.well-known/oauth-protected-resource")
+            asd = await client.get("/.well-known/oauth-authorization-server")
+
+        assert pr.json()["scopes_supported"] == asd.json()["scopes_supported"]
+
+    @pytest.mark.asyncio
+    async def test_read_only_mode_hides_write_scopes_in_discovery(
+        self, app, monkeypatch
+    ):
+        """When REDMINE_MCP_READ_ONLY=true, write scopes are not advertised."""
+        from redmine_mcp_server.oauth_scopes import WRITE_SCOPES
+
+        monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "true")
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            pr = await client.get("/.well-known/oauth-protected-resource")
+            asd = await client.get("/.well-known/oauth-authorization-server")
+
+        for endpoint_name, response in (("PR", pr), ("AS", asd)):
+            scopes = response.json()["scopes_supported"]
+            for w in WRITE_SCOPES:
+                assert (
+                    w not in scopes
+                ), f"{endpoint_name} leaked write scope {w} in RO mode"
+
+    @pytest.mark.asyncio
+    async def test_read_only_mode_off_advertises_write_scopes_in_discovery(
+        self, app, monkeypatch
+    ):
+        """Symmetric counterpart: write scopes ARE advertised when RO unset."""
+        from redmine_mcp_server.oauth_scopes import WRITE_SCOPES
+
+        monkeypatch.delenv("REDMINE_MCP_READ_ONLY", raising=False)
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            pr = await client.get("/.well-known/oauth-protected-resource")
+            asd = await client.get("/.well-known/oauth-authorization-server")
+
+        for endpoint_name, response in (("PR", pr), ("AS", asd)):
+            scopes = response.json()["scopes_supported"]
+            for w in WRITE_SCOPES:
+                assert (
+                    w in scopes
+                ), f"{endpoint_name} missing write scope {w} when RO off"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "path",
+        PROTECTED_RESOURCE_PATHS,
+    )
+    async def test_protected_resource_paths_return_identical_body(self, app, path):
+        """All three protected-resource aliases serve the same JSON body."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            canonical = await client.get("/.well-known/oauth-protected-resource")
+            alias = await client.get(path)
+
+        assert alias.status_code == 200
+        assert alias.json() == canonical.json()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "path",
+        AUTHORIZATION_SERVER_PATHS,
+    )
+    async def test_authorization_server_paths_return_identical_body(self, app, path):
+        """All three authorization-server aliases serve the same JSON body."""
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            canonical = await client.get("/.well-known/oauth-authorization-server")
+            alias = await client.get(path)
+
+        assert alias.status_code == 200
+        assert alias.json() == canonical.json()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("path", ["/mcp/revoke", "/revoke/mcp"])
+    async def test_revoke_endpoint_not_aliased(self, app, path):
+        """RFC 7009 specifies a single revocation endpoint; no aliases.
+
+        The status code depends on whether the OAuth middleware is attached:
+        404 from the router when middleware is absent (the test fixture),
+        401 from the middleware demanding a Bearer token in production
+        (REDMINE_AUTH_MODE=oauth). Either response means the alias path is
+        not a working revocation endpoint, which is what we want.
+        """
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.post(path, data={"token": "x"})
+
+        assert response.status_code in (401, 404)
+
+    @pytest.mark.asyncio
     async def test_well_known_accessible_without_auth_in_oauth_mode(self):
-        """Discovery endpoints must be reachable without a Bearer token even in oauth mode."""  # noqa: E501
+        """All discovery endpoints (including path aliases) must be reachable without a Bearer token even in oauth mode."""  # noqa: E501
         import os
 
         with patch.dict(os.environ, {"REDMINE_AUTH_MODE": "oauth"}):
-            # Import fresh app state isn't possible after module load, so test
-            # the middleware skip-path logic directly via _make_app equivalent.
             from starlette.applications import Starlette
             from starlette.requests import Request
             from starlette.responses import JSONResponse
             from starlette.routing import Route
-            from redmine_mcp_server.oauth_middleware import RedmineOAuthMiddleware
+            from redmine_mcp_server.oauth_middleware import (
+                AUTHORIZATION_SERVER_PATHS,
+                PROTECTED_RESOURCE_PATHS,
+                RedmineOAuthMiddleware,
+            )
 
             async def discovery(request: Request):
                 return JSONResponse({"issuer": "http://test"})
 
-            app = Starlette(
-                routes=[
-                    Route("/.well-known/oauth-authorization-server", discovery),
-                    Route("/.well-known/oauth-protected-resource", discovery),
-                ]
-            )
+            all_paths = [
+                *PROTECTED_RESOURCE_PATHS,
+                *AUTHORIZATION_SERVER_PATHS,
+            ]
+            app = Starlette(routes=[Route(p, discovery) for p in all_paths])
             app.add_middleware(RedmineOAuthMiddleware)
 
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
-                r1 = await client.get("/.well-known/oauth-authorization-server")
-                r2 = await client.get("/.well-known/oauth-protected-resource")
-
-        assert r1.status_code == 200
-        assert r2.status_code == 200
+                for path in all_paths:
+                    response = await client.get(path)
+                    assert (
+                        response.status_code == 200
+                    ), f"middleware blocked {path} in oauth mode"
 
 
 # ---------------------------------------------------------------------------

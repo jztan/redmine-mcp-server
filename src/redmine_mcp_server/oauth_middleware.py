@@ -14,13 +14,32 @@ REDMINE_MCP_BASE_URL = os.environ.get(
     "REDMINE_MCP_BASE_URL", "http://localhost:3040"
 ).rstrip("/")
 
-SKIP_AUTH_PATHS = {
+# Path aliases for OAuth2 discovery endpoints.
+# Some MCP clients fetch discovery docs at path-prefixed locations
+# (e.g. /mcp/.well-known/...) rather than the server root.
+# RFC 9728 §3.1 specifies the path-prefix form for non-root-mounted
+# resources, so we serve all three variants.
+PROTECTED_RESOURCE_PATHS = [
     "/.well-known/oauth-protected-resource",
+    "/.well-known/oauth-protected-resource/mcp",
+    "/mcp/.well-known/oauth-protected-resource",
+]
+
+AUTHORIZATION_SERVER_PATHS = [
     "/.well-known/oauth-authorization-server",
+    "/.well-known/oauth-authorization-server/mcp",
+    "/mcp/.well-known/oauth-authorization-server",
+]
+
+SKIP_AUTH_PATHS = {
+    *PROTECTED_RESOURCE_PATHS,
+    *AUTHORIZATION_SERVER_PATHS,
     "/health",
     "/revoke",
 }
 
+# WWW-Authenticate header always points to the canonical path per RFC 9728,
+# even though the discovery doc is also served at the path-aliased forms.
 RESOURCE_METADATA_URL = f"{REDMINE_MCP_BASE_URL}/.well-known/oauth-protected-resource"
 
 
