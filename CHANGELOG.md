@@ -40,6 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `roadmap.md`: Refreshed the Project Status block — v2.0.0 → v2.0.1 current, v2.1 noted as merged-to-develop, test count 1339 → 1365 (1285 unit + 80 integration). Updated "Last Updated" stamp.
   - `docs/oauth-setup.md`, `docs/troubleshooting.md`, `src/redmine_mcp_server/_env.py`, `src/redmine_mcp_server/_auth.py`, `tests/test_oauth_integration.py`: Unified the operator-facing terminology around "confidential" rather than `protected_resource?`. Doorkeeper's `Application#protected_resource?` is an alias for `confidential?` and isn't a separate UI toggle in Redmine's Admin → Applications form, so describing the requirement as "confidential" matches what operators actually click.
 
+### Dependencies
+- Bump `fastmcp` from 3.2.4 to 3.3.1 ([#128](https://github.com/jztan/redmine-mcp-server/pull/128)). Includes OAuth proxy hardening (silent-consent AS-in-the-middle guard, redirect URI dot-segment rejection, per-token response cache partitioning), `OAuthProxy.update_scopes()` public API, streamable-HTTP transport shutdown fix, and OTEL semconv compliance for list operations. The 3.3 packaging split (introducing `fastmcp-slim`) preserves all public import paths; 3.3.1 hotfixes a circular-import regression in 3.3.0.
+
 ### Fixed
 - `tests/test_oauth_integration.py` now calls `python-dotenv`'s `load_dotenv()` at module-import time, so `REDMINE_URL` (and any other config) defined in `.env` is honored by the integration suite without having to re-export the var on the command line. Previously the test module read `os.environ` directly at import time, which meant the suite skipped with "Missing: REDMINE_URL" unless the var was set in the shell, even when it was already in `.env` for the running server.
 
