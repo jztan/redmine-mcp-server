@@ -215,22 +215,35 @@ The unit suite mocks Doorkeeper at the httpx transport boundary. To exercise rea
 
 1. Register an MCP introspection client in the sandbox per `docs/oauth-setup.md` Step 2.
 2. Mint a valid bearer for any user-flow OAuth app in the same sandbox.
-3. Set env vars and run:
+3. Add the four env vars to your `.env` file:
 
    ```bash
-   REDMINE_URL=https://sandbox-redmine.example.com \
-   REDMINE_INTROSPECT_CLIENT_ID=... \
-   REDMINE_INTROSPECT_CLIENT_SECRET=... \
-   REDMINE_OAUTH_TEST_TOKEN=... \
-   python tests/run_tests.py --integration -k test_oauth_integration
+   REDMINE_URL=https://sandbox-redmine.example.com
+   REDMINE_INTROSPECT_CLIENT_ID=...
+   REDMINE_INTROSPECT_CLIENT_SECRET=...
+   REDMINE_OAUTH_TEST_TOKEN=...
    ```
 
-If any env var is missing the entire suite skips with a clear "Live OAuth integration not configured" message — safe to leave in CI.
+   The OAuth integration test module calls `load_dotenv()` at import time, so vars in `.env` are picked up automatically — no need to re-export on the command line.
+
+4. Run the full integration suite:
+
+   ```bash
+   python tests/run_tests.py --integration
+   ```
+
+   …or run just the OAuth subset (needs direct pytest because `run_tests.py` does not forward `-k`):
+
+   ```bash
+   python -m pytest tests/test_oauth_integration.py -v -m integration
+   ```
+
+If any required env var is missing, the OAuth tests skip with a clear "Live OAuth integration not configured" message — safe to leave in CI.
 
 The destructive `test_revoked_token_rejected` test invalidates the test bearer and is skipped by default. To enable (and lose the bearer):
 
 ```bash
-RUN_DESTRUCTIVE_TESTS=1 ... python tests/run_tests.py --integration ...
+RUN_DESTRUCTIVE_TESTS=1 python tests/run_tests.py --integration
 ```
 
 Re-mint the test bearer through the sandbox's OAuth user-flow before re-running.

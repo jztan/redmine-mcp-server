@@ -19,6 +19,13 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
+from dotenv import load_dotenv
+
+# Load .env so REDMINE_URL and friends come from the same file the server uses.
+# Runs at module-import time (before pytest evaluates the skip predicate below)
+# so plain ``python -m pytest tests/test_oauth_integration.py`` works without
+# needing to re-pass already-in-.env vars on the command line.
+load_dotenv()
 
 pytestmark = pytest.mark.integration
 

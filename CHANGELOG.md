@@ -32,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Documentation
 - `docs/oauth-setup.md`: Step 2 rewritten with a Redmine-specific gotcha. The previously recommended approach of adding a separate `config/initializers/doorkeeper.rb` with a fresh `Doorkeeper.configure` block silently wipes Redmine's entire Doorkeeper configuration (admin_authenticator, resource_owner_authenticator, grant_flows, scopes), because Doorkeeper's `configure` rebuilds the Config wholesale rather than merging. The only safe override is editing the existing `Doorkeeper.configure` block in Redmine's `config/initializers/30-redmine.rb` in place. Also adds a note that `Setting.rest_api_enabled` must be true for Administration → Applications to be accessible.
 - `docs/troubleshooting.md`: "all MCP requests return 401" diagnostic flow gains an entry for the standalone-initializer wipe symptom, which is otherwise indistinguishable from a misconfigured introspection client without checking the Doorkeeper warning log.
+- `docs/contributing.md`: Reorganized the live OAuth integration test instructions around `.env`-based configuration (which the test module now honors). `python tests/run_tests.py --integration` runs both general and OAuth integration suites. For OAuth-only filtering, the doc points at `python -m pytest tests/test_oauth_integration.py` directly because `run_tests.py` does not forward `-k`-style filters.
+
+### Fixed
+- `tests/test_oauth_integration.py` now calls `python-dotenv`'s `load_dotenv()` at module-import time, so `REDMINE_URL` (and any other config) defined in `.env` is honored by the integration suite without having to re-export the var on the command line. Previously the test module read `os.environ` directly at import time, which meant the suite skipped with "Missing: REDMINE_URL" unless the var was set in the shell, even when it was already in `.env` for the running server.
 
 ## [2.0.1] - 2026-05-22
 ### Security
