@@ -5,8 +5,10 @@ Tests cover:
 - /health endpoint
 - /files/{file_id} endpoint (serve_attachment)
 - /cleanup/status endpoint
+- Regression: /health remains unauthenticated under FastMCP native auth
 """
 
+import importlib
 import pytest
 import json
 import os
@@ -303,3 +305,55 @@ class TestCleanupStatusEndpoint:
             assert data["enabled"] is True
             assert data["running"] is True
             assert data["storage_stats"]["total_files"] == 5
+
+
+@pytest.mark.unit
+class TestHealthUnauthenticated:
+    """Native FastMCP auth must NOT enroll custom_route endpoints like /health."""
+
+    @pytest.mark.asyncio
+    async def test_health_returns_200_without_bearer_in_oauth_mode(self, monkeypatch):
+        from fastmcp import FastMCP
+        from redmine_mcp_server import _auth, _http_routes, oauth_scopes
+        from redmine_mcp_server import _client
+
+        monkeypatch.setenv("REDMINE_URL", "https://r.example.com")
+        monkeypatch.setenv("REDMINE_MCP_BASE_URL", "http://localhost:3040")
+        monkeypatch.setenv("REDMINE_INTROSPECT_CLIENT_ID", "cid")
+        monkeypatch.setenv("REDMINE_INTROSPECT_CLIENT_SECRET", "csec")
+        monkeypatch.setenv("REDMINE_AUTH_MODE", "oauth")
+
+        importlib.reload(_client)
+        importlib.reload(oauth_scopes)
+        importlib.reload(_auth)
+        importlib.reload(_http_routes)
+
+        provider = _auth.build_remote_auth()
+        local_mcp = FastMCP("oauth_health_test", auth=provider)
+        local_mcp.custom_route("/health", methods=["GET"])(_http_routes.health_check)
+        app = local_mcp.http_app(stateless_http=True)
+
+        with (
+            patch(
+                "redmine_mcp_server._cleanup._ensure_cleanup_started",
+                new_callable=AsyncMock,
+            ),
+            patch.object(
+                _http_routes,
+                "_probe_introspection",
+                new=AsyncMock(return_value=("ok", None)),
+            ),
+        ):
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://t"
+            ) as client:
+                r = await client.get("/health")
+        assert r.status_code == 200
+        body = r.json()
+        # /health succeeds without a bearer — native auth must not gate it
+        assert body["status"] in ("ok", "degraded")
+
+        # Restore baseline modules so later tests see legacy mode
+        monkeypatch.undo()
+        importlib.reload(_client)
+        importlib.reload(_http_routes)

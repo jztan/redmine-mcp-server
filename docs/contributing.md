@@ -209,6 +209,32 @@ python tests/run_tests.py --integration
 python tests/run_tests.py --coverage
 ```
 
+**Live OAuth Integration Tests (v2.1+):**
+
+The unit suite mocks Doorkeeper at the httpx transport boundary. To exercise real Doorkeeper RFC 7662 introspection against a sandbox Redmine:
+
+1. Register an MCP introspection client in the sandbox per `docs/oauth-setup.md` Step 2.
+2. Mint a valid bearer for any user-flow OAuth app in the same sandbox.
+3. Set env vars and run:
+
+   ```bash
+   REDMINE_URL=https://sandbox-redmine.example.com \
+   REDMINE_INTROSPECT_CLIENT_ID=... \
+   REDMINE_INTROSPECT_CLIENT_SECRET=... \
+   REDMINE_OAUTH_TEST_TOKEN=... \
+   python tests/run_tests.py --integration -k test_oauth_integration
+   ```
+
+If any env var is missing the entire suite skips with a clear "Live OAuth integration not configured" message — safe to leave in CI.
+
+The destructive `test_revoked_token_rejected` test invalidates the test bearer and is skipped by default. To enable (and lose the bearer):
+
+```bash
+RUN_DESTRUCTIVE_TESTS=1 ... python tests/run_tests.py --integration ...
+```
+
+Re-mint the test bearer through the sandbox's OAuth user-flow before re-running.
+
 **Writing Tests:**
 
 ```python

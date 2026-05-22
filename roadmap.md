@@ -84,12 +84,12 @@ GA release. Prompt injection protection with `<insecure-content>` boundary tags;
 
 ## 🔮 Future (post-v2.0)
 
-- [ ] **Native FastMCP v3 Auth Migration** *(Priority: High security; was previously slated for v2.0)*
-  - Replace `RedmineOAuthMiddleware` Starlette middleware with FastMCP v3's native `auth=` constructor parameter (`JWTVerifier` / `OAuthProxy` / `MultiAuth`)
+- [x] **Native FastMCP v3 Auth Migration** *(Completed: v2.1, see CHANGELOG)*
+  - Replaced `RedmineOAuthMiddleware` Starlette middleware with FastMCP v3's native `auth=` using `RemoteAuthProvider` + `IntrospectionTokenVerifier`
+  - Token validation now goes through Doorkeeper's RFC 7662 introspection endpoint instead of `GET /users/current.json`
   - Closes the medium-likelihood `custom_route` auth bypass risk identified in the FastMCP v3 compatibility analysis
-  - Evaluate `JWTVerifier` vs `OAuthProxy` fit for Doorkeeper OAuth flow
-  - Verify OAuth discovery endpoints remain functional under native auth
-  - Likely v2.1 or v2.2 depending on scope
+  - `/health` now probes the introspection endpoint to surface upstream availability lost in the 503→401 collapse
+  - Live integration test suite against sandbox Redmine added
 
 - [ ] **OpenTelemetry observability**
   - Optional `opentelemetry-sdk` dependency

@@ -814,3 +814,55 @@ If your issue isn't covered here:
 4. **Community Support**
    - Check MCP community resources
    - Review python-redmine library documentation
+
+## OAuth Mode (v2.1+: FastMCP Native Auth Migration)
+
+### Symptom: every MCP request returns 401 (even with a valid bearer)
+
+Native OAuth authentication validates Bearer tokens via Doorkeeper's `/oauth/introspect` endpoint (RFC 7662). If every request returns 401, the cause is usually one of:
+
+1. **Introspection env vars not set.** The server fails fast at startup if `REDMINE_INTROSPECT_CLIENT_ID` or `REDMINE_INTROSPECT_CLIENT_SECRET` is missing in OAuth mode — re-check startup logs.
+2. **Introspection client lacks permission.** Per RFC 7662 §2.1, a client needs to be either the token's issuer, hold the `introspection` scope, or be a Doorkeeper `protected_resource?`. See `docs/oauth-setup.md` Step 2 for the `allow_token_introspection` initializer block.
+3. **Doorkeeper introspection disabled.** Some custom deployments set `allow_token_introspection { false }`. Verify with the curl test in `docs/oauth-setup.md` Step 2.
+4. **Token expired.** Check the bearer's `exp` against current time; mint a fresh one if needed.
+
+**Quick diagnostic:** hit `/health` on the MCP server. If `"status": "degraded"` with `"introspection": "unreachable"`, the problem is server-side (introspection endpoint or credentials). If `"status": "ok"`, the introspection client itself works, so the problem is per-token (expired, wrong app, etc.).
+
+### Symptom: `/health` reports `"introspection": "unreachable"`
+
+Likely causes, in order:
+
+- `REDMINE_URL` unreachable from the MCP server's network.
+- `REDMINE_INTROSPECT_CLIENT_*` credentials wrong (Doorkeeper returns HTTP 401 on the introspection POST).
+- Doorkeeper introspection endpoint disabled.
+- TLS verification failing (check `REDMINE_SSL_VERIFY` / `REDMINE_SSL_CERT`).
+
+The probe result is cached for `HEALTH_INTROSPECTION_TTL_SECONDS` (default 30 seconds). Wait that long after fixing the underlying issue before re-checking `/health`.
+
+### Symptom: clients see 401 where they used to see 503
+
+This is by design after the FastMCP v3 auth migration. The previous middleware returned `503 upstream_unavailable` when Redmine was unreachable for token validation; FastMCP's `IntrospectionTokenVerifier` treats transport failures as auth failures and returns 401. Operators monitoring for 503 spikes should switch to:
+
+- Watching `/health` for `"status": "degraded"`, OR
+- Monitoring 401-rate spikes correlated with Redmine availability metrics.
+
+### Emergency rollback from OAuth mode
+
+If an OAuth-mode regression is impacting users and a fix is not immediate, fall back to legacy mode without redeploying a previous version:
+
+1. Set `REDMINE_AUTH_MODE=legacy` in the environment.
+2. Provide `REDMINE_API_KEY` (or `REDMINE_USERNAME` + `REDMINE_PASSWORD`).
+3. Restart the MCP server.
+
+Legacy mode is preserved across versions and behaves identically to pre-OAuth deployments. Clients lose per-user scoping but regain availability.
+
+If a legacy API key isn't available, revert to the previous application version via standard release rollback procedures (`RELEASE_SOP.md`).
+
+### Symptom: clients fetching `/.well-known/oauth-protected-resource` (without `/mcp`) get 404
+
+The v2.1+ release dropped several discovery path aliases. Only these paths remain:
+
+- `GET /.well-known/oauth-protected-resource/mcp` (canonical RFC 9728 §3.1 suffix-scoped form, mounted by `RemoteAuthProvider`)
+- `GET /.well-known/oauth-authorization-server` (canonical root, mirrors Redmine's Doorkeeper AS metadata)
+
+Clients should follow `WWW-Authenticate: Bearer resource_metadata="..."` headers from 401 responses (RFC 9728 §5.3) rather than guessing paths. If a client hardcodes the dropped variants, update the client; we don't plan to restore aliases.

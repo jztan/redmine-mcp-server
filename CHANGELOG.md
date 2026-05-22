@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **OAuth mode now uses FastMCP v3 native auth.** The hand-rolled `RedmineOAuthMiddleware` (Starlette `BaseHTTPMiddleware`) is replaced by `RemoteAuthProvider(token_verifier=IntrospectionTokenVerifier(...))`. Token validation moves from `GET /users/current.json` to Doorkeeper's RFC 7662 introspection endpoint (`POST /oauth/introspect`), exposing the token's actual scopes via `AccessToken.claims`. This closes the medium-likelihood `custom_route` middleware-skip-list auth-bypass risk identified in the FastMCP v3 compatibility analysis.
+
+### Breaking
+- **Two new required env vars in OAuth mode**: `REDMINE_INTROSPECT_CLIENT_ID` and `REDMINE_INTROSPECT_CLIENT_SECRET`. Operators register a confidential OAuth client in Redmine with `protected_resource?` permission and supply the credentials. See [`docs/oauth-setup.md`](docs/oauth-setup.md) Step 2 for the walkthrough including the required `allow_token_introspection` initializer block. Server fails fast at startup if either is missing.
+- **Discovery path aliases dropped.** Only the canonical paths remain:
+  - `GET /.well-known/oauth-protected-resource/mcp` (RFC 9728 §3.1 suffix-scoped, mounted natively by `RemoteAuthProvider`)
+  - `GET /.well-known/oauth-authorization-server` (canonical root, kept as `custom_route` mirror of Redmine's Doorkeeper AS metadata)
+
+  These previously-served paths now return 404: `/.well-known/oauth-protected-resource` (root), `/mcp/.well-known/oauth-protected-resource` (prefix), `/.well-known/oauth-authorization-server/mcp` (suffix), `/mcp/.well-known/oauth-authorization-server` (prefix). Clients should follow `WWW-Authenticate: Bearer resource_metadata="..."` headers from 401 responses for RFC 9728 §5.3 compliant discovery.
+- **Upstream introspection failures now return 401 instead of 503.** When Doorkeeper is unreachable, the previous behavior was `503 upstream_unavailable`. FastMCP's `IntrospectionTokenVerifier` treats transport failures as auth failures, so clients see 401. Operators monitoring 503 spikes as an upstream-Redmine-down signal should switch to monitoring 401-rate or watch `/health`'s new introspection probe (see Added).
+
+### Added
+- `/health` now probes Doorkeeper's introspection endpoint in OAuth mode and surfaces the result as `{"status": "ok"|"degraded", "checks": {"introspection": "ok"|"unreachable", "introspection_detail": "..."}}`. Response remains HTTP 200 so container orchestrators continue treating the endpoint as a binary liveness probe; monitoring systems should inspect the JSON `status` field. Results cached per `HEALTH_INTROSPECTION_TTL_SECONDS` (default 30s) to avoid hammering Doorkeeper on every health check.
+- Live OAuth integration test suite (`tests/test_oauth_integration.py`) that exercises real Doorkeeper introspection against a sandbox Redmine. Runs only under `--integration` with sandbox creds, skips cleanly with a clear message when unconfigured. See [`docs/contributing.md`](docs/contributing.md) "Live OAuth Integration Tests".
+- Structured warning logs on introspection upstream failures (`introspection_upstream_failure status_code=... url=...`) so log-based alerting can distinguish real upstream issues from per-token 401s.
+
+### Removed
+- `src/redmine_mcp_server/oauth_middleware.py` (replaced by FastMCP native auth in `src/redmine_mcp_server/_auth.py`).
+- `tests/test_oauth_middleware.py` (replaced by `tests/test_oauth_auth.py` and `tests/test_oauth_discovery.py`).
+
 ## [2.0.1] - 2026-05-22
 ### Security
 - Bump `urllib3` from 2.6.3 to 2.7.0, patching CVE-2026-44431 and CVE-2026-44432; added explicit lower-bound constraint (`urllib3>=2.7.0,<3`) in `pyproject.toml` to prevent silent regression to vulnerable versions (urllib3 is a transitive dep via `requests` / `python-redmine`, so it had no direct floor before this).
