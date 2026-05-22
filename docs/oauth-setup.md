@@ -17,6 +17,8 @@ Set up the MCP server so each user authenticates with their own Redmine account.
 
 The MCP server validates incoming Bearer tokens by calling Doorkeeper's RFC 7662 introspection endpoint (`POST /oauth/introspect`). To do this it needs its own confidential OAuth application registered in Redmine, separate from the user-flow OAuth app from Step 1.
 
+### 2a. Register the application
+
 1. **Sign in to Redmine as administrator → Administration → Applications → New Application.**
 2. Fill in:
    - **Name:** `Redmine MCP Server (introspection)`
@@ -25,23 +27,37 @@ The MCP server validates incoming Bearer tokens by calling Doorkeeper's RFC 7662
    - **Scopes:** leave empty
 3. Save and note the **Client ID** and **Client Secret**.
 
-**Configure Doorkeeper to allow this client to introspect tokens issued to other apps.** Edit `config/initializers/doorkeeper.rb` on the Redmine server:
+> **If the Administration → Applications page returns 403:** Redmine's `admin_authenticator` for Doorkeeper requires REST API to be enabled. Go to **Administration → Settings → API → "Enable REST web service"** and save. (You can also flip this from a Rails console: `Setting.rest_api_enabled = "1"`.)
+
+### 2b. Enable cross-app token introspection in Doorkeeper
+
+Redmine ships with `allow_token_introspection false` hard-coded, which means even an authenticated client cannot introspect a token issued to a different OAuth app. The MCP introspection client needs to introspect tokens issued by the **user-flow** OAuth app (Step 1), so the default has to change.
+
+**Edit Redmine's own initializer in place, on the Redmine server:** `config/initializers/30-redmine.rb`. Find the line:
 
 ```ruby
-Doorkeeper.configure do
-  # ... existing config ...
-
-  # Allow protected resource servers (like the MCP server) to introspect
-  # tokens issued to user-flow apps. The default block rejects this case.
-  allow_token_introspection do |token, authorized_client, _resource_owner|
-    authorized_client&.protected_resource? || token.application == authorized_client
-  end
-end
+    allow_token_introspection false
 ```
 
-Restart Redmine after the initializer change.
+Replace it with:
 
-**Verify** the introspection client can talk to Doorkeeper:
+```ruby
+    allow_token_introspection do |_token, authorized_client, _resource_owner|
+      !authorized_client.nil? && authorized_client.confidential?
+    end
+```
+
+This grants introspection rights to any confidential OAuth client — which the MCP introspection client is (Step 2a), while user-flow public clients are still rejected.
+
+Restart Redmine after the change.
+
+> **⚠️ Why edit `30-redmine.rb` directly instead of creating a separate initializer?**
+>
+> Redmine wraps its entire Doorkeeper configuration inside a `Rails.application.config.to_prepare do ... end` block. Doorkeeper's `Doorkeeper.configure do ... end` call **rebuilds the entire `Doorkeeper.config` object from scratch each call** — it does not merge with existing settings. If you add a second `Doorkeeper.configure` block in your own initializer, it wipes Redmine's `admin_authenticator`, `resource_owner_authenticator`, `grant_flows`, `enforce_configured_scopes`, base controller, and every other setting Redmine relies on. The most visible symptom is the entire Administration → Applications page returning 403 with the log warning *"Access to admin panel is forbidden due to Doorkeeper.configure.admin_authenticator being unconfigured"*.
+>
+> The only safe way to override a single Doorkeeper option in a Redmine deployment is to edit the existing `Doorkeeper.configure` block in `30-redmine.rb` in place. Track the change as a deployment patch (e.g., a Dockerfile `RUN sed -i ...` step) so it survives Redmine upgrades.
+
+### 2c. Verify
 
 ```bash
 curl -X POST $REDMINE_URL/oauth/introspect \
@@ -49,7 +65,12 @@ curl -X POST $REDMINE_URL/oauth/introspect \
   -d "token=any-test-token&token_type_hint=access_token"
 ```
 
-Expected response: `200 OK` with body `{"active":false}`. The `false` is correct (the synthetic token isn't real) — what matters is that you got `200`, not `401`. If you get `401 Unauthorized`, the introspection client is not authorized — re-check the `allow_token_introspection` block and confirm the client is marked confidential.
+Expected response: `200 OK` with body `{"active":false}`. The `false` is correct (the synthetic token isn't real); what matters is that you got `200`, not `401` or `404`.
+
+Common failure modes:
+- **`404 Page not found`** — the `/oauth/introspect` route isn't mounted. Confirm step 2b was applied and Redmine was restarted; the route is only mounted when `allow_token_introspection` is something other than `false`.
+- **`401 invalid_client`** — the introspection client's `client_id` / `client_secret` are wrong, or the application isn't marked confidential.
+- **`200 {"active": false}` for a *known-valid* user-flow bearer** — your `allow_token_introspection` block is returning falsy for the introspecting client. Confirm the introspection client is confidential and that your block matches the example in Step 2b.
 
 ## Step 3: Configure the MCP Server
 

@@ -822,9 +822,10 @@ If your issue isn't covered here:
 Native OAuth authentication validates Bearer tokens via Doorkeeper's `/oauth/introspect` endpoint (RFC 7662). If every request returns 401, the cause is usually one of:
 
 1. **Introspection env vars not set.** The server fails fast at startup if `REDMINE_INTROSPECT_CLIENT_ID` or `REDMINE_INTROSPECT_CLIENT_SECRET` is missing in OAuth mode — re-check startup logs.
-2. **Introspection client lacks permission.** Per RFC 7662 §2.1, a client needs to be either the token's issuer, hold the `introspection` scope, or be a Doorkeeper `protected_resource?`. See `docs/oauth-setup.md` Step 2 for the `allow_token_introspection` initializer block.
-3. **Doorkeeper introspection disabled.** Some custom deployments set `allow_token_introspection { false }`. Verify with the curl test in `docs/oauth-setup.md` Step 2.
-4. **Token expired.** Check the bearer's `exp` against current time; mint a fresh one if needed.
+2. **Introspection client lacks permission.** Per RFC 7662 §2.1, a client needs to be either the token's issuer, hold the `introspection` scope, or be a Doorkeeper `protected_resource?` / confidential. See `docs/oauth-setup.md` Step 2b for the in-place edit of `30-redmine.rb`.
+3. **Doorkeeper introspection disabled in Redmine's default config.** Redmine ships `allow_token_introspection false`, which makes the `/oauth/introspect` route return 404. Verify with the curl test in `docs/oauth-setup.md` Step 2c.
+4. **A standalone `Doorkeeper.configure` initializer silently wiped Redmine's config.** Symptom: Administration → Applications also returns 403 with the log line *"Access to admin panel is forbidden due to Doorkeeper.configure.admin_authenticator being unconfigured"*. Fix: remove any standalone `Doorkeeper.configure` block from `config/initializers/`; apply the introspection change in-place in `30-redmine.rb` instead. See `docs/oauth-setup.md` Step 2b for the why (Doorkeeper's `configure` rebuilds the entire config wholesale).
+5. **Token expired.** Check the bearer's `exp` against current time; mint a fresh one if needed.
 
 **Quick diagnostic:** hit `/health` on the MCP server. If `"status": "degraded"` with `"introspection": "unreachable"`, the problem is server-side (introspection endpoint or credentials). If `"status": "ok"`, the introspection client itself works, so the problem is per-token (expired, wrong app, etc.).
 

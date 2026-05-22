@@ -29,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `src/redmine_mcp_server/oauth_middleware.py` (replaced by FastMCP native auth in `src/redmine_mcp_server/_auth.py`).
 - `tests/test_oauth_middleware.py` (replaced by `tests/test_oauth_auth.py` and `tests/test_oauth_discovery.py`).
 
+### Documentation
+- `docs/oauth-setup.md`: Step 2 rewritten with a Redmine-specific gotcha. The previously recommended approach of adding a separate `config/initializers/doorkeeper.rb` with a fresh `Doorkeeper.configure` block silently wipes Redmine's entire Doorkeeper configuration (admin_authenticator, resource_owner_authenticator, grant_flows, scopes), because Doorkeeper's `configure` rebuilds the Config wholesale rather than merging. The only safe override is editing the existing `Doorkeeper.configure` block in Redmine's `config/initializers/30-redmine.rb` in place. Also adds a note that `Setting.rest_api_enabled` must be true for Administration → Applications to be accessible.
+- `docs/troubleshooting.md`: "all MCP requests return 401" diagnostic flow gains an entry for the standalone-initializer wipe symptom, which is otherwise indistinguishable from a misconfigured introspection client without checking the Doorkeeper warning log.
+
 ## [2.0.1] - 2026-05-22
 ### Security
 - Bump `urllib3` from 2.6.3 to 2.7.0, patching CVE-2026-44431 and CVE-2026-44432; added explicit lower-bound constraint (`urllib3>=2.7.0,<3`) in `pyproject.toml` to prevent silent regression to vulnerable versions (urllib3 is a transitive dep via `requests` / `python-redmine`, so it had no direct floor before this).
