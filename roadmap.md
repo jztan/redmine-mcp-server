@@ -5,7 +5,7 @@
 - **Current Version:** v2.0.1 (released 2026-05-22)
 - **On Develop (unreleased):** v2.1 — FastMCP v3 native auth migration ([PR #132](https://github.com/jztan/redmine-mcp-server/pull/132))
 - **MCP Registry Status:** Published
-- **Test Suite:** 1365 tests passing (1285 unit + 80 integration; 5 integration skipped — 4 behind `REDMINE_AGILE_ENABLED`, 1 destructive OAuth test behind `RUN_DESTRUCTIVE_TESTS=1`)
+- **Test Suite:** 1285 unit tests + 85 integration tests. Integration tests gate on environment: a sandbox Redmine, plugin flags (`REDMINE_AGILE_ENABLED` etc.), and the destructive OAuth test behind `RUN_DESTRUCTIVE_TESTS=1`. Tests that can't run in the current environment skip cleanly with a clear reason.
 - **Tools:** 40 core + 5 plugin-gated + 1 admin-gated (maximum 46 with all flags enabled)
 
 ---
