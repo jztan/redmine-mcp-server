@@ -42,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Dependencies
 - Bump `fastmcp` from 3.2.4 to 3.3.1 ([#128](https://github.com/jztan/redmine-mcp-server/pull/128)). Includes OAuth proxy hardening (silent-consent AS-in-the-middle guard, redirect URI dot-segment rejection, per-token response cache partitioning), `OAuthProxy.update_scopes()` public API, streamable-HTTP transport shutdown fix, and OTEL semconv compliance for list operations. The 3.3 packaging split (introducing `fastmcp-slim`) preserves all public import paths; 3.3.1 hotfixes a circular-import regression in 3.3.0.
+- Bump `uvicorn` from 0.46.0 to 0.47.0 ([#127](https://github.com/jztan/redmine-mcp-server/pull/127)). Upstream adds an `ssl_context_factory` hook, eagerly imports the ASGI app in the parent process, and fixes `fd=0` handling under reload/workers. No behavioral impact for this server.
 
 ### Fixed
 - `tests/test_oauth_integration.py` now calls `python-dotenv`'s `load_dotenv()` at module-import time, so `REDMINE_URL` (and any other config) defined in `.env` is honored by the integration suite without having to re-export the var on the command line. Previously the test module read `os.environ` directly at import time, which meant the suite skipped with "Missing: REDMINE_URL" unless the var was set in the shell, even when it was already in `.env` for the running server.
