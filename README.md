@@ -104,6 +104,9 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `REDMINE_USERNAME` | Yes† | – | Username for basic auth (legacy mode only) |
 | `REDMINE_PASSWORD` | Yes† | – | Password for basic auth (legacy mode only) |
 | `REDMINE_MCP_BASE_URL` | Yes‡ | `http://localhost:3040` | Public base URL of this server, no trailing slash (OAuth mode only) |
+| `REDMINE_INTROSPECT_CLIENT_ID` | Yes‡ | – | Doorkeeper OAuth client ID used by the MCP server to introspect Bearer tokens (RFC 7662). Register a confidential OAuth app in Redmine with `protected_resource?` permission — see [`docs/oauth-setup.md`](docs/oauth-setup.md) Step 2. |
+| `REDMINE_INTROSPECT_CLIENT_SECRET` | Yes‡ | – | Secret for the introspection client |
+| `HEALTH_INTROSPECTION_TTL_SECONDS` | No | `30` | TTL (seconds) for the `/health` Doorkeeper introspection probe cache. Set to `0` to disable caching. |
 | `SERVER_HOST` | No | `0.0.0.0` | Host/IP the MCP server binds to |
 | `SERVER_PORT` | No | `8000` | Port the MCP server listens on |
 | `PUBLIC_HOST` | No | `localhost` | Hostname used when generating download URLs |
@@ -220,19 +223,23 @@ REDMINE_API_KEY=your_api_key
 
 > **Requires Redmine 6.1 or newer.** OAuth2 support (via the Doorkeeper gem) was introduced in Redmine 6.1.
 
-Each MCP request carries its own `Authorization: Bearer <token>` header. The server validates the token against `GET /users/current.json` on Redmine before forwarding it. This enables multi-user deployments where each user authenticates with their own Redmine account.
+Each MCP request carries its own `Authorization: Bearer <token>` header. Since v2.1, the server validates the token against Doorkeeper's RFC 7662 introspection endpoint (`POST /oauth/introspect`) on Redmine before forwarding it. This enables multi-user deployments where each user authenticates with their own Redmine account, with the token's scopes available to the server (unlocking future per-tool scope enforcement).
 
 ```bash
 REDMINE_AUTH_MODE=oauth
 REDMINE_URL=https://redmine.example.com
 REDMINE_MCP_BASE_URL=https://redmine-mcp.example.com   # public URL of this server
+
+# Introspection client (register a confidential OAuth app in Redmine; see docs/oauth-setup.md)
+REDMINE_INTROSPECT_CLIENT_ID=...
+REDMINE_INTROSPECT_CLIENT_SECRET=...
 ```
 
 In OAuth mode the server also exposes OAuth2 discovery and token management endpoints:
 
 | Endpoint | Standard | Purpose |
 |----------|----------|---------|
-| `/.well-known/oauth-protected-resource` | RFC 8707 | Tells clients where to find the authorization server |
+| `/.well-known/oauth-protected-resource/mcp` | RFC 9728 §3.1 | Tells clients where to find the authorization server (mounted by FastMCP `RemoteAuthProvider`) |
 | `/.well-known/oauth-authorization-server` | RFC 8414 | Advertises Redmine's Doorkeeper OAuth endpoints |
 | `POST /revoke` | RFC 7009 | Revokes an OAuth2 token (proxies to Redmine's `/oauth/revoke`) |
 
