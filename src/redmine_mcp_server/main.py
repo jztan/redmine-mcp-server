@@ -57,13 +57,21 @@ async def oauth_authorization_server(request: Request):
 
     Redmine uses Doorkeeper but does not serve this discovery document itself.
     We serve it manually, pointing to Redmine's real Doorkeeper endpoints.
+
+    Env vars are read at request time (rather than module-import time) so
+    that the handler responds to runtime configuration changes and is
+    cleanly testable without module reloads.
     """
+    redmine_url = (os.environ.get("REDMINE_URL", "") or "").rstrip("/")
+    base_url = (
+        os.environ.get("REDMINE_MCP_BASE_URL", "http://localhost:3040") or ""
+    ).rstrip("/")
     return JSONResponse(
         {
-            "issuer": REDMINE_MCP_BASE_URL,
-            "authorization_endpoint": f"{REDMINE_URL}/oauth/authorize",
-            "token_endpoint": f"{REDMINE_URL}/oauth/token",
-            "revocation_endpoint": f"{REDMINE_URL}/oauth/revoke",
+            "issuer": base_url,
+            "authorization_endpoint": f"{redmine_url}/oauth/authorize",
+            "token_endpoint": f"{redmine_url}/oauth/token",
+            "revocation_endpoint": f"{redmine_url}/oauth/revoke",
             "response_types_supported": ["code"],
             "grant_types_supported": [
                 "authorization_code",
@@ -126,11 +134,13 @@ async def revoke_token(request: Request):
             },
         )
 
-    # Forward revocation to Redmine's Doorkeeper endpoint
+    # Forward revocation to Redmine's Doorkeeper endpoint. Env vars are read
+    # at request time so runtime overrides (and tests) are honoured.
+    redmine_url = (os.environ.get("REDMINE_URL", "") or "").rstrip("/")
     async with httpx.AsyncClient() as client:
         try:
             response = await client.post(
-                f"{REDMINE_URL}/oauth/revoke",
+                f"{redmine_url}/oauth/revoke",
                 data={"token": token},
                 timeout=10,
             )

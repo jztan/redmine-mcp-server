@@ -1,26 +1,106 @@
 """Starlette HTTP routes mounted alongside the MCP endpoint.
 
 Routes:
-  - GET /health         -> health_check (lightweight liveness probe)
+  - GET /health         -> health_check (lightweight liveness probe; also
+    probes Doorkeeper introspection in OAuth mode)
   - GET /files/{id}     -> serve_attachment (UUID-validated file serving)
   - GET /cleanup/status -> cleanup_status (background-task stats)
 """
 
+import base64
 import json
 import logging
 import os
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
+
+import httpx
 
 from ._client import REDMINE_AUTH_MODE
+from ._env import (
+    get_health_introspection_ttl_seconds,
+    get_introspection_credentials,
+)
 from .server import mcp
 
 logger = logging.getLogger("redmine_mcp_server")
 
+# Module-level probe cache: {"ts": <monotonic seconds>, "result": (status, detail)|None}
+_probe_cache: dict = {"ts": 0.0, "result": None}
+
+
+async def _probe_introspection_uncached() -> tuple[str, Optional[str]]:
+    """POST a synthetic token to Doorkeeper's /oauth/introspect.
+
+    Returns ("ok", None) if reachable (200 response, any body).
+    Returns ("unreachable", "<reason>") on transport failure or non-200.
+
+    A 200 with ``{"active": false}`` for the synthetic token IS healthy:
+    it proves the endpoint is reachable and our client credentials work.
+    """
+    redmine_url = (os.environ.get("REDMINE_URL") or "").rstrip("/")
+    if not redmine_url:
+        return "unreachable", "REDMINE_URL not set"
+    client_id, client_secret = get_introspection_credentials()
+    if not (client_id and client_secret):
+        return "unreachable", "introspection credentials not configured"
+
+    creds = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+    headers = {
+        "Authorization": f"Basic {creds}",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "application/json",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            r = await client.post(
+                f"{redmine_url}/oauth/introspect",
+                headers=headers,
+                data={"token": "health-probe-synthetic-token"},
+            )
+            if r.status_code == 200:
+                return "ok", None
+            logger.warning(
+                "introspection_upstream_failure status_code=%s url=%s",
+                r.status_code,
+                f"{redmine_url}/oauth/introspect",
+            )
+            return "unreachable", f"HTTP {r.status_code}"
+    except httpx.RequestError as e:
+        logger.warning(
+            "introspection_upstream_failure error=%s url=%s",
+            type(e).__name__,
+            f"{redmine_url}/oauth/introspect",
+        )
+        return "unreachable", type(e).__name__
+
+
+async def _probe_introspection() -> tuple[str, Optional[str]]:
+    """Cached wrapper around _probe_introspection_uncached."""
+    ttl = get_health_introspection_ttl_seconds()
+    now = time.monotonic()
+    if _probe_cache["result"] is not None and (now - _probe_cache["ts"]) < ttl:
+        return _probe_cache["result"]
+    result = await _probe_introspection_uncached()
+    _probe_cache["ts"] = now
+    _probe_cache["result"] = result
+    return result
+
 
 async def health_check(request):
-    """Health check endpoint for container orchestration and monitoring."""
+    """Health check endpoint for container orchestration and monitoring.
+
+    In OAuth mode, also probes Doorkeeper's ``/oauth/introspect`` to surface
+    upstream availability that was lost in the 503->401 collapse when
+    FastMCP native auth replaced the bespoke middleware.
+
+    Returns HTTP 200 in both healthy and degraded states so container
+    orchestrators continue treating the endpoint as a binary liveness
+    probe; monitoring systems should inspect the JSON ``status`` field.
+    """
     from starlette.responses import JSONResponse
 
     # Lazy lookup so tests patching _cleanup._ensure_cleanup_started
@@ -30,13 +110,22 @@ async def health_check(request):
     # Initialize cleanup task on first health check (lazy initialization)
     await _cleanup._ensure_cleanup_started()
 
-    return JSONResponse(
-        {
-            "status": "ok",
-            "service": "redmine_mcp_tools",
-            "auth_mode": REDMINE_AUTH_MODE,
-        }
-    )
+    response: dict = {
+        "status": "ok",
+        "service": "redmine_mcp_tools",
+        "auth_mode": REDMINE_AUTH_MODE,
+    }
+
+    if REDMINE_AUTH_MODE == "oauth":
+        probe_status, detail = await _probe_introspection()
+        checks: dict = {"introspection": probe_status}
+        if detail:
+            checks["introspection_detail"] = detail
+        response["checks"] = checks
+        if probe_status != "ok":
+            response["status"] = "degraded"
+
+    return JSONResponse(response)
 
 
 async def serve_attachment(request):
