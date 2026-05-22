@@ -3,7 +3,9 @@
 Prerequisites (all required, otherwise the suite skips):
   - REDMINE_URL: reachable sandbox Redmine
   - REDMINE_INTROSPECT_CLIENT_ID / _SECRET: confidential OAuth app in the
-    sandbox with protected_resource? permission
+    sandbox whose introspection is allowed by Doorkeeper's
+    allow_token_introspection block (stock Redmine ships this as false;
+    see docs/oauth-setup.md Step 2b)
   - REDMINE_OAUTH_TEST_TOKEN: a valid end-user bearer issued by a user-flow
     OAuth app in the same sandbox
 
@@ -19,6 +21,13 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
+from dotenv import load_dotenv
+
+# Load .env so REDMINE_URL and friends come from the same file the server uses.
+# Runs at module-import time (before pytest evaluates the skip predicate below)
+# so plain ``python -m pytest tests/test_oauth_integration.py`` works without
+# needing to re-pass already-in-.env vars on the command line.
+load_dotenv()
 
 pytestmark = pytest.mark.integration
 
@@ -71,7 +80,8 @@ async def test_real_introspection_call_succeeds():
     body = r.json()
     assert body.get("active") is True, (
         "Test token is inactive per introspection. Either it expired, or "
-        "the introspection client lacks protected_resource? permission."
+        "Doorkeeper's allow_token_introspection block is rejecting the "
+        "introspection client (see docs/oauth-setup.md Step 2b)."
     )
     assert body.get("scope"), "Active token must have a non-empty scope"
 

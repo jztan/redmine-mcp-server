@@ -2,12 +2,12 @@
 
 ## 🎯 Project Status
 
-**Current Version:** v2.0.0 (released 2026-05-16)
-**Next Release:** TBD (post-v2.0 hardening + native FastMCP v3 auth migration on deck)
+**Current Version:** v2.0.1 (released 2026-05-22)
+**On Develop (unreleased):** v2.1 — FastMCP v3 native auth migration (merged to develop in [PR #132](https://github.com/jztan/redmine-mcp-server/pull/132))
 **MCP Registry Status:** Published
 
-**Test Suite:** 1339 tests passing (1259 unit + 80 integration; 4 skipped behind `REDMINE_AGILE_ENABLED`)
-**Total MCP Tools:** 46 (43 after the v2.0 consolidation, plus `delete_redmine_issue`, `get_mcp_server_info`, `manage_document`)
+**Test Suite:** 1365 tests passing (1285 unit + 80 integration; 5 integration skipped — 4 behind `REDMINE_AGILE_ENABLED`, 1 destructive OAuth test behind `RUN_DESTRUCTIVE_TESTS=1`)
+**Total MCP Tools:** 45 unconditional tools, plus 1 admin-gated (`cleanup_attachment_files`) for a maximum of 46.
 
 ---
 
@@ -112,4 +112,4 @@ GA release. Prompt injection protection with `<insecure-content>` boundary tags;
 
 ---
 
-**Last Updated:** 2026-05-16 (v2.0.0 released)
+**Last Updated:** 2026-05-22 (v2.0.1 released; v2.1 FastMCP v3 native auth migration merged to develop)

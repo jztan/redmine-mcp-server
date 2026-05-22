@@ -161,10 +161,16 @@ When enabled, the following tools return an error instead of executing
 - `create_redmine_issue`
 - `update_redmine_issue`
 - `delete_redmine_issue`
+- `copy_issue`
+- `upload_file`
+- `delete_file`
+- `import_time_entries`
+- `update_checklist_item` (also requires `REDMINE_CHECKLISTS_ENABLED=true`)
 - `manage_project_member` — all actions
 - `manage_issue_watcher` — all actions
 - `manage_issue_note` — all actions
 - `manage_time_entry` — all actions
+- `manage_redmine_version` — all actions (`create`, `update`, `delete`)
 
 **Partially blocked (read actions still work):**
 - `manage_redmine_wiki_page` — `create`, `update`, `delete`, `rename` blocked; `list`, `get` allowed
@@ -172,8 +178,9 @@ When enabled, the following tools return an error instead of executing
 - `manage_issue_relation` — `create`, `delete` blocked; `list` allowed
 - `manage_product` — `create`, `update` blocked; `list`, `get` allowed (also requires `REDMINE_PRODUCTS_ENABLED=true`)
 - `manage_contact` — `create`, `update`, `delete`, `assign_to_project`, `remove_from_project` blocked; `list`, `get` allowed (also requires `REDMINE_CRM_ENABLED=true`)
+- `manage_document` — `create`, `update` blocked; `list`, `get` allowed (also requires `REDMINE_DMSF_ENABLED=true`)
 
-All read tools (`get_redmine_issue`, `list_redmine_issues`, `list_redmine_projects`, etc.) and local operations (`cleanup_attachment_files`) continue to work normally.
+All read tools (`get_redmine_issue`, `list_redmine_issues`, `list_redmine_projects`, etc.) continue to work normally. The admin-gated `cleanup_attachment_files` tool (when registered via `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`) is also unaffected — it performs local filesystem cleanup, not Redmine mutations.
 
 ### Prompt Injection Protection
 

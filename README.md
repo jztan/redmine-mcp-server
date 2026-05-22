@@ -16,7 +16,7 @@ A Model Context Protocol (MCP) server that integrates with Redmine project manag
 
 ## Features
 
-- **44 MCP Tools**: Issues, projects, time tracking, wiki, Gantt, file operations, membership management, products, contacts (CRM), DMSF documents, and more
+- **45 MCP Tools** (plus 1 operator tool gated by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`): Issues, projects, time tracking, wiki, Gantt, file operations, membership management, products, contacts (CRM), DMSF documents, and more
 - **Flexible Authentication**: API key, username/password, or OAuth2 per-user tokens
 - **Prompt Injection Protection**: User-controlled content wrapped in boundary tags for safe LLM consumption
 - **Read-Only Mode**: Restrict to read-only operations via `REDMINE_MCP_READ_ONLY` environment variable
@@ -448,7 +448,7 @@ curl http://localhost:8000/health
 
 ## Available Tools
 
-This MCP server provides 46 tools for interacting with Redmine (plus 1 operator tool exposed by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`). For detailed documentation, see [Tool Reference](./docs/tool-reference.md).
+This MCP server provides 45 tools for interacting with Redmine (plus 1 operator tool exposed by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`, for a maximum of 46). For detailed documentation, see [Tool Reference](./docs/tool-reference.md).
 
 - **Project Management** (9 tools)
   - [`list_redmine_projects`](docs/tool-reference.md#list_redmine_projects) - List all accessible projects
@@ -461,7 +461,7 @@ This MCP server provides 46 tools for interacting with Redmine (plus 1 operator 
   - [`get_project_modules`](docs/tool-reference.md#get_project_modules) - Retrieve the enabled modules for a project
   - [`manage_project_member`](docs/tool-reference.md#manage_project_member) - Add, update, or remove a project membership
 
-- **Issue Operations** (12 tools)
+- **Issue Operations** (13 tools)
   - [`get_redmine_issue`](docs/tool-reference.md#get_redmine_issue) - Retrieve detailed issue information (supports journal pagination, watchers, relations, children)
   - [`list_redmine_issues`](docs/tool-reference.md#list_redmine_issues) - List issues with flexible filtering (project, status, assignee, etc.)
   - [`search_redmine_issues`](docs/tool-reference.md#search_redmine_issues) - Search issues by text query

@@ -87,9 +87,9 @@ def require_introspection_credentials() -> tuple[str, str]:
         raise RuntimeError(
             "OAuth mode requires Doorkeeper introspection credentials. "
             f"Missing env var(s): {', '.join(missing)}. "
-            "Register a confidential OAuth client in Redmine with "
-            "protected_resource? permission and set these vars. "
-            "See docs/oauth-setup.md."
+            "Register a confidential OAuth client in Redmine and configure "
+            "Doorkeeper's allow_token_introspection block to accept it "
+            "(see docs/oauth-setup.md Step 2 for the walkthrough)."
         )
     return client_id, client_secret
 
