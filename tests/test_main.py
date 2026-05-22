@@ -93,3 +93,40 @@ class TestMainFunction:
         assert call_args[0][0] is app
         assert isinstance(call_args[1]["host"], str)
         assert isinstance(call_args[1]["port"], int)
+
+
+@pytest.mark.unit
+class TestAuthWiring:
+    """FastMCP construction with native auth in OAuth mode.
+
+    These tests exercise the ``_select_auth_provider`` helper instead of
+    reloading ``server.py``. Reloading the module would rebuild the global
+    ``mcp`` singleton and break every other test that has already captured
+    a reference to it (tool registrations, schema introspection, etc.).
+    """
+
+    def test_oauth_mode_returns_remote_auth_provider(self, monkeypatch):
+        from fastmcp.server.auth import RemoteAuthProvider
+
+        monkeypatch.setenv("REDMINE_URL", "https://r.example.com")
+        monkeypatch.setenv("REDMINE_MCP_BASE_URL", "http://localhost:3040")
+        monkeypatch.setenv("REDMINE_INTROSPECT_CLIENT_ID", "cid")
+        monkeypatch.setenv("REDMINE_INTROSPECT_CLIENT_SECRET", "csec")
+        from redmine_mcp_server.server import _select_auth_provider
+
+        provider = _select_auth_provider("oauth")
+        assert isinstance(provider, RemoteAuthProvider)
+
+    def test_legacy_mode_returns_none(self):
+        from redmine_mcp_server.server import _select_auth_provider
+
+        assert _select_auth_provider("legacy") is None
+
+    def test_oauth_mode_missing_creds_raises(self, monkeypatch):
+        monkeypatch.setenv("REDMINE_URL", "https://r.example.com")
+        monkeypatch.delenv("REDMINE_INTROSPECT_CLIENT_ID", raising=False)
+        monkeypatch.delenv("REDMINE_INTROSPECT_CLIENT_SECRET", raising=False)
+        from redmine_mcp_server.server import _select_auth_provider
+
+        with pytest.raises(RuntimeError, match="REDMINE_INTROSPECT_CLIENT_ID"):
+            _select_auth_provider("oauth")
