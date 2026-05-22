@@ -10,9 +10,10 @@ Builds a RemoteAuthProvider that:
 
 The MCP server's introspection client_id/secret are read from
 REDMINE_INTROSPECT_CLIENT_ID / REDMINE_INTROSPECT_CLIENT_SECRET. The
-client must be registered in Doorkeeper as a confidential client with
-protected_resource? permission (or the `introspection` scope) so it can
-introspect tokens issued to user-flow OAuth apps. See docs/oauth-setup.md.
+client must be registered in Doorkeeper as a confidential client, and
+Doorkeeper's ``allow_token_introspection`` block must permit it to
+introspect tokens issued to user-flow OAuth apps (stock Redmine sets
+this to ``false`` and must be patched). See docs/oauth-setup.md Step 2.
 """
 
 import os

@@ -47,7 +47,7 @@ Replace it with:
     end
 ```
 
-This grants introspection rights to any confidential OAuth client — which the MCP introspection client is (Step 2a), while user-flow public clients are still rejected.
+This grants introspection rights to any confidential OAuth client. The MCP introspection client is confidential by configuration (Step 2a). Public clients (e.g., browser-based or native apps registered without a secret) are still rejected. Note: if your user-flow OAuth app from Step 1 is also configured as confidential, it would technically also be permitted to introspect — but only the MCP server uses these credentials in practice.
 
 Restart Redmine after the change.
 
@@ -114,7 +114,7 @@ curl http://localhost:8000/health
 # {"status": "ok", "checks": {"introspection": "ok"}, ...}
 ```
 
-If `/health` returns `"status": "degraded"` with `"introspection": "unreachable"`, the introspection client is misconfigured (see Step 2 — verify the `protected_resource?` permission and the credentials).
+If `/health` returns `"status": "degraded"` with `"introspection": "unreachable"`, the introspection client is misconfigured (see Step 2 — verify the client is **confidential** and that the `allow_token_introspection` block in `30-redmine.rb` was applied per Step 2b).
 
 ## Step 5: Connect Your MCP Client
 
@@ -155,7 +155,7 @@ Set this in Redmine's OAuth app (Step 1) to match your client:
 |-------|-------|-----|
 | `{"error": "unauthorized"}` | Missing Bearer token | Check client is sending `Authorization` header |
 | `{"error": "invalid_token"}` | Token failed Doorkeeper introspection (revoked, expired, or invalid) | Test with `curl $REDMINE_URL/oauth/introspect -u "$REDMINE_INTROSPECT_CLIENT_ID:$REDMINE_INTROSPECT_CLIENT_SECRET" -d "token=<bearer>&token_type_hint=access_token"` |
-| Every MCP call returns 401 | Introspection client lacks `protected_resource?` permission | Re-check Step 2's `allow_token_introspection` block in `doorkeeper.rb`. Confirm the client is confidential. |
+| Every MCP call returns 401 | Introspection client not authorized to introspect tokens of other apps | Re-check Step 2b's `allow_token_introspection` block in `30-redmine.rb`. Confirm the introspection client is **Confidential: Yes**. |
 | `/health` returns `status: "degraded"` | Introspection endpoint unreachable | Check `REDMINE_URL`, introspection credentials, and Doorkeeper's `allow_token_introspection` setting |
 | Server fails to start: "Missing env var(s): REDMINE_INTROSPECT_CLIENT_ID..." | OAuth mode requires introspection creds | Register the introspection client per Step 2, set `REDMINE_INTROSPECT_CLIENT_ID` / `_SECRET` |
 | Discovery endpoints 404 | Not in OAuth mode, or hitting wrong path | Ensure `REDMINE_AUTH_MODE=oauth`. Note: the canonical paths are `/.well-known/oauth-protected-resource/mcp` (suffix-scoped per RFC 9728 §3.1) and `/.well-known/oauth-authorization-server` (root) |

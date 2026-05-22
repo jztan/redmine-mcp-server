@@ -3,7 +3,9 @@
 Prerequisites (all required, otherwise the suite skips):
   - REDMINE_URL: reachable sandbox Redmine
   - REDMINE_INTROSPECT_CLIENT_ID / _SECRET: confidential OAuth app in the
-    sandbox with protected_resource? permission
+    sandbox whose introspection is allowed by Doorkeeper's
+    allow_token_introspection block (stock Redmine ships this as false;
+    see docs/oauth-setup.md Step 2b)
   - REDMINE_OAUTH_TEST_TOKEN: a valid end-user bearer issued by a user-flow
     OAuth app in the same sandbox
 
@@ -78,7 +80,8 @@ async def test_real_introspection_call_succeeds():
     body = r.json()
     assert body.get("active") is True, (
         "Test token is inactive per introspection. Either it expired, or "
-        "the introspection client lacks protected_resource? permission."
+        "Doorkeeper's allow_token_introspection block is rejecting the "
+        "introspection client (see docs/oauth-setup.md Step 2b)."
     )
     assert body.get("scope"), "Active token must have a non-empty scope"
 
