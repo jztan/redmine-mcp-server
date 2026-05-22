@@ -57,3 +57,43 @@ def _get_int_env(var_name: str, default: int) -> int:
         return int(os.getenv(var_name, str(default)))
     except (ValueError, TypeError):
         return default
+
+
+def get_introspection_credentials() -> tuple[str | None, str | None]:
+    """Return (client_id, client_secret) for the Doorkeeper introspection client.
+
+    Both values are required when REDMINE_AUTH_MODE=oauth. Returns
+    (None, None) if neither is set. Callers that need fail-fast behaviour
+    should use require_introspection_credentials().
+    """
+    client_id = os.getenv("REDMINE_INTROSPECT_CLIENT_ID") or None
+    client_secret = os.getenv("REDMINE_INTROSPECT_CLIENT_SECRET") or None
+    return client_id, client_secret
+
+
+def require_introspection_credentials() -> tuple[str, str]:
+    """Return (client_id, client_secret) or raise RuntimeError with a clear message.
+
+    Used at OAuth-mode startup so the server fails fast instead of returning
+    401 on every request.
+    """
+    client_id, client_secret = get_introspection_credentials()
+    missing = []
+    if not client_id:
+        missing.append("REDMINE_INTROSPECT_CLIENT_ID")
+    if not client_secret:
+        missing.append("REDMINE_INTROSPECT_CLIENT_SECRET")
+    if missing:
+        raise RuntimeError(
+            "OAuth mode requires Doorkeeper introspection credentials. "
+            f"Missing env var(s): {', '.join(missing)}. "
+            "Register a confidential OAuth client in Redmine with "
+            "protected_resource? permission and set these vars. "
+            "See docs/oauth-setup.md."
+        )
+    return client_id, client_secret
+
+
+def get_health_introspection_ttl_seconds() -> int:
+    """How long /health caches the Doorkeeper introspection probe result."""
+    return _get_int_env("HEALTH_INTROSPECTION_TTL_SECONDS", 30)

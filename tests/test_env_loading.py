@@ -225,3 +225,46 @@ class TestEnvLoadingUnit:
         assert hasattr(
             redmine_handler, "_env_loaded"
         ), "_env_loaded flag should be defined"
+
+
+class TestOAuthIntrospectionEnv:
+    """Validation of REDMINE_INTROSPECT_CLIENT_ID / _SECRET in OAuth mode."""
+
+    def test_get_introspection_credentials_returns_both_when_set(self, monkeypatch):
+        monkeypatch.setenv("REDMINE_INTROSPECT_CLIENT_ID", "client-id-x")
+        monkeypatch.setenv("REDMINE_INTROSPECT_CLIENT_SECRET", "client-secret-y")
+        import importlib
+        from redmine_mcp_server import _env
+
+        importlib.reload(_env)
+        assert _env.get_introspection_credentials() == (
+            "client-id-x",
+            "client-secret-y",
+        )
+
+    def test_require_introspection_credentials_raises_when_missing(self, monkeypatch):
+        monkeypatch.delenv("REDMINE_INTROSPECT_CLIENT_ID", raising=False)
+        monkeypatch.delenv("REDMINE_INTROSPECT_CLIENT_SECRET", raising=False)
+        import importlib
+        import pytest
+        from redmine_mcp_server import _env
+
+        importlib.reload(_env)
+        with pytest.raises(RuntimeError, match="REDMINE_INTROSPECT_CLIENT_ID"):
+            _env.require_introspection_credentials()
+
+    def test_health_introspection_ttl_default(self, monkeypatch):
+        monkeypatch.delenv("HEALTH_INTROSPECTION_TTL_SECONDS", raising=False)
+        import importlib
+        from redmine_mcp_server import _env
+
+        importlib.reload(_env)
+        assert _env.get_health_introspection_ttl_seconds() == 30
+
+    def test_health_introspection_ttl_custom(self, monkeypatch):
+        monkeypatch.setenv("HEALTH_INTROSPECTION_TTL_SECONDS", "120")
+        import importlib
+        from redmine_mcp_server import _env
+
+        importlib.reload(_env)
+        assert _env.get_health_introspection_ttl_seconds() == 120
