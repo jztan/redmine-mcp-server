@@ -6,8 +6,10 @@ Owns:
   - The cached `_legacy_client` singleton and the `redmine` module-level var.
   - `_get_redmine_client()` -- the single entry point used by every MCP tool.
 
-`current_redmine_token` (the OAuth ContextVar) lives in `oauth_middleware.py`
-and is lazy-imported inside `_get_redmine_client()` to avoid circular import.
+In OAuth mode, the per-request Bearer token is retrieved via FastMCP's
+`get_access_token()` dependency (from `fastmcp.server.dependencies`),
+which reads the AccessToken injected by RemoteAuthProvider after
+RFC 7662 introspection succeeds.
 
 Tests patch this module's attributes directly, e.g.
 ``patch("redmine_mcp_server._client.REDMINE_API_KEY", "...")`` or
@@ -20,6 +22,7 @@ from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
+from fastmcp.server.dependencies import get_access_token
 from redminelib import Redmine
 
 logger = logging.getLogger("redmine_mcp_server")
@@ -166,14 +169,14 @@ def _get_redmine_client() -> Redmine:
     if g["redmine"] is not None:
         return g["redmine"]
 
-    from .oauth_middleware import current_redmine_token
-
-    token = current_redmine_token.get()
-
-    if token:
-        # OAuth mode: per-request client with Bearer token (cannot be cached)
+    # OAuth mode: per-request bearer token from FastMCP's native auth.
+    # get_access_token() returns None outside an authenticated request
+    # (e.g., legacy mode, or background tasks).
+    access_token = get_access_token()
+    if access_token is not None and access_token.token:
+        # Per-request client with Bearer token (cannot be cached)
         requests_config = _build_requests_config()
-        headers = {"Authorization": f"Bearer {token}"}
+        headers = {"Authorization": f"Bearer {access_token.token}"}
         if requests_config:
             return g["Redmine"](
                 g["REDMINE_URL"],
