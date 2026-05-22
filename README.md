@@ -448,7 +448,11 @@ curl http://localhost:8000/health
 
 ## Available Tools
 
-This MCP server provides 45 tools for interacting with Redmine (plus 1 operator tool exposed by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`, for a maximum of 46). For detailed documentation, see [Tool Reference](./docs/tool-reference.md).
+This MCP server provides 45 tools for interacting with Redmine (plus 1 operator tool exposed by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`, and 5 plugin-gated tools that opt in via env vars, for a maximum of 46 when all enabled). For detailed documentation, see [Tool Reference](./docs/tool-reference.md).
+
+### Core tools (40, always available)
+
+These tools require only a Redmine instance and credentials — no extra plugins or feature flags.
 
 - **Project Management** (9 tools)
   - [`list_redmine_projects`](docs/tool-reference.md#list_redmine_projects) - List all accessible projects
@@ -495,31 +499,40 @@ This MCP server provides 45 tools for interacting with Redmine (plus 1 operator 
   - [`search_entire_redmine`](docs/tool-reference.md#search_entire_redmine) - Global search across issues and wiki pages (Redmine 3.3.0+)
   - [`manage_redmine_wiki_page`](docs/tool-reference.md#manage_redmine_wiki_page) - List, get, create, update, delete, or rename wiki pages
 
-- **File Operations** (4 tools, plus 1 admin-gated)
+- **File Operations** (4 tools)
   - [`list_files`](docs/tool-reference.md#list_files) - List files uploaded to a project's Files section
   - [`upload_file`](docs/tool-reference.md#upload_file) - Upload a new file (base64 content) to a project, optionally tied to a version
   - [`delete_file`](docs/tool-reference.md#delete_file) - Delete a file from a project
   - [`get_redmine_attachment`](docs/tool-reference.md#get_redmine_attachment) - Download an attachment (works in both HTTP and stdio mode)
-  - [`cleanup_attachment_files`](docs/tool-reference.md#cleanup_attachment_files) - Clean up expired attachment files (operator-gated by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`; the background cleanup task runs automatically regardless)
 
-- **Checklists** (2 tools, requires `REDMINE_CHECKLISTS_ENABLED=true` + RedmineUP Checklists Pro plugin)
-  - [`get_checklist`](docs/tool-reference.md#get_checklist) - Retrieve all checklist items for an issue
-  - [`update_checklist_item`](docs/tool-reference.md#update_checklist_item) - Update a checklist item's text, done state, or position
-
-- **Gantt** (1 tool, no plugin required)
+- **Gantt** (1 tool)
   - [`get_gantt_chart`](docs/tool-reference.md#get_gantt_chart) - Retrieve project timeline data: issues with dates, dependencies, and milestones
-
-- **Products** (1 tool, requires `REDMINE_PRODUCTS_ENABLED=true` + RedmineUP Products plugin)
-  - [`manage_product`](docs/tool-reference.md#manage_product) - List, get, create, or update products
-
-- **Contacts (CRM)** (1 tool, requires `REDMINE_CRM_ENABLED=true` + RedmineUP CRM plugin)
-  - [`manage_contact`](docs/tool-reference.md#manage_contact) - List, get, create, update, delete, or assign/remove project association for contacts
-
-- **Documents (DMSF)** (1 tool, requires `REDMINE_DMSF_ENABLED=true` + `redmine_dmsf` plugin)
-  - [`manage_document`](docs/tool-reference.md#manage_document) - List, get, create (upload), or update (new revision) DMSF documents
 
 - **Meta** (1 tool)
   - [`get_mcp_server_info`](docs/tool-reference.md#get_mcp_server_info) - Report server version, auth mode, read-only state, and which plugin-gated tool families are enabled. Use to detect deployment lag before relying on a recently-shipped fix.
+
+### Plugin-gated tools (5, opt in via env var)
+
+These tools require a corresponding Redmine plugin installed on the server **and** the matching environment variable set to `true` on the MCP server. They stay completely hidden from `tools/list` when their flag is unset.
+
+- **Checklists** (2 tools) — set `REDMINE_CHECKLISTS_ENABLED=true`; requires the [RedmineUP Checklists Pro plugin](https://www.redmineup.com/pages/plugins/checklists)
+  - [`get_checklist`](docs/tool-reference.md#get_checklist) - Retrieve all checklist items for an issue
+  - [`update_checklist_item`](docs/tool-reference.md#update_checklist_item) - Update a checklist item's text, done state, or position
+
+- **Products** (1 tool) — set `REDMINE_PRODUCTS_ENABLED=true`; requires the [RedmineUP Products plugin](https://www.redmineup.com/pages/plugins/products)
+  - [`manage_product`](docs/tool-reference.md#manage_product) - List, get, create, or update products
+
+- **Contacts (CRM)** (1 tool) — set `REDMINE_CRM_ENABLED=true`; requires the [RedmineUP CRM plugin](https://www.redmineup.com/pages/plugins/crm)
+  - [`manage_contact`](docs/tool-reference.md#manage_contact) - List, get, create, update, delete, or assign/remove project association for contacts
+
+- **Documents (DMSF)** (1 tool) — set `REDMINE_DMSF_ENABLED=true`; requires the [`redmine_dmsf` plugin](https://github.com/danmunn/redmine_dmsf)
+  - [`manage_document`](docs/tool-reference.md#manage_document) - List, get, create (upload), or update (new revision) DMSF documents
+
+### Operator tools (1, admin-gated)
+
+Hidden from `tools/list` by default. Set `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true` to register them on the MCP surface. The underlying background tasks run regardless of this flag — exposing them only adds the option to drive them through MCP.
+
+- [`cleanup_attachment_files`](docs/tool-reference.md#cleanup_attachment_files) - Manually trigger cleanup of expired attachment files (the background cleanup task runs automatically regardless)
 
 
 ## Docker Deployment
