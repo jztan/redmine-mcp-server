@@ -85,6 +85,9 @@ REDMINE_INTROSPECT_CLIENT_SECRET=<Secret from Redmine>
 
 # Optional: /health introspection probe cache TTL in seconds (default 30)
 # HEALTH_INTROSPECTION_TTL_SECONDS=30
+
+# Optional: mirror Redmine's own AS/OIDC discovery metadata when available
+# REDMINE_MCP_MIRROR_REDMINE_AS_METADATA=true
 ```
 
 Set these in `.env` (local) or `.env.docker` (Docker). Legacy credentials are not needed in OAuth mode.
@@ -142,6 +145,8 @@ Set this in Redmine's OAuth app (Step 1) to match your client:
 | Kiro | Configurable via `oauth.redirectUri` |
 
 > **Note on DCR:** Some clients (Claude Desktop, VS Code) expect Dynamic Client Registration. Redmine's Doorkeeper does not support DCR, so you must pre-register the app manually (Step 1) and configure the client with the `client_id`/`client_secret`.
+>
+> If your Redmine deployment serves OAuth/OIDC discovery metadata with a `registration_endpoint`, set `REDMINE_MCP_MIRROR_REDMINE_AS_METADATA=true` to mirror that endpoint from `/.well-known/oauth-authorization-server/mcp`. One compatible plugin option is [`redmine_oidc_provider`](https://github.com/aadnehovda/redmine_oidc_provider).
 
 ## Migrating from Legacy Mode
 

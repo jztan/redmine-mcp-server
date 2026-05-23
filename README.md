@@ -233,6 +233,9 @@ REDMINE_MCP_BASE_URL=https://redmine-mcp.example.com   # public URL of this serv
 # Introspection client (register a confidential OAuth app in Redmine; see docs/oauth-setup.md)
 REDMINE_INTROSPECT_CLIENT_ID=...
 REDMINE_INTROSPECT_CLIENT_SECRET=...
+
+# Optional: mirror Redmine's own AS/OIDC discovery metadata when available
+# REDMINE_MCP_MIRROR_REDMINE_AS_METADATA=true
 ```
 
 In OAuth mode the server also exposes OAuth2 discovery and token management endpoints:
@@ -243,12 +246,15 @@ In OAuth mode the server also exposes OAuth2 discovery and token management endp
 | `/.well-known/oauth-authorization-server/mcp` | RFC 8414 | Advertises Redmine's Doorkeeper OAuth endpoints, scoped to this MCP resource |
 | `POST /revoke` | RFC 7009 | Revokes an OAuth2 token (proxies to Redmine's `/oauth/revoke`) |
 
-Redmine uses the [Doorkeeper](https://github.com/doorkeeper-gem/doorkeeper) gem for OAuth2 but does not serve the RFC 8414 discovery document itself. This server serves path-scoped metadata on Redmine's behalf, pointing to Redmine's real `/oauth/authorize`, `/oauth/token`, and `/oauth/revoke` endpoints.
+Redmine uses the [Doorkeeper](https://github.com/doorkeeper-gem/doorkeeper) gem for OAuth2. By default this server serves path-scoped metadata on Redmine's behalf, pointing to Redmine's real `/oauth/authorize`, `/oauth/token`, and `/oauth/revoke` endpoints. If `REDMINE_MCP_MIRROR_REDMINE_AS_METADATA=true` is set, the MCP server mirrors Redmine's own RFC 8414 / OpenID Connect discovery metadata when available, then narrows `scopes_supported` to the scopes used by this MCP resource.
 
 **Prerequisites for OAuth mode:**
 - An OAuth application registered in Redmine admin → **Applications** with the callback URL of your client
 - A client that handles the authorization code flow, stores the resulting token per user, and sends it as `Authorization: Bearer <token>` on every MCP request
 - No Dynamic Client Registration (DCR) is required — register the application manually in Redmine admin
+- DCR-capable Redmine deployments can opt in to AS metadata mirroring with `REDMINE_MCP_MIRROR_REDMINE_AS_METADATA=true`
+
+For Redmine deployments that need OIDC discovery and DCR, [`redmine_oidc_provider`](https://github.com/aadnehovda/redmine_oidc_provider) is one compatible plugin option.
 
 For step-by-step setup instructions, see the [OAuth2 Setup Guide](./docs/oauth-setup.md).
 

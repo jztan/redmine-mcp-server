@@ -25,6 +25,7 @@ def oauth_app(monkeypatch):
     monkeypatch.setenv("REDMINE_MCP_BASE_URL", "http://localhost:3040")
     monkeypatch.setenv("REDMINE_INTROSPECT_CLIENT_ID", "cid")
     monkeypatch.setenv("REDMINE_INTROSPECT_CLIENT_SECRET", "csec")
+    monkeypatch.setenv("REDMINE_MCP_MIRROR_REDMINE_AS_METADATA", "true")
     monkeypatch.delenv("REDMINE_MCP_READ_ONLY", raising=False)
 
     from redmine_mcp_server import _auth, oauth_scopes
@@ -32,6 +33,28 @@ def oauth_app(monkeypatch):
 
     importlib.reload(oauth_scopes)
     importlib.reload(_auth)
+
+    async def mock_as_metadata(redmine_url):
+        return {
+            "issuer": redmine_url,
+            "authorization_endpoint": f"{redmine_url}/oauth/authorize",
+            "token_endpoint": f"{redmine_url}/oauth/token",
+            "registration_endpoint": f"{redmine_url}/oauth/registration",
+            "revocation_endpoint": f"{redmine_url}/oauth/revoke",
+            "jwks_uri": f"{redmine_url}/oauth/discovery/keys",
+            "subject_types_supported": ["public"],
+            "response_types_supported": ["code"],
+            "grant_types_supported": ["authorization_code", "refresh_token"],
+            "code_challenge_methods_supported": ["S256"],
+            "token_endpoint_auth_methods_supported": [
+                "client_secret_post",
+                "client_secret_basic",
+            ],
+        }
+
+    monkeypatch.setattr(
+        main_mod, "fetch_authorization_server_metadata", mock_as_metadata
+    )
 
     auth_provider = _auth.build_remote_auth()
     local_mcp = FastMCP("redmine_mcp_tools_test", auth=auth_provider)
@@ -92,6 +115,47 @@ async def test_authorization_server_suffix_path_returns_200(oauth_app):
 
 
 @pytest.mark.asyncio
+async def test_authorization_server_does_not_fetch_redmine_discovery_by_default(
+    monkeypatch,
+):
+    monkeypatch.setenv("REDMINE_URL", "https://r.example.com")
+    monkeypatch.delenv("REDMINE_MCP_MIRROR_REDMINE_AS_METADATA", raising=False)
+
+    from redmine_mcp_server import main as main_mod
+
+    async def fail_fetch(redmine_url):
+        raise AssertionError("Redmine discovery should be opt-in")
+
+    monkeypatch.setattr(main_mod, "fetch_authorization_server_metadata", fail_fetch)
+
+    body = (await main_mod.oauth_authorization_server(None)).body
+
+    assert b"registration_endpoint" not in body
+
+
+@pytest.mark.asyncio
+async def test_authorization_server_mirrors_redmine_discovery_when_enabled(oauth_app):
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=oauth_app), base_url="http://test"
+    ) as client:
+        r = await client.get("/.well-known/oauth-authorization-server/mcp")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["registration_endpoint"] == "https://r.example.com/oauth/registration"
+    assert body["jwks_uri"] == "https://r.example.com/oauth/discovery/keys"
+    assert body["subject_types_supported"] == ["public"]
+
+
+@pytest.mark.asyncio
+async def test_registration_endpoint_is_omitted_when_falling_back():
+    from redmine_mcp_server import main as main_mod
+
+    metadata = main_mod.fallback_authorization_server_metadata("https://r.example.com")
+
+    assert "registration_endpoint" not in metadata
+
+
+@pytest.mark.asyncio
 async def test_scope_sources_match(oauth_app):
     """Both discovery endpoints must return identical scopes_supported."""
     async with httpx.AsyncClient(
@@ -109,6 +173,7 @@ async def test_scope_sources_filtered_consistently_in_read_only_mode(monkeypatch
     monkeypatch.setenv("REDMINE_MCP_BASE_URL", "http://localhost:3040")
     monkeypatch.setenv("REDMINE_INTROSPECT_CLIENT_ID", "cid")
     monkeypatch.setenv("REDMINE_INTROSPECT_CLIENT_SECRET", "csec")
+    monkeypatch.setenv("REDMINE_MCP_MIRROR_REDMINE_AS_METADATA", "true")
     monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "true")
 
     from redmine_mcp_server import _auth, oauth_scopes
@@ -119,6 +184,13 @@ async def test_scope_sources_filtered_consistently_in_read_only_mode(monkeypatch
 
     auth_provider = _auth.build_remote_auth()
     local_mcp = FastMCP("ro_test", auth=auth_provider)
+
+    async def mock_as_metadata(redmine_url):
+        return main_mod.fallback_authorization_server_metadata(redmine_url)
+
+    monkeypatch.setattr(
+        main_mod, "fetch_authorization_server_metadata", mock_as_metadata
+    )
     local_mcp.custom_route(
         "/.well-known/oauth-authorization-server/mcp", methods=["GET"]
     )(main_mod.oauth_authorization_server)

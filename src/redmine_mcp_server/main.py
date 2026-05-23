@@ -55,36 +55,81 @@ def get_version() -> str:
 async def oauth_authorization_server(request: Request):
     """RFC 8414 — Authorization Server Metadata.
 
-    Redmine uses Doorkeeper but does not serve this discovery document itself.
-    We serve it manually, pointing to Redmine's real Doorkeeper endpoints.
+    Return path-scoped metadata for MCP clients that derive Authorization
+    Server Metadata from the MCP resource path.
 
-    Env vars are read at request time (rather than module-import time) so
-    that the handler responds to runtime configuration changes and is
-    cleanly testable without module reloads.
+    By default this returns conservative stock-Doorkeeper endpoint metadata.
+    Deployments whose Redmine instance serves OAuth/OIDC discovery metadata
+    can opt in to mirroring that metadata, then MCP-specific scopes are
+    applied to keep clients from requesting broad Redmine-wide scopes for
+    this protected resource.
     """
     redmine_url = (os.environ.get("REDMINE_URL", "") or "").rstrip("/")
-    base_url = (
-        os.environ.get("REDMINE_MCP_BASE_URL", "http://localhost:3040") or ""
-    ).rstrip("/")
-    return JSONResponse(
-        {
-            "issuer": base_url,
-            "authorization_endpoint": f"{redmine_url}/oauth/authorize",
-            "token_endpoint": f"{redmine_url}/oauth/token",
-            "revocation_endpoint": f"{redmine_url}/oauth/revoke",
-            "response_types_supported": ["code"],
-            "grant_types_supported": [
-                "authorization_code",
-                "refresh_token",
-            ],
-            "code_challenge_methods_supported": ["S256"],
-            "token_endpoint_auth_methods_supported": [
-                "client_secret_post",
-                "client_secret_basic",
-            ],
-            "scopes_supported": advertised_scopes(),
-        }
+    if mirror_redmine_as_metadata_enabled():
+        metadata = await fetch_authorization_server_metadata(redmine_url)
+    else:
+        metadata = fallback_authorization_server_metadata(redmine_url)
+    metadata["scopes_supported"] = advertised_scopes()
+    return JSONResponse(metadata)
+
+
+def mirror_redmine_as_metadata_enabled() -> bool:
+    """Return whether to mirror Redmine's own AS/OIDC discovery document."""
+    return os.environ.get("REDMINE_MCP_MIRROR_REDMINE_AS_METADATA", "").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+async def fetch_authorization_server_metadata(redmine_url: str) -> dict:
+    """Fetch Redmine's real OAuth/OIDC discovery metadata.
+
+    If discovery is unavailable, fall back to the standard Doorkeeper endpoint
+    paths without advertising optional capabilities such as DCR.
+    """
+    discovery_paths = (
+        "/.well-known/oauth-authorization-server",
+        "/.well-known/openid-configuration",
     )
+    async with httpx.AsyncClient(timeout=10) as client:
+        for path in discovery_paths:
+            try:
+                response = await client.get(f"{redmine_url}{path}")
+                response.raise_for_status()
+                body = response.json()
+            except (httpx.HTTPError, ValueError) as e:
+                logger.debug(
+                    "Failed to fetch AS metadata from %s%s: %s",
+                    redmine_url,
+                    path,
+                    e,
+                )
+                continue
+            return body
+
+    return fallback_authorization_server_metadata(redmine_url)
+
+
+def fallback_authorization_server_metadata(redmine_url: str) -> dict:
+    """Return conservative Doorkeeper defaults without optional DCR."""
+    return {
+        "issuer": redmine_url,
+        "authorization_endpoint": f"{redmine_url}/oauth/authorize",
+        "token_endpoint": f"{redmine_url}/oauth/token",
+        "revocation_endpoint": f"{redmine_url}/oauth/revoke",
+        "response_types_supported": ["code"],
+        "grant_types_supported": [
+            "authorization_code",
+            "refresh_token",
+        ],
+        "code_challenge_methods_supported": ["S256"],
+        "token_endpoint_auth_methods_supported": [
+            "client_secret_post",
+            "client_secret_basic",
+        ],
+    }
 
 
 async def revoke_token(request: Request):
