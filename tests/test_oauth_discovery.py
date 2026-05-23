@@ -37,9 +37,9 @@ def oauth_app(monkeypatch):
     local_mcp = FastMCP("redmine_mcp_tools_test", auth=auth_provider)
 
     # Mirror main.py: register kept custom_routes
-    local_mcp.custom_route("/.well-known/oauth-authorization-server", methods=["GET"])(
-        main_mod.oauth_authorization_server
-    )
+    local_mcp.custom_route(
+        "/.well-known/oauth-authorization-server/mcp", methods=["GET"]
+    )(main_mod.oauth_authorization_server)
     local_mcp.custom_route("/revoke", methods=["POST"])(main_mod.revoke_token)
 
     return local_mcp.http_app(stateless_http=True)
@@ -62,9 +62,9 @@ async def test_protected_resource_suffix_path_returns_200(oauth_app):
 @pytest.mark.parametrize(
     "path",
     [
+        "/.well-known/oauth-authorization-server",
         "/.well-known/oauth-protected-resource",
         "/mcp/.well-known/oauth-protected-resource",
-        "/.well-known/oauth-authorization-server/mcp",
         "/mcp/.well-known/oauth-authorization-server",
     ],
 )
@@ -79,11 +79,11 @@ async def test_dropped_discovery_paths_return_404(oauth_app, path):
 
 
 @pytest.mark.asyncio
-async def test_authorization_server_canonical_path_returns_200(oauth_app):
+async def test_authorization_server_suffix_path_returns_200(oauth_app):
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=oauth_app), base_url="http://test"
     ) as client:
-        r = await client.get("/.well-known/oauth-authorization-server")
+        r = await client.get("/.well-known/oauth-authorization-server/mcp")
     assert r.status_code == 200
     body = r.json()
     assert body["authorization_endpoint"] == "https://r.example.com/oauth/authorize"
@@ -98,7 +98,7 @@ async def test_scope_sources_match(oauth_app):
         transport=httpx.ASGITransport(app=oauth_app), base_url="http://test"
     ) as client:
         pr = (await client.get("/.well-known/oauth-protected-resource/mcp")).json()
-        asm = (await client.get("/.well-known/oauth-authorization-server")).json()
+        asm = (await client.get("/.well-known/oauth-authorization-server/mcp")).json()
     assert pr["scopes_supported"] == asm["scopes_supported"]
 
 
@@ -119,9 +119,9 @@ async def test_scope_sources_filtered_consistently_in_read_only_mode(monkeypatch
 
     auth_provider = _auth.build_remote_auth()
     local_mcp = FastMCP("ro_test", auth=auth_provider)
-    local_mcp.custom_route("/.well-known/oauth-authorization-server", methods=["GET"])(
-        main_mod.oauth_authorization_server
-    )
+    local_mcp.custom_route(
+        "/.well-known/oauth-authorization-server/mcp", methods=["GET"]
+    )(main_mod.oauth_authorization_server)
     app = local_mcp.http_app(stateless_http=True)
 
     from redmine_mcp_server.oauth_scopes import WRITE_SCOPES
@@ -130,7 +130,7 @@ async def test_scope_sources_filtered_consistently_in_read_only_mode(monkeypatch
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
         pr = (await client.get("/.well-known/oauth-protected-resource/mcp")).json()
-        asm = (await client.get("/.well-known/oauth-authorization-server")).json()
+        asm = (await client.get("/.well-known/oauth-authorization-server/mcp")).json()
 
     for write_scope in WRITE_SCOPES:
         assert write_scope not in pr["scopes_supported"]

@@ -172,7 +172,7 @@ async def revoke_token(request: Request):
 # no Starlette middleware doing auth, so custom_route no longer represents
 # the bypass surface.
 if REDMINE_AUTH_MODE == "oauth":
-    mcp.custom_route("/.well-known/oauth-authorization-server", methods=["GET"])(
+    mcp.custom_route("/.well-known/oauth-authorization-server/mcp", methods=["GET"])(
         oauth_authorization_server
     )
     mcp.custom_route("/revoke", methods=["POST"])(revoke_token)
