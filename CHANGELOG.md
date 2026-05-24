@@ -51,6 +51,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - `tests/test_oauth_integration.py` now calls `python-dotenv`'s `load_dotenv()` at module-import time, so `REDMINE_URL` (and any other config) defined in `.env` is honored by the integration suite without having to re-export the var on the command line. Previously the test module read `os.environ` directly at import time, which meant the suite skipped with "Missing: REDMINE_URL" unless the var was set in the shell, even when it was already in `.env` for the running server.
 
+### Contributors
+
+- @aadnehovda, narrowed the RFC 8414 AS metadata path from root to `/.well-known/oauth-authorization-server/mcp` so the MCP server no longer claims the root discovery slot when co-hosted with another app ([#135](https://github.com/jztan/redmine-mcp-server/pull/135)).
+
 ## [2.0.1] - 2026-05-22
 ### Security
 - Bump `urllib3` from 2.6.3 to 2.7.0, patching CVE-2026-44431 and CVE-2026-44432; added explicit lower-bound constraint (`urllib3>=2.7.0,<3`) in `pyproject.toml` to prevent silent regression to vulnerable versions (urllib3 is a transitive dep via `requests` / `python-redmine`, so it had no direct floor before this).
