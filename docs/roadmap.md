@@ -12,7 +12,7 @@
 
 ## Next Release
 
-**v2.1 — FastMCP v3 native auth migration.** Merged to develop, awaiting release cut. Cut via `python scripts/release.py minor` per [`RELEASE_SOP.md`](RELEASE_SOP.md). See `[Unreleased]` in [`CHANGELOG.md`](CHANGELOG.md) for the full diff.
+**v2.1 — FastMCP v3 native auth migration.** Merged to develop, awaiting release cut. Cut via `python scripts/release.py minor` per [`RELEASE_SOP.md`](../RELEASE_SOP.md). See `[Unreleased]` in [`CHANGELOG.md`](../CHANGELOG.md) for the full diff.
 
 ---
 
@@ -40,7 +40,7 @@ The MCP spec [release candidate locked on 2026-05-21](https://blog.modelcontextp
 
 ## Under Consideration
 
-- [ ] **OpenTelemetry observability.** Optional `opentelemetry-sdk` dependency. Zero overhead when unconfigured; production-grade tracing (tool calls, Redmine API latency, error rates) when the OTEL SDK is present. Would need to document OTEL configuration in [`docs/contributing.md`](docs/contributing.md). Note: the 2026-07-28 spec deprecates protocol-level logging in favor of stderr or OpenTelemetry, so this item is increasingly aligned with the upstream direction.
+- [ ] **OpenTelemetry observability.** Optional `opentelemetry-sdk` dependency. Zero overhead when unconfigured; production-grade tracing (tool calls, Redmine API latency, error rates) when the OTEL SDK is present. Would need to document OTEL configuration in [`contributing.md`](contributing.md). Note: the 2026-07-28 spec deprecates protocol-level logging in favor of stderr or OpenTelemetry, so this item is increasingly aligned with the upstream direction.
 
 ---
 
@@ -58,7 +58,7 @@ These are not planned. They will be considered only if users open issues asking 
 
 For per-release detail (features, fixes, CVE patches, contributor credits, breaking changes), see:
 
-- [`CHANGELOG.md`](CHANGELOG.md) — canonical changelog, every version since v0.1
+- [`CHANGELOG.md`](../CHANGELOG.md) — canonical changelog, every version since v0.1
 - [GitHub Releases](https://github.com/jztan/redmine-mcp-server/releases) — release notes with installation instructions
 
 ---
