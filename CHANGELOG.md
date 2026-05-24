@@ -15,9 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Two new required env vars in OAuth mode**: `REDMINE_INTROSPECT_CLIENT_ID` and `REDMINE_INTROSPECT_CLIENT_SECRET`. Operators register a confidential OAuth client in Redmine and patch Doorkeeper's `allow_token_introspection` block (stock Redmine ships with `allow_token_introspection false`). See [`docs/oauth-setup.md`](docs/oauth-setup.md) Step 2 for the walkthrough. Server fails fast at startup if either env var is missing.
 - **Discovery path aliases dropped.** Only the canonical paths remain:
   - `GET /.well-known/oauth-protected-resource/mcp` (RFC 9728 §3.1 suffix-scoped, mounted natively by `RemoteAuthProvider`)
-  - `GET /.well-known/oauth-authorization-server` (canonical root, kept as `custom_route` mirror of Redmine's Doorkeeper AS metadata)
+  - `GET /.well-known/oauth-authorization-server/mcp` (path-scoped RFC 8414 form, kept as `custom_route` mirror of Redmine's Doorkeeper AS metadata)
 
-  These previously-served paths now return 404: `/.well-known/oauth-protected-resource` (root), `/mcp/.well-known/oauth-protected-resource` (prefix), `/.well-known/oauth-authorization-server/mcp` (suffix), `/mcp/.well-known/oauth-authorization-server` (prefix). Clients should follow `WWW-Authenticate: Bearer resource_metadata="..."` headers from 401 responses for RFC 9728 §5.3 compliant discovery.
+  These previously-served paths now return 404: `/.well-known/oauth-protected-resource` (root), `/mcp/.well-known/oauth-protected-resource` (prefix), `/.well-known/oauth-authorization-server` (root), `/mcp/.well-known/oauth-authorization-server` (prefix). Clients should follow `WWW-Authenticate: Bearer resource_metadata="..."` headers from 401 responses for RFC 9728 §5.3 compliant discovery.
 - **Upstream introspection failures now return 401 instead of 503.** When Doorkeeper is unreachable, the previous behavior was `503 upstream_unavailable`. FastMCP's `IntrospectionTokenVerifier` treats transport failures as auth failures, so clients see 401. Operators monitoring 503 spikes as an upstream-Redmine-down signal should switch to monitoring 401-rate or watch `/health`'s new introspection probe (see Added).
 
 ### Added

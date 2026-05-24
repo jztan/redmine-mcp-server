@@ -2,7 +2,7 @@
 
 This module is the single source of truth for the ``scopes_supported``
 list returned by ``/.well-known/oauth-protected-resource`` and
-``/.well-known/oauth-authorization-server``.
+``/.well-known/oauth-authorization-server/mcp``.
 
 Scope identifiers are Redmine Doorkeeper scope names. In stock Redmine
 6.x they match the permission name from ``lib/redmine/access_control.rb``.

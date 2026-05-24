@@ -864,6 +864,6 @@ If a legacy API key isn't available, revert to the previous application version 
 The v2.1+ release dropped several discovery path aliases. Only these paths remain:
 
 - `GET /.well-known/oauth-protected-resource/mcp` (canonical RFC 9728 §3.1 suffix-scoped form, mounted by `RemoteAuthProvider`)
-- `GET /.well-known/oauth-authorization-server` (canonical root, mirrors Redmine's Doorkeeper AS metadata)
+- `GET /.well-known/oauth-authorization-server/mcp` (path-scoped RFC 8414 form, mirrors Redmine's Doorkeeper AS metadata)
 
 Clients should follow `WWW-Authenticate: Bearer resource_metadata="..."` headers from 401 responses (RFC 9728 §5.3) rather than guessing paths. If a client hardcodes the dropped variants, update the client; we don't plan to restore aliases.
