@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- Bump `starlette` 1.0.0 to 1.0.1 to fix PYSEC-2026-161 (malformed `Host` header handling)
+
 ### Changed
 - **OAuth mode now uses FastMCP v3 native auth.** The hand-rolled `RedmineOAuthMiddleware` (Starlette `BaseHTTPMiddleware`) is replaced by `RemoteAuthProvider(token_verifier=IntrospectionTokenVerifier(...))`. Token validation moves from `GET /users/current.json` to Doorkeeper's RFC 7662 introspection endpoint (`POST /oauth/introspect`), exposing the token's actual scopes via `AccessToken.claims`. This closes the medium-likelihood `custom_route` middleware-skip-list auth-bypass risk identified in the FastMCP v3 compatibility analysis.
 
