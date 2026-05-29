@@ -110,7 +110,13 @@ async def test_oauth_mode_unreachable_probe_returns_degraded(oauth_env):
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-async def test_legacy_mode_skips_introspection_probe():
+async def test_legacy_mode_probes_redmine_not_introspection():
+    """Legacy mode runs a Redmine connectivity probe instead of OAuth introspection.
+
+    When no credentials are configured the probe returns "unconfigured"
+    and the overall status stays "ok" (server hasn't been set up yet, not
+    a runtime failure).
+    """
     monkeypatch_set = pytest.MonkeyPatch()
     monkeypatch_set.setenv("REDMINE_AUTH_MODE", "legacy")
     monkeypatch_set.setenv("REDMINE_URL", "https://r.example.com")
@@ -134,8 +140,56 @@ async def test_legacy_mode_skips_introspection_probe():
                 r = await client.get("/health")
         assert r.status_code == 200
         body = r.json()
+        # No credentials configured → "unconfigured", not degraded.
         assert body["status"] == "ok"
-        assert "checks" not in body
+        assert "introspection" not in body.get("checks", {})
+        assert body["checks"]["redmine"] == "unconfigured"
+    finally:
+        monkeypatch_set.undo()
+        from redmine_mcp_server import _client, _http_routes
+
+        importlib.reload(_client)
+        importlib.reload(_http_routes)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_legacy_mode_degraded_when_redmine_unreachable():
+    """When credentials are configured but Redmine rejects them, status is degraded."""
+    monkeypatch_set = pytest.MonkeyPatch()
+    monkeypatch_set.setenv("REDMINE_AUTH_MODE", "legacy")
+    monkeypatch_set.setenv("REDMINE_URL", "https://r.example.com")
+    monkeypatch_set.setenv("REDMINE_API_KEY", "test-key")
+    try:
+        from redmine_mcp_server import _client, _http_routes
+
+        importlib.reload(_client)
+        importlib.reload(_http_routes)
+        _reset_probe_cache()
+        with (
+            patch.object(
+                _http_routes,
+                "_probe_redmine_legacy",
+                AsyncMock(return_value=("unreachable", "AuthError")),
+            ),
+            patch(
+                "redmine_mcp_server._cleanup._ensure_cleanup_started",
+                new_callable=AsyncMock,
+            ),
+        ):
+            from starlette.applications import Starlette
+            from starlette.routing import Route
+
+            app = Starlette(routes=[Route("/health", _http_routes.health_check)])
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://t"
+            ) as client:
+                r = await client.get("/health")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["status"] == "degraded"
+        assert body["checks"]["redmine"] == "unreachable"
+        assert "AuthError" in body["checks"]["redmine_detail"]
     finally:
         monkeypatch_set.undo()
         from redmine_mcp_server import _client, _http_routes

@@ -118,13 +118,58 @@ async def test_does_not_leak_credentials_or_hostnames(monkeypatch):
             "The tool must only surface non-sensitive metadata."
         )
 
+    # current_user is None when Redmine is unreachable (no live server in tests)
+    assert result.data.get("current_user") is None
+
     # The keys it IS allowed to surface are pinned.
     assert set(result.data.keys()) == {
         "server_version",
         "read_only_mode",
         "auth_mode",
+        "current_user",
         "plugin_flags",
     }
+
+
+@pytest.mark.asyncio
+async def test_current_user_is_none_when_redmine_unreachable(monkeypatch):
+    """When Redmine cannot be reached, current_user is None rather than an error."""
+    monkeypatch.delenv("REDMINE_API_KEY", raising=False)
+    monkeypatch.delenv("REDMINE_USERNAME", raising=False)
+    monkeypatch.delenv("REDMINE_PASSWORD", raising=False)
+
+    async with Client(_server.mcp) as client:
+        result = await client.call_tool("get_mcp_server_info", {})
+
+    assert result.data.get("current_user") is None
+
+
+@pytest.mark.asyncio
+async def test_current_user_populated_when_client_works(monkeypatch):
+    """When the Redmine client returns a valid user, current_user has id/login/name."""
+    from unittest.mock import MagicMock, patch
+
+    mock_user = MagicMock()
+    mock_user.id = 42
+    mock_user.login = "testuser"
+    mock_user.firstname = "Test"
+    mock_user.lastname = "User"
+
+    mock_client = MagicMock()
+    mock_client.user.get.return_value = mock_user
+
+    with patch(
+        "redmine_mcp_server.tools.meta._fetch_current_user_info",
+        return_value={"id": 42, "login": "testuser", "name": "Test User"},
+    ):
+        async with Client(_server.mcp) as client:
+            result = await client.call_tool("get_mcp_server_info", {})
+
+    cu = result.data.get("current_user")
+    assert cu is not None
+    assert cu["id"] == 42
+    assert cu["login"] == "testuser"
+    assert cu["name"] == "Test User"
 
 
 def test_package_version_is_importable():

@@ -19,10 +19,11 @@ What this deliberately does NOT expose:
 Only the flags that change *call shape* for the caller are exposed:
 which auth mode the server is in, which plugin-gated tool families
 are enabled, and whether the server is in read-only mode. The version
-string is unambiguously safe.
+string and current-user identity are unambiguously safe.
 """
 
-from typing import Any, Dict
+import logging
+from typing import Any, Dict, Optional
 
 from .. import __version__
 from .._env import (
@@ -35,15 +36,45 @@ from .._env import (
 )
 from ..server import mcp
 
+logger = logging.getLogger("redmine_mcp_server")
+
+
+def _fetch_current_user_info() -> Optional[Dict[str, Any]]:
+    """Return {id, login, name} for the authenticated user, or None on failure.
+
+    Resolves who ``assigned_to_id="me"`` maps to — crucial when a shared
+    or robot API key is in use, where "me" is not the human operator.
+    """
+    try:
+        from .._client import _get_redmine_client
+
+        user = _get_redmine_client().user.get("current")
+        firstname = getattr(user, "firstname", "") or ""
+        lastname = getattr(user, "lastname", "") or ""
+        return {
+            "id": getattr(user, "id", None),
+            "login": getattr(user, "login", None),
+            "name": f"{firstname} {lastname}".strip() or None,
+        }
+    except Exception as exc:
+        logger.warning("get_mcp_server_info: could not fetch current user: %s", exc)
+        return None
+
 
 @mcp.tool()
 async def get_mcp_server_info() -> Dict[str, Any]:
-    """Return the MCP server's version and enabled-feature flags.
+    """Return the MCP server's version, enabled-feature flags, and current user.
 
-    Use this tool to detect deployment lag (the running server may be
-    behind a recently-shipped patch) before relying on a fix that
-    landed on ``develop`` -- compare ``server_version`` against the
-    release / commit you expect.
+    Use this tool to:
+
+    - Detect deployment lag: compare ``server_version`` against the
+      release you expect before relying on a recently-shipped fix.
+    - Understand who ``"me"`` resolves to: ``current_user`` shows the
+      identity behind the configured API key. When a shared or robot API
+      key is in use, ``assigned_to_id="me"`` will match **that** account,
+      not the human operator — call this tool first if issue queries
+      assigned to "me" return unexpectedly empty results.
+    - Check which plugin-gated tool families are active.
 
     Returns:
         A dict with:
@@ -56,6 +87,9 @@ async def get_mcp_server_info() -> Dict[str, Any]:
           is enabled. When ``True``, all write tools refuse with the
           standard read-only error.
         - ``auth_mode`` (str): ``"oauth"`` or ``"legacy"``.
+        - ``current_user`` (dict | None): ``{id, login, name}`` for the
+          authenticated Redmine user. ``None`` if the server cannot reach
+          Redmine (check ``/health`` for connectivity status).
         - ``plugin_flags`` (dict[str, bool]): which plugin-gated tool
           families are enabled. Keys: ``agile``, ``checklists``,
           ``products``, ``crm``, ``dmsf``. ``True`` means the
@@ -73,6 +107,7 @@ async def get_mcp_server_info() -> Dict[str, Any]:
             "server_version": "1.3.0",
             "read_only_mode": False,
             "auth_mode": "legacy",
+            "current_user": {"id": 5, "login": "vitex", "name": "Vítězslav Dvořák"},
             "plugin_flags": {
                 "agile": False,
                 "checklists": False,
@@ -88,6 +123,7 @@ async def get_mcp_server_info() -> Dict[str, Any]:
         "server_version": __version__,
         "read_only_mode": _is_read_only_mode(),
         "auth_mode": (os.environ.get("REDMINE_AUTH_MODE") or "legacy").lower(),
+        "current_user": _fetch_current_user_info(),
         "plugin_flags": {
             "agile": _is_agile_enabled(),
             "checklists": _is_checklists_enabled(),
