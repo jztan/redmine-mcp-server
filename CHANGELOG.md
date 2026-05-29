@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-05-29
 ### Security
 - Bump `starlette` 1.0.0 to 1.0.1 to fix PYSEC-2026-161 (malformed `Host` header handling)
 
@@ -857,6 +858,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive authentication support (username/password and API key)
 - Docker containerization support
 
+[2.1.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.1.0
 [2.0.1]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.0.1
 [2.0.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.0.0
 [1.3.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v1.3.0

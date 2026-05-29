@@ -1713,7 +1713,7 @@ wheels = [
 
 [[package]]
 name = "redmine-mcp-server"
-version = "2.0.1"
+version = "2.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi", extra = ["standard"] },
