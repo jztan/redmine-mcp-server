@@ -109,7 +109,6 @@ async def _probe_redmine_legacy() -> tuple[str, str | None]:
         REDMINE_PASSWORD,
         REDMINE_URL,
         REDMINE_USERNAME,
-        _get_redmine_client,
     )
 
     if not REDMINE_URL:
@@ -117,14 +116,28 @@ async def _probe_redmine_legacy() -> tuple[str, str | None]:
     if not (REDMINE_API_KEY or (REDMINE_USERNAME and REDMINE_PASSWORD)):
         return "unconfigured", "no credentials configured"
 
+    # Use httpx directly against /my/account.json.
+    # redminelib's user.get('current') hits /users/current.json which requires
+    # admin rights and fails for non-admin API keys.
+    url = REDMINE_URL.rstrip("/") + "/my/account.json"
     try:
-        client = _get_redmine_client()
-        # Triggers a real API call; raises AuthError / ConnectionError on failure.
-        client.user.get("current")
-        return "ok", None
-    except Exception as exc:
+        if REDMINE_API_KEY:
+            headers = {"X-Redmine-API-Key": REDMINE_API_KEY}
+            auth = None
+        else:
+            headers = {}
+            auth = (REDMINE_USERNAME, REDMINE_PASSWORD)
+        async with httpx.AsyncClient(timeout=5) as client:
+            r = await client.get(url, headers=headers, auth=auth)
+        if r.status_code == 200:
+            return "ok", None
+        logger.warning(
+            "legacy_redmine_probe_failure status_code=%s url=%s", r.status_code, url
+        )
+        return "unreachable", f"HTTP {r.status_code}"
+    except httpx.RequestError as exc:
         reason = type(exc).__name__
-        logger.warning("legacy_redmine_probe_failure error=%s", reason)
+        logger.warning("legacy_redmine_probe_failure error=%s url=%s", reason, url)
         return "unreachable", reason
 
 

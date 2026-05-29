@@ -44,16 +44,37 @@ def _fetch_current_user_info() -> Optional[Dict[str, Any]]:
 
     Resolves who ``assigned_to_id="me"`` maps to — crucial when a shared
     or robot API key is in use, where "me" is not the human operator.
+
+    Uses ``GET /my/account.json`` via requests (not redminelib's
+    ``user.get('current')`` which hits ``/users/current.json`` and requires
+    admin rights).
     """
     try:
-        from .._client import _get_redmine_client
+        import requests
+        from .. import _client
 
-        user = _get_redmine_client().user.get("current")
-        firstname = getattr(user, "firstname", "") or ""
-        lastname = getattr(user, "lastname", "") or ""
+        url = (_client.REDMINE_URL or "").rstrip("/") + "/my/account.json"
+        if not url.startswith("http"):
+            return None
+
+        if _client.REDMINE_API_KEY:
+            headers = {"X-Redmine-API-Key": _client.REDMINE_API_KEY}
+            auth = None
+        elif _client.REDMINE_USERNAME and _client.REDMINE_PASSWORD:
+            headers = {}
+            auth = (_client.REDMINE_USERNAME, _client.REDMINE_PASSWORD)
+        else:
+            return None
+
+        r = requests.get(url, headers=headers, auth=auth, timeout=5)
+        if r.status_code != 200:
+            return None
+        user = r.json().get("user", {})
+        firstname = user.get("firstname", "") or ""
+        lastname = user.get("lastname", "") or ""
         return {
-            "id": getattr(user, "id", None),
-            "login": getattr(user, "login", None),
+            "id": user.get("id"),
+            "login": user.get("login"),
             "name": f"{firstname} {lastname}".strip() or None,
         }
     except Exception as exc:
