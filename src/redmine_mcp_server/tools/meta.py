@@ -45,15 +45,16 @@ def _fetch_current_user_info() -> Optional[Dict[str, Any]]:
     Resolves who ``assigned_to_id="me"`` maps to — crucial when a shared
     or robot API key is in use, where "me" is not the human operator.
 
-    Uses ``GET /my/account.json`` via requests (not redminelib's
-    ``user.get('current')`` which hits ``/users/current.json`` and requires
-    admin rights).
+    Uses ``GET /users/current.json`` via requests — works on Redmine 3.x
+    and later. ``/my/account.json`` is not reliably available on older
+    Redmine instances. redminelib's ``user.get('current')`` is not used
+    because it requires admin rights on some setups.
     """
     try:
         import requests
         from .. import _client
 
-        url = (_client.REDMINE_URL or "").rstrip("/") + "/my/account.json"
+        url = (_client.REDMINE_URL or "").rstrip("/") + "/users/current.json"
         if not url.startswith("http"):
             return None
 

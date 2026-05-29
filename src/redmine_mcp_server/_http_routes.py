@@ -116,10 +116,12 @@ async def _probe_redmine_legacy() -> tuple[str, str | None]:
     if not (REDMINE_API_KEY or (REDMINE_USERNAME and REDMINE_PASSWORD)):
         return "unconfigured", "no credentials configured"
 
-    # Use httpx directly against /my/account.json.
-    # redminelib's user.get('current') hits /users/current.json which requires
-    # admin rights and fails for non-admin API keys.
-    url = REDMINE_URL.rstrip("/") + "/my/account.json"
+    # Use httpx directly against /users/current.json.
+    # This endpoint works on Redmine 3.x and later (/my/account.json is
+    # not reliably available on older instances).
+    # redminelib's user.get('current') is NOT used here because it requires
+    # admin rights on some Redmine setups.
+    url = REDMINE_URL.rstrip("/") + "/users/current.json"
     try:
         if REDMINE_API_KEY:
             headers = {"X-Redmine-API-Key": REDMINE_API_KEY}
