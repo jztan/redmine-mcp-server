@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Fixed
+- `scripts/release.py` now recognizes comma-separated contributor entries (`- @user, did X`) when building the GitHub release notes. The author-parsing regex previously accepted only colon, hyphen, en dash, and em dash separators, so comma-style entries failed to parse and the generated `## Acknowledgements` block came out empty. This silently dropped the Contributors credits from the v2.0.1 and v2.1.0 GitHub releases (the CHANGELOG entries themselves were unaffected); both releases have been backfilled.
 
 ## [2.1.0] - 2026-05-29
 ### Security
