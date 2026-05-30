@@ -90,12 +90,68 @@ async def _probe_introspection() -> tuple[str, Optional[str]]:
     return result
 
 
+async def _probe_redmine_legacy() -> tuple[str, str | None]:
+    """Check Redmine connectivity for legacy (API key / password) auth mode.
+
+    Calls ``GET /users/current.json`` using the configured credentials.
+
+    Returns:
+        ``("ok", None)`` — credentials valid and Redmine reachable.
+        ``("unconfigured", "<reason>")`` — URL or credentials not set;
+            health status is NOT degraded (server hasn't been configured yet).
+        ``("unreachable", "<reason>")`` — credentials present but Redmine
+            rejected or could not be reached; health status IS degraded.
+
+    Not cached — auth failures should surface on every health poll.
+    """
+    from ._client import (
+        REDMINE_API_KEY,
+        REDMINE_PASSWORD,
+        REDMINE_URL,
+        REDMINE_USERNAME,
+    )
+
+    if not REDMINE_URL:
+        return "unconfigured", "REDMINE_URL not set"
+    if not (REDMINE_API_KEY or (REDMINE_USERNAME and REDMINE_PASSWORD)):
+        return "unconfigured", "no credentials configured"
+
+    # Use httpx directly against /users/current.json.
+    # This endpoint works on Redmine 3.x and later (/my/account.json is
+    # not reliably available on older instances).
+    # redminelib's user.get('current') is NOT used here because it requires
+    # admin rights on some Redmine setups.
+    url = REDMINE_URL.rstrip("/") + "/users/current.json"
+    try:
+        if REDMINE_API_KEY:
+            headers = {"X-Redmine-API-Key": REDMINE_API_KEY}
+            auth = None
+        else:
+            headers = {}
+            auth = (REDMINE_USERNAME, REDMINE_PASSWORD)
+        async with httpx.AsyncClient(timeout=5) as client:
+            r = await client.get(url, headers=headers, auth=auth)
+        if r.status_code == 200:
+            return "ok", None
+        logger.warning(
+            "legacy_redmine_probe_failure status_code=%s url=%s", r.status_code, url
+        )
+        return "unreachable", f"HTTP {r.status_code}"
+    except httpx.RequestError as exc:
+        reason = type(exc).__name__
+        logger.warning("legacy_redmine_probe_failure error=%s url=%s", reason, url)
+        return "unreachable", reason
+
+
 async def health_check(request):
     """Health check endpoint for container orchestration and monitoring.
 
     In OAuth mode, also probes Doorkeeper's ``/oauth/introspect`` to surface
     upstream availability that was lost in the 503->401 collapse when
     FastMCP native auth replaced the bespoke middleware.
+
+    In legacy mode, probes ``GET /users/current.json`` to verify the configured
+    API key (or username/password) is accepted by Redmine.
 
     Returns HTTP 200 in both healthy and degraded states so container
     orchestrators continue treating the endpoint as a binary liveness
@@ -123,6 +179,16 @@ async def health_check(request):
             checks["introspection_detail"] = detail
         response["checks"] = checks
         if probe_status != "ok":
+            response["status"] = "degraded"
+    else:
+        probe_status, detail = await _probe_redmine_legacy()
+        checks: dict = {"redmine": probe_status}
+        if detail:
+            checks["redmine_detail"] = detail
+        response["checks"] = checks
+        # "unconfigured" means the server hasn't been set up yet — not a
+        # runtime failure, so don't degrade. Only degrade on "unreachable".
+        if probe_status == "unreachable":
             response["status"] = "degraded"
 
     return JSONResponse(response)

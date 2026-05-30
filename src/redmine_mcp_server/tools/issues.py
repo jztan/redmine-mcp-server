@@ -588,9 +588,13 @@ async def list_redmine_issues(
             to discover specific numeric IDs.
         tracker_id: Filter by tracker ID.
         assigned_to_id: Filter by assignee. Accepts a numeric user ID or
-            the literal string ``"me"`` (the only valid string sentinel,
-            retrieves issues assigned to the currently authenticated
-            user). Arbitrary strings are rejected at the FastMCP boundary.
+            the literal string ``"me"`` (retrieves issues assigned to the
+            currently authenticated user — i.e. the owner of the
+            configured ``REDMINE_API_KEY``, which may be a shared or robot
+            account rather than the human operator). Call
+            ``get_mcp_server_info`` first to confirm who ``"me"`` resolves
+            to when results are unexpectedly empty. Arbitrary strings are
+            rejected at the FastMCP boundary.
         priority_id: Filter by priority ID.
         fixed_version_id: Filter by target version/milestone ID.
         sort: Sort order (e.g., "updated_on:desc").
