@@ -278,6 +278,17 @@ This guide covers common issues and solutions for the Redmine MCP Server.
    - Ensure Redmine administrator has enabled REST API
    - Check in Redmine: Administration → Settings → API → "Enable REST web service"
 
+4. **Confirm credentials with the health endpoint (legacy mode)**
+   ```bash
+   curl http://localhost:8000/health
+   ```
+   In legacy mode, `/health` probes Redmine with the configured credentials and reports the result under `checks.redmine`:
+   - `"redmine": "ok"`: credentials accepted and Redmine reachable.
+   - `"redmine": "unreachable"` with `"status": "degraded"`: credentials are present but Redmine rejected them or could not be reached (see `checks.redmine_detail`, e.g. `HTTP 401`).
+   - `"redmine": "unconfigured"` with `"status": "ok"`: `REDMINE_URL` or credentials are not set yet (not a runtime failure).
+
+   The response is always HTTP 200 so orchestrators keep treating it as a binary liveness probe; inspect the JSON `status` field for the real state.
+
 ### Username/Password Authentication Failed
 
 **Symptoms:**

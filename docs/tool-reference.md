@@ -612,7 +612,7 @@ List Redmine issues with flexible filtering and pagination support. A general-pu
 - `project_id` (integer or string, optional): Filter by project (numeric ID or string identifier)
 - `status_id` (integer, optional): Filter by status ID
 - `tracker_id` (integer, optional): Filter by tracker ID
-- `assigned_to_id` (integer or string, optional): Filter by assignee. Use a numeric user ID or the special value `'me'` to retrieve issues assigned to the currently authenticated user.
+- `assigned_to_id` (integer or string, optional): Filter by assignee. Use a numeric user ID or the special value `'me'` to retrieve issues assigned to the currently authenticated user. Note that `'me'` resolves to the owner of the configured `REDMINE_API_KEY`, which may be a shared or robot account rather than the human operator. If results come back unexpectedly empty, call [`get_mcp_server_info`](#get_mcp_server_info) to confirm who `'me'` maps to.
 - `priority_id` (integer, optional): Filter by priority ID
 - `fixed_version_id` (integer, optional): Filter by target version/milestone ID
 - `sort` (string, optional): Sort order (e.g., `"updated_on:desc"`)
@@ -2179,7 +2179,7 @@ manage_document(
 
 ### `get_mcp_server_info`
 
-Return the MCP server's version and enabled-feature flags. Use this tool to detect deployment lag (the running server may be behind a recently-shipped patch) before relying on a fix that landed on `develop` — compare `server_version` against the release / commit you expect.
+Return the MCP server's version, enabled-feature flags, and the identity of the authenticated Redmine user. Use this tool to detect deployment lag (the running server may be behind a recently-shipped patch) before relying on a fix that landed on `develop` (compare `server_version` against the release / commit you expect), and to confirm who `assigned_to_id="me"` resolves to.
 
 **Parameters:** None
 
@@ -2187,6 +2187,7 @@ Return the MCP server's version and enabled-feature flags. Use this tool to dete
 - `server_version` (string): the deployed package version (from `importlib.metadata`). The literal `"0.0.0+unknown"` when the package metadata is unavailable (rare; source-tree runs without an editable install).
 - `read_only_mode` (boolean): whether `REDMINE_MCP_READ_ONLY` is enabled. When `True`, all write tools refuse with the standard read-only error.
 - `auth_mode` (string): `"oauth"` or `"legacy"`.
+- `current_user` (dict or null): `{id, login, name}` for the authenticated Redmine user behind the configured API key. `null` when the server cannot reach Redmine (check `/health` for connectivity status). Use this to confirm who `assigned_to_id="me"` resolves to, which matters when a shared or robot API key is in use.
 - `plugin_flags` (dict): which plugin-gated tool families are enabled. Keys: `agile`, `checklists`, `products`, `crm`, `dmsf`. `True` means the corresponding `manage_*` / `get_*` tools are routable and will reach the underlying plugin endpoints; `False` means they will return a "feature disabled" error envelope.
 
 The response intentionally excludes credentials, internal hostnames, file-system paths, and any other operator config that a caller doesn't need to know to choose its call shape. Only flags that change *call shape* are surfaced.
@@ -2197,6 +2198,7 @@ The response intentionally excludes credentials, internal hostnames, file-system
     "server_version": "1.3.0",
     "read_only_mode": false,
     "auth_mode": "legacy",
+    "current_user": {"id": 5, "login": "jdoe", "name": "Jane Doe"},
     "plugin_flags": {
         "agile": false,
         "checklists": false,
@@ -2211,3 +2213,4 @@ The response intentionally excludes credentials, internal hostnames, file-system
 - Before re-probing a recently-shipped fix to confirm the deployment has caught up.
 - Before relying on a plugin-gated tool (`manage_contact`, `manage_product`, `manage_document`, `get_checklist`, etc.) — `plugin_flags` tells you whether the call will succeed or return "feature disabled".
 - Before adapting to `auth_mode` if your caller has different code paths for OAuth vs legacy.
+- When `list_redmine_issues(assigned_to_id="me")` returns unexpectedly empty results: `current_user` shows the identity behind the configured API key, which may be a shared or robot account rather than the human operator.

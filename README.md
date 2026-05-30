@@ -509,7 +509,7 @@ These tools require only a Redmine instance and credentials — no extra plugins
   - [`get_gantt_chart`](docs/tool-reference.md#get_gantt_chart) - Retrieve project timeline data: issues with dates, dependencies, and milestones
 
 - **Meta** (1 tool)
-  - [`get_mcp_server_info`](docs/tool-reference.md#get_mcp_server_info) - Report server version, auth mode, read-only state, and which plugin-gated tool families are enabled. Use to detect deployment lag before relying on a recently-shipped fix.
+  - [`get_mcp_server_info`](docs/tool-reference.md#get_mcp_server_info) - Report server version, auth mode, read-only state, the authenticated user (`current_user`), and which plugin-gated tool families are enabled. Use to detect deployment lag before relying on a recently-shipped fix, or to confirm who `assigned_to_id="me"` resolves to.
 
 ### Plugin-gated tools (5, opt in via env var)
 

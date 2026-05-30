@@ -109,7 +109,7 @@ Cross-cutting utilities live as flat private modules:
 | `_custom_fields.py` | Custom-field parsing, autofill, and update coercion |
 | `_ssrf.py` | SSRF protection for `upload_file`'s `source_url` |
 | `_cleanup.py` | Background cleanup task |
-| `_http_routes.py` | Starlette routes (`/health` with Doorkeeper introspection probe, `/files/{id}`, `/cleanup/status`) |
+| `_http_routes.py` | Starlette routes (`/health` with Doorkeeper introspection probe in OAuth mode and a Redmine credential probe in legacy mode, `/files/{id}`, `/cleanup/status`) |
 | `_decorators.py` | `@action_dispatch` decorator + `ActionMode` enum |
 | `_auth.py` | `build_remote_auth()` factory: composes `IntrospectionTokenVerifier` (RFC 7662) into a `RemoteAuthProvider` for FastMCP v3 native auth (OAuth mode only). |
 | `_tool_error_middleware.py` | FastMCP middleware that surfaces tool-validation errors with a clean payload. |
@@ -583,7 +583,7 @@ redmine-mcp-server/
 │   ├── _custom_fields.py    # Custom-field parsing/coercion
 │   ├── _ssrf.py             # SSRF protection for upload_file source_url
 │   ├── _cleanup.py          # Background attachment cleanup task
-│   ├── _http_routes.py      # Starlette routes (/health w/ introspection probe, /files, /cleanup/status)
+│   ├── _http_routes.py      # Starlette routes (/health w/ introspection + legacy redmine probe, /files, /cleanup/status)
 │   ├── _decorators.py       # `@action_dispatch` decorator + `ActionMode` enum
 │   ├── _tool_error_middleware.py  # FastMCP middleware that normalizes tool validation errors
 │   ├── oauth_scopes.py      # READ_SCOPES / WRITE_SCOPES inventory + advertised_scopes()
