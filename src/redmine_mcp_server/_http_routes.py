@@ -93,7 +93,7 @@ async def _probe_introspection() -> tuple[str, Optional[str]]:
 async def _probe_redmine_legacy() -> tuple[str, str | None]:
     """Check Redmine connectivity for legacy (API key / password) auth mode.
 
-    Calls ``GET /my/account.json`` using the configured credentials.
+    Calls ``GET /users/current.json`` using the configured credentials.
 
     Returns:
         ``("ok", None)`` — credentials valid and Redmine reachable.
@@ -150,7 +150,7 @@ async def health_check(request):
     upstream availability that was lost in the 503->401 collapse when
     FastMCP native auth replaced the bespoke middleware.
 
-    In legacy mode, probes ``GET /my/account.json`` to verify the configured
+    In legacy mode, probes ``GET /users/current.json`` to verify the configured
     API key (or username/password) is accepted by Redmine.
 
     Returns HTTP 200 in both healthy and degraded states so container

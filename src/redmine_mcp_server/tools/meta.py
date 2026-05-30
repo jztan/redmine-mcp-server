@@ -39,19 +39,19 @@ from ..server import mcp
 logger = logging.getLogger("redmine_mcp_server")
 
 
-def _fetch_current_user_info() -> Optional[Dict[str, Any]]:
+async def _fetch_current_user_info() -> Optional[Dict[str, Any]]:
     """Return {id, login, name} for the authenticated user, or None on failure.
 
     Resolves who ``assigned_to_id="me"`` maps to — crucial when a shared
     or robot API key is in use, where "me" is not the human operator.
 
-    Uses ``GET /users/current.json`` via requests — works on Redmine 3.x
+    Uses ``GET /users/current.json`` via async httpx — works on Redmine 3.x
     and later. ``/my/account.json`` is not reliably available on older
     Redmine instances. redminelib's ``user.get('current')`` is not used
     because it requires admin rights on some setups.
     """
     try:
-        import requests
+        import httpx
         from .. import _client
 
         url = (_client.REDMINE_URL or "").rstrip("/") + "/users/current.json"
@@ -67,7 +67,8 @@ def _fetch_current_user_info() -> Optional[Dict[str, Any]]:
         else:
             return None
 
-        r = requests.get(url, headers=headers, auth=auth, timeout=5)
+        async with httpx.AsyncClient(timeout=5) as client:
+            r = await client.get(url, headers=headers, auth=auth)
         if r.status_code != 200:
             return None
         user = r.json().get("user", {})
@@ -145,7 +146,7 @@ async def get_mcp_server_info() -> Dict[str, Any]:
         "server_version": __version__,
         "read_only_mode": _is_read_only_mode(),
         "auth_mode": (os.environ.get("REDMINE_AUTH_MODE") or "legacy").lower(),
-        "current_user": _fetch_current_user_info(),
+        "current_user": await _fetch_current_user_info(),
         "plugin_flags": {
             "agile": _is_agile_enabled(),
             "checklists": _is_checklists_enabled(),
