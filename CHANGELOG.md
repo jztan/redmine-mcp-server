@@ -14,10 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - `scripts/release.py` now recognizes comma-separated contributor entries (`- @user, did X`) when building the GitHub release notes. The author-parsing regex previously accepted only colon, hyphen, en dash, and em dash separators, so comma-style entries failed to parse and the generated `## Acknowledgements` block came out empty. This silently dropped the Contributors credits from the v2.0.1 and v2.1.0 GitHub releases (the CHANGELOG entries themselves were unaffected); both releases have been backfilled.
+- OAuth mode: the `/.well-known/oauth-authorization-server/mcp` discovery document now reports `issuer` as the Redmine URL instead of the MCP server's own base URL. On a split-host deployment (`REDMINE_URL` and `REDMINE_MCP_BASE_URL` on different hosts), the previous `issuer` disagreed with `authorization_servers` in the protected-resource document, so a spec-strict client (e.g. VS Code 1.122.1) treated the MCP server as the authorization server and requested `/authorize` on the MCP host, which 404s. The issuer now matches `authorization_servers` and the endpoint URLs, all naming Redmine, per RFC 8414 §3.3. ([#140](https://github.com/jztan/redmine-mcp-server/issues/140))
 
 ### Contributors
 - @Vitexus, exposed `current_user` in `get_mcp_server_info` and added the legacy-mode Redmine probe to `/health` ([#139](https://github.com/jztan/redmine-mcp-server/pull/139))
 - @Bricklou, requested publishing the Docker image to the GitHub Container Registry ([#141](https://github.com/jztan/redmine-mcp-server/issues/141))
+- @timcomport, reported and diagnosed the OAuth discovery issuer mismatch on split-host deployments ([#140](https://github.com/jztan/redmine-mcp-server/issues/140))
 
 ## [2.1.0] - 2026-05-29
 ### Security

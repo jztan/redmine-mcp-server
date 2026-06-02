@@ -86,6 +86,7 @@ async def test_authorization_server_suffix_path_returns_200(oauth_app):
         r = await client.get("/.well-known/oauth-authorization-server/mcp")
     assert r.status_code == 200
     body = r.json()
+    assert body["issuer"] == "https://r.example.com/"
     assert body["authorization_endpoint"] == "https://r.example.com/oauth/authorize"
     assert body["token_endpoint"] == "https://r.example.com/oauth/token"
     assert body["revocation_endpoint"] == "https://r.example.com/oauth/revoke"
@@ -135,3 +136,31 @@ async def test_scope_sources_filtered_consistently_in_read_only_mode(monkeypatch
     for write_scope in WRITE_SCOPES:
         assert write_scope not in pr["scopes_supported"]
         assert write_scope not in asm["scopes_supported"]
+
+
+@pytest.mark.asyncio
+async def test_issuer_matches_authorization_servers(oauth_app):
+    """AS-metadata issuer must be byte-identical to the authorization-server
+    identifier the protected-resource doc advertises (RFC 8414 §3.3), so a
+    spec-strict client resolves them to the same server. Regression for #140:
+    on a split-host deployment the issuer was sourced from REDMINE_MCP_BASE_URL
+    and named the MCP server instead of Redmine.
+
+    The assertion is exact (no trailing-slash normalization) on purpose: the
+    protected-resource doc serializes authorization_servers via pydantic
+    AnyHttpUrl, which appends a trailing slash for bare hosts, so the issuer
+    must carry it too or a byte-comparing client still sees a mismatch.
+    """
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=oauth_app), base_url="http://test"
+    ) as client:
+        pr = (await client.get("/.well-known/oauth-protected-resource/mcp")).json()
+        asm = (await client.get("/.well-known/oauth-authorization-server/mcp")).json()
+
+    auth_servers = [str(u) for u in pr["authorization_servers"]]
+
+    # issuer must byte-match one of the advertised authorization servers
+    assert asm["issuer"] in auth_servers
+    # ...and that server is Redmine, not the MCP server's own base URL
+    assert "r.example.com" in asm["issuer"]
+    assert "localhost:3040" not in asm["issuer"]

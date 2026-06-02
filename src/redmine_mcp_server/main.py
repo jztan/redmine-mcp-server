@@ -17,6 +17,7 @@ import os
 import uvicorn
 import httpx
 from importlib.metadata import version, PackageNotFoundError
+from pydantic import AnyHttpUrl
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -63,12 +64,17 @@ async def oauth_authorization_server(request: Request):
     cleanly testable without module reloads.
     """
     redmine_url = (os.environ.get("REDMINE_URL", "") or "").rstrip("/")
-    base_url = (
-        os.environ.get("REDMINE_MCP_BASE_URL", "http://localhost:3040") or ""
-    ).rstrip("/")
+    # issuer must be byte-identical to the authorization-server identifier the
+    # protected-resource doc advertises in authorization_servers, which _auth.py
+    # builds as AnyHttpUrl(REDMINE_URL). Reuse the same normalization so a
+    # spec-strict client (RFC 8414 §3.3) treats the two as equal, including the
+    # trailing slash pydantic adds for bare hosts. Sourcing issuer from
+    # REDMINE_MCP_BASE_URL made split-host deployments advertise the MCP server
+    # as the AS (#140).
+    issuer = str(AnyHttpUrl(redmine_url)) if redmine_url else redmine_url
     return JSONResponse(
         {
-            "issuer": base_url,
+            "issuer": issuer,
             "authorization_endpoint": f"{redmine_url}/oauth/authorize",
             "token_endpoint": f"{redmine_url}/oauth/token",
             "revocation_endpoint": f"{redmine_url}/oauth/revoke",
