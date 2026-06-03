@@ -552,6 +552,21 @@ docker build -t redmine-mcp-server .
 docker run -p 8000:8000 --env-file .env.docker redmine-mcp-server
 ```
 
+### Use the Published Image
+
+Prebuilt multi-architecture images (`linux/amd64`, `linux/arm64`) are published to
+the GitHub Container Registry on each release, so you can run the server without
+building it yourself:
+
+```bash
+docker pull ghcr.io/jztan/redmine-mcp-server:latest
+docker run -p 8000:8000 --env-file .env.docker ghcr.io/jztan/redmine-mcp-server:latest
+```
+
+Pin to an exact version (e.g. `ghcr.io/jztan/redmine-mcp-server:2.2.0`) or track a
+minor series (e.g. `:2.2`). Published images are available starting from the next
+release.
+
 ### Production Deployment
 
 Use the automated deployment script:
