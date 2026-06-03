@@ -10,12 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `get_mcp_server_info` now returns `current_user` (`{id, login, name}`) for the authenticated Redmine user, or `null` when Redmine is unreachable. This lets a caller see who `assigned_to_id="me"` resolves to, which matters when a shared or robot API key is in use and `"me"` is not the human operator. The `list_redmine_issues` `assigned_to_id` docs now point to `get_mcp_server_info` when `"me"` queries return unexpectedly empty. ([#139](https://github.com/jztan/redmine-mcp-server/pull/139))
 - `/health` in legacy mode now probes `GET /users/current.json` to verify the configured credentials and reports the result under `checks.redmine`: `"ok"` when accepted, `"unreachable"` with `status: "degraded"` on auth failure, and `"unconfigured"` with `status: "ok"` when no URL or credentials are set. Auth misconfiguration now surfaces at the health check instead of only on the first failed tool call. The response stays HTTP 200 so orchestrators keep treating it as a binary liveness probe. ([#139](https://github.com/jztan/redmine-mcp-server/pull/139))
+- Docker images are now built and published to the GitHub Container Registry (`ghcr.io/jztan/redmine-mcp-server`) on each release. The release workflow builds multi-architecture images (`linux/amd64`, `linux/arm64`) and applies the version tags only after the matching PyPI wheel publishes, so a release never produces an image without its wheel. Pull `:latest`, a pinned `:X.Y.Z`, or a minor series `:X.Y`. Requested by @Bricklou ([#141](https://github.com/jztan/redmine-mcp-server/issues/141)).
 
 ### Fixed
 - `scripts/release.py` now recognizes comma-separated contributor entries (`- @user, did X`) when building the GitHub release notes. The author-parsing regex previously accepted only colon, hyphen, en dash, and em dash separators, so comma-style entries failed to parse and the generated `## Acknowledgements` block came out empty. This silently dropped the Contributors credits from the v2.0.1 and v2.1.0 GitHub releases (the CHANGELOG entries themselves were unaffected); both releases have been backfilled.
 
 ### Contributors
 - @Vitexus, exposed `current_user` in `get_mcp_server_info` and added the legacy-mode Redmine probe to `/health` ([#139](https://github.com/jztan/redmine-mcp-server/pull/139))
+- @Bricklou, requested publishing the Docker image to the GitHub Container Registry ([#141](https://github.com/jztan/redmine-mcp-server/issues/141))
 
 ## [2.1.0] - 2026-05-29
 ### Security
