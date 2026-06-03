@@ -56,7 +56,7 @@ jobs:
           verbose: true
 
   build-image:
-    # No `needs:` — runs in parallel with `test` to shorten the release critical
+    # No `needs:`, so it runs in parallel with `test` to shorten the release critical
     # path (release.py polls the run with a 900s timeout). Atomicity is preserved
     # because publish-pypi gates on BOTH test and build-image below.
     runs-on: ubuntu-latest
