@@ -741,6 +741,27 @@ class TestRedmineHandler:
         assert "error" in result
 
     @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_create_redmine_issue_404_warns_possible_creation(self, mock_redmine):
+        """A 404 on create is ambiguous (often a reverse-proxy redirect): the
+        issue may have been created, so warn the caller to verify before
+        retrying instead of returning the bare 'not found' message."""
+        from redminelib.exceptions import ResourceNotFoundError
+
+        mock_redmine.issue.create.side_effect = ResourceNotFoundError()
+
+        from redmine_mcp_server.tools.issues import create_redmine_issue
+
+        result = await create_redmine_issue(1, "A", "B")
+
+        assert "error" in result
+        # Must not be the generic bare 404 message that invites blind retries.
+        assert result["error"] != "Requested resource not found."
+        lowered = result["error"].lower()
+        assert "may have been created" in lowered
+        assert "retry" in lowered or "duplicate" in lowered
+
+    @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.redmine", None)
     async def test_create_redmine_issue_no_client(self):
         """Test issue creation when client is not initialized."""
