@@ -7,7 +7,7 @@ import logging
 from typing import Annotated, Any, Dict, List, Literal, Optional, Set, Union
 
 from pydantic import Field
-from redminelib.exceptions import ValidationError
+from redminelib.exceptions import ResourceNotFoundError, ValidationError
 
 from .._cleanup import _ensure_cleanup_started
 from .._client import _get_redmine_client, logger
@@ -1104,6 +1104,29 @@ async def create_redmine_issue(
                 ),
                 str(retry_error),
             )
+    except ResourceNotFoundError:
+        # A 404 on a create POST is anomalous: the issue may have been created
+        # anyway. This commonly happens behind a reverse proxy that redirects or
+        # rewrites the request (e.g. a trailing-slash or path canonicalization),
+        # so Redmine processes the POST while the client ultimately sees a 404.
+        # Returning the bare "not found" message invites blind retries and risks
+        # silent duplicate issues (see #146), so warn the caller to verify first.
+        logger.warning(
+            "create issue returned HTTP 404 for project %s; the issue may have "
+            "been created. Suspect a reverse-proxy redirect or misconfigured "
+            "REDMINE_URL.",
+            project_id,
+        )
+        return {
+            "error": (
+                "Redmine returned HTTP 404 for the create request, but the issue "
+                "may have been created anyway. This usually indicates a "
+                "reverse-proxy redirect or a misconfigured REDMINE_URL (for "
+                "example a trailing-slash or path rewrite). Before retrying, "
+                "check Redmine for a newly created issue to avoid creating a "
+                "duplicate."
+            )
+        }
     except Exception as e:
         return _handle_redmine_error(e, f"creating issue in project {project_id}")
 
