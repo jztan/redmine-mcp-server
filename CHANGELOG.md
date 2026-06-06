@@ -7,6 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Security
+- Pin `pyjwt[crypto]>=2.13.0,<3` to pull the fix for four advisories in 2.12.1: SSRF via `PyJWKClient` non-HTTP URL handlers (CVE-2026-48522), unbounded JWKS fetches driven by an unverified `kid` header (CVE-2026-48524), incorrect detached-JWS (`b64:false`) payload decoding (CVE-2026-48525), and HMAC/asymmetric algorithm confusion where an issuer public key is accepted as the HMAC secret (CVE-2026-48526). `pyjwt` is a transitive dependency via `mcp`, so it had no direct floor before this. Verified the 2.13.0 release is published by pyjwt maintainer Jose Padilla.
+
 ### Added
 - `get_mcp_server_info` now returns `current_user` (`{id, login, name}`) for the authenticated Redmine user, or `null` when Redmine is unreachable. This lets a caller see who `assigned_to_id="me"` resolves to, which matters when a shared or robot API key is in use and `"me"` is not the human operator. The `list_redmine_issues` `assigned_to_id` docs now point to `get_mcp_server_info` when `"me"` queries return unexpectedly empty. ([#139](https://github.com/jztan/redmine-mcp-server/pull/139))
 - `/health` in legacy mode now probes `GET /users/current.json` to verify the configured credentials and reports the result under `checks.redmine`: `"ok"` when accepted, `"unreachable"` with `status: "degraded"` on auth failure, and `"unconfigured"` with `status: "ok"` when no URL or credentials are set. Auth misconfiguration now surfaces at the health check instead of only on the first failed tool call. The response stays HTTP 200 so orchestrators keep treating it as a binary liveness probe. ([#139](https://github.com/jztan/redmine-mcp-server/pull/139))

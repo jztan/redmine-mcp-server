@@ -33,6 +33,7 @@ dependencies = [
     "uvicorn>=0.24.0,<1",
     "python-multipart>=0.0.27,<1",
     "urllib3>=2.7.0,<3",
+    "pyjwt[crypto]>=2.13.0,<3",
 ]
 
 [project.urls]
