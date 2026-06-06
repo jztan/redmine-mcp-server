@@ -743,9 +743,12 @@ class TestRedmineHandler:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.redmine")
     async def test_create_redmine_issue_404_warns_possible_creation(self, mock_redmine):
-        """A 404 on create is ambiguous (often a reverse-proxy redirect): the
-        issue may have been created, so warn the caller to verify before
-        retrying instead of returning the bare 'not found' message."""
+        """A 404 on create is ambiguous: it generally comes from the deployment
+        or from Redmine itself (a sub-URI/Passenger deployment, a reverse proxy,
+        or a plugin or controller filter on the create path) rather than a
+        missing resource, so the issue may have been created. Warn the caller to
+        verify before retrying instead of returning the bare 'not found'
+        message."""
         from redminelib.exceptions import ResourceNotFoundError
 
         mock_redmine.issue.create.side_effect = ResourceNotFoundError()

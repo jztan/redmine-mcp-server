@@ -1106,25 +1106,30 @@ async def create_redmine_issue(
             )
     except ResourceNotFoundError:
         # A 404 on a create POST is anomalous: the issue may have been created
-        # anyway. This commonly happens behind a reverse proxy that redirects or
-        # rewrites the request (e.g. a trailing-slash or path canonicalization),
-        # so Redmine processes the POST while the client ultimately sees a 404.
-        # Returning the bare "not found" message invites blind retries and risks
-        # silent duplicate issues (see #146), so warn the caller to verify first.
+        # anyway. The 404 generally comes from the deployment or from Redmine
+        # itself rather than a genuinely missing resource (e.g. a sub-URI or
+        # Passenger deployment, a reverse proxy, or a plugin or controller
+        # filter on the create path), so Redmine can process the POST while the
+        # client ultimately sees a 404. Returning the bare "not found" message
+        # invites blind retries and risks silent duplicate issues (see #146), so
+        # warn the caller to verify first.
         logger.warning(
             "create issue returned HTTP 404 for project %s; the issue may have "
-            "been created. Suspect a reverse-proxy redirect or misconfigured "
-            "REDMINE_URL.",
+            "been created. The 404 likely originates from the deployment or "
+            "Redmine itself (a sub-URI/Passenger setup, a reverse proxy, or a "
+            "plugin or controller filter on the create path) rather than a "
+            "missing resource.",
             project_id,
         )
         return {
             "error": (
                 "Redmine returned HTTP 404 for the create request, but the issue "
-                "may have been created anyway. This usually indicates a "
-                "reverse-proxy redirect or a misconfigured REDMINE_URL (for "
-                "example a trailing-slash or path rewrite). Before retrying, "
-                "check Redmine for a newly created issue to avoid creating a "
-                "duplicate."
+                "may have been created anyway. This usually originates from the "
+                "deployment or from Redmine itself rather than a missing "
+                "resource (for example a sub-URI/Passenger deployment, a reverse "
+                "proxy, or a plugin or controller filter on the create path). "
+                "Before retrying, check Redmine for a newly created issue to "
+                "avoid creating a duplicate."
             )
         }
     except Exception as e:
