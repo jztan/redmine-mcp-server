@@ -4,7 +4,46 @@ Configuration file for pytest.
 This file configures pytest markers and test settings for the Redmine MCP server tests.
 """
 
+import os
+import sys
+
 import pytest
+
+
+def _integration_run() -> bool:
+    """True only when the invocation explicitly targets integration tests.
+
+    Unit runs use ``-m "not integration"`` and the release/full run uses no
+    marker; both must be hermetic. The integration-only run (``-m integration``)
+    needs the developer's real ``.env`` config, so we leave it alone.
+    """
+    argv = sys.argv
+    for i, arg in enumerate(argv):
+        if arg == "-m" and i + 1 < len(argv):
+            return argv[i + 1].strip() == "integration"
+        if arg.startswith("-m") and len(arg) > 2:
+            return arg[2:].strip() == "integration"
+    return False
+
+
+# Hermeticity guard (must run before any test module imports _client).
+#
+# A developer's local ``.env`` can define REDMINE_URL + credentials that point
+# at a running Redmine. _client loads ``.env`` at import via load_dotenv() and
+# re-runs it on every importlib.reload(), so simply deleting these vars in a
+# fixture does not hold: the next reload re-adds them. python-dotenv defaults to
+# override=False, so pre-seeding the vars as empty strings here makes every
+# load_dotenv() a no-op for them. Empty strings read as "unconfigured" by both
+# _build_legacy_client() and the /health probe (all checks are truthy tests),
+# which is exactly what the unit tests assume.
+if not _integration_run():
+    for _var in (
+        "REDMINE_URL",
+        "REDMINE_API_KEY",
+        "REDMINE_USERNAME",
+        "REDMINE_PASSWORD",
+    ):
+        os.environ[_var] = ""
 
 
 def pytest_configure(config):
