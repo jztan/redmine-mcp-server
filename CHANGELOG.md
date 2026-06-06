@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [2.2.0] - 2026-06-06
 ### Security
 - Pin `pyjwt[crypto]>=2.13.0,<3` to pull the fix for four advisories in 2.12.1: SSRF via `PyJWKClient` non-HTTP URL handlers (CVE-2026-48522), unbounded JWKS fetches driven by an unverified `kid` header (CVE-2026-48524), incorrect detached-JWS (`b64:false`) payload decoding (CVE-2026-48525), and HMAC/asymmetric algorithm confusion where an issuer public key is accepted as the HMAC secret (CVE-2026-48526). `pyjwt` is a transitive dependency via `mcp`, so it had no direct floor before this. Verified the 2.13.0 release is published by pyjwt maintainer Jose Padilla.
 
@@ -875,6 +877,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive authentication support (username/password and API key)
 - Docker containerization support
 
+[2.2.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.2.0
 [2.1.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.1.0
 [2.0.1]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.0.1
 [2.0.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.0.0
