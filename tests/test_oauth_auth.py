@@ -31,11 +31,9 @@ def _build_test_app(introspect_handler):
     ``introspect_handler`` is a callable taking an ``httpx.Request`` and
     returning an ``httpx.Response`` that simulates Doorkeeper's /oauth/introspect.
     """
-    from redmine_mcp_server import _auth, oauth_scopes
-    from redmine_mcp_server import main as main_mod
+    from redmine_mcp_server import oauth_scopes
 
     importlib.reload(oauth_scopes)
-    importlib.reload(_auth)
 
     mock_transport = httpx.MockTransport(introspect_handler)
     mock_client = httpx.AsyncClient(transport=mock_transport)
@@ -54,9 +52,6 @@ def _build_test_app(introspect_handler):
         resource_name="Redmine MCP Server",
     )
     local_mcp = FastMCP("oauth_auth_test", auth=provider)
-    local_mcp.custom_route(
-        "/.well-known/oauth-authorization-server/mcp", methods=["GET"]
-    )(main_mod.oauth_authorization_server)
     return local_mcp.http_app(stateless_http=True)
 
 

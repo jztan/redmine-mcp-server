@@ -35,5 +35,7 @@ def _select_auth_provider(auth_mode: str):
     return None
 
 
-mcp = FastMCP("redmine_mcp_tools", auth=_select_auth_provider(REDMINE_AUTH_MODE))
+AUTH_PROVIDER = _select_auth_provider(REDMINE_AUTH_MODE)
+
+mcp = FastMCP("redmine_mcp_tools", auth=AUTH_PROVIDER)
 mcp.add_middleware(CleanValidationErrorMiddleware())
