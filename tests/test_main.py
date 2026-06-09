@@ -117,6 +117,21 @@ class TestAuthWiring:
         provider = _select_auth_provider("oauth")
         assert isinstance(provider, RemoteAuthProvider)
 
+    def test_oauth_proxy_mode_returns_oauth_proxy(self, monkeypatch, tmp_path):
+        from fastmcp import settings
+        from fastmcp.server.auth.oauth_proxy import OAuthProxy
+
+        monkeypatch.setenv("REDMINE_URL", "https://r.example.com")
+        monkeypatch.setenv("REDMINE_MCP_BASE_URL", "https://mcp.example.com")
+        monkeypatch.setenv("REDMINE_INTROSPECT_CLIENT_ID", "cid")
+        monkeypatch.setenv("REDMINE_INTROSPECT_CLIENT_SECRET", "csec")
+        monkeypatch.setenv("REDMINE_MCP_JWT_SIGNING_KEY", "stable-test-signing-key")
+        monkeypatch.setattr(settings, "home", tmp_path)
+        from redmine_mcp_server.server import _select_auth_provider
+
+        provider = _select_auth_provider("oauth-proxy")
+        assert isinstance(provider, OAuthProxy)
+
     def test_legacy_mode_returns_none(self):
         from redmine_mcp_server.server import _select_auth_provider
 

@@ -146,9 +146,10 @@ async def _probe_redmine_legacy() -> tuple[str, str | None]:
 async def health_check(request):
     """Health check endpoint for container orchestration and monitoring.
 
-    In OAuth mode, also probes Doorkeeper's ``/oauth/introspect`` to surface
-    upstream availability that was lost in the 503->401 collapse when
-    FastMCP native auth replaced the bespoke middleware.
+    In OAuth and OAuth proxy modes, also probes Doorkeeper's
+    ``/oauth/introspect`` to surface upstream availability that was lost in
+    the 503->401 collapse when FastMCP native auth replaced the bespoke
+    middleware.
 
     In legacy mode, probes ``GET /users/current.json`` to verify the configured
     API key (or username/password) is accepted by Redmine.
@@ -172,7 +173,7 @@ async def health_check(request):
         "auth_mode": REDMINE_AUTH_MODE,
     }
 
-    if REDMINE_AUTH_MODE == "oauth":
+    if REDMINE_AUTH_MODE in {"oauth", "oauth-proxy"}:
         probe_status, detail = await _probe_introspection()
         checks: dict = {"introspection": probe_status}
         if detail:

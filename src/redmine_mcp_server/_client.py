@@ -52,8 +52,9 @@ REDMINE_USERNAME = os.getenv("REDMINE_USERNAME")
 REDMINE_PASSWORD = os.getenv("REDMINE_PASSWORD")
 REDMINE_API_KEY = os.getenv("REDMINE_API_KEY")
 
-# Auth mode: "oauth" uses per-request Bearer tokens via OAuth middleware;
-# "legacy" uses REDMINE_API_KEY or REDMINE_USERNAME/REDMINE_PASSWORD (default).
+# Auth mode:
+# - "oauth" and "oauth-proxy" use per-request Bearer tokens via FastMCP auth.
+# - "legacy" uses REDMINE_API_KEY or REDMINE_USERNAME/REDMINE_PASSWORD (default).
 REDMINE_AUTH_MODE = os.getenv("REDMINE_AUTH_MODE", "legacy").lower()
 
 # SSL Configuration (optional)
@@ -98,13 +99,13 @@ if not REDMINE_URL:
         "REDMINE_URL not set. "
         "Please create a .env file in your working directory with REDMINE_URL defined."
     )
-elif REDMINE_AUTH_MODE != "oauth" and not (
+elif REDMINE_AUTH_MODE not in {"oauth", "oauth-proxy"} and not (
     REDMINE_API_KEY or (REDMINE_USERNAME and REDMINE_PASSWORD)
 ):
     logger.warning(
         "No Redmine authentication configured. "
         "Please set REDMINE_API_KEY or REDMINE_USERNAME/REDMINE_PASSWORD "
-        "in your .env file, or set REDMINE_AUTH_MODE=oauth."
+        "in your .env file, or set REDMINE_AUTH_MODE=oauth or oauth-proxy."
     )
 
 
@@ -153,8 +154,8 @@ def _build_legacy_client() -> Redmine:
     else:
         raise RuntimeError(
             "No Redmine authentication available. "
-            "Set REDMINE_AUTH_MODE=oauth or configure REDMINE_API_KEY / "
-            "REDMINE_USERNAME+REDMINE_PASSWORD."
+            "Set REDMINE_AUTH_MODE=oauth or oauth-proxy, or configure "
+            "REDMINE_API_KEY / REDMINE_USERNAME+REDMINE_PASSWORD."
         )
 
 

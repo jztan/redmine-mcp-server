@@ -37,7 +37,7 @@ from ._mount import (  # noqa: E402
 logger = logging.getLogger(__name__)
 
 REDMINE_AUTH_MODE = os.environ.get("REDMINE_AUTH_MODE", "legacy").lower()
-AUTHENTICATED_AUTH_MODES = {"oauth"}
+AUTHENTICATED_AUTH_MODES = {"oauth", "oauth-proxy"}
 
 
 def get_version() -> str:

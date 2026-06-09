@@ -8,8 +8,11 @@ Importing this module does NOT register any tools -- only `tools/__init__.py`
 
 In OAuth mode (``REDMINE_AUTH_MODE=oauth``), the FastMCP instance is
 constructed with a ``RemoteAuthProvider`` that validates Bearer tokens
-against Doorkeeper's RFC 7662 introspection endpoint. In legacy mode the
-instance is built without ``auth=`` and behaves as before.
+against Doorkeeper's RFC 7662 introspection endpoint. In OAuth proxy mode
+(``REDMINE_AUTH_MODE=oauth-proxy``), FastMCP's ``OAuthProxy`` handles client
+registration and the authorization code flow, then validates upstream Redmine
+tokens with the same introspection endpoint. In legacy mode the instance is
+built without ``auth=`` and behaves as before.
 """
 
 import os
@@ -32,6 +35,10 @@ def _select_auth_provider(auth_mode: str):
         from ._auth import build_remote_auth
 
         return build_remote_auth()
+    if auth_mode == "oauth-proxy":
+        from ._oauth_proxy import build_oauth_proxy
+
+        return build_oauth_proxy()
     return None
 
 

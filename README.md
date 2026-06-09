@@ -99,13 +99,18 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `REDMINE_URL` | Yes | – | Base URL of your Redmine instance |
-| `REDMINE_AUTH_MODE` | No | `legacy` | Authentication mode: `legacy` or `oauth` (see [Authentication](#authentication)) |
+| `REDMINE_AUTH_MODE` | No | `legacy` | Authentication mode: `legacy`, `oauth`, or `oauth-proxy` (see [Authentication](#authentication)) |
 | `REDMINE_API_KEY` | Yes† | – | API key (legacy mode only) |
 | `REDMINE_USERNAME` | Yes† | – | Username for basic auth (legacy mode only) |
 | `REDMINE_PASSWORD` | Yes† | – | Password for basic auth (legacy mode only) |
-| `REDMINE_MCP_BASE_URL` | Yes‡ | `http://localhost:3040` | Public base URL of this server, no trailing slash (OAuth mode only) |
-| `REDMINE_INTROSPECT_CLIENT_ID` | Yes‡ | – | Doorkeeper OAuth client ID used by the MCP server to introspect Bearer tokens (RFC 7662). Register a confidential OAuth app in Redmine with `protected_resource?` permission — see [`docs/oauth-setup.md`](docs/oauth-setup.md) Step 2. |
+| `REDMINE_MCP_BASE_URL` | Yes‡ | `http://localhost:3040` | Public base URL of this server, no trailing slash (OAuth modes only) |
+| `FASTMCP_STREAMABLE_HTTP_PATH` | No | `/mcp` | MCP transport path inside `REDMINE_MCP_BASE_URL` |
+| `REDMINE_INTROSPECT_CLIENT_ID` | Yes‡ | – | Doorkeeper OAuth client ID used by the MCP server to introspect Bearer tokens (RFC 7662). Register a confidential OAuth app in Redmine — see [`docs/oauth-setup.md`](docs/oauth-setup.md) Step 2. |
 | `REDMINE_INTROSPECT_CLIENT_SECRET` | Yes‡ | – | Secret for the introspection client |
+| `REDMINE_MCP_JWT_SIGNING_KEY` | Yes§ | – | Stable signing/encryption key used by FastMCP OAuthProxy tokens and storage |
+| `REDMINE_OAUTH_CLIENT_ID` | No | – | Optional upstream Redmine OAuth client ID for `oauth-proxy`; defaults to `REDMINE_INTROSPECT_CLIENT_ID` |
+| `REDMINE_OAUTH_CLIENT_SECRET` | No | – | Optional upstream Redmine OAuth client secret for `oauth-proxy`; defaults to `REDMINE_INTROSPECT_CLIENT_SECRET` |
+| `FASTMCP_HOME` | No | platform default | FastMCP data directory. In `oauth-proxy` mode, encrypted OAuthProxy state is stored below `FASTMCP_HOME/oauth-proxy/` |
 | `HEALTH_INTROSPECTION_TTL_SECONDS` | No | `30` | TTL (seconds) for the `/health` Doorkeeper introspection probe cache. Set to `0` to disable caching. |
 | `SERVER_HOST` | No | `0.0.0.0` | Host/IP the MCP server binds to |
 | `SERVER_PORT` | No | `8000` | Port the MCP server listens on |
@@ -132,7 +137,9 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `REDMINE_ALLOW_PRIVATE_FETCH_URLS` | No | `false` | **Warning:** disables all SSRF protection for attachment fetching. Never set to `true` in production. |
 
 *† Required when `REDMINE_AUTH_MODE=legacy`. Either `REDMINE_API_KEY` or `REDMINE_USERNAME`+`REDMINE_PASSWORD` must be set. API key is recommended.*
-*‡ Required when `REDMINE_AUTH_MODE=oauth`.*
+*‡ Required when `REDMINE_AUTH_MODE=oauth` or `REDMINE_AUTH_MODE=oauth-proxy`.*
+*§ Required when `REDMINE_AUTH_MODE=oauth-proxy`.*
+Secret values can also be supplied with Docker/Kubernetes-style file variables: `REDMINE_INTROSPECT_CLIENT_SECRET_FILE`, `REDMINE_MCP_JWT_SIGNING_KEY_FILE`, and `REDMINE_OAUTH_CLIENT_SECRET_FILE`.
 
 When `REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true`, `create_redmine_issue` retries once on relevant custom-field validation errors (for example `<Field Name> cannot be blank` or `<Field Name> is not included in the list`) and fills values only from:
 - the Redmine custom field `default_value`, or
@@ -202,7 +209,7 @@ For SSL troubleshooting, see the [Troubleshooting Guide](./docs/troubleshooting.
 
 ## Authentication
 
-The server supports two authentication modes, selected via `REDMINE_AUTH_MODE`.
+The server supports three authentication modes, selected via `REDMINE_AUTH_MODE`.
 
 > **Backward compatibility**: `REDMINE_AUTH_MODE` defaults to `legacy`, so all existing deployments continue to work without any configuration changes. OAuth2 support is purely additive — nothing breaks if you never set the variable.
 
@@ -251,6 +258,25 @@ Redmine uses the [Doorkeeper](https://github.com/doorkeeper-gem/doorkeeper) gem 
 - No Dynamic Client Registration (DCR) is required — register the application manually in Redmine admin
 
 For step-by-step setup instructions, see the [OAuth2 Setup Guide](./docs/oauth-setup.md).
+
+### OAuthProxy mode
+
+For hosted MCP deployments, `REDMINE_AUTH_MODE=oauth-proxy` lets FastMCP act as the MCP-facing authorization server. FastMCP handles DCR/CIMD for MCP clients, then redirects users to Redmine as the upstream OAuth provider and external consent screen.
+
+```bash
+REDMINE_AUTH_MODE=oauth-proxy
+REDMINE_URL=https://redmine.example.com
+REDMINE_MCP_BASE_URL=https://redmine-mcp.example.com   # public URL of this server
+
+# Introspection/upstream client (register a confidential OAuth app in Redmine; see docs/oauth-setup.md)
+REDMINE_INTROSPECT_CLIENT_ID=...
+REDMINE_INTROSPECT_CLIENT_SECRET=...
+REDMINE_MCP_JWT_SIGNING_KEY=...
+```
+
+The upstream Redmine OAuth app should use `${REDMINE_MCP_BASE_URL}/auth/callback` as its redirect URI. If `REDMINE_OAUTH_CLIENT_ID` / `REDMINE_OAUTH_CLIENT_SECRET` are not set, the introspection credentials are reused for the upstream Redmine OAuth app.
+
+OAuthProxy uses FastMCP's default encrypted file storage under `FASTMCP_HOME/oauth-proxy/` for client registrations, transactions, and upstream token state. Mount `FASTMCP_HOME` to persistent storage in container deployments.
 
 ## MCP Client Configuration
 

@@ -4,18 +4,20 @@ Set up the MCP server so each user authenticates with their own Redmine account.
 
 **Requirements:** Redmine 6.1+ and admin access to register an OAuth application.
 
+This guide covers both direct Redmine Bearer-token mode (`REDMINE_AUTH_MODE=oauth`) and hosted OAuthProxy mode (`REDMINE_AUTH_MODE=oauth-proxy`). In `oauth-proxy` mode, FastMCP handles DCR/CIMD for MCP clients and uses Redmine as the upstream OAuth provider and external consent screen.
+
 ## Step 1: Register an OAuth App in Redmine
 
 1. Log in as admin → **Administration → Applications** → **New Application**
 2. Fill in:
    - **Name:** `MCP Server`
-   - **Redirect URI:** `http://127.0.0.1:PORT/callback` (see redirect URIs below)
+   - **Redirect URI:** `http://127.0.0.1:PORT/callback` for direct OAuth mode, or `${REDMINE_MCP_BASE_URL}/auth/callback` for OAuthProxy mode
    - **Confidential:** Yes
 3. Save and note the **Client ID** and **Client Secret**
 
 ## Step 2: Register a Doorkeeper Introspection Client
 
-The MCP server validates incoming Bearer tokens by calling Doorkeeper's RFC 7662 introspection endpoint (`POST /oauth/introspect`). To do this it needs its own confidential OAuth application registered in Redmine, separate from the user-flow OAuth app from Step 1.
+The MCP server validates incoming Bearer tokens by calling Doorkeeper's RFC 7662 introspection endpoint (`POST /oauth/introspect`). To do this it needs a confidential OAuth application registered in Redmine. In `oauth-proxy` mode this can be the same app from Step 1; a separate app is only useful for independent credential rotation or clearer audit labels.
 
 ### 2a. Register the application
 
@@ -82,9 +84,28 @@ REDMINE_MCP_BASE_URL=https://mcp.example.com   # public URL of this server
 # Introspection client (from Step 2)
 REDMINE_INTROSPECT_CLIENT_ID=<UID from Redmine>
 REDMINE_INTROSPECT_CLIENT_SECRET=<Secret from Redmine>
+# Or: REDMINE_INTROSPECT_CLIENT_SECRET_FILE=/run/secrets/redmine_introspect_client_secret
 
 # Optional: /health introspection probe cache TTL in seconds (default 30)
 # HEALTH_INTROSPECTION_TTL_SECONDS=30
+```
+
+For OAuthProxy mode, use `REDMINE_AUTH_MODE=oauth-proxy` and add a stable proxy signing key:
+
+```bash
+REDMINE_AUTH_MODE=oauth-proxy
+REDMINE_MCP_JWT_SIGNING_KEY=<stable-random-secret>
+# Or: REDMINE_MCP_JWT_SIGNING_KEY_FILE=/run/secrets/redmine_mcp_jwt_signing_key
+
+# Optional: mount this directory to persistent storage in container deployments.
+# OAuthProxy stores encrypted state below FASTMCP_HOME/oauth-proxy/.
+# FASTMCP_HOME=/app/data/fastmcp
+
+# Optional: use a separate upstream Redmine OAuth app.
+# If unset, REDMINE_INTROSPECT_CLIENT_ID / _SECRET are reused.
+# REDMINE_OAUTH_CLIENT_ID=<UID from Redmine>
+# REDMINE_OAUTH_CLIENT_SECRET=<Secret from Redmine>
+# Or: REDMINE_OAUTH_CLIENT_SECRET_FILE=/run/secrets/redmine_oauth_client_secret
 ```
 
 Set these in `.env` (local) or `.env.docker` (Docker). Legacy credentials are not needed in OAuth mode.
@@ -108,6 +129,9 @@ curl http://localhost:8000/.well-known/oauth-protected-resource/mcp
 
 # RFC 8414 authorization-server metadata (mirror of Redmine's Doorkeeper)
 curl http://localhost:8000/.well-known/oauth-authorization-server/mcp
+
+# OAuthProxy mode also exposes DCR
+curl -I http://localhost:8000/register
 
 # /health probes Doorkeeper introspection in OAuth mode
 curl http://localhost:8000/health
@@ -142,6 +166,7 @@ Set this in Redmine's OAuth app (Step 1) to match your client:
 | Kiro | Configurable via `oauth.redirectUri` |
 
 > **Note on DCR:** Some clients (Claude Desktop, VS Code) expect Dynamic Client Registration. Redmine's Doorkeeper does not support DCR, so you must pre-register the app manually (Step 1) and configure the client with the `client_id`/`client_secret`.
+> Use `REDMINE_AUTH_MODE=oauth-proxy` when MCP clients need DCR/CIMD onboarding.
 
 ## Migrating from Legacy Mode
 
