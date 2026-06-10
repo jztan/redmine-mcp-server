@@ -139,3 +139,31 @@ def require_introspection_credentials() -> tuple[str, str]:
 def get_health_introspection_ttl_seconds() -> int:
     """How long /health caches the Doorkeeper introspection probe result."""
     return _get_int_env("HEALTH_INTROSPECTION_TTL_SECONDS", 30)
+
+
+def get_allowed_client_redirect_uris() -> list[str] | None:
+    """Allowed client redirect-URI patterns for oauth-proxy mode.
+
+    Controls which redirect URIs an MCP client may register and use via
+    ``REDMINE_MCP_ALLOWED_CLIENT_REDIRECT_URIS``:
+
+    - Unset: loopback-only default (``http://localhost:*`` and
+      ``http://127.0.0.1:*``), which covers the common local-client case
+      while blocking remote redirect targets.
+    - A literal ``*``: returns ``None``, which tells FastMCP's ``OAuthProxy``
+      to accept any redirect URI (the DCR-permissive default). Use only when
+      hosted clients with non-loopback redirect URIs are required.
+    - Otherwise: a comma- or space-separated list of glob patterns, e.g.
+      ``https://app.example.com/*``.
+
+    A blank value falls back to the loopback default rather than accepting
+    none, since an empty allowlist would reject every client.
+    """
+    loopback = ["http://localhost:*", "http://127.0.0.1:*"]
+    raw = os.getenv("REDMINE_MCP_ALLOWED_CLIENT_REDIRECT_URIS")
+    if raw is None:
+        return loopback
+    if raw.strip() == "*":
+        return None
+    patterns = [p for p in raw.replace(",", " ").split() if p]
+    return patterns or loopback

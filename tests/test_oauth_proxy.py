@@ -25,6 +25,25 @@ def test_build_oauth_proxy_uses_introspection_verifier(monkeypatch, tmp_path):
     )
 
 
+def test_build_oauth_proxy_restricts_redirect_uris_to_loopback_by_default(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setenv("REDMINE_URL", "https://redmine.example")
+    monkeypatch.setenv("REDMINE_MCP_BASE_URL", "https://mcp.example")
+    monkeypatch.setenv("REDMINE_INTROSPECT_CLIENT_ID", "introspect-client")
+    monkeypatch.setenv("REDMINE_INTROSPECT_CLIENT_SECRET", "introspect-secret")
+    monkeypatch.setenv("REDMINE_MCP_JWT_SIGNING_KEY", "stable-test-signing-key")
+    monkeypatch.delenv("REDMINE_MCP_ALLOWED_CLIENT_REDIRECT_URIS", raising=False)
+    monkeypatch.setattr(settings, "home", tmp_path)
+
+    proxy = build_oauth_proxy()
+
+    assert proxy._allowed_client_redirect_uris == [
+        "http://localhost:*",
+        "http://127.0.0.1:*",
+    ]
+
+
 @pytest.mark.asyncio
 async def test_authenticated_app_mounts_oauth_proxy_under_mcp(monkeypatch, tmp_path):
     monkeypatch.setenv("REDMINE_URL", "https://redmine.example")
@@ -69,7 +88,8 @@ async def test_authenticated_app_mounts_oauth_proxy_under_mcp(monkeypatch, tmp_p
     assert as_body["registration_endpoint"] == "https://mcp.example/register"
     assert prm_body["authorization_servers"] == ["https://mcp.example/"]
     assert (
-        'resource_metadata="https://mcp.example/.well-known/oauth-protected-resource/mcp'
+        'resource_metadata="https://mcp.example'
+        "/.well-known/oauth-protected-resource/mcp"
         in mcp_post.headers["www-authenticate"]
     )
 
@@ -113,6 +133,7 @@ async def test_authenticated_app_derives_mount_prefix_from_base_url(
     assert mcp_post.status_code == 401
     assert scoped_as.json()["issuer"] == "https://mcp.example/api"
     assert (
-        'resource_metadata="https://mcp.example/.well-known/oauth-protected-resource/api/mcp'
+        'resource_metadata="https://mcp.example'
+        "/.well-known/oauth-protected-resource/api/mcp"
         in mcp_post.headers["www-authenticate"]
     )
