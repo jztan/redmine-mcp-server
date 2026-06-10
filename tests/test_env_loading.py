@@ -31,7 +31,8 @@ class TestEnvLoading:
 
         # Create a test script that imports the module and checks the env vars
         test_script = tmp_path / "test_env_check.py"
-        test_script.write_text("""
+        test_script.write_text(
+            """
 import sys
 import os
 
@@ -45,7 +46,8 @@ from redmine_mcp_server._client import REDMINE_URL, REDMINE_API_KEY
 # Print the values for verification
 print(f"REDMINE_URL={REDMINE_URL}")
 print(f"REDMINE_API_KEY={REDMINE_API_KEY}")
-""")
+"""
+        )
 
         # Run the test script from the temp directory (simulating user's project)
         result = subprocess.run(
@@ -78,7 +80,8 @@ print(f"REDMINE_API_KEY={REDMINE_API_KEY}")
 
         # Create a test script that imports the module
         test_script = tmp_path / "test_warning.py"
-        test_script.write_text("""
+        test_script.write_text(
+            """
 import sys
 import os
 
@@ -88,7 +91,8 @@ for key in ['REDMINE_URL', 'REDMINE_API_KEY', 'REDMINE_USERNAME', 'REDMINE_PASSW
 
 # Import the module which triggers env loading and warnings
 from redmine_mcp_server import _client as redmine_handler
-""")
+"""
+        )
 
         result = subprocess.run(
             [sys.executable, str(test_script)],
@@ -115,7 +119,8 @@ from redmine_mcp_server import _client as redmine_handler
         env_file.write_text("REDMINE_URL=http://example.com\n")
 
         test_script = tmp_path / "test_auth_warning.py"
-        test_script.write_text("""
+        test_script.write_text(
+            """
 import sys
 import os
 
@@ -124,7 +129,8 @@ for key in ['REDMINE_URL', 'REDMINE_API_KEY', 'REDMINE_USERNAME', 'REDMINE_PASSW
     os.environ.pop(key, None)
 
 from redmine_mcp_server import _client as redmine_handler
-""")
+"""
+        )
 
         result = subprocess.run(
             [sys.executable, str(test_script)],
@@ -162,7 +168,8 @@ from redmine_mcp_server import _client as redmine_handler
         env_file.write_text(f"REDMINE_URL={cwd_url}\n" f"REDMINE_API_KEY=cwd_key\n")
 
         test_script = tmp_path / "test_precedence.py"
-        test_script.write_text("""
+        test_script.write_text(
+            """
 import os
 
 # Clear any existing env vars
@@ -171,7 +178,8 @@ for key in ['REDMINE_URL', 'REDMINE_API_KEY', 'REDMINE_USERNAME', 'REDMINE_PASSW
 
 from redmine_mcp_server._client import REDMINE_URL
 print(f"REDMINE_URL={REDMINE_URL}")
-""")
+"""
+        )
 
         result = subprocess.run(
             [sys.executable, str(test_script)],
@@ -297,3 +305,43 @@ class TestOAuthIntrospectionEnv:
 
         importlib.reload(_env)
         assert _env.get_health_introspection_ttl_seconds() == 120
+
+
+class TestAllowedClientRedirectURIs:
+    """REDMINE_MCP_ALLOWED_CLIENT_REDIRECT_URIS parsing for oauth-proxy mode."""
+
+    def test_defaults_to_loopback_when_unset(self, monkeypatch):
+        monkeypatch.delenv("REDMINE_MCP_ALLOWED_CLIENT_REDIRECT_URIS", raising=False)
+        from redmine_mcp_server import _env
+
+        assert _env.get_allowed_client_redirect_uris() == [
+            "http://localhost:*",
+            "http://127.0.0.1:*",
+        ]
+
+    def test_star_means_allow_all(self, monkeypatch):
+        monkeypatch.setenv("REDMINE_MCP_ALLOWED_CLIENT_REDIRECT_URIS", "*")
+        from redmine_mcp_server import _env
+
+        assert _env.get_allowed_client_redirect_uris() is None
+
+    def test_parses_comma_and_space_separated_patterns(self, monkeypatch):
+        monkeypatch.setenv(
+            "REDMINE_MCP_ALLOWED_CLIENT_REDIRECT_URIS",
+            "https://a.example.com/*, https://b.example.com/*",
+        )
+        from redmine_mcp_server import _env
+
+        assert _env.get_allowed_client_redirect_uris() == [
+            "https://a.example.com/*",
+            "https://b.example.com/*",
+        ]
+
+    def test_blank_falls_back_to_loopback(self, monkeypatch):
+        monkeypatch.setenv("REDMINE_MCP_ALLOWED_CLIENT_REDIRECT_URIS", "   ")
+        from redmine_mcp_server import _env
+
+        assert _env.get_allowed_client_redirect_uris() == [
+            "http://localhost:*",
+            "http://127.0.0.1:*",
+        ]

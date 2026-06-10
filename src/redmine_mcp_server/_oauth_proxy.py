@@ -8,7 +8,12 @@ from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.providers.introspection import IntrospectionTokenVerifier
 from pydantic import AnyHttpUrl
 
-from ._env import get_required, get_required_secret, get_secret
+from ._env import (
+    get_allowed_client_redirect_uris,
+    get_required,
+    get_required_secret,
+    get_secret,
+)
 from .oauth_scopes import advertised_scopes
 
 INTROSPECTION_GUIDANCE = (
@@ -83,4 +88,5 @@ def build_oauth_proxy() -> OAuthProxy:
         jwt_signing_key=jwt_signing_key,
         valid_scopes=advertised_scopes(),
         require_authorization_consent="external",
+        allowed_client_redirect_uris=get_allowed_client_redirect_uris(),
     )

@@ -111,6 +111,7 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `REDMINE_OAUTH_CLIENT_ID` | No | – | Optional upstream Redmine OAuth client ID for `oauth-proxy`; defaults to `REDMINE_INTROSPECT_CLIENT_ID` |
 | `REDMINE_OAUTH_CLIENT_SECRET` | No | – | Optional upstream Redmine OAuth client secret for `oauth-proxy`; defaults to `REDMINE_INTROSPECT_CLIENT_SECRET` |
 | `FASTMCP_HOME` | No | platform default | FastMCP data directory. In `oauth-proxy` mode, encrypted OAuthProxy state is stored below `FASTMCP_HOME/oauth-proxy/` |
+| `REDMINE_MCP_ALLOWED_CLIENT_REDIRECT_URIS` | No | loopback only | `oauth-proxy` client redirect-URI allowlist (glob patterns, comma/space separated). Unset = `http://localhost:*` and `http://127.0.0.1:*`; `*` = allow any |
 | `HEALTH_INTROSPECTION_TTL_SECONDS` | No | `30` | TTL (seconds) for the `/health` Doorkeeper introspection probe cache. Set to `0` to disable caching. |
 | `SERVER_HOST` | No | `0.0.0.0` | Host/IP the MCP server binds to |
 | `SERVER_PORT` | No | `8000` | Port the MCP server listens on |
