@@ -7,6 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- New opt-in authentication mode `REDMINE_AUTH_MODE=oauth-proxy`, backed by FastMCP's `OAuthProxy`. In this mode the MCP server is the OAuth authorization server that MCP clients talk to (serving Dynamic Client Registration plus `/authorize`, `/token`, and `/register`) and proxies the upstream flow to Redmine/Doorkeeper, keeping user consent on Redmine via `require_authorization_consent="external"`. This supports clients that require DCR or CIMD without Redmine having to serve RFC 8414 metadata or implement DCR, which the existing `oauth` (introspection) mode could not provide on split-host deployments. The existing remote-auth setup is refactored into a `RedmineAuthProvider`, `/health` now probes Redmine introspection in both `oauth` and `oauth-proxy` modes, and the app supports mounting behind a public base path via `REDMINE_MCP_BASE_URL`. Token validation continues to use Doorkeeper introspection, and secrets may be supplied via `*_FILE` env vars for Docker/Kubernetes. Legacy and `oauth` modes are unchanged and `legacy` remains the default; the new mode also requires a stable `REDMINE_MCP_JWT_SIGNING_KEY`. See [`docs/oauth-setup.md`](docs/oauth-setup.md) for setup. ([#153](https://github.com/jztan/redmine-mcp-server/pull/153))
+
+### Contributors
+- @aadnehovda, designed and implemented the `oauth-proxy` authentication mode backed by FastMCP `OAuthProxy`, and refactored the remote OAuth setup into `RedmineAuthProvider` ([#153](https://github.com/jztan/redmine-mcp-server/pull/153))
 
 ## [2.2.0] - 2026-06-06
 ### Security
