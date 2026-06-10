@@ -15,11 +15,9 @@ Modules:
 import logging
 import os
 import uvicorn
-import httpx
 from importlib.metadata import version, PackageNotFoundError
-from pydantic import AnyHttpUrl
-from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.applications import Starlette
+from starlette.routing import Mount, Route
 
 # Configure basic logging before importing modules that log during init
 logging.basicConfig(
@@ -30,16 +28,16 @@ logging.basicConfig(
 
 from . import tools  # noqa: E402,F401  -- triggers @mcp.tool registration
 from . import _http_routes  # noqa: E402,F401  -- registers HTTP custom routes
-from .server import mcp  # noqa: E402
-from .oauth_scopes import advertised_scopes  # noqa: E402
+from .server import AUTH_PROVIDER, mcp  # noqa: E402
+from ._mount import (  # noqa: E402
+    mcp_mount_prefix,
+    mcp_path_for_http_app,
+)
 
 logger = logging.getLogger(__name__)
 
-REDMINE_URL = os.environ.get("REDMINE_URL", "").rstrip("/")
-REDMINE_MCP_BASE_URL = os.environ.get(
-    "REDMINE_MCP_BASE_URL", "http://localhost:3040"
-).rstrip("/")
 REDMINE_AUTH_MODE = os.environ.get("REDMINE_AUTH_MODE", "legacy").lower()
+AUTHENTICATED_AUTH_MODES = {"oauth", "oauth-proxy"}
 
 
 def get_version() -> str:
@@ -50,141 +48,41 @@ def get_version() -> str:
         return "dev"
 
 
-# --- OAuth2 route handlers (registered conditionally) ---
+def build_authenticated_app(mcp_instance, auth_provider):
+    """Build a mounted ASGI app for authenticated modes."""
+    mcp_path = mcp_path_for_http_app()
+    mcp_app = mcp_instance.http_app(path=mcp_path, stateless_http=True)
 
-
-async def oauth_authorization_server(request: Request):
-    """RFC 8414 — Authorization Server Metadata.
-
-    Redmine uses Doorkeeper but does not serve this discovery document itself.
-    We serve it manually, pointing to Redmine's real Doorkeeper endpoints.
-
-    Env vars are read at request time (rather than module-import time) so
-    that the handler responds to runtime configuration changes and is
-    cleanly testable without module reloads.
-    """
-    redmine_url = (os.environ.get("REDMINE_URL", "") or "").rstrip("/")
-    # issuer must be byte-identical to the authorization-server identifier the
-    # protected-resource doc advertises in authorization_servers, which _auth.py
-    # builds as AnyHttpUrl(REDMINE_URL). Reuse the same normalization so a
-    # spec-strict client (RFC 8414 §3.3) treats the two as equal, including the
-    # trailing slash pydantic adds for bare hosts. Sourcing issuer from
-    # REDMINE_MCP_BASE_URL made split-host deployments advertise the MCP server
-    # as the AS (#140).
-    issuer = str(AnyHttpUrl(redmine_url)) if redmine_url else redmine_url
-    return JSONResponse(
-        {
-            "issuer": issuer,
-            "authorization_endpoint": f"{redmine_url}/oauth/authorize",
-            "token_endpoint": f"{redmine_url}/oauth/token",
-            "revocation_endpoint": f"{redmine_url}/oauth/revoke",
-            "response_types_supported": ["code"],
-            "grant_types_supported": [
-                "authorization_code",
-                "refresh_token",
-            ],
-            "code_challenge_methods_supported": ["S256"],
-            "token_endpoint_auth_methods_supported": [
-                "client_secret_post",
-                "client_secret_basic",
-            ],
-            "scopes_supported": advertised_scopes(),
-        }
+    routes = list(auth_provider.get_well_known_routes(mcp_path=mcp_path))
+    routes.extend(
+        [
+            Route("/health", _http_routes.health_check, methods=["GET"]),
+            Route(
+                "/files/{file_id}",
+                _http_routes.serve_attachment,
+                methods=["GET"],
+            ),
+            Route(
+                "/cleanup/status",
+                _http_routes.cleanup_status,
+                methods=["GET"],
+            ),
+            Mount(mcp_mount_prefix(), app=mcp_app),
+        ]
     )
+    return Starlette(routes=routes, lifespan=mcp_app.lifespan)
 
 
-async def revoke_token(request: Request):
-    """RFC 7009 — Revoke an OAuth2 access or refresh token.
+def build_app():
+    """Build the ASGI app."""
+    if REDMINE_AUTH_MODE in AUTHENTICATED_AUTH_MODES and AUTH_PROVIDER is not None:
+        return build_authenticated_app(mcp, AUTH_PROVIDER)
 
-    Proxies token revocation to Redmine's Doorkeeper /oauth/revoke endpoint.
+    return mcp.http_app(stateless_http=True)
 
-    Accepts token via:
-    - Authorization header: Bearer <token>
-    - POST body: {"token": "<token>"} or form-encoded token=<token>
-
-    Returns:
-        200 OK on success (per RFC 7009, even if token was already invalid)
-        400 Bad Request if no token provided
-        502 Bad Gateway if Redmine is unreachable
-    """
-    token = None
-
-    # Try Authorization header first
-    auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Bearer "):
-        token = auth_header.removeprefix("Bearer ").strip()
-
-    # Fall back to request body
-    if not token:
-        content_type = request.headers.get("Content-Type", "")
-        if "application/json" in content_type:
-            try:
-                body = await request.json()
-                token = body.get("token")
-            except Exception:
-                pass
-        else:
-            # form-encoded
-            try:
-                form = await request.form()
-                token = form.get("token")
-            except Exception:
-                pass
-
-    if not token:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "error": "invalid_request",
-                "error_description": "No token provided",
-            },
-        )
-
-    # Forward revocation to Redmine's Doorkeeper endpoint. Env vars are read
-    # at request time so runtime overrides (and tests) are honoured.
-    redmine_url = (os.environ.get("REDMINE_URL", "") or "").rstrip("/")
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.post(
-                f"{redmine_url}/oauth/revoke",
-                data={"token": token},
-                timeout=10,
-            )
-        except httpx.RequestError as e:
-            logger.error(f"Failed to reach Redmine for token revocation: {e}")
-            return JSONResponse(
-                status_code=502,
-                content={"error": "upstream_unavailable"},
-            )
-
-    # RFC 7009: return 200 regardless of whether token was valid
-    # (to prevent token scanning attacks)
-    if response.status_code in (200, 204):
-        return JSONResponse(status_code=200, content={"success": True})
-
-    # If Redmine returns an error, log but still return success per RFC 7009
-    logger.warning(
-        f"Redmine revocation returned {response.status_code}: " f"{response.text}"
-    )
-    return JSONResponse(status_code=200, content={"success": True})
-
-
-# Register the kept OAuth custom routes via FastMCP. The
-# /.well-known/oauth-protected-resource route is mounted natively by
-# RemoteAuthProvider at the suffix-scoped path
-# (/.well-known/oauth-protected-resource/mcp). The authorization-server
-# metadata mirror and /revoke remain custom_routes because
-# RemoteAuthProvider doesn't provide them. After this migration there is
-# no Starlette middleware doing auth, so custom_route no longer represents
-# the bypass surface.
-if REDMINE_AUTH_MODE == "oauth":
-    mcp.custom_route("/.well-known/oauth-authorization-server/mcp", methods=["GET"])(
-        oauth_authorization_server
-    )
-    mcp.custom_route("/revoke", methods=["POST"])(revoke_token)
 
 # Export the Starlette app for testing and external use
-app = mcp.http_app(stateless_http=True)
+app = build_app()
 
 # Log version at module load time so it appears regardless of how the server is started
 logger.info("Redmine MCP Server v%s", get_version())

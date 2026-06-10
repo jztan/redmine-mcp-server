@@ -1,6 +1,7 @@
 """Environment-variable accessor helpers."""
 
 import os
+from pathlib import Path
 
 
 def _is_true_env(var_name: str, default: str = "false") -> bool:
@@ -59,6 +60,51 @@ def _get_int_env(var_name: str, default: int) -> int:
         return default
 
 
+def get_secret(var_name: str) -> str | None:
+    """Return a secret from an env var or Docker/Kubernetes-style file env var."""
+    value = os.getenv(var_name)
+    if value:
+        return value
+
+    file_name = os.getenv(f"{var_name}_FILE")
+    if not file_name:
+        return None
+
+    return Path(file_name).read_text(encoding="utf-8").strip()
+
+
+def get_required(
+    var_name: str,
+    *,
+    error_text: str | None = None,
+) -> str:
+    """Return a required environment variable or raise a clear RuntimeError."""
+    value = os.getenv(var_name)
+    if value:
+        return value
+
+    message = f"Missing required env var: {var_name}."
+    if error_text:
+        message = f"{message} {error_text}"
+    raise RuntimeError(message)
+
+
+def get_required_secret(
+    var_name: str,
+    *,
+    error_text: str | None = None,
+) -> str:
+    """Return a required secret from env or a file env var."""
+    value = get_secret(var_name)
+    if value:
+        return value
+
+    message = f"Missing required secret env var: {var_name} or {var_name}_FILE."
+    if error_text:
+        message = f"{message} {error_text}"
+    raise RuntimeError(message)
+
+
 def get_introspection_credentials() -> tuple[str | None, str | None]:
     """Return (client_id, client_secret) for the Doorkeeper introspection client.
 
@@ -66,9 +112,10 @@ def get_introspection_credentials() -> tuple[str | None, str | None]:
     (None, None) if neither is set. Callers that need fail-fast behaviour
     should use require_introspection_credentials().
     """
-    client_id = os.getenv("REDMINE_INTROSPECT_CLIENT_ID") or None
-    client_secret = os.getenv("REDMINE_INTROSPECT_CLIENT_SECRET") or None
-    return client_id, client_secret
+    return (
+        os.getenv("REDMINE_INTROSPECT_CLIENT_ID") or None,
+        get_secret("REDMINE_INTROSPECT_CLIENT_SECRET"),
+    )
 
 
 def require_introspection_credentials() -> tuple[str, str]:
@@ -77,21 +124,16 @@ def require_introspection_credentials() -> tuple[str, str]:
     Used at OAuth-mode startup so the server fails fast instead of returning
     401 on every request.
     """
-    client_id, client_secret = get_introspection_credentials()
-    missing = []
-    if not client_id:
-        missing.append("REDMINE_INTROSPECT_CLIENT_ID")
-    if not client_secret:
-        missing.append("REDMINE_INTROSPECT_CLIENT_SECRET")
-    if missing:
-        raise RuntimeError(
-            "OAuth mode requires Doorkeeper introspection credentials. "
-            f"Missing env var(s): {', '.join(missing)}. "
-            "Register a confidential OAuth client in Redmine and configure "
-            "Doorkeeper's allow_token_introspection block to accept it "
-            "(see docs/oauth-setup.md Step 2 for the walkthrough)."
-        )
-    return client_id, client_secret
+    error_text = (
+        "OAuth mode requires Doorkeeper introspection credentials. "
+        "Register a confidential OAuth client in Redmine and configure "
+        "Doorkeeper's allow_token_introspection block to accept it "
+        "(see docs/oauth-setup.md Step 2 for the walkthrough)."
+    )
+    return (
+        get_required("REDMINE_INTROSPECT_CLIENT_ID", error_text=error_text),
+        get_required_secret("REDMINE_INTROSPECT_CLIENT_SECRET", error_text=error_text),
+    )
 
 
 def get_health_introspection_ttl_seconds() -> int:

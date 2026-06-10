@@ -207,10 +207,10 @@ This guide covers common issues and solutions for the Redmine MCP Server.
 **Symptoms:**
 - MCP client fails to connect with `{"error":"unauthorized"}`
 - Server returns `401 Unauthorized` with a `WWW-Authenticate: Bearer` header
-- Health endpoint shows `"auth_mode":"oauth"` when you expected legacy mode
+- Health endpoint shows `"auth_mode":"oauth"` or `"auth_mode":"oauth-proxy"` when you expected legacy mode
 
-**Cause:** The server is running in OAuth mode (`REDMINE_AUTH_MODE=oauth`) instead of legacy mode. This can happen if:
-- `REDMINE_AUTH_MODE=oauth` is set in your shell environment (e.g., via `export`), which takes precedence over `.env`
+**Cause:** The server is running in OAuth mode (`REDMINE_AUTH_MODE=oauth` or `REDMINE_AUTH_MODE=oauth-proxy`) instead of legacy mode. This can happen if:
+- `REDMINE_AUTH_MODE` is set in your shell environment (e.g., via `export`), which takes precedence over `.env`
 - The `.env` file doesn't explicitly set `REDMINE_AUTH_MODE=legacy`, and a shell variable overrides the default
 - The server was started with a previous configuration and hasn't been restarted after changes
 
@@ -875,6 +875,8 @@ If a legacy API key isn't available, revert to the previous application version 
 The v2.1+ release dropped several discovery path aliases. Only these paths remain:
 
 - `GET /.well-known/oauth-protected-resource/mcp` (canonical RFC 9728 §3.1 suffix-scoped form, mounted by `RemoteAuthProvider`)
-- `GET /.well-known/oauth-authorization-server/mcp` (path-scoped RFC 8414 form, mirrors Redmine's Doorkeeper AS metadata)
+- `GET /.well-known/oauth-authorization-server/mcp` (path-scoped RFC 8414 form, mirrors Redmine's Doorkeeper AS metadata in direct OAuth mode)
+
+In `REDMINE_AUTH_MODE=oauth-proxy`, the authorization-server metadata describes FastMCP's OAuthProxy endpoints instead.
 
 Clients should follow `WWW-Authenticate: Bearer resource_metadata="..."` headers from 401 responses (RFC 9728 §5.3) rather than guessing paths. If a client hardcodes the dropped variants, update the client; we don't plan to restore aliases.
