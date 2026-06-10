@@ -21,50 +21,28 @@ import sys
 import os
 
 
-def run_tests(test_type="unit", specific_file=None, coverage=False, verbose=False):
-    """Run tests based on the specified type."""
+def _run_pytest(selector, coverage=False, verbose=False, append_cov=False):
+    """Run a single pytest invocation with the given selector args.
 
-    # Base pytest command
+    ``selector`` is the list of marker/path args (e.g.
+    ``["-m", "not integration", "tests/"]``). Returns the pytest exit code.
+    """
     cmd = ["python", "-m", "pytest"]
+    cmd.append("-v" if verbose else "-q")
 
-    # Add verbosity
-    if verbose:
-        cmd.append("-v")
-    else:
-        cmd.append("-q")
-
-    # Add coverage if requested
     if coverage:
-        cmd.extend(
-            ["--cov=src/redmine_mcp_server", "--cov-report=html", "--cov-report=term"]
-        )
+        cmd.append("--cov=src/redmine_mcp_server")
+        # When accumulating across more than one invocation (e.g. --all),
+        # append to the existing data instead of overwriting it.
+        cmd.append("--cov-append" if append_cov else "--cov-report=html")
+        cmd.append("--cov-report=term")
 
-    # Determine what tests to run
-    if specific_file:
-        # Run specific test file
-        test_file = (
-            f"tests/{specific_file}"
-            if not specific_file.startswith("tests/")
-            else specific_file
-        )
-        cmd.append(test_file)
-    elif test_type == "unit":
-        # Run unit tests (exclude integration marker)
-        cmd.extend(["-m", "not integration", "tests/"])
-    elif test_type == "integration":
-        # Run integration tests only
-        cmd.extend(["-m", "integration", "tests/"])
-    elif test_type == "all":
-        # Run all tests
-        cmd.append("tests/")
-
-    # Add test output formatting
+    cmd.extend(selector)
     cmd.extend(["--tb=short"])
 
     print(f"Running command: {' '.join(cmd)}")
     print("-" * 60)
 
-    # Run the tests
     try:
         result = subprocess.run(
             cmd,
@@ -76,6 +54,40 @@ def run_tests(test_type="unit", specific_file=None, coverage=False, verbose=Fals
     except Exception as e:
         print(f"Error running tests: {e}")
         return 1
+
+
+def run_tests(test_type="unit", specific_file=None, coverage=False, verbose=False):
+    """Run tests based on the specified type."""
+
+    if specific_file:
+        test_file = (
+            f"tests/{specific_file}"
+            if not specific_file.startswith("tests/")
+            else specific_file
+        )
+        return _run_pytest([test_file], coverage, verbose)
+
+    if test_type == "unit":
+        return _run_pytest(["-m", "not integration", "tests/"], coverage, verbose)
+
+    if test_type == "integration":
+        return _run_pytest(["-m", "integration", "tests/"], coverage, verbose)
+
+    if test_type == "all":
+        # Run unit and integration as two separate pytest processes rather than
+        # one unmarked run. conftest.py neutralizes a developer's local .env for
+        # unit runs (so leaked REDMINE_* credentials don't break hermetic tests)
+        # but leaves it intact for an explicit `-m integration` run. A single
+        # unmarked invocation would be treated as non-integration and blank the
+        # env, silently skipping every integration test. Splitting the run lets
+        # each phase get the right environment.
+        rc_unit = _run_pytest(["-m", "not integration", "tests/"], coverage, verbose)
+        rc_integration = _run_pytest(
+            ["-m", "integration", "tests/"], coverage, verbose, append_cov=True
+        )
+        return rc_unit or rc_integration
+
+    return 1
 
 
 def check_dependencies():
