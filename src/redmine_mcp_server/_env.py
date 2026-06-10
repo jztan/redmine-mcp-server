@@ -70,7 +70,12 @@ def get_secret(var_name: str) -> str | None:
     if not file_name:
         return None
 
-    return Path(file_name).read_text(encoding="utf-8").strip()
+    try:
+        return Path(file_name).read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise RuntimeError(
+            f"Could not read secret file for {var_name}_FILE " f"({file_name}): {exc}"
+        ) from exc
 
 
 def get_required(
