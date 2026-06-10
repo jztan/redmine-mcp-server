@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Secret `*_FILE` env vars (for example `REDMINE_MCP_JWT_SIGNING_KEY_FILE`) now raise a clear error naming the variable and path when the referenced file cannot be read, instead of surfacing a bare `FileNotFoundError`. `docs/oauth-setup.md` also notes that when the upstream `oauth-proxy` client falls back to the introspection client, that client must have the authorization code grant and the `/auth/callback` redirect URI configured.
 
+### Fixed
+- `python tests/run_tests.py --all` now actually runs the integration suite. The test hermeticity guard introduced in 2.2.0 blanks `REDMINE_*` environment variables for any run that is not an explicit `-m integration` invocation, so the single unmarked `--all` command was treated as a unit run and silently skipped every integration test. `--all` now runs the unit phase (`-m "not integration"`) and the integration phase (`-m integration`) as two separate pytest processes so each gets the correct environment; integration coverage is appended. ([#156](https://github.com/jztan/redmine-mcp-server/pull/156))
+
 ### Contributors
 - @aadnehovda, designed and implemented the `oauth-proxy` authentication mode backed by FastMCP `OAuthProxy`, and refactored the remote OAuth setup into `RedmineAuthProvider` ([#153](https://github.com/jztan/redmine-mcp-server/pull/153))
 
