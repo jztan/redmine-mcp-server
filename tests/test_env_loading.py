@@ -345,3 +345,19 @@ class TestAllowedClientRedirectURIs:
             "http://localhost:*",
             "http://127.0.0.1:*",
         ]
+
+
+class TestGetSecretFileErrors:
+    """get_secret should explain which *_FILE var pointed at an unreadable file."""
+
+    def test_missing_secret_file_raises_clear_runtime_error(
+        self, monkeypatch, tmp_path
+    ):
+        missing = tmp_path / "does-not-exist.secret"
+        monkeypatch.delenv("MY_TEST_SECRET", raising=False)
+        monkeypatch.setenv("MY_TEST_SECRET_FILE", str(missing))
+        import pytest
+        from redmine_mcp_server import _env
+
+        with pytest.raises(RuntimeError, match="MY_TEST_SECRET_FILE"):
+            _env.get_secret("MY_TEST_SECRET")
