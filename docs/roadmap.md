@@ -2,17 +2,17 @@
 
 ## Project Status
 
-- **Current Version:** v2.0.1 (released 2026-05-22)
-- **On Develop (unreleased):** v2.1 — FastMCP v3 native auth migration ([PR #132](https://github.com/jztan/redmine-mcp-server/pull/132))
+- **Current Version:** v2.2.0 (released 2026-06-06)
+- **On Develop (unreleased):** v2.3 candidate: hosted OAuth via the `oauth-proxy` auth mode ([#153](https://github.com/jztan/redmine-mcp-server/pull/153)), plus hardening ([#154](https://github.com/jztan/redmine-mcp-server/pull/154), [#155](https://github.com/jztan/redmine-mcp-server/pull/155)) and tooling/doc fixes ([#156](https://github.com/jztan/redmine-mcp-server/pull/156), [#157](https://github.com/jztan/redmine-mcp-server/pull/157))
 - **MCP Registry Status:** Published
-- **Test Suite:** 1285 unit tests + 85 integration tests. Integration tests gate on environment: a sandbox Redmine, plugin flags (`REDMINE_AGILE_ENABLED` etc.), and the destructive OAuth test behind `RUN_DESTRUCTIVE_TESTS=1`. Tests that can't run in the current environment skip cleanly with a clear reason.
+- **Test Suite:** 1305 unit tests + 85 integration tests. Integration tests gate on environment: a sandbox Redmine, plugin flags (`REDMINE_AGILE_ENABLED` etc.), and the destructive OAuth test behind `RUN_DESTRUCTIVE_TESTS=1`. Tests that can't run in the current environment skip cleanly with a clear reason. Run them locally with `python tests/run_tests.py --all` or `--integration`.
 - **Tools:** 40 core + 5 plugin-gated + 1 admin-gated (maximum 46 with all flags enabled)
 
 ---
 
 ## Next Release
 
-**v2.1 — FastMCP v3 native auth migration.** Merged to develop, awaiting release cut. Cut via `python scripts/release.py minor` per [`RELEASE_SOP.md`](../RELEASE_SOP.md). See `[Unreleased]` in [`CHANGELOG.md`](../CHANGELOG.md) for the full diff.
+**v2.3: hosted OAuth (`oauth-proxy` auth mode).** The MCP server can now act as the OAuth authorization server for MCP clients (serving Dynamic Client Registration plus `/authorize`, `/token`, `/register`) and proxy the upstream flow to Redmine/Doorkeeper, keeping consent on Redmine. This resolves split-host OAuth discovery for clients that require DCR or RFC 8414 metadata, which the introspection-based `oauth` mode (shipped in v2.1) could not provide ([#140](https://github.com/jztan/redmine-mcp-server/issues/140), verified end-to-end in VS Code on a split-host Redmine 6.1.1 deployment). Merged to develop with client redirect-URI and secret-handling hardening, awaiting release cut via `python scripts/release.py minor` per [`RELEASE_SOP.md`](../RELEASE_SOP.md). See `[Unreleased]` in [`CHANGELOG.md`](../CHANGELOG.md) for the full diff.
 
 ---
 
@@ -23,7 +23,7 @@ The MCP spec [release candidate locked on 2026-05-21](https://blog.modelcontextp
 **v3.0 scope (target: Q3 2026, gated on FastMCP):**
 
 - [ ] **Stateless transport.** Adopt the new request model once FastMCP supports it. The `initialize` handshake and `Mcp-Session-Id` header are removed by the spec; per-request `_meta` replaces them.
-- [ ] **Authorization hardening.** Fold the six OAuth/OIDC SEPs that ship with 2026-07-28 (mandatory `iss` validation per RFC 9207, OIDC `application_type` declaration, refresh-token handling improvements) into the FastMCP v3 auth path landing in v2.1. Doing the SEP work and the v3 auth migration in one release avoids a second breaking change for operators.
+- [ ] **Authorization hardening.** Fold the six OAuth/OIDC SEPs that ship with 2026-07-28 (mandatory `iss` validation per RFC 9207, OIDC `application_type` declaration, refresh-token handling improvements) onto the FastMCP-backed auth path that now exists (the introspection `oauth` mode shipped in v2.1, extended by the `oauth-proxy` mode in v2.3). Landing the SEP work on this foundation avoids a second breaking change for operators.
 - [ ] **Error-code update.** Switch missing-resource errors from `-32002` to `-32602` on `/files/{file_id}`.
 - [ ] **Cacheable list responses.** Add `ttlMs` / `cacheScope` hints to slow-changing read-only tools (`list_redmine_projects`, `list_redmine_issue_statuses`, `list_redmine_issue_priorities`, `list_redmine_trackers`, `list_redmine_users`, `list_redmine_versions`, `list_redmine_roles`, `list_project_members`, `list_time_entry_activities`).
 - [ ] **JSON Schema 2020-12.** Use composition operators (`oneOf`, `anyOf`) where they improve `manage_X(action=...)` ergonomics.
@@ -63,4 +63,4 @@ For per-release detail (features, fixes, CVE patches, contributor credits, break
 
 ---
 
-**Last Updated:** 2026-05-24
+**Last Updated:** 2026-06-11
