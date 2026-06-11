@@ -17,8 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - `python tests/run_tests.py --all` now actually runs the integration suite. The test hermeticity guard introduced in 2.2.0 blanks `REDMINE_*` environment variables for any run that is not an explicit `-m integration` invocation, so the single unmarked `--all` command was treated as a unit run and silently skipped every integration test. `--all` now runs the unit phase (`-m "not integration"`) and the integration phase (`-m integration`) as two separate pytest processes so each gets the correct environment; integration coverage is appended. ([#156](https://github.com/jztan/redmine-mcp-server/pull/156))
 
+### Documentation
+- `docs/oauth-setup.md` Step 4 now shows the correct authorization-server metadata path per mode. In `oauth-proxy` mode the issuer is `REDMINE_MCP_BASE_URL`, so RFC 8414 metadata is served at the root `/.well-known/oauth-authorization-server`; the `/mcp`-suffixed path used by `oauth` mode 404s there and previously read as a failure during verification. ([#140](https://github.com/jztan/redmine-mcp-server/issues/140))
+
 ### Contributors
 - @aadnehovda, designed and implemented the `oauth-proxy` authentication mode backed by FastMCP `OAuthProxy`, and refactored the remote OAuth setup into `RedmineAuthProvider` ([#153](https://github.com/jztan/redmine-mcp-server/pull/153))
+- @timcomport, verified the `oauth-proxy` mode end to end on a split-host VS Code + Redmine 6.1.1 deployment and caught the Step 4 authorization-server metadata path discrepancy ([#140](https://github.com/jztan/redmine-mcp-server/issues/140))
 
 ## [2.2.0] - 2026-06-06
 ### Security

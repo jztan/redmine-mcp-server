@@ -137,8 +137,12 @@ Verify discovery endpoints:
 # RFC 9728 protected-resource metadata (mounted by FastMCP RemoteAuthProvider)
 curl http://localhost:8000/.well-known/oauth-protected-resource/mcp
 
-# RFC 8414 authorization-server metadata (mirror of Redmine's Doorkeeper)
-curl http://localhost:8000/.well-known/oauth-authorization-server/mcp
+# RFC 8414 authorization-server metadata
+#   oauth mode: served at the /mcp-suffixed path (issuer is the Redmine URL)
+#   oauth-proxy mode: served at the root path (issuer is REDMINE_MCP_BASE_URL),
+#                     so the /mcp-suffixed URL 404s
+curl http://localhost:8000/.well-known/oauth-authorization-server/mcp   # oauth mode
+curl http://localhost:8000/.well-known/oauth-authorization-server       # oauth-proxy mode
 
 # OAuthProxy mode also exposes DCR
 curl -I http://localhost:8000/register
