@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [2.3.0] - 2026-06-12
 ### Added
 - New opt-in authentication mode `REDMINE_AUTH_MODE=oauth-proxy`, backed by FastMCP's `OAuthProxy`. In this mode the MCP server is the OAuth authorization server that MCP clients talk to (serving Dynamic Client Registration plus `/authorize`, `/token`, and `/register`) and proxies the upstream flow to Redmine/Doorkeeper, keeping user consent on Redmine via `require_authorization_consent="external"`. This supports clients that require DCR or CIMD without Redmine having to serve RFC 8414 metadata or implement DCR, which the existing `oauth` (introspection) mode could not provide on split-host deployments. The existing remote-auth setup is refactored into a `RedmineAuthProvider`, `/health` now probes Redmine introspection in both `oauth` and `oauth-proxy` modes, and the app supports mounting behind a public base path via `REDMINE_MCP_BASE_URL`. Token validation continues to use Doorkeeper introspection, and secrets may be supplied via `*_FILE` env vars for Docker/Kubernetes. Legacy and `oauth` modes are unchanged and `legacy` remains the default; the new mode also requires a stable `REDMINE_MCP_JWT_SIGNING_KEY`. See [`docs/oauth-setup.md`](docs/oauth-setup.md) for setup. ([#153](https://github.com/jztan/redmine-mcp-server/pull/153))
 - `oauth-proxy` mode restricts client redirect URIs to loopback by default (`http://localhost:*`, `http://127.0.0.1:*`). Since MCP clients register their own redirect URI via DCR, this prevents a registered client from pointing the flow at a remote target out of the box. Set `REDMINE_MCP_ALLOWED_CLIENT_REDIRECT_URIS` to a comma- or space-separated list of glob patterns for hosted clients, or `*` to accept any redirect URI. `docs/oauth-setup.md` also documents that OAuthProxy state is stored node-locally, so the mode is single-replica / sticky-session unless a shared `client_storage` backend is configured.
@@ -893,6 +895,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive authentication support (username/password and API key)
 - Docker containerization support
 
+[2.3.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.3.0
 [2.2.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.2.0
 [2.1.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.1.0
 [2.0.1]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.0.1
