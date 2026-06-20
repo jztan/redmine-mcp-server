@@ -1,7 +1,7 @@
 [project]
 name = "redmine-mcp-server"
 version = "2.3.0"
-description = "Production-ready MCP server for Redmine with security, pagination, and enterprise features"
+description = "MCP server that lets AI assistants manage Redmine issues, projects, wikis, and time tracking"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
