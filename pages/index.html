@@ -598,7 +598,7 @@
         due_date:"2026-06-12", done_ratio:0, col:"new", note:null },
       { id:4807, subject:"Checkout crashes when coupon field is empty", tracker:"Bug",
         status:STATUS.INPROG, priority:PRIO.URGENT, assigned_to:MAYA, author:ME,
-        due_date:"2026-06-16", done_ratio:40, col:"inprog", note:null },
+        due_date:"2026-06-24", done_ratio:40, col:"inprog", note:null },
       { id:4830, subject:"Add biometric login", tracker:"Feature",
         status:STATUS.NEW, priority:PRIO.NORMAL, assigned_to:DEV, author:ME,
         due_date:"2026-06-27", done_ratio:0, col:"new", note:null },
@@ -649,19 +649,19 @@
   // Each step: narration, tool, args (request), result builder, apply (board mutation)
   const SCRIPT = [
     {
-      say: "I'll triage the overdue, open issues in Sprint 14. First, let me pull them.",
+      say: "I'll triage Sprint 14's overdue, open issues. Let me pull them, highest priority first.",
       tool: "list_redmine_issues",
       args: { project_id: 42, status_id: "open", due_date: "<=2026-06-20", sort: "priority:desc",
               fields: ["id","subject","status","priority","assigned_to","due_date"] },
       result: () => [
-        { id:4807, subject:"Checkout crashes when coupon field is empty",
-          status:{id:2,name:"In Progress"}, priority:{id:4,name:"Urgent"},
-          assigned_to:{id:8,name:"Maya Chen"}, due_date:"2026-06-16" },
         { id:4821, subject:"Push notifications silently dropped on Android 14",
           status:{id:1,name:"New"}, priority:{id:3,name:"High"},
           assigned_to:null, due_date:"2026-06-12" },
+        { id:4812, subject:"Fix flaky checkout E2E test",
+          status:{id:2,name:"In Progress"}, priority:{id:2,name:"Normal"},
+          assigned_to:{id:4,name:"Sam Ruiz"}, due_date:"2026-06-18" },
       ],
-      apply: () => { flash([4807, 4821]); touch([4807,4821]); },
+      apply: () => { flash([4821, 4812]); },
     },
     {
       say: "#4821 is High, overdue since Jun 12, and still unassigned. Let me read it.",
@@ -715,7 +715,7 @@
       apply: () => { addHours(0.75); touch([4821]); },
     },
     {
-      say: "#4812 is at 100% with a green pipeline — the flaky test is fixed. Closing it.",
+      say: "The other overdue ticket, #4812, is already at 100% with a green pipeline — the fix landed but nobody closed it. Closing it.",
       tool: "update_redmine_issue",
       args: { issue_id: 4812, fields: { status_id: 5, notes: "Verified fixed: 200 consecutive green runs on CI. Closing." } },
       result: () => { const i = byId(4812); i.status = STATUS.CLOSED; i.col = "done";
