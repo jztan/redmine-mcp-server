@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Promotional demo page under `pages/`, deployed to GitHub Pages on version tags via a new `deploy-demo.yml` workflow. It is a scripted, client-side walkthrough of an AI agent triaging a sample Redmine sprint backlog (list, read, reassign, comment, log time, close), with tool-call request/response JSON that matches the server's real response shapes, a Kanban board that updates as the agent works, and a light/dark theme toggle. No live Redmine is connected.
 
+### Fixed
+- `get_redmine_issue` now returns journal field-change `details` (status, assignee, custom-field edits) and no longer drops journals that have no note text. The `_journals_to_list` helper previously skipped any journal whose `notes` was empty via `if not notes: continue` and never serialized the `details` array, so field-only history was lost and `details` was missing even on journals with notes. Journals are now kept when they have a note **or** field-change details, and each entry includes `details` (`property`, `name`, `old_value`, `new_value`) plus `private_notes`. `get_private_notes` exposes `details` as well. ([#161](https://github.com/jztan/redmine-mcp-server/issues/161))
+
 ## [2.3.1] - 2026-06-20
 ### Security
 - Bump `python-multipart` 0.0.29 to 0.0.32 to clear CVE-2026-53539 and CVE-2026-53538 (both fixed upstream in 0.0.30). The direct floor in `pyproject.toml` is also raised from `>=0.0.27` to `>=0.0.30` so the fix reaches PyPI installs, not only the pinned lockfile. ([#150](https://github.com/jztan/redmine-mcp-server/pull/150))
