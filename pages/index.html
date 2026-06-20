@@ -177,11 +177,8 @@
   .proj-sub { font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); }
   .stage-controls { display: flex; gap: 8px; align-items: center; }
 
-  .stage-body { display: grid; grid-template-columns: 1.7fr 1fr; gap: 0; }
-  /* min-width:0 lets the wide <pre> JSON scroll inside its column instead of
-     blowing out the grid track and pushing the board off-screen. */
-  .stage-body > * { min-width: 0; }
-  @media (max-width: 900px) { .stage-body { grid-template-columns: 1fr; } }
+  /* Top-down split: Redmine app on top, agent transcript below. */
+  .stage-body { display: block; }
 
   /* ── Embedded Redmine app (fixed light palette, mimics the real UI
      so it reads as an actual Redmine screenshot regardless of page theme) ── */
@@ -189,9 +186,8 @@
     --rm-link: #2a5685; --rm-text: #333; --rm-border: #d6d6d6;
     font-family: Verdana, "Lucida Grande", Tahoma, Geneva, sans-serif;
     font-size: 12px; line-height: 1.4; color: var(--rm-text); background: #fff;
-    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
   }
-  @media (max-width: 900px) { .rm-app { border-right: none; border-bottom: 1px solid var(--border); } }
   .rm-topmenu {
     background: #2c3e50; color: #b9c4d0; font-size: 11px;
     display: flex; justify-content: space-between; align-items: center; padding: 4px 12px;
@@ -247,9 +243,12 @@
   .rm-none { color: #999; font-style: italic; }
 
   /* Transcript */
-  .transcript { padding: 18px 20px; min-height: 360px; display: flex; flex-direction: column; }
+  /* Fixed height + internally-scrolling feed so the Redmine table above stays
+     on screen while the agent log scrolls beneath it. */
+  .transcript { padding: 16px 20px 18px; height: 400px; display: flex; flex-direction: column; }
+  @media (max-width: 640px) { .transcript { height: 340px; } }
   .transcript-head { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-tertiary); margin-bottom: 12px; }
-  .feed { flex: 1; display: flex; flex-direction: column; gap: 12px; }
+  .feed { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
   .turn { opacity: 0; transform: translateY(6px); transition: all 0.4s ease; }
   .turn.on { opacity: 1; transform: none; }
   .agent-line { display: block; }
@@ -458,7 +457,7 @@
       <div class="scoreboard">
         <div class="sb-item"><span class="sb-num accent" id="sbCalls">0</span><span class="sb-lbl">tool calls</span></div>
         <div class="sb-item"><span class="sb-num" id="sbIssues">0</span><span class="sb-lbl">issues touched</span></div>
-        <div class="sb-item"><span class="sb-num" id="sbHours">0</span><span class="sb-lbl">hours logged</span></div>
+        <div class="sb-item"><span class="sb-num" id="sbComments">0</span><span class="sb-lbl">comments added</span></div>
         <div class="sb-item"><span class="sb-num" id="sbClosed">0</span><span class="sb-lbl">issues closed</span></div>
       </div>
     </div>
@@ -476,8 +475,8 @@
     <p>That's the point. With redmine-mcp-server, an agent doesn't just summarize your tickets — it moves them.</p>
     <div class="receipt-row">
       <span><b id="rCalls">6</b>tool calls</span>
-      <span><b id="rIssues">3</b>issues touched</span>
-      <span><b id="rHours">0.75</b>hours logged</span>
+      <span><b id="rIssues">2</b>issues touched</span>
+      <span><b id="rComments">2</b>comments added</span>
       <span><b id="rClosed">1</b>issue closed</span>
     </div>
     <button class="btn btn-ghost" id="copyLinkBtn">Copy a link to this demo</button>
@@ -495,7 +494,7 @@
     </button>
   </div>
   <p class="other-tools">
-    The demo shows 4 of the server's 45 tools. The full set spans
+    The demo shows 3 of the server's 45 tools. The full set spans
     <code>list_redmine_issues</code>, <code>get_redmine_issue</code>, <code>update_redmine_issue</code>,
     <code>manage_time_entry</code>, <code>manage_redmine_wiki_page</code>, <code>manage_project_member</code>,
     <code>search_entire_redmine</code>, and more — covering issues, projects, wikis, time tracking,
@@ -637,7 +636,7 @@
       apply: () => { flash([4821]); },
     },
     {
-      say: "Reproduced on my end. Moving it to In Progress and assigning Maya — she owns the notifications module.",
+      say: "Sam's note ties this to Android 14's foreground-service change, so it belongs with the notifications owner. Assigning Maya and moving it to In Progress.",
       tool: "update_redmine_issue",
       args: { issue_id: 4821, fields: { status_id: 2, assigned_to_id: 8 } },
       result: () => { const i = byId(4821); i.status = STATUS.INPROG; i.assigned_to = MAYA;
@@ -645,38 +644,36 @@
       apply: () => { render(); flash([4821]); touch([4821]); },
     },
     {
-      say: "Adding a triage note so the context isn't lost.",
+      say: "Leaving a triage summary on the ticket so whoever picks it up has the context.",
       tool: "update_redmine_issue",
-      args: { issue_id: 4821, fields: { notes: "Triaged: reproduced on Pixel 8 / Android 14. Root cause likely the foreground-service change. Assigned to Maya (notifications owner). Target: 4.2 release." } },
+      args: { issue_id: 4821, fields: { notes: "Triaged from the issue history: regression isolated to Android 14's foreground-service change (per Sam's note, 2026-06-13). Reassigned to Maya (notifications). Needs to land in the 4.2 release." } },
       result: () => { const i = byId(4821);
         const d = issueDict(i); d.custom_fields = []; return d; },
-      apply: () => { render(); flash([4821]); },
+      apply: () => { render(); flash([4821]); addComment(); },
     },
     {
-      say: "Logging the time I spent reproducing and triaging it.",
-      tool: "manage_time_entry",
-      args: { action: "create", issue_id: 4821, hours: 0.75, activity_id: 9,
-              comments: "Reproduced and triaged the Android 14 push regression." },
-      result: () => ({
-        id: 31204, hours: 0.75,
-        comments: wrap("Reproduced and triaged the Android 14 push regression."),
-        spent_on: TODAY,
-        user: { id: ME.id, name: ME.name },
-        project: { id: PROJECT.id, name: PROJECT.name },
-        issue: { id: 4821 },
-        activity: { id: 9, name: "Investigation" },
-        created_on: TODAY + "T16:41:12Z",
-        updated_on: TODAY + "T16:41:12Z",
-      }),
-      apply: () => { addHours(0.75); touch([4821]); },
+      say: "Next, the other overdue ticket, #4812. Before touching it, let me read why a test fix is still open.",
+      tool: "get_redmine_issue",
+      args: { issue_id: 4812, include_journals: true },
+      result: () => {
+        const d = issueDict(byId(4812));
+        d.description = wrap("The checkout E2E suite fails intermittently on CI (~1 run in 8), blocking the release pipeline.");
+        d.journals = [
+          { id: 90255, user: {id:4,name:"Sam Ruiz"}, created_on: "2026-06-17T09:48:10Z",
+            notes: wrap("Fix merged in r4471 (added an explicit wait on the cart spinner). 200 green runs since — safe to close once someone confirms.") },
+        ];
+        d.attachments = [];
+        return d;
+      },
+      apply: () => { flash([4812]); },
     },
     {
-      say: "The other overdue ticket, #4812, is already at 100% with a green pipeline — the fix landed but nobody closed it. Closing it.",
+      say: "Sam's last note says the fix merged and has been green since — it just was never closed. Closing it with a reason.",
       tool: "update_redmine_issue",
-      args: { issue_id: 4812, fields: { status_id: 5, notes: "Verified fixed: 200 consecutive green runs on CI. Closing." } },
+      args: { issue_id: 4812, fields: { status_id: 5, notes: "Closing: fix merged in r4471 and stable on CI per Sam's 2026-06-17 note. No further action needed." } },
       result: () => { const i = byId(4812); i.status = STATUS.CLOSED;
                       const d = issueDict(i); d.custom_fields = []; return d; },
-      apply: () => { render(); flash([4812]); touch([4812]); markClosed(); },
+      apply: () => { render(); flash([4812]); touch([4812]); addComment(); markClosed(); },
     },
   ];
 
@@ -712,14 +709,14 @@
 
   // ── Ledger ────────────────────────────────────────────────
   const touched = new Set();
-  let calls = 0, hours = 0, closed = 0;
+  let calls = 0, comments = 0, closed = 0;
   function touch(ids) { ids.forEach(i => touched.add(i)); $("sbIssues").textContent = touched.size; }
-  function addHours(h) { hours = Math.round((hours + h) * 100) / 100; $("sbHours").textContent = hours; }
+  function addComment() { comments++; $("sbComments").textContent = comments; }
   function markClosed() { closed++; $("sbClosed").textContent = closed; }
   function bumpCalls() { calls++; $("sbCalls").textContent = calls; $("ledgerChipVal").textContent = calls; $("ledgerChip").classList.remove("hidden"); }
   function resetLedger() {
-    touched.clear(); calls = hours = closed = 0;
-    ["sbCalls","sbIssues","sbHours","sbClosed"].forEach(id => $(id).textContent = "0");
+    touched.clear(); calls = comments = closed = 0;
+    ["sbCalls","sbIssues","sbComments","sbClosed"].forEach(id => $(id).textContent = "0");
     $("ledgerChipVal").textContent = "0";
   }
 
@@ -784,7 +781,7 @@
     $("stepBtn").disabled = true; $("replayBtn").disabled = false;
     $("receiptHead").innerHTML = `The agent worked <span>${touched.size} issues</span> in ${calls} tool calls.`;
     $("rCalls").textContent = calls; $("rIssues").textContent = touched.size;
-    $("rHours").textContent = hours; $("rClosed").textContent = closed;
+    $("rComments").textContent = comments; $("rClosed").textContent = closed;
     $("receipt").classList.remove("hidden");
     track("demo_complete");
   }
