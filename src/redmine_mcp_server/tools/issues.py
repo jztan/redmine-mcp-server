@@ -320,12 +320,38 @@ def _issue_to_dict_selective(
     return {key: all_fields[key] for key in fields if key in all_fields}
 
 
+# Attribute changes whose values are free-form user text (rather than numeric
+# IDs, enums or dates) and so must be wrapped against prompt injection.
+_FREE_TEXT_ATTR_NAMES = {"description", "subject"}
+
+
+def _detail_value_is_free_text(property_name: Any, field_name: Any) -> bool:
+    """Whether a journal detail's old/new values are free-form user text.
+
+    Custom-field values (``cf``), the free-text attributes ``description`` and
+    ``subject``, and attachment filenames (``attachment``) carry
+    attacker-controllable prose and must be wrapped like journal notes are.
+    Everything else (status/assignee/priority IDs, dates, numbers) is
+    structured and left raw to avoid bloating the output with boundary tags.
+    """
+    if property_name in ("cf", "attachment"):
+        return True
+    if property_name == "attr" and field_name in _FREE_TEXT_ATTR_NAMES:
+        return True
+    return False
+
+
 def _journal_details_to_list(journal: Any) -> List[Dict[str, Any]]:
     """Convert a journal's raw ``details`` (list of dicts) to a serializable list.
 
     python-redmine exposes journal field-changes as plain dicts with keys
     ``property``, ``name``, ``old_value`` and ``new_value``. The ``getattr``
     fallback defends against the library ever wrapping the items in objects.
+
+    Free-text values (custom fields, ``description``/``subject`` edits,
+    attachment filenames) are passed through ``wrap_insecure_content`` so that
+    field-change history cannot smuggle prompt-injection payloads past the same
+    protection applied to journal notes.
     """
     raw = getattr(journal, "details", None)
     if not raw:
@@ -338,9 +364,13 @@ def _journal_details_to_list(journal: Any) -> List[Dict[str, Any]]:
     keys = ("property", "name", "old_value", "new_value")
     for d in iterator:
         if isinstance(d, dict):
-            details.append({k: d.get(k) for k in keys})
+            item = {k: d.get(k) for k in keys}
         else:
-            details.append({k: getattr(d, k, None) for k in keys})
+            item = {k: getattr(d, k, None) for k in keys}
+        if _detail_value_is_free_text(item["property"], item["name"]):
+            item["old_value"] = wrap_insecure_content(item["old_value"])
+            item["new_value"] = wrap_insecure_content(item["new_value"])
+        details.append(item)
     return details
 
 
