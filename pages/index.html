@@ -285,6 +285,10 @@
   .tc-result::before { content: "\23bf  "; color: #57534d; }
   .tc-expand { color: #6f6a64; }
   .tc-result:hover .tc-expand { color: var(--cli-text); }
+  .hidden-tc { display: none; }
+  .tc-pending { color: var(--cli-dim); animation: ccpulse 1.1s ease-in-out infinite; }
+  @keyframes ccpulse { 50% { opacity: 0.4; } }
+  @media (prefers-reduced-motion: reduce) { .tc-pending { animation: none; } }
   .json-wrap { max-height: 0; overflow: hidden; transition: max-height 0.35s cubic-bezier(0.4,0,0.2,1); }
   .json-wrap.open { max-height: 460px; }
   .json-label { color: var(--cli-dim); font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase; padding-left: 18px; margin-top: 7px; }
@@ -795,9 +799,9 @@
     '<span class="sub">redmine-mcp-server connected over MCP · 45 tools available</span></div>';
   const HINT_HTML = '<div class="cli-hint" id="feedPlaceholder">▸ press <b style="color:#d6d3cd">Run the agent</b> to start</div>';
 
-  let idx = 0, playing = false, timer = null, promptShown = false;
+  let idx = 0, playing = false, animating = false, promptShown = false;
   function reset() {
-    clearTimeout(timer); playing = false; idx = 0; promptShown = false;
+    playing = false; animating = false; idx = 0; promptShown = false;
     board = initialIssues(); _boundary = 0; render();
     $("feed").innerHTML = WELCOME_HTML + HINT_HTML;
     $("cliInput").textContent = "";
@@ -832,19 +836,36 @@
     promptShown = true;
   }
 
-  function appendStep(step) {
+  function scrollFeed() { const f = $("feed"); f.scrollTop = f.scrollHeight; }
+
+  // Stream text into an element word by word, like an LLM emitting tokens.
+  // If autoplay is paused mid-stream, dump the remaining text and stop.
+  async function streamText(el, text) {
+    const words = text.split(" ");
+    el.textContent = "";
+    for (let i = 0; i < words.length; i++) {
+      if (!playing) { el.textContent = text; scrollFeed(); return; }
+      el.textContent += (i ? " " : "") + words[i];
+      scrollFeed();
+      await sleep(30);
+    }
+  }
+
+  // Render one step. Animated: stream the reasoning, show the tool call as
+  // "running", then fill its result (and mutate the board) when it returns.
+  async function playStep(step, animated) {
     const ph = $("feedPlaceholder"); if (ph) ph.remove();
     const result = step.result();
-    const argsPreview = Object.entries(step.args).filter(([k]) => k!=="fields")
-      .map(([k,v]) => `${k}: ${JSON.stringify(v)}`).join(", ");
+    const argsPreview = Object.entries(step.args).filter(([k]) => k !== "fields")
+      .map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(", ");
     const tid = "tc" + idx;
     const turn = document.createElement("div");
-    turn.className = "turn";
+    turn.className = "turn on";
     turn.innerHTML = `
-      <div class="cc-msg"><span class="cc-bullet">⏺</span><span class="agent-text">${escapeHtml(step.say)}</span></div>
-      <div class="toolcall">
+      <div class="cc-msg"><span class="cc-bullet">⏺</span><span class="agent-text"></span></div>
+      <div class="toolcall hidden-tc">
         <div class="tc-line"><span class="cc-bullet">⏺</span><span class="tc-call"><span class="tc-name">${step.tool}</span><span class="tc-args">(${escapeHtml(argsPreview)})</span></span></div>
-        <div class="tc-result">${escapeHtml(step.summary || "ok")} <span class="tc-expand">(ctrl+o to expand)</span></div>
+        <div class="tc-result"><span class="tc-pending">running…</span></div>
         <div class="json-wrap" id="${tid}">
           <div class="json-label">request</div>
           <pre class="json-box">${syntaxHighlight(JSON.stringify(step.args, null, 2))}</pre>
@@ -853,23 +874,33 @@
         </div>
       </div>`;
     $("feed").appendChild(turn);
-    const expandLabel = turn.querySelector(".tc-expand");
-    turn.querySelector(".tc-result").addEventListener("click", () => {
+    const textEl = turn.querySelector(".agent-text");
+    const tcEl = turn.querySelector(".toolcall");
+    const resEl = turn.querySelector(".tc-result");
+
+    animating = true;
+    if (animated && !REDUCED_MOTION) {
+      await streamText(textEl, step.say);
+      tcEl.classList.remove("hidden-tc"); scrollFeed();
+      if (playing) await sleep(640);            // the tool call runs
+    } else {
+      textEl.textContent = step.say;
+      tcEl.classList.remove("hidden-tc");
+    }
+    // the tool returns: fill the result line and apply its effect to the board
+    resEl.innerHTML = `${escapeHtml(step.summary || "ok")} <span class="tc-expand">(ctrl+o to expand)</span>`;
+    bumpCalls();
+    step.apply();
+    const expandLabel = resEl.querySelector(".tc-expand");
+    resEl.addEventListener("click", () => {
       const open = $(tid).classList.toggle("open");
       expandLabel.textContent = open ? "(ctrl+o to collapse)" : "(ctrl+o to expand)";
     });
-    requestAnimationFrame(() => turn.classList.add("on"));
-    bumpCalls();
-    step.apply();
     if (REDUCED_MOTION) $(tid).classList.add("open");
-    turn.scrollIntoView({ behavior: REDUCED_MOTION ? "auto" : "smooth", block: "nearest" });
-  }
-
-  function doStep() {
-    if (idx >= SCRIPT.length) return finish();
-    appendStep(SCRIPT[idx]);
+    scrollFeed();
     idx++;
     if (idx >= SCRIPT.length) finish();
+    animating = false;
   }
 
   function finish() {
@@ -885,34 +916,32 @@
 
   async function play() {
     if (idx >= SCRIPT.length) reset();
+    if (animating) return;
     playing = true;
     $("playBtn").textContent = "● Running…"; $("playBtn").disabled = true;
     $("replayBtn").disabled = true;
     track("demo_play");
-    if (!promptShown) { await showPrompt(true); }
-    if (!playing) return;                    // paused during the typing animation
-    const advance = () => {
-      if (!playing) return;
-      doStep();
-      if (idx < SCRIPT.length) timer = setTimeout(advance, REDUCED_MOTION ? 0 : 2300);
-    };
-    advance();
+    if (!promptShown) await showPrompt(true);
+    while (playing && idx < SCRIPT.length) {
+      await playStep(SCRIPT[idx], true);
+      if (!playing || idx >= SCRIPT.length) break;
+      await sleep(520);
+    }
   }
 
   // Stop autoplay without resetting, leaving the run resumable via "Run".
   function pause() {
-    clearTimeout(timer);
     playing = false;
     if (idx < SCRIPT.length) { $("playBtn").textContent = "▶ Run the agent"; $("playBtn").disabled = false; }
   }
 
   $("playBtn").addEventListener("click", play);
-  // Step takes manual control: pause any running autoplay, then advance one call.
-  $("stepBtn").addEventListener("click", () => {
-    if (idx >= SCRIPT.length) return;
+  // Step: advance one call instantly (pausing any running autoplay first).
+  $("stepBtn").addEventListener("click", async () => {
+    if (animating || idx >= SCRIPT.length) return;
     if (playing) pause();
-    if (!promptShown) { showPrompt(false); }   // submit the prompt instantly first
-    doStep();
+    if (!promptShown) showPrompt(false);
+    await playStep(SCRIPT[idx], false);
   });
   $("replayBtn").addEventListener("click", () => { reset(); play(); });
 
@@ -920,14 +949,13 @@
   if (!REDUCED_MOTION) {
     let auto = false;
     const io = new IntersectionObserver((entries) => {
-      entries.forEach(e => { if (e.isIntersecting && !auto && idx===0) { auto = true; setTimeout(play, 500); } });
+      entries.forEach(e => { if (e.isIntersecting && !auto && idx === 0) { auto = true; setTimeout(play, 500); } });
     }, { threshold: 0.4 });
     io.observe($("demoSection"));
   } else {
     // reduced motion: render the full final state immediately
     showPrompt(false);
-    SCRIPT.forEach((s) => { appendStep(s); idx++; });
-    finish();
+    (async () => { while (idx < SCRIPT.length) await playStep(SCRIPT[idx], false); })();
   }
 
   $("installCopyBtn").addEventListener("click", () => { navigator.clipboard.writeText($("installCmd").textContent); showToast("Copied"); });
