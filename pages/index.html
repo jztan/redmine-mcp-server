@@ -242,57 +242,68 @@
   td.rm-due.overdue { color: #cc3300; font-weight: bold; }
   .rm-none { color: #999; font-style: italic; }
 
-  /* ── Agent CLI terminal (dark, like a real coding-agent session) ──
-     The Redmine table above mutates as the agent's tool calls land here. */
+  /* ── Agent CLI, styled after Claude Code ──
+     The Redmine table above mutates as the agent's MCP tool calls land here. */
   .cli {
-    --cli-text: #c8d0da; --cli-dim: #717b89; --cli-mark: #56d364; --cli-tool: #61afef;
-    background: #0f1117; display: flex; flex-direction: column; height: 430px;
+    --cli-text: #d6d3cd; --cli-dim: #8b8680; --cli-accent: #d97757;
+    background: #1a1816; display: flex; flex-direction: column; height: 460px;
   }
-  @media (max-width: 640px) { .cli { height: 360px; } }
+  @media (max-width: 640px) { .cli { height: 390px; } }
   .cli-bar { display: flex; align-items: center; gap: 8px; padding: 9px 14px;
-             background: #181b22; border-bottom: 1px solid rgba(255,255,255,0.06); flex-shrink: 0; }
+             background: #211e1b; border-bottom: 1px solid rgba(255,255,255,0.06); flex-shrink: 0; }
   .cli-dot { width: 11px; height: 11px; border-radius: 50%; }
   .cli-dot.r { background: #ff5f56; } .cli-dot.y { background: #ffbd2e; } .cli-dot.g { background: #27c93f; }
   .cli-title { margin-left: 6px; font-family: var(--font-mono); font-size: 11.5px; color: var(--cli-dim); }
-  .cli-title b { color: #aeb6c2; font-weight: 500; }
-  .cli-body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 16px 18px;
-              font-family: var(--font-mono); font-size: 12.5px; line-height: 1.6; color: var(--cli-text); }
-  .cli-prompt { color: var(--cli-text); }
-  .cli-prompt::before { content: "\276f "; color: var(--cli-mark); }
-  .cli-prompt b { color: #fff; font-weight: 500; }
-  .cli-hint { color: var(--cli-dim); margin-top: 8px; }
-  .cli-hint .blink { animation: blink 1.1s step-end infinite; }
-  @keyframes blink { 50% { opacity: 0; } }
-  @media (prefers-reduced-motion: reduce) { .cli-hint .blink { animation: none; } }
+  .cli-body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 16px 8px;
+              font-family: var(--font-mono); font-size: 12.5px; line-height: 1.65; color: var(--cli-text); }
 
-  .turn { opacity: 0; transform: translateY(5px); transition: all 0.35s ease; margin-top: 15px; }
+  .cc-welcome { border: 1px solid #3a352f; border-radius: 6px; padding: 9px 12px; margin-bottom: 14px; color: var(--cli-dim); }
+  .cc-welcome .cc-star { color: var(--cli-accent); }
+  .cc-welcome b { color: var(--cli-text); font-weight: 500; }
+  .cc-welcome .sub { display: block; margin-top: 3px; font-size: 11.5px; color: #6f6a64; }
+  .cli-prompt { color: var(--cli-text); }
+  .cli-prompt::before { content: "> "; color: var(--cli-dim); }
+  .cli-hint { color: var(--cli-dim); margin-top: 10px; }
+  .blink, .cc-cursor { animation: blink 1.1s step-end infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .blink, .cc-cursor { animation: none; } }
+
+  .turn { opacity: 0; transform: translateY(5px); transition: all 0.35s ease; margin-top: 14px; }
   .turn.on { opacity: 1; transform: none; }
-  .cli-section { color: var(--cli-dim); margin-bottom: 7px; font-size: 11.5px; }
-  .cli-section::before { content: "# "; }
+  .cc-msg { display: flex; gap: 8px; }
+  .cc-bullet { color: var(--cli-accent); flex-shrink: 0; }
   .agent-text { color: var(--cli-text); }
-  .toolcall { margin-top: 7px; }
-  .tc-line { display: flex; align-items: baseline; gap: 8px; cursor: pointer; user-select: none; }
-  .tc-mark { color: var(--cli-mark); flex-shrink: 0; }
+  .toolcall { margin-top: 12px; }
+  .tc-line { display: flex; gap: 8px; align-items: baseline; }
   .tc-call { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-  .tc-name { color: var(--cli-tool); }
+  .tc-name { color: var(--cli-text); }
   .tc-args { color: var(--cli-dim); }
-  .tc-toggle { color: var(--cli-dim); font-size: 10px; flex-shrink: 0; }
-  .tc-line:hover .tc-toggle { color: var(--cli-text); }
-  .tc-result { color: var(--cli-dim); padding-left: 1px; margin-top: 1px; }
-  .tc-result::before { content: "\23bf "; }
+  .tc-result { color: var(--cli-dim); padding-left: 18px; margin-top: 2px; cursor: pointer; }
+  .tc-result::before { content: "\23bf  "; color: #57534d; }
+  .tc-expand { color: #6f6a64; }
+  .tc-result:hover .tc-expand { color: var(--cli-text); }
   .json-wrap { max-height: 0; overflow: hidden; transition: max-height 0.35s cubic-bezier(0.4,0,0.2,1); }
   .json-wrap.open { max-height: 460px; }
-  .json-label { color: var(--cli-dim); font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase; padding-left: 16px; margin-top: 7px; }
+  .json-label { color: var(--cli-dim); font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase; padding-left: 18px; margin-top: 7px; }
   .json-box {
-    margin: 4px 0 0 16px; padding: 9px 12px; border-left: 2px solid rgba(255,255,255,0.12);
-    white-space: pre; overflow: auto; max-height: 290px; color: var(--cli-text);
+    margin: 4px 0 0 18px; padding: 9px 12px; border-left: 2px solid #3a352f;
+    white-space: pre; overflow: auto; max-height: 280px; color: var(--cli-text);
     font-size: 11.5px; line-height: 1.5;
   }
-  .json-key { color: #d4a5ff; }
-  .json-string { color: #7ee787; }
-  .json-number { color: #79c0ff; }
-  .json-bool { color: #ff7b9d; }
+  .json-key { color: #e0a0ff; }
+  .json-string { color: #9ece6a; }
+  .json-number { color: #7aa2f7; }
+  .json-bool { color: #f7768e; }
   .json-null { color: var(--cli-dim); font-style: italic; }
+
+  /* Claude Code bottom input box */
+  .cc-input { flex-shrink: 0; padding: 4px 14px 12px; }
+  .cc-input-box { border: 1px solid #4a443d; border-radius: 8px; padding: 8px 12px;
+                  color: var(--cli-dim); font-family: var(--font-mono); font-size: 12.5px; }
+  .cc-input-box::before { content: "> "; color: #6f6a64; }
+  .cc-input-hint { margin-top: 5px; font-family: var(--font-mono); font-size: 10.5px;
+                   color: #6f6a64; display: flex; justify-content: space-between; }
+  .cc-input-hint .ok { color: #7faa6e; }
 
   /* ledger / scoreboard */
   .scoreboard { display: flex; gap: 22px; padding: 14px 24px; border-top: 1px solid var(--border); background: var(--bg-subtle); flex-wrap: wrap; }
@@ -460,11 +471,15 @@
         <div class="cli">
           <div class="cli-bar">
             <span class="cli-dot r"></span><span class="cli-dot y"></span><span class="cli-dot g"></span>
-            <span class="cli-title"><b>claude</b>&nbsp;—&nbsp;agent · redmine-mcp-server (MCP)</span>
+            <span class="cli-title">claude — ~/work/cartly-app</span>
           </div>
           <div class="cli-body" id="feed">
-            <div class="cli-prompt"><b>triage the overdue issues in Sprint 14</b></div>
-            <div class="cli-hint" id="feedPlaceholder">press <b style="color:#aeb6c2">Run the agent</b> to start the session&nbsp;<span class="blink">▍</span></div>
+            <div class="cc-welcome"><span class="cc-star">✻</span> Welcome to <b>Claude Code</b><span class="sub">redmine-mcp-server connected over MCP · 45 tools available</span></div>
+            <div class="cli-hint" id="feedPlaceholder">▸ press <b style="color:#d6d3cd">Run the agent</b> to start</div>
+          </div>
+          <div class="cc-input">
+            <div class="cc-input-box"><span id="cliInput"></span><span class="cc-cursor">▏</span></div>
+            <div class="cc-input-hint"><span>? for shortcuts</span><span class="ok">● redmine-mcp-server (MCP)</span></div>
           </div>
         </div>
       </div>
@@ -745,37 +760,62 @@
   }
 
   // ── Driver ────────────────────────────────────────────────
-  let idx = 0, playing = false, timer = null;
+  const PROMPT_TEXT = "triage the overdue issues in Sprint 14";
+  const WELCOME_HTML =
+    '<div class="cc-welcome"><span class="cc-star">✻</span> Welcome to <b>Claude Code</b>' +
+    '<span class="sub">redmine-mcp-server connected over MCP · 45 tools available</span></div>';
+  const HINT_HTML = '<div class="cli-hint" id="feedPlaceholder">▸ press <b style="color:#d6d3cd">Run the agent</b> to start</div>';
+
+  let idx = 0, playing = false, timer = null, promptShown = false;
   function reset() {
-    clearTimeout(timer); playing = false; idx = 0;
+    clearTimeout(timer); playing = false; idx = 0; promptShown = false;
     board = initialIssues(); _boundary = 0; render();
-    $("feed").innerHTML =
-      '<div class="cli-prompt"><b>triage the overdue issues in Sprint 14</b></div>' +
-      '<div class="cli-hint" id="feedPlaceholder">press <b style="color:#aeb6c2">Run the agent</b> to start the session&nbsp;<span class="blink">▍</span></div>';
+    $("feed").innerHTML = WELCOME_HTML + HINT_HTML;
+    $("cliInput").textContent = "";
     resetLedger();
     $("receipt").classList.add("hidden");
     $("playBtn").textContent = "▶ Run the agent"; $("playBtn").disabled = false;
     $("stepBtn").disabled = false; $("replayBtn").disabled = true;
   }
 
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  // Show the prompt: type it into the input box (like a human), then "submit"
+  // it into the conversation. Instant when not animated (reduced motion / Step).
+  async function showPrompt(animated) {
+    const ph = $("feedPlaceholder"); if (ph) ph.remove();
+    const input = $("cliInput");
+    if (animated && !REDUCED_MOTION) {
+      input.textContent = "";
+      for (const ch of PROMPT_TEXT) {
+        if (!playing) break;                 // paused mid-type → stop early
+        input.textContent += ch;
+        $("feed").scrollTop = $("feed").scrollHeight;
+        await sleep(ch === " " ? 70 : 38);
+      }
+      await sleep(320);
+    }
+    input.textContent = "";
+    const line = document.createElement("div");
+    line.className = "cli-prompt";
+    line.textContent = PROMPT_TEXT;
+    $("feed").appendChild(line);
+    $("feed").scrollTop = $("feed").scrollHeight;
+    promptShown = true;
+  }
+
   function appendStep(step) {
     const ph = $("feedPlaceholder"); if (ph) ph.remove();
     const result = step.result();
     const argsPreview = Object.entries(step.args).filter(([k]) => k!=="fields")
-      .map(([k,v]) => `${k}=${typeof v==="object"?JSON.stringify(v):JSON.stringify(v)}`).join(", ");
+      .map(([k,v]) => `${k}: ${JSON.stringify(v)}`).join(", ");
     const tid = "tc" + idx;
     const turn = document.createElement("div");
     turn.className = "turn";
     turn.innerHTML = `
-      ${step.section ? `<div class="cli-section">${escapeHtml(step.section)}</div>` : ""}
-      <div class="agent-text">${escapeHtml(step.say)}</div>
+      <div class="cc-msg"><span class="cc-bullet">⏺</span><span class="agent-text">${escapeHtml(step.say)}</span></div>
       <div class="toolcall">
-        <div class="tc-line" data-target="${tid}">
-          <span class="tc-mark">⏺</span>
-          <span class="tc-call"><span class="tc-name">${step.tool}</span><span class="tc-args">(${escapeHtml(argsPreview)})</span></span>
-          <span class="tc-toggle">▸ json</span>
-        </div>
-        <div class="tc-result">${escapeHtml(step.summary || "ok")}</div>
+        <div class="tc-line"><span class="cc-bullet">⏺</span><span class="tc-call"><span class="tc-name">${step.tool}</span><span class="tc-args">(${escapeHtml(argsPreview)})</span></span></div>
+        <div class="tc-result">${escapeHtml(step.summary || "ok")} <span class="tc-expand">(ctrl+o to expand)</span></div>
         <div class="json-wrap" id="${tid}">
           <div class="json-label">request</div>
           <pre class="json-box">${syntaxHighlight(JSON.stringify(step.args, null, 2))}</pre>
@@ -784,10 +824,10 @@
         </div>
       </div>`;
     $("feed").appendChild(turn);
-    const tcToggle = turn.querySelector(".tc-toggle");
-    turn.querySelector(".tc-line").addEventListener("click", () => {
+    const expandLabel = turn.querySelector(".tc-expand");
+    turn.querySelector(".tc-result").addEventListener("click", () => {
       const open = $(tid).classList.toggle("open");
-      tcToggle.textContent = open ? "▾ json" : "▸ json";
+      expandLabel.textContent = open ? "(ctrl+o to collapse)" : "(ctrl+o to expand)";
     });
     requestAnimationFrame(() => turn.classList.add("on"));
     bumpCalls();
@@ -814,12 +854,14 @@
     track("demo_complete");
   }
 
-  function play() {
+  async function play() {
     if (idx >= SCRIPT.length) reset();
     playing = true;
     $("playBtn").textContent = "● Running…"; $("playBtn").disabled = true;
     $("replayBtn").disabled = true;
     track("demo_play");
+    if (!promptShown) { await showPrompt(true); }
+    if (!playing) return;                    // paused during the typing animation
     const advance = () => {
       if (!playing) return;
       doStep();
@@ -840,6 +882,7 @@
   $("stepBtn").addEventListener("click", () => {
     if (idx >= SCRIPT.length) return;
     if (playing) pause();
+    if (!promptShown) { showPrompt(false); }   // submit the prompt instantly first
     doStep();
   });
   $("replayBtn").addEventListener("click", () => { reset(); play(); });
@@ -852,7 +895,8 @@
     }, { threshold: 0.4 });
     io.observe($("demoSection"));
   } else {
-    // reduced motion: render full final state immediately
+    // reduced motion: render the full final state immediately
+    showPrompt(false);
     SCRIPT.forEach((s) => { appendStep(s); idx++; });
     finish();
   }
