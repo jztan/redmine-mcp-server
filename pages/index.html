@@ -408,6 +408,10 @@
     .rm-app { font-size: 11px; }
     .stage-controls { width: 100%; }
     .btn:not(.btn-icon) { flex: 1; }
+    /* Shrink the install command on phones so the copy button doesn't
+       overflow the box (the command text is nowrap). */
+    .install-cmd { font-size: 13px; padding: 12px 14px; gap: 8px; }
+    .install-cmd-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   }
   /* On phones the 8-column issues table can't fit, so collapse it to the
      columns that carry the demo (#, Subject, Status, Assignee) and let it fit
