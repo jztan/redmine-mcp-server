@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Security
+- Bump `python-multipart` 0.0.29 to 0.0.32 to clear CVE-2026-53539 and CVE-2026-53538 (both fixed upstream in 0.0.30). ([#150](https://github.com/jztan/redmine-mcp-server/pull/150))
+- Bump `starlette` 1.0.1 to 1.3.1 to clear four advisories: CVE-2026-48818 and CVE-2026-48817 (fixed in 1.1.0), CVE-2026-54282 (1.3.0), and CVE-2026-54283 (1.3.1). `starlette` is a transitive dependency via the FastMCP/Uvicorn stack; `fastmcp-slim` 3.4.2 constrains it as `>=1.0.1` with no upper bound, so 1.3.1 satisfies it. Dependabot does not propose transitive bumps on its own, so this was applied manually. ([#162](https://github.com/jztan/redmine-mcp-server/pull/162))
+- Bump `cryptography` 46.0.7 to 49.0.0 to clear GHSA-537c-gmf6-5ccf (fixed in 48.0.1). `cryptography` is a transitive dependency via `authlib` and `joserfc`. ([#162](https://github.com/jztan/redmine-mcp-server/pull/162))
+
+### Changed
+- Bump runtime dependencies `fastmcp` 3.3.1 to 3.4.2 ([#152](https://github.com/jztan/redmine-mcp-server/pull/152)) and `uvicorn` 0.48.0 to 0.49.0, which pulls `httptools` 0.8.0 ([#151](https://github.com/jztan/redmine-mcp-server/pull/151)). The OAuth discovery and introspection paths were smoke-tested under FastMCP 3.4.2.
+- Bump development and CI tooling: `pytest` 9.0.3 to 9.1.1 ([#160](https://github.com/jztan/redmine-mcp-server/pull/160)), `pytest-asyncio` 1.3.0 to 1.4.0 ([#143](https://github.com/jztan/redmine-mcp-server/pull/143)), `actions/checkout` to 6.0.3 ([#142](https://github.com/jztan/redmine-mcp-server/pull/142)), `astral-sh/setup-uv` to 8.2.0 ([#149](https://github.com/jztan/redmine-mcp-server/pull/149)), and `codecov/codecov-action` 6.0.1 to 7.0.0 ([#148](https://github.com/jztan/redmine-mcp-server/pull/148)).
 
 ## [2.3.0] - 2026-06-12
 ### Added
