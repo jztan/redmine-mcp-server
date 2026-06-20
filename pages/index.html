@@ -242,46 +242,57 @@
   td.rm-due.overdue { color: #cc3300; font-weight: bold; }
   .rm-none { color: #999; font-style: italic; }
 
-  /* Transcript */
-  /* Fixed height + internally-scrolling feed so the Redmine table above stays
-     on screen while the agent log scrolls beneath it. */
-  .transcript { padding: 16px 20px 18px; height: 400px; display: flex; flex-direction: column; }
-  @media (max-width: 640px) { .transcript { height: 340px; } }
-  .transcript-head { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-tertiary); margin-bottom: 12px; }
-  .feed { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
-  .turn { opacity: 0; transform: translateY(6px); transition: all 0.4s ease; }
-  .turn.on { opacity: 1; transform: none; }
-  .agent-line { display: block; }
-  .agent-kicker { display: block; font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.13em;
-                  text-transform: uppercase; color: var(--text-tertiary); margin-bottom: 4px; }
-  .agent-text { font-size: 14px; line-height: 1.55; color: var(--text); }
-  .toolcall { margin: 9px 0 0; }
-  .toolcall-head {
-    display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 11.5px;
-    background: var(--code-bg); border: 1px solid var(--border); border-radius: var(--radius-sm);
-    padding: 7px 11px; cursor: pointer; user-select: none;
+  /* ── Agent CLI terminal (dark, like a real coding-agent session) ──
+     The Redmine table above mutates as the agent's tool calls land here. */
+  .cli {
+    --cli-text: #c8d0da; --cli-dim: #717b89; --cli-mark: #56d364; --cli-tool: #61afef;
+    background: #0f1117; display: flex; flex-direction: column; height: 430px;
   }
-  .toolcall-head:hover { border-color: var(--border-strong); }
-  .tc-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
-  .tc-name { color: var(--accent); font-weight: 500; }
-  .tc-args { color: var(--text-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-  .tc-toggle { color: var(--text-tertiary); font-size: 10px; flex-shrink: 0; }
-  .json-wrap { max-height: 0; overflow: hidden; transition: max-height 0.35s cubic-bezier(0.4,0,0.2,1); }
-  .json-wrap.open { max-height: 520px; }
-  .json-box {
-    background: var(--code-bg); border: 1px solid var(--border); border-top: none;
-    border-radius: 0 0 var(--radius-sm) var(--radius-sm); padding: 12px 14px;
-    font-family: var(--font-mono); font-size: 11px; line-height: 1.5;
-    white-space: pre; overflow: auto; max-height: 320px; margin: 0; color: var(--text);
-  }
-  .json-label { font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-tertiary); padding: 8px 14px 2px; background: var(--code-bg); border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
-  .json-key { color: var(--json-key); }
-  .json-string { color: var(--json-string); }
-  .json-number { color: var(--json-number); }
-  .json-bool { color: var(--json-bool); }
-  .json-null { color: var(--text-tertiary); font-style: italic; }
+  @media (max-width: 640px) { .cli { height: 360px; } }
+  .cli-bar { display: flex; align-items: center; gap: 8px; padding: 9px 14px;
+             background: #181b22; border-bottom: 1px solid rgba(255,255,255,0.06); flex-shrink: 0; }
+  .cli-dot { width: 11px; height: 11px; border-radius: 50%; }
+  .cli-dot.r { background: #ff5f56; } .cli-dot.y { background: #ffbd2e; } .cli-dot.g { background: #27c93f; }
+  .cli-title { margin-left: 6px; font-family: var(--font-mono); font-size: 11.5px; color: var(--cli-dim); }
+  .cli-title b { color: #aeb6c2; font-weight: 500; }
+  .cli-body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 16px 18px;
+              font-family: var(--font-mono); font-size: 12.5px; line-height: 1.6; color: var(--cli-text); }
+  .cli-prompt { color: var(--cli-text); }
+  .cli-prompt::before { content: "\276f "; color: var(--cli-mark); }
+  .cli-prompt b { color: #fff; font-weight: 500; }
+  .cli-hint { color: var(--cli-dim); margin-top: 8px; }
+  .cli-hint .blink { animation: blink 1.1s step-end infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .cli-hint .blink { animation: none; } }
 
-  .feed-placeholder { color: var(--text-tertiary); font-size: 13px; text-align: center; margin: auto; max-width: 240px; line-height: 1.5; }
+  .turn { opacity: 0; transform: translateY(5px); transition: all 0.35s ease; margin-top: 15px; }
+  .turn.on { opacity: 1; transform: none; }
+  .cli-section { color: var(--cli-dim); margin-bottom: 7px; font-size: 11.5px; }
+  .cli-section::before { content: "# "; }
+  .agent-text { color: var(--cli-text); }
+  .toolcall { margin-top: 7px; }
+  .tc-line { display: flex; align-items: baseline; gap: 8px; cursor: pointer; user-select: none; }
+  .tc-mark { color: var(--cli-mark); flex-shrink: 0; }
+  .tc-call { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .tc-name { color: var(--cli-tool); }
+  .tc-args { color: var(--cli-dim); }
+  .tc-toggle { color: var(--cli-dim); font-size: 10px; flex-shrink: 0; }
+  .tc-line:hover .tc-toggle { color: var(--cli-text); }
+  .tc-result { color: var(--cli-dim); padding-left: 1px; margin-top: 1px; }
+  .tc-result::before { content: "\23bf "; }
+  .json-wrap { max-height: 0; overflow: hidden; transition: max-height 0.35s cubic-bezier(0.4,0,0.2,1); }
+  .json-wrap.open { max-height: 460px; }
+  .json-label { color: var(--cli-dim); font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase; padding-left: 16px; margin-top: 7px; }
+  .json-box {
+    margin: 4px 0 0 16px; padding: 9px 12px; border-left: 2px solid rgba(255,255,255,0.12);
+    white-space: pre; overflow: auto; max-height: 290px; color: var(--cli-text);
+    font-size: 11.5px; line-height: 1.5;
+  }
+  .json-key { color: #d4a5ff; }
+  .json-string { color: #7ee787; }
+  .json-number { color: #79c0ff; }
+  .json-bool { color: #ff7b9d; }
+  .json-null { color: var(--cli-dim); font-style: italic; }
 
   /* ledger / scoreboard */
   .scoreboard { display: flex; gap: 22px; padding: 14px 24px; border-top: 1px solid var(--border); background: var(--bg-subtle); flex-wrap: wrap; }
@@ -446,10 +457,14 @@
             </table>
           </div>
         </div>
-        <div class="transcript">
-          <div class="transcript-head">agent · tool-calling loop</div>
-          <div class="feed" id="feed">
-            <div class="feed-placeholder" id="feedPlaceholder">Press <b>Run the agent</b> and watch it triage the overdue issues in Sprint 14 using real MCP tool calls.</div>
+        <div class="cli">
+          <div class="cli-bar">
+            <span class="cli-dot r"></span><span class="cli-dot y"></span><span class="cli-dot g"></span>
+            <span class="cli-title"><b>claude</b>&nbsp;—&nbsp;agent · redmine-mcp-server (MCP)</span>
+          </div>
+          <div class="cli-body" id="feed">
+            <div class="cli-prompt"><b>triage the overdue issues in Sprint 14</b></div>
+            <div class="cli-hint" id="feedPlaceholder">press <b style="color:#aeb6c2">Run the agent</b> to start the session&nbsp;<span class="blink">▍</span></div>
           </div>
         </div>
       </div>
@@ -605,7 +620,9 @@
   // Each step: narration, tool, args (request), result builder, apply (board mutation)
   const SCRIPT = [
     {
-      say: "I'll triage Sprint 14's overdue, open issues. Let me pull them, highest priority first.",
+      section: "discover — overdue, open issues in Sprint 14",
+      say: "I'll start by pulling the overdue, open tickets, highest priority first.",
+      summary: "2 issues · #4821 (High), #4812 (Normal)",
       tool: "list_redmine_issues",
       args: { project_id: 42, status_id: "open", due_date: "<=2026-06-20", sort: "priority:desc",
               fields: ["id","subject","status","priority","assigned_to","due_date"] },
@@ -620,7 +637,9 @@
       apply: () => { flash([4821, 4812]); },
     },
     {
-      say: "#4821 is High, overdue since Jun 12, and still unassigned. Let me read it.",
+      section: "analyze & triage #4821",
+      say: "#4821 is the top one — High, overdue since Jun 12, still unassigned. Reading it.",
+      summary: "High · unassigned · journal: Sam → Android 14 foreground-service change",
       tool: "get_redmine_issue",
       args: { issue_id: 4821, include_journals: true },
       result: () => {
@@ -637,6 +656,7 @@
     },
     {
       say: "Sam's note ties this to Android 14's foreground-service change, so it belongs with the notifications owner. Assigning Maya and moving it to In Progress.",
+      summary: "#4821 → In Progress · assigned Maya Chen",
       tool: "update_redmine_issue",
       args: { issue_id: 4821, fields: { status_id: 2, assigned_to_id: 8 } },
       result: () => { const i = byId(4821); i.status = STATUS.INPROG; i.assigned_to = MAYA;
@@ -645,6 +665,7 @@
     },
     {
       say: "Leaving a triage summary on the ticket so whoever picks it up has the context.",
+      summary: "comment added to #4821",
       tool: "update_redmine_issue",
       args: { issue_id: 4821, fields: { notes: "Triaged from the issue history: regression isolated to Android 14's foreground-service change (per Sam's note, 2026-06-13). Reassigned to Maya (notifications). Needs to land in the 4.2 release." } },
       result: () => { const i = byId(4821);
@@ -652,7 +673,9 @@
       apply: () => { render(); flash([4821]); addComment(); },
     },
     {
-      say: "Next, the other overdue ticket, #4812. Before touching it, let me read why a test fix is still open.",
+      section: "verify & close #4812",
+      say: "Next, the other overdue ticket, #4812. Before touching it, reading why a test fix is still open.",
+      summary: "In Progress · journal: Sam → fix merged in r4471, green since",
       tool: "get_redmine_issue",
       args: { issue_id: 4812, include_journals: true },
       result: () => {
@@ -669,6 +692,7 @@
     },
     {
       say: "Sam's last note says the fix merged and has been green since — it just was never closed. Closing it with a reason.",
+      summary: "#4812 → Closed · comment added",
       tool: "update_redmine_issue",
       args: { issue_id: 4812, fields: { status_id: 5, notes: "Closing: fix merged in r4471 and stable on CI per Sam's 2026-06-17 note. No further action needed." } },
       result: () => { const i = byId(4812); i.status = STATUS.CLOSED;
@@ -725,7 +749,9 @@
   function reset() {
     clearTimeout(timer); playing = false; idx = 0;
     board = initialIssues(); _boundary = 0; render();
-    $("feed").innerHTML = '<div class="feed-placeholder" id="feedPlaceholder">Press <b>Run the agent</b> and watch it triage the overdue issues in Sprint 14 using real MCP tool calls.</div>';
+    $("feed").innerHTML =
+      '<div class="cli-prompt"><b>triage the overdue issues in Sprint 14</b></div>' +
+      '<div class="cli-hint" id="feedPlaceholder">press <b style="color:#aeb6c2">Run the agent</b> to start the session&nbsp;<span class="blink">▍</span></div>';
     resetLedger();
     $("receipt").classList.add("hidden");
     $("playBtn").textContent = "▶ Run the agent"; $("playBtn").disabled = false;
@@ -741,17 +767,15 @@
     const turn = document.createElement("div");
     turn.className = "turn";
     turn.innerHTML = `
-      <div class="agent-line">
-        <span class="agent-kicker">Agent</span>
-        <span class="agent-text">${escapeHtml(step.say)}</span>
-      </div>
+      ${step.section ? `<div class="cli-section">${escapeHtml(step.section)}</div>` : ""}
+      <div class="agent-text">${escapeHtml(step.say)}</div>
       <div class="toolcall">
-        <div class="toolcall-head" data-target="${tid}">
-          <span class="tc-dot"></span>
-          <span class="tc-name">${step.tool}</span>
-          <span class="tc-args">(${escapeHtml(argsPreview)})</span>
-          <span class="tc-toggle">{ } JSON</span>
+        <div class="tc-line" data-target="${tid}">
+          <span class="tc-mark">⏺</span>
+          <span class="tc-call"><span class="tc-name">${step.tool}</span><span class="tc-args">(${escapeHtml(argsPreview)})</span></span>
+          <span class="tc-toggle">▸ json</span>
         </div>
+        <div class="tc-result">${escapeHtml(step.summary || "ok")}</div>
         <div class="json-wrap" id="${tid}">
           <div class="json-label">request</div>
           <pre class="json-box">${syntaxHighlight(JSON.stringify(step.args, null, 2))}</pre>
@@ -760,7 +784,11 @@
         </div>
       </div>`;
     $("feed").appendChild(turn);
-    turn.querySelector(".toolcall-head").addEventListener("click", () => $(tid).classList.toggle("open"));
+    const tcToggle = turn.querySelector(".tc-toggle");
+    turn.querySelector(".tc-line").addEventListener("click", () => {
+      const open = $(tid).classList.toggle("open");
+      tcToggle.textContent = open ? "▾ json" : "▸ json";
+    });
     requestAnimationFrame(() => turn.classList.add("on"));
     bumpCalls();
     step.apply();
