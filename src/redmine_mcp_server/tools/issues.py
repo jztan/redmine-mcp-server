@@ -320,6 +320,30 @@ def _issue_to_dict_selective(
     return {key: all_fields[key] for key in fields if key in all_fields}
 
 
+def _journal_details_to_list(journal: Any) -> List[Dict[str, Any]]:
+    """Convert a journal's raw ``details`` (list of dicts) to a serializable list.
+
+    python-redmine exposes journal field-changes as plain dicts with keys
+    ``property``, ``name``, ``old_value`` and ``new_value``. The ``getattr``
+    fallback defends against the library ever wrapping the items in objects.
+    """
+    raw = getattr(journal, "details", None)
+    if not raw:
+        return []
+    details: List[Dict[str, Any]] = []
+    try:
+        iterator = iter(raw)
+    except TypeError:
+        return []
+    keys = ("property", "name", "old_value", "new_value")
+    for d in iterator:
+        if isinstance(d, dict):
+            details.append({k: d.get(k) for k in keys})
+        else:
+            details.append({k: getattr(d, k, None) for k in keys})
+    return details
+
+
 def _journals_to_list(issue: Any) -> List[Dict[str, Any]]:
     """Convert journals on an issue object to a list of dicts."""
     raw_journals = getattr(issue, "journals", None)
@@ -334,7 +358,10 @@ def _journals_to_list(issue: Any) -> List[Dict[str, Any]]:
 
     for journal in iterator:
         notes = getattr(journal, "notes", "")
-        if not notes:
+        details = _journal_details_to_list(journal)
+        # Keep journals that have a note OR field-change details. Entries with
+        # neither carry no information and are skipped.
+        if not notes and not details:
             continue
         user = getattr(journal, "user", None)
         journals.append(
@@ -348,8 +375,10 @@ def _journals_to_list(issue: Any) -> List[Dict[str, Any]]:
                     if user is not None
                     else None
                 ),
-                "notes": wrap_insecure_content(notes),
+                "notes": wrap_insecure_content(notes) if notes else "",
                 "created_on": _safe_isoformat(getattr(journal, "created_on", None)),
+                "private_notes": bool(getattr(journal, "private_notes", False)),
+                "details": details,
             }
         )
     return journals
@@ -413,6 +442,7 @@ def _journal_to_dict(journal: Any, include_private_flag: bool = True) -> Dict[st
         ),
         "notes": wrap_insecure_content(notes) if notes else "",
         "created_on": _safe_isoformat(getattr(journal, "created_on", None)),
+        "details": _journal_details_to_list(journal),
     }
     if include_private_flag:
         entry["private_notes"] = bool(getattr(journal, "private_notes", False))
