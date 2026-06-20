@@ -12,7 +12,7 @@ A Model Context Protocol (MCP) server that integrates with Redmine project manag
 
 **mcp-name: io.github.jztan/redmine-mcp-server**
 
-## [Tool reference](./docs/tool-reference.md) | [Changelog](./CHANGELOG.md) | [Contributing](./docs/contributing.md) | [Troubleshooting](./docs/troubleshooting.md)
+## [Live demo](https://redmine-mcp-server.jztan.com) | [Tool reference](./docs/tool-reference.md) | [Changelog](./CHANGELOG.md) | [Contributing](./docs/contributing.md) | [Troubleshooting](./docs/troubleshooting.md)
 
 ## Features
 

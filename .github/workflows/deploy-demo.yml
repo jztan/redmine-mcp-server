@@ -1,0 +1,35 @@
+name: Deploy demo to GitHub Pages
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inject GA4 measurement ID
+        run: sed -i 's/__GA_MEASUREMENT_ID__/${{ secrets.GA_MEASUREMENT_ID }}/g' pages/index.html
+      - name: Inject demo version
+        run: sed -i 's/__VERSION__/${{ github.ref_name }}/g' pages/index.html
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./pages
+      - id: deployment
+        uses: actions/deploy-pages@v4

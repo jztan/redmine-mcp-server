@@ -35,3 +35,6 @@ docker/test-*/
 # Runtime data
 attachments/
 .worktrees/
+
+# Local build/preview artifacts (demo page screenshots, etc.)
+.preview/
