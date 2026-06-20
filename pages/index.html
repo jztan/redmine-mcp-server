@@ -557,7 +557,7 @@
     </button>
   </div>
   <p class="other-tools">
-    The demo shows 3 of the server's 45 tools. The full set spans
+    The demo shows 4 of the server's 45 tools. The full set spans
     <code>list_redmine_issues</code>, <code>get_redmine_issue</code>, <code>update_redmine_issue</code>,
     <code>manage_time_entry</code>, <code>manage_redmine_wiki_page</code>, <code>manage_project_member</code>,
     <code>search_entire_redmine</code>, and more — covering issues, projects, wikis, time tracking,
@@ -687,23 +687,49 @@
     {
       section: "analyze & triage #4821",
       say: "#4821 is the top one — High, overdue since Jun 12, still unassigned. Reading it.",
-      summary: "High · unassigned · journal: Sam → Android 14 foreground-service change",
+      summary: "High · unassigned · 1 attachment (logcat) · journal from Sam",
       tool: "get_redmine_issue",
-      args: { issue_id: 4821, include_journals: true },
+      args: { issue_id: 4821, include_journals: true, include_attachments: true },
       result: () => {
         const d = issueDict(byId(4821));
         d.description = wrap("Push notifications stop arriving after ~30 min on Android 14 (Pixel 8). FCM token looks valid. Repro: background the app, wait, send a test push — nothing lands. Works on Android 13.");
         d.journals = [
           { id: 90211, user: {id:4,name:"Sam Ruiz"}, created_on: "2026-06-13T11:02:40Z",
-            notes: wrap("Seeing this in crash-free sessions too — likely the foreground-service change in 14.") },
+            notes: wrap("Seeing this in crash-free sessions too — likely the foreground-service change in 14. Attached a logcat from a repro.") },
         ];
-        d.attachments = [];
+        d.attachments = [
+          { id: 7012, filename: "logcat-push-drop.txt", filesize: 48213, content_type: "text/plain",
+            description: wrap("logcat captured during a Pixel 8 repro session"),
+            content_url: "https://redmine.cartly.io/attachments/download/7012/logcat-push-drop.txt",
+            author: { id: 4, name: "Sam Ruiz" }, created_on: "2026-06-13T11:05:12Z" },
+        ];
         return d;
       },
       apply: () => { flash([4821]); },
     },
     {
-      say: "Sam's note ties this to Android 14's foreground-service change, so it belongs with the notifications owner. Assigning Maya and moving it to In Progress.",
+      say: "Sam attached a logcat from a repro. Let me pull it down and see what's actually failing.",
+      summary: "downloaded logcat-push-drop.txt · 48 KB · text/plain",
+      tool: "get_redmine_attachment",
+      args: { attachment_id: 7012 },
+      result: () => ({
+        uri: "http://localhost:8000/files/3f9c1a8e-7b42-4d11-9e6a-2c5d8f0b1a44",
+        uri_type: "http",
+        filename: "logcat-push-drop.txt",
+        content_type: "text/plain",
+        size: 48213,
+        expires_at: TODAY + "T17:41:00Z",
+        attachment_id: 7012,
+      }),
+      apply: () => { flash([4821]); },
+    },
+    {
+      // reasoning-only turn (no tool call): the agent analyzes the downloaded log
+      say: "Reading the logcat: the FCM foreground service is killed about 30 minutes in, right after Android 14's stricter foreground-service timeout fires. That lines up with Sam's note — this is the regression, and it sits in the notifications module.",
+      apply: () => { flash([4821]); },
+    },
+    {
+      say: "Confirmed. Assigning Maya, who owns notifications, and moving it to In Progress.",
       summary: "#4821 → In Progress · assigned Maya Chen",
       tool: "update_redmine_issue",
       args: { issue_id: 4821, fields: { status_id: 2, assigned_to_id: 8 } },
@@ -715,7 +741,7 @@
       say: "Leaving a triage summary on the ticket so whoever picks it up has the context.",
       summary: "comment added to #4821",
       tool: "update_redmine_issue",
-      args: { issue_id: 4821, fields: { notes: "Triaged from the issue history: regression isolated to Android 14's foreground-service change (per Sam's note, 2026-06-13). Reassigned to Maya (notifications). Needs to land in the 4.2 release." } },
+      args: { issue_id: 4821, fields: { notes: "Triaged: logcat (attachment #7012) shows the FCM foreground service killed ~30 min in, right after Android 14's foreground-service timeout. Root cause confirmed. Reassigned to Maya (notifications). Needs to land in the 4.2 release." } },
       result: () => { const i = byId(4821);
         const d = issueDict(i); d.custom_fields = []; return d; },
       apply: () => { render(); flash([4821]); addComment(); },
@@ -855,6 +881,25 @@
   // "running", then fill its result (and mutate the board) when it returns.
   async function playStep(step, animated) {
     const ph = $("feedPlaceholder"); if (ph) ph.remove();
+
+    // Reasoning-only turn (no tool call) — e.g. the agent analyzing a file.
+    if (!step.tool) {
+      const turn = document.createElement("div");
+      turn.className = "turn on";
+      turn.innerHTML = `<div class="cc-msg"><span class="cc-bullet">⏺</span><span class="agent-text"></span></div>`;
+      $("feed").appendChild(turn);
+      const textEl = turn.querySelector(".agent-text");
+      animating = true;
+      if (animated && !REDUCED_MOTION) await streamText(textEl, step.say);
+      else textEl.textContent = step.say;
+      if (step.apply) step.apply();
+      scrollFeed();
+      idx++;
+      if (idx >= SCRIPT.length) finish();
+      animating = false;
+      return;
+    }
+
     const result = step.result();
     const argsPreview = Object.entries(step.args).filter(([k]) => k !== "fields")
       .map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(", ");
