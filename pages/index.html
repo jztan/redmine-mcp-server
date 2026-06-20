@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<meta name="color-scheme" content="light dark" />
+<meta name="color-scheme" content="light" />
 
 <title>redmine-mcp-server · Your AI doesn't just read tickets. It works them.</title>
 <meta name="description" content="Watch an AI agent triage a Redmine backlog — search, read, reassign, comment, log time, and close issues — with the same 45 MCP tools it would use against your real Redmine. Scripted in-browser demo." />
@@ -56,11 +56,6 @@
   gtag('js', new Date());
   gtag('config', '__GA_MEASUREMENT_ID__');
 </script>
-<!-- THEME-TOGGLE: apply saved manual theme before first paint (avoids flash). -->
-<script>
-  try { var t = localStorage.getItem('rms-theme'); if (t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t); } catch (e) {}
-</script>
-
 <style>
   *, *::before, *::after { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
@@ -98,64 +93,6 @@
     --font-text: "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif;
     --font-mono: "SF Mono", ui-monospace, "Menlo", "Monaco", "Cascadia Mono", monospace;
   }
-  /* Dark palette, defined once. Applied automatically when the OS prefers dark
-     (unless the user has manually forced light), and explicitly via the manual
-     toggle's [data-theme="dark"]. To drop the manual toggle later, remove the
-     [data-theme] hooks (the :not(...) guard and the [data-theme="dark"] block)
-     along with the toggle button and its script — see THEME-TOGGLE markers. */
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --bg: #000000;
-      --bg-elev: #1c1c1e;
-      --bg-subtle: #1c1c1e;
-      --text: #f5f5f7;
-      --text-secondary: #a1a1a6;
-      --text-tertiary: #86868b;
-      --border: rgba(255, 255, 255, 0.1);
-      --border-strong: rgba(255, 255, 255, 0.18);
-      --accent: #2997ff;
-      --accent-hover: #409cff;
-      --green: #30d158;
-      --amber: #ff9f0a;
-      --red: #ff453a;
-      --purple: #bf8cff;
-      --code-bg: #1c1c1e;
-      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-      --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.4);
-      --shadow-lg: 0 20px 60px rgba(0, 0, 0, 0.5);
-      --nav-bg: rgba(0, 0, 0, 0.72);
-      --json-key: #d4a5ff;
-      --json-string: #3fd79d;
-      --json-number: #6cb6ff;
-      --json-bool: #ff6b9d;
-    }
-  }
-  /* THEME-TOGGLE: explicit dark override (mirrors the auto block above). */
-  :root[data-theme="dark"] {
-    --bg: #000000;
-    --bg-elev: #1c1c1e;
-    --bg-subtle: #1c1c1e;
-    --text: #f5f5f7;
-    --text-secondary: #a1a1a6;
-    --text-tertiary: #86868b;
-    --border: rgba(255, 255, 255, 0.1);
-    --border-strong: rgba(255, 255, 255, 0.18);
-    --accent: #2997ff;
-    --accent-hover: #409cff;
-    --green: #30d158;
-    --amber: #ff9f0a;
-    --red: #ff453a;
-    --purple: #bf8cff;
-    --code-bg: #1c1c1e;
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-    --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.4);
-    --shadow-lg: 0 20px 60px rgba(0, 0, 0, 0.5);
-    --nav-bg: rgba(0, 0, 0, 0.72);
-    --json-key: #d4a5ff;
-    --json-string: #3fd79d;
-    --json-number: #6cb6ff;
-    --json-bool: #ff6b9d;
-  }
   body {
     font-family: var(--font-text);
     font-size: 17px; line-height: 1.47;
@@ -181,23 +118,6 @@
   nav.top ul { list-style: none; display: flex; gap: 28px; margin: 0; padding: 0; }
   nav.top ul a { font-size: 13px; color: var(--text-secondary); text-decoration: none; transition: color 0.15s ease; }
   nav.top ul a:hover { color: var(--text); }
-  /* THEME-TOGGLE button (remove with the manual toggle if dropped). */
-  .theme-toggle {
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 30px; height: 30px; padding: 0; border-radius: 980px;
-    background: transparent; border: 1px solid var(--border); color: var(--text-secondary);
-    cursor: pointer; transition: color 0.15s ease, border-color 0.15s ease;
-  }
-  .theme-toggle:hover { color: var(--text); border-color: var(--border-strong); }
-  .theme-toggle svg { width: 15px; height: 15px; }
-  .theme-toggle .icon-sun { display: none; }
-  .theme-toggle .icon-moon { display: block; }
-  :root[data-theme="dark"] .theme-toggle .icon-sun { display: block; }
-  :root[data-theme="dark"] .theme-toggle .icon-moon { display: none; }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) .theme-toggle .icon-sun { display: block; }
-    :root:not([data-theme="light"]) .theme-toggle .icon-moon { display: none; }
-  }
   .ledger-chip { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary);
             border: 1px solid var(--border); border-radius: 980px; padding: 6px 14px; background: var(--bg-elev); }
   .ledger-chip b { color: var(--accent); font-weight: 500; }
@@ -332,12 +252,11 @@
   .feed { flex: 1; display: flex; flex-direction: column; gap: 12px; }
   .turn { opacity: 0; transform: translateY(6px); transition: all 0.4s ease; }
   .turn.on { opacity: 1; transform: none; }
-  .agent-line { display: flex; gap: 9px; align-items: flex-start; }
-  .agent-badge { flex-shrink: 0; width: 22px; height: 22px; border-radius: 6px; background: linear-gradient(135deg, var(--accent), var(--purple));
-                 display: inline-flex; align-items: center; justify-content: center; }
-  .agent-badge svg { width: 13px; height: 13px; color: #fff; }
-  .agent-text { font-size: 13.5px; line-height: 1.5; color: var(--text); }
-  .toolcall { margin: 9px 0 0 31px; }
+  .agent-line { display: block; }
+  .agent-kicker { display: block; font-family: var(--font-mono); font-size: 9.5px; letter-spacing: 0.13em;
+                  text-transform: uppercase; color: var(--text-tertiary); margin-bottom: 4px; }
+  .agent-text { font-size: 14px; line-height: 1.55; color: var(--text); }
+  .toolcall { margin: 9px 0 0; }
   .toolcall-head {
     display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 11.5px;
     background: var(--code-bg); border: 1px solid var(--border); border-radius: var(--radius-sm);
@@ -463,11 +382,6 @@
       <li><a href="https://github.com/jztan/redmine-mcp-server">GitHub</a></li>
       <li><a href="https://pypi.org/project/redmine-mcp-server/">PyPI</a></li>
       <li><a href="https://blog.jztan.com/how-i-linked-a-legacy-system-to-a-modern-ai-agent/?utm_source=redmine-mcp-demo&utm_medium=referral&utm_campaign=demo-launch&utm_content=nav">Blog</a></li>
-      <!-- THEME-TOGGLE: manual light/dark switch -->
-      <li><button class="theme-toggle" id="themeToggle" aria-label="Toggle light/dark theme" title="Toggle theme">
-        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
-      </button></li>
     </ul>
   </div>
 </nav>
@@ -831,7 +745,7 @@
     turn.className = "turn";
     turn.innerHTML = `
       <div class="agent-line">
-        <span class="agent-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v4"/><rect x="4" y="6" width="16" height="12" rx="3"/><path d="M9 12h.01M15 12h.01M8 18v2M16 18v2"/></svg></span>
+        <span class="agent-kicker">Agent</span>
         <span class="agent-text">${escapeHtml(step.say)}</span>
       </div>
       <div class="toolcall">
@@ -917,22 +831,6 @@
     SCRIPT.forEach((s) => { appendStep(s); idx++; });
     finish();
   }
-
-  // THEME-TOGGLE: manual light/dark switch. Overrides prefers-color-scheme by
-  // setting [data-theme] on <html>; persists the choice in localStorage. Remove
-  // this block (and the button, head init, and CSS [data-theme] hooks) to drop
-  // manual switching and fall back to OS-only theming.
-  function effectiveDark() {
-    const attr = document.documentElement.getAttribute("data-theme");
-    if (attr) return attr === "dark";
-    return window.matchMedia("(prefers-color-scheme: dark)").matches;
-  }
-  $("themeToggle").addEventListener("click", () => {
-    const next = effectiveDark() ? "light" : "dark";
-    document.documentElement.setAttribute("data-theme", next);
-    try { localStorage.setItem("rms-theme", next); } catch (e) {}
-    track("theme_toggle", { theme: next });
-  });
 
   $("installCopyBtn").addEventListener("click", () => { navigator.clipboard.writeText($("installCmd").textContent); showToast("Copied"); });
   $("copyLinkBtn").addEventListener("click", () => { navigator.clipboard.writeText(location.href); showToast("Link copied"); track("copy_link"); });
