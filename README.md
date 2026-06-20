@@ -8,6 +8,14 @@
 [![Coverage](https://codecov.io/gh/jztan/redmine-mcp-server/branch/master/graph/badge.svg)](https://codecov.io/gh/jztan/redmine-mcp-server)
 [![Downloads](https://pepy.tech/badge/redmine-mcp-server)](https://pepy.tech/project/redmine-mcp-server)
 
+<p align="center">
+  <a href="https://redmine-mcp-server.jztan.com">
+    <img src="https://raw.githubusercontent.com/jztan/redmine-mcp-server/develop/assets/redmine-mcp-demo.gif" alt="An AI agent triaging a Redmine sprint backlog through redmine-mcp-server" width="820" />
+  </a>
+</p>
+
+<p align="center"><sub>An AI agent triaging a Redmine sprint through redmine-mcp-server. <a href="https://redmine-mcp-server.jztan.com">Try the live demo →</a></sub></p>
+
 A Model Context Protocol (MCP) server that integrates with Redmine project management systems. This server provides seamless access to Redmine data through MCP tools, enabling AI assistants to interact with your Redmine instance.
 
 **mcp-name: io.github.jztan/redmine-mcp-server**
