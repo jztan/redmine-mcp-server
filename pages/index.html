@@ -214,7 +214,10 @@
   .rm-filters .chipf { background: #eef3f8; border: 1px solid #d2e0ee; border-radius: 3px; padding: 1px 6px; color: #2a5685; }
   .rm-apply { margin-left: auto; color: #2f9e2f; font-weight: bold; }
   .rm-apply::before { content: "\2713\00a0"; }
-  table.rm-list { width: 100%; border-collapse: collapse; font-size: 12px; }
+  /* Wrap the table so it scrolls horizontally on narrow screens instead of
+     being clipped by the card (this is how Redmine itself behaves on mobile). */
+  .rm-tablewrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table.rm-list { width: 100%; min-width: 560px; border-collapse: collapse; font-size: 12px; }
   table.rm-list th {
     background: #eee; border: 1px solid var(--rm-border); color: #444; font-weight: bold;
     text-align: left; padding: 3px 7px; white-space: nowrap;
@@ -457,15 +460,17 @@
               <span class="chipf">Sprint 14</span>
               <span class="rm-apply">Apply</span>
             </div>
-            <table class="rm-list">
-              <thead><tr>
-                <th style="width:16px"></th>
-                <th>#&nbsp;<span class="sortarrow">▾</span></th>
-                <th>Tracker</th><th>Status</th><th>Priority</th>
-                <th>Subject</th><th>Assignee</th><th>Due&nbsp;date</th>
-              </tr></thead>
-              <tbody id="issueRows"></tbody>
-            </table>
+            <div class="rm-tablewrap">
+              <table class="rm-list">
+                <thead><tr>
+                  <th style="width:16px"></th>
+                  <th>#&nbsp;<span class="sortarrow">▾</span></th>
+                  <th>Tracker</th><th>Status</th><th>Priority</th>
+                  <th>Subject</th><th>Assignee</th><th>Due&nbsp;date</th>
+                </tr></thead>
+                <tbody id="issueRows"></tbody>
+              </table>
+            </div>
           </div>
         </div>
         <div class="cli">
