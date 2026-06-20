@@ -299,6 +299,16 @@
   .json-bool { color: #f7768e; }
   .json-null { color: var(--cli-dim); font-style: italic; }
 
+  /* Hide scrollbars on the demo's scroll areas (table, terminal log, JSON);
+     scrolling/swiping still works, it just looks cleaner. */
+  .rm-tablewrap, .cli-body, .json-box {
+    scrollbar-width: none;        /* Firefox */
+    -ms-overflow-style: none;     /* old Edge */
+  }
+  .rm-tablewrap::-webkit-scrollbar,
+  .cli-body::-webkit-scrollbar,
+  .json-box::-webkit-scrollbar { width: 0; height: 0; }
+
   /* Claude Code bottom input box */
   .cc-input { flex-shrink: 0; padding: 4px 14px 12px; }
   .cc-input-box { border: 1px solid #4a443d; border-radius: 8px; padding: 8px 12px;
