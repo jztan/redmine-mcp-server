@@ -873,7 +873,7 @@
       if (!playing) { el.textContent = text; scrollFeed(); return; }
       el.textContent += (i ? " " : "") + words[i];
       scrollFeed();
-      await sleep(30);
+      await sleep(42);
     }
   }
 
@@ -927,7 +927,7 @@
     if (animated && !REDUCED_MOTION) {
       await streamText(textEl, step.say);
       tcEl.classList.remove("hidden-tc"); scrollFeed();
-      if (playing) await sleep(640);            // the tool call runs
+      if (playing) await sleep(800);            // the tool call runs
     } else {
       textEl.textContent = step.say;
       tcEl.classList.remove("hidden-tc");
@@ -970,7 +970,7 @@
     while (playing && idx < SCRIPT.length) {
       await playStep(SCRIPT[idx], true);
       if (!playing || idx >= SCRIPT.length) break;
-      await sleep(520);
+      await sleep(750);
     }
   }
 
