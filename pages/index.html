@@ -473,7 +473,7 @@
         </div>
         <div class="stage-controls">
           <button class="btn btn-sm" id="playBtn">▶ Run the agent</button>
-          <button class="btn btn-ghost btn-sm" id="stepBtn" disabled>Step</button>
+          <button class="btn btn-ghost btn-sm" id="stepBtn">Step</button>
           <button class="btn btn-ghost btn-sm" id="replayBtn" disabled>↺ Replay</button>
         </div>
       </div>
@@ -849,7 +849,7 @@
     if (idx >= SCRIPT.length) reset();
     playing = true;
     $("playBtn").textContent = "● Running…"; $("playBtn").disabled = true;
-    $("replayBtn").disabled = true; $("stepBtn").disabled = true;
+    $("replayBtn").disabled = true;
     track("demo_play");
     const advance = () => {
       if (!playing) return;
@@ -859,8 +859,20 @@
     advance();
   }
 
+  // Stop autoplay without resetting, leaving the run resumable via "Run".
+  function pause() {
+    clearTimeout(timer);
+    playing = false;
+    if (idx < SCRIPT.length) { $("playBtn").textContent = "▶ Run the agent"; $("playBtn").disabled = false; }
+  }
+
   $("playBtn").addEventListener("click", play);
-  $("stepBtn").addEventListener("click", () => { if (!playing) doStep(); });
+  // Step takes manual control: pause any running autoplay, then advance one call.
+  $("stepBtn").addEventListener("click", () => {
+    if (idx >= SCRIPT.length) return;
+    if (playing) pause();
+    doStep();
+  });
   $("replayBtn").addEventListener("click", () => { reset(); play(); });
 
   // Autoplay once when the demo scrolls into view (cinematic).
