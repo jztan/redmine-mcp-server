@@ -968,7 +968,7 @@
 
   async function play() {
     if (idx >= SCRIPT.length) reset();
-    if (animating) return;
+    if (playing || animating) return;        // a run is already active
     playing = true;
     $("playBtn").textContent = "● Running…"; $("playBtn").disabled = true;
     $("replayBtn").disabled = true;
