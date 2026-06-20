@@ -404,6 +404,20 @@
     .stage-controls { width: 100%; }
     .btn:not(.btn-icon) { flex: 1; }
   }
+  /* On phones the 8-column issues table can't fit, so collapse it to the
+     columns that carry the demo (#, Subject, Status, Assignee) and let it fit
+     the screen with no sideways scroll, with subjects wrapping. */
+  @media (max-width: 600px) {
+    table.rm-list { min-width: 0; }
+    .rm-list th:nth-child(1), .rm-list td:nth-child(1),   /* checkbox */
+    .rm-list th:nth-child(3), .rm-list td:nth-child(3),   /* Tracker */
+    .rm-list th:nth-child(5), .rm-list td:nth-child(5),   /* Priority */
+    .rm-list th:nth-child(8), .rm-list td:nth-child(8) {  /* Due date */
+      display: none;
+    }
+    table.rm-list td, table.rm-list th { white-space: normal; }
+    table.rm-list td.rm-subject { width: auto; max-width: none; overflow: visible; text-overflow: clip; line-height: 1.35; }
+  }
 </style>
 </head>
 <body>
