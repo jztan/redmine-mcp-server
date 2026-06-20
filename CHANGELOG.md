@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [2.3.1] - 2026-06-20
 ### Security
 - Bump `python-multipart` 0.0.29 to 0.0.32 to clear CVE-2026-53539 and CVE-2026-53538 (both fixed upstream in 0.0.30). The direct floor in `pyproject.toml` is also raised from `>=0.0.27` to `>=0.0.30` so the fix reaches PyPI installs, not only the pinned lockfile. ([#150](https://github.com/jztan/redmine-mcp-server/pull/150))
 - Bump `starlette` 1.0.1 to 1.3.1 to clear four advisories: CVE-2026-48818 and CVE-2026-48817 (fixed in 1.1.0), CVE-2026-54282 (1.3.0), and CVE-2026-54283 (1.3.1). `starlette` is now also a declared direct dependency (the server imports it directly) with a `>=1.3.1` floor, so PyPI installs cannot resolve a vulnerable version. Dependabot does not propose transitive bumps on its own, so this was applied manually. ([#162](https://github.com/jztan/redmine-mcp-server/pull/162))
@@ -906,6 +908,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive authentication support (username/password and API key)
 - Docker containerization support
 
+[2.3.1]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.3.1
 [2.3.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.3.0
 [2.2.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.2.0
 [2.1.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.1.0
