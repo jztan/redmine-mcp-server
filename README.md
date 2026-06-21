@@ -619,6 +619,18 @@ If you run into any issues, checkout our [troubleshooting guide](./docs/troubles
 
 Contributions are welcome! Please see our [contributing guide](./docs/contributing.md) for details.
 
+## Contributors
+
+Thank you to everyone who has helped improve this project through code, reviews, testing, and feature requests:
+
+[@sebastianelsner](https://github.com/sebastianelsner) · [@mihajlovicjj](https://github.com/mihajlovicjj) · [@aadnehovda](https://github.com/aadnehovda) · [@martindglaser](https://github.com/martindglaser) · [@Vitexus](https://github.com/Vitexus) · [@timcomport](https://github.com/timcomport) · [@Bricklou](https://github.com/Bricklou)
+
+<a href="https://github.com/jztan/redmine-mcp-server/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=jztan/redmine-mcp-server" alt="Contributors" />
+</a>
+
+Per-release contributor credits are listed in the [Changelog](./CHANGELOG.md).
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
