@@ -26,7 +26,7 @@ jobs:
       - name: Inject demo version
         run: sed -i 's/__VERSION__/${{ github.ref_name }}/g' pages/index.html
       - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: ./pages
       - id: deployment
