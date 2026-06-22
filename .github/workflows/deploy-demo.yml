@@ -22,7 +22,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Inject demo version
         run: sed -i 's/__VERSION__/${{ github.ref_name }}/g' pages/index.html
       - uses: actions/configure-pages@v5
