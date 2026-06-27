@@ -21,7 +21,9 @@ HEADER_NAME = "X-Redmine-API-Key"
 
 # Stock Redmine API keys are 40 hex chars; the wider bound tolerates custom
 # setups without accepting arbitrary garbage.
-_KEY_RE = re.compile(r"^[A-Za-z0-9]{20,128}$")
+# fullmatch anchors implicitly; no ^/$ needed, and avoids the Python $-before-\n
+# pitfall where "$" matches before a trailing newline.
+_KEY_RE = re.compile(r"[A-Za-z0-9]{20,128}")
 
 
 class PerUserAuthError(Exception):
@@ -39,8 +41,8 @@ def _fingerprint(key: str) -> str:
     return "..." + key[-4:]
 
 
-def _validate_key_format(key: Optional[str]) -> bool:
-    return bool(_KEY_RE.match(key or ""))
+def _validate_key_format(key: str) -> bool:
+    return bool(_KEY_RE.fullmatch(key))
 
 
 def _extract_key(request) -> Optional[str]:

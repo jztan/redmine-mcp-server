@@ -119,6 +119,7 @@ def test_client_uses_per_user_key_over_secure_transport():
         patch.object(_client, "REDMINE_AUTH_MODE", "legacy-per-user"),
         patch.object(_client, "redmine", None),
         patch.object(_client, "Redmine") as mock_redmine,
+        patch.object(_client, "_build_requests_config", return_value={}),
         patch("redmine_mcp_server._client.get_http_request", return_value=req),
     ):
         _client._get_redmine_client()
@@ -136,6 +137,7 @@ def test_client_per_user_missing_header_raises():
         patch.object(_client, "REDMINE_AUTH_MODE", "legacy-per-user"),
         patch.object(_client, "redmine", None),
         patch.object(_client, "Redmine"),
+        patch.object(_client, "_build_requests_config", return_value={}),
         patch("redmine_mcp_server._client.get_http_request", return_value=req),
     ):
         with pytest.raises(PerUserAuthError):
@@ -195,12 +197,39 @@ def test_audit_identity_on_logs_user_id(monkeypatch, caplog):
     assert VALID_KEY not in joined  # still never the raw key
 
 
-def test_audit_identity_swallows_errors(monkeypatch):
+def test_audit_identity_swallows_errors(monkeypatch, caplog):
     monkeypatch.setenv("REDMINE_PER_USER_AUDIT_IDENTITY", "true")
     client = MagicMock()
     client.user.get.side_effect = Exception("boom")
-    # must not raise
-    _per_user.maybe_log_identity(client, VALID_KEY)
+    with caplog.at_level(logging.WARNING, logger="redmine_mcp_server"):
+        _per_user.maybe_log_identity(client, VALID_KEY)
+    assert any(r.levelno == logging.WARNING for r in caplog.records)
+    assert VALID_KEY not in " ".join(r.getMessage() for r in caplog.records)
+
+
+def test_resolve_rejects_trailing_newline_key():
+    req = FakeRequest(headers={"X-Redmine-API-Key": VALID_KEY + "\n"})
+    with pytest.raises(PerUserAuthError) as exc:
+        resolve_per_user_key(req)
+    assert "malformed" in exc.value.message.lower()
+
+
+def test_client_per_user_no_request_context_raises():
+    from redmine_mcp_server import _client
+
+    with (
+        patch.object(_client, "REDMINE_URL", "https://r.example.com"),
+        patch.object(_client, "REDMINE_AUTH_MODE", "legacy-per-user"),
+        patch.object(_client, "redmine", None),
+        patch.object(_client, "Redmine"),
+        patch.object(_client, "_build_requests_config", return_value={}),
+        patch(
+            "redmine_mcp_server._client.get_http_request",
+            side_effect=RuntimeError("no request context"),
+        ),
+    ):
+        with pytest.raises(PerUserAuthError):
+            _client._get_redmine_client()
 
 
 @pytest.mark.asyncio

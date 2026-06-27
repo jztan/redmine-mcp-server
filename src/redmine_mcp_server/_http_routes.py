@@ -175,6 +175,11 @@ async def health_check(request):
     In legacy mode, probes ``GET /users/current.json`` to verify the configured
     API key (or username/password) is accepted by Redmine.
 
+    In legacy-per-user mode there is no shared credential, so it probes
+    ``GET /users/current.json`` unauthenticated to confirm URL reachability
+    only. Any HTTP response (including 401 or 403) counts as reachable; only
+    transport failures degrade status.
+
     Returns HTTP 200 in both healthy and degraded states so container
     orchestrators continue treating the endpoint as a binary liveness
     probe; monitoring systems should inspect the JSON ``status`` field.
