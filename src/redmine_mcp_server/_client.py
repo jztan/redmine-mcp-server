@@ -193,7 +193,7 @@ def _get_redmine_client() -> Redmine:
 
     # legacy-per-user mode: per-request key from the X-Redmine-API-Key header.
     if g["REDMINE_AUTH_MODE"] == "legacy-per-user":
-        from ._per_user import resolve_per_user_key
+        from ._per_user import maybe_log_identity, resolve_per_user_key
 
         try:
             request = get_http_request()
@@ -202,8 +202,11 @@ def _get_redmine_client() -> Redmine:
         key = resolve_per_user_key(request)  # raises PerUserAuthError
         requests_config = _build_requests_config()
         if requests_config:
-            return g["Redmine"](g["REDMINE_URL"], key=key, requests=requests_config)
-        return g["Redmine"](g["REDMINE_URL"], key=key)
+            client = g["Redmine"](g["REDMINE_URL"], key=key, requests=requests_config)
+        else:
+            client = g["Redmine"](g["REDMINE_URL"], key=key)
+        maybe_log_identity(client, key)
+        return client
 
     # Legacy mode: reuse a cached singleton.
     if g["_legacy_client"] is None:

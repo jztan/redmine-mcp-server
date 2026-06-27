@@ -101,6 +101,31 @@ def resolve_per_user_key(request) -> str:
     return key
 
 
+def maybe_log_identity(client, key: str) -> None:
+    """Opt-in audit: resolve and log the Redmine user id for this request.
+
+    Enabled by REDMINE_PER_USER_AUDIT_IDENTITY=true (off by default). Adds one
+    GET /users/current.json round-trip. Never raises and never logs the key.
+    """
+    from ._env import _is_true_env
+
+    if not _is_true_env("REDMINE_PER_USER_AUDIT_IDENTITY"):
+        return
+    try:
+        user = client.user.get("current")
+        logger.info(
+            "per-user audit: fingerprint=%s redmine_user_id=%s",
+            _fingerprint(key),
+            getattr(user, "id", "unknown"),
+        )
+    except Exception as exc:  # audit must never break the request
+        logger.warning(
+            "per-user audit: could not resolve identity for fingerprint=%s (%s)",
+            _fingerprint(key),
+            type(exc).__name__,
+        )
+
+
 def assert_startup_attestation() -> None:
     """Fail closed unless the operator attests the server sits behind TLS.
 

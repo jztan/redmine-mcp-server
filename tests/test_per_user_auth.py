@@ -176,6 +176,33 @@ async def test_health_legacy_per_user_reports_reachable(monkeypatch):
     assert body["checks"]["redmine"] == "reachable_unauthenticated"
 
 
+def test_audit_identity_off_by_default_no_call(monkeypatch):
+    monkeypatch.delenv("REDMINE_PER_USER_AUDIT_IDENTITY", raising=False)
+    client = MagicMock()
+    _per_user.maybe_log_identity(client, VALID_KEY)
+    client.user.get.assert_not_called()
+
+
+def test_audit_identity_on_logs_user_id(monkeypatch, caplog):
+    monkeypatch.setenv("REDMINE_PER_USER_AUDIT_IDENTITY", "true")
+    client = MagicMock()
+    client.user.get.return_value = MagicMock(id=42)
+    with caplog.at_level(logging.INFO, logger="redmine_mcp_server"):
+        _per_user.maybe_log_identity(client, VALID_KEY)
+    client.user.get.assert_called_once_with("current")
+    joined = " ".join(r.getMessage() for r in caplog.records)
+    assert "42" in joined
+    assert VALID_KEY not in joined  # still never the raw key
+
+
+def test_audit_identity_swallows_errors(monkeypatch):
+    monkeypatch.setenv("REDMINE_PER_USER_AUDIT_IDENTITY", "true")
+    client = MagicMock()
+    client.user.get.side_effect = Exception("boom")
+    # must not raise
+    _per_user.maybe_log_identity(client, VALID_KEY)
+
+
 @pytest.mark.asyncio
 async def test_health_legacy_per_user_degraded_when_unreachable(monkeypatch):
     import json
