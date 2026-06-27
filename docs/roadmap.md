@@ -3,24 +3,26 @@
 ## Project Status
 
 - **Current Version:** v2.4.0 (released 2026-06-27)
-- **On Develop (unreleased):** nothing queued; `[Unreleased]` in [`CHANGELOG.md`](../CHANGELOG.md) is empty
+- **On Develop (unreleased):** nothing queued
 - **MCP Registry Status:** Published
 - **Test Suite:** 1309 unit tests + 85 integration tests. Integration tests gate on environment: a sandbox Redmine, plugin flags (`REDMINE_AGILE_ENABLED` etc.), and the destructive OAuth test behind `RUN_DESTRUCTIVE_TESTS=1`. Tests that can't run in the current environment skip cleanly with a clear reason. Run them locally with `python tests/run_tests.py --all` or `--integration`.
 - **Tools:** 40 core + 5 plugin-gated + 1 admin-gated (maximum 46 with all flags enabled)
 
 ---
 
-## Next Release
+## Latest Release
 
-Nothing is currently queued; `[Unreleased]` in [`CHANGELOG.md`](../CHANGELOG.md) is empty. The next substantial effort is the MCP 2026-07-28 spec track below.
+**v2.4.0** (2026-06-27) shipped the promotional demo page (GitHub Pages, deployed on version tags), the `get_redmine_issue` fix that restores journal field-change `details` and stops dropping field-only journals ([#161](https://github.com/jztan/redmine-mcp-server/issues/161), [#163](https://github.com/jztan/redmine-mcp-server/pull/163)), a direct `joserfc` floor clearing CVE-2026-48990, and prompt-injection wrapping extended to journal field-change values. Recent lineage: hosted OAuth (`oauth-proxy` mode) landed in **v2.3.0** (2026-06-12), and **v2.3.1** (2026-06-20) cleared CVE dependency bumps and removed the unused `fastapi[standard]` tree. See [`CHANGELOG.md`](../CHANGELOG.md) for full per-release detail.
 
-**Latest release.** **v2.4.0** (2026-06-27) shipped the promotional demo page (GitHub Pages, deployed on version tags), the `get_redmine_issue` fix that restores journal field-change `details` and stops dropping field-only journals ([#161](https://github.com/jztan/redmine-mcp-server/issues/161), [#163](https://github.com/jztan/redmine-mcp-server/pull/163)), a direct `joserfc` floor clearing CVE-2026-48990, and prompt-injection wrapping extended to journal field-change values. Recent lineage: hosted OAuth (`oauth-proxy` mode) landed in **v2.3.0** (2026-06-12), and **v2.3.1** (2026-06-20) cleared CVE dependency bumps and removed the unused `fastapi[standard]` tree. See [`CHANGELOG.md`](../CHANGELOG.md) for full per-release detail.
+Nothing is currently queued for the next release; `[Unreleased]` in [`CHANGELOG.md`](../CHANGELOG.md) is empty. The next substantial effort is the MCP 2026-07-28 spec track below.
 
 ---
 
 ## Tracking MCP 2026-07-28
 
 The MCP spec [release candidate locked on 2026-05-21](https://blog.modelcontextprotocol.io/posts/2026-07-28-release-candidate/), with GA targeted for 2026-07-28. Protocol-level work is gated on FastMCP shipping support for the new spec; the goal is a single coordinated v3.0 release rather than two breaking cutovers.
+
+**Gate status (2026-06-27):** still closed. FastMCP latest is [v3.4.1](https://gofastmcp.com/changelog) (2026-06-05) with no 2026-07-28 support yet (stateless transport, per-request `_meta`, or the new OAuth/OIDC SEPs); it does carry Apps Phase 1 from v3.2.0, relevant to the v3.1+ MCP Apps item. The official Python SDK targets beta 2026-06-30 and stable v2 2026-07-27. Spec timeline unchanged.
 
 **v3.0 scope (target: Q3 2026, gated on FastMCP):**
 
