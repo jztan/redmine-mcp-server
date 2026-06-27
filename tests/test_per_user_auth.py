@@ -149,3 +149,53 @@ def test_handle_error_maps_per_user_auth_error():
     result = _handle_redmine_error(err, "listing trackers")
     assert result["code"] == "PER_USER_AUTH"
     assert "X-Redmine-API-Key" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_health_legacy_per_user_reports_reachable(monkeypatch):
+    import json
+
+    import redmine_mcp_server._cleanup as _cleanup_mod
+    import redmine_mcp_server._http_routes as routes
+
+    monkeypatch.setattr(routes, "REDMINE_AUTH_MODE", "legacy-per-user")
+
+    async def fake_probe():
+        return "reachable_unauthenticated", None
+
+    monkeypatch.setattr(routes, "_probe_redmine_reachable", fake_probe)
+
+    async def noop():
+        return None
+
+    monkeypatch.setattr(_cleanup_mod, "_ensure_cleanup_started", noop)
+
+    resp = await routes.health_check(MagicMock())
+    body = json.loads(resp.body)
+    assert body["status"] == "ok"
+    assert body["checks"]["redmine"] == "reachable_unauthenticated"
+
+
+@pytest.mark.asyncio
+async def test_health_legacy_per_user_degraded_when_unreachable(monkeypatch):
+    import json
+
+    import redmine_mcp_server._cleanup as _cleanup_mod
+    import redmine_mcp_server._http_routes as routes
+
+    monkeypatch.setattr(routes, "REDMINE_AUTH_MODE", "legacy-per-user")
+
+    async def fake_probe():
+        return "unreachable", "ConnectError"
+
+    monkeypatch.setattr(routes, "_probe_redmine_reachable", fake_probe)
+
+    async def noop():
+        return None
+
+    monkeypatch.setattr(_cleanup_mod, "_ensure_cleanup_started", noop)
+
+    resp = await routes.health_check(MagicMock())
+    body = json.loads(resp.body)
+    assert body["status"] == "degraded"
+    assert body["checks"]["redmine"] == "unreachable"
