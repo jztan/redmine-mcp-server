@@ -88,3 +88,18 @@ def test_resolve_logs_fingerprint_not_key(caplog):
     joined = " ".join(r.getMessage() for r in caplog.records)
     assert VALID_KEY not in joined
     assert VALID_KEY[-4:] in joined
+
+
+def test_startup_gate_raises_without_attestation(monkeypatch):
+    monkeypatch.delenv("REDMINE_PER_USER_TRUST_PROXY", raising=False)
+    with pytest.raises(RuntimeError) as exc:
+        _per_user.assert_startup_attestation()
+    assert "REDMINE_PER_USER_TRUST_PROXY" in str(exc.value)
+
+
+def test_startup_gate_passes_with_attestation_and_warns(monkeypatch, caplog):
+    monkeypatch.setenv("REDMINE_PER_USER_TRUST_PROXY", "true")
+    with caplog.at_level(logging.WARNING, logger="redmine_mcp_server"):
+        _per_user.assert_startup_attestation()  # must not raise
+    joined = " ".join(r.getMessage() for r in caplog.records).lower()
+    assert "tls" in joined

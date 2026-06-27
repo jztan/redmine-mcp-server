@@ -75,6 +75,11 @@ def build_authenticated_app(mcp_instance, auth_provider):
 
 def build_app():
     """Build the ASGI app."""
+    if REDMINE_AUTH_MODE == "legacy-per-user":
+        from ._per_user import assert_startup_attestation
+
+        assert_startup_attestation()
+
     if REDMINE_AUTH_MODE in AUTHENTICATED_AUTH_MODES and AUTH_PROVIDER is not None:
         return build_authenticated_app(mcp, AUTH_PROVIDER)
 

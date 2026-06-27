@@ -99,3 +99,26 @@ def resolve_per_user_key(request) -> str:
         raise PerUserAuthError("Per-user auth received a malformed API key.")
     logger.info("per-user key resolved fingerprint=%s", _fingerprint(key))
     return key
+
+
+def assert_startup_attestation() -> None:
+    """Fail closed unless the operator attests the server sits behind TLS.
+
+    Called once at app build time when REDMINE_AUTH_MODE=legacy-per-user.
+    """
+    from ._env import _is_true_env
+
+    if not _is_true_env("REDMINE_PER_USER_TRUST_PROXY"):
+        raise RuntimeError(
+            "REDMINE_AUTH_MODE=legacy-per-user requires "
+            "REDMINE_PER_USER_TRUST_PROXY=true. This attests that the server "
+            "sits behind a TLS-terminating proxy and that the proxy does not "
+            "forward client-supplied X-Forwarded-Proto. The server cannot "
+            "verify TLS itself."
+        )
+    logger.warning(
+        "legacy-per-user auth is ACTIVE: per-user Redmine API keys travel in "
+        "the X-Redmine-API-Key request header. Ensure end-to-end TLS, firewall "
+        "the app port, keep headers out of upstream logs, and prefer dedicated "
+        "limited-permission Redmine accounts."
+    )
