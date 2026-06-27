@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - Free-form journal field-change values now receive the same prompt-injection wrapping as journal notes. Custom-field values (`cf`), `description`/`subject` edits, and attachment filenames in `details` are wrapped in `<insecure-content-{boundary}>` tags, so the newly surfaced field-change history cannot smuggle injected instructions past an LLM consumer. Structured values (status, assignee, priority IDs, dates, numbers) are left raw to avoid bloating output with boundary tags. ([#161](https://github.com/jztan/redmine-mcp-server/issues/161))
 
+### Tests
+- `test_scope_advertising_subset_of_sandbox_scopes` now asserts the introspected test token is active before checking scope overlap. A stale `REDMINE_OAUTH_TEST_TOKEN` introspects with an empty scope, which previously made the test fail with a misleading "name drift between oauth_scopes.py and live Doorkeeper config" message; the active-token guard surfaces the real cause (re-mint the bearer) instead.
+
 ### Contributors
 - @martindglaser — fix missing journal field-change details in `get_redmine_issue` ([#163](https://github.com/jztan/redmine-mcp-server/pull/163))
 

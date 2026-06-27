@@ -136,7 +136,16 @@ async def test_scope_advertising_subset_of_sandbox_scopes():
             },
             data={"token": TEST_TOKEN, "token_type_hint": "access_token"},
         )
-    sandbox_scopes = set((r.json().get("scope") or "").split())
+    body = r.json()
+    # Guard: an inactive token introspects with no scope, which would make the
+    # overlap check below fail with a misleading "name drift" message. Surface
+    # the real cause (a stale/expired test bearer) instead.
+    assert body.get("active") is True, (
+        "Test token is inactive per introspection, so it carries no scopes. "
+        "Re-mint REDMINE_OAUTH_TEST_TOKEN before reading this as scope drift "
+        "(see docs/contributing.md)."
+    )
+    sandbox_scopes = set((body.get("scope") or "").split())
     from redmine_mcp_server.oauth_scopes import advertised_scopes
 
     our_scopes = set(advertised_scopes())
