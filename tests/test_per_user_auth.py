@@ -103,3 +103,40 @@ def test_startup_gate_passes_with_attestation_and_warns(monkeypatch, caplog):
         _per_user.assert_startup_attestation()  # must not raise
     joined = " ".join(r.getMessage() for r in caplog.records).lower()
     assert "tls" in joined
+
+
+from unittest.mock import MagicMock, patch  # noqa: E402
+
+
+def test_client_uses_per_user_key_over_secure_transport():
+    from redmine_mcp_server import _client
+
+    req = MagicMock()
+    req.headers = {"X-Redmine-API-Key": VALID_KEY}
+
+    with (
+        patch.object(_client, "REDMINE_URL", "https://r.example.com"),
+        patch.object(_client, "REDMINE_AUTH_MODE", "legacy-per-user"),
+        patch.object(_client, "redmine", None),
+        patch.object(_client, "Redmine") as mock_redmine,
+        patch("redmine_mcp_server._client.get_http_request", return_value=req),
+    ):
+        _client._get_redmine_client()
+        mock_redmine.assert_called_once_with("https://r.example.com", key=VALID_KEY)
+
+
+def test_client_per_user_missing_header_raises():
+    from redmine_mcp_server import _client
+
+    req = MagicMock()
+    req.headers = {}
+
+    with (
+        patch.object(_client, "REDMINE_URL", "https://r.example.com"),
+        patch.object(_client, "REDMINE_AUTH_MODE", "legacy-per-user"),
+        patch.object(_client, "redmine", None),
+        patch.object(_client, "Redmine"),
+        patch("redmine_mcp_server._client.get_http_request", return_value=req),
+    ):
+        with pytest.raises(PerUserAuthError):
+            _client._get_redmine_client()
