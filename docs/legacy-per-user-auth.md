@@ -25,8 +25,8 @@ Use `legacy-per-user` when:
 
 If your Redmine is 6.1 or newer, prefer `REDMINE_AUTH_MODE=oauth` or
 `REDMINE_AUTH_MODE=oauth-proxy`. Per-user OAuth tokens expire, can be scoped, and can
-be revoked instantly via Redmine's token management UI -- none of which apply to API
-keys.
+be revoked instantly via Redmine's token management UI. None of these capabilities apply
+to API keys.
 
 ## Threat model and security requirements
 
@@ -46,7 +46,7 @@ Without this flag the server refuses to start in `legacy-per-user` mode.
 
 At request time, if the incoming request carries `X-Forwarded-Proto: http`, the
 request is rejected immediately as a cheap misconfig catch. This is not a complete TLS
-check -- the app cannot verify the full transport path -- so the attestation flag is
+check. The app cannot verify the full transport path, so the attestation flag is
 the binding commitment.
 
 ### Firewall the app port
@@ -142,7 +142,7 @@ delegated entirely to Redmine and takes effect on the next request.
      immediately). Notify the user so they can update their client config.
    - Or click **Lock** to disable the account entirely if the user should no longer
      have any access.
-4. No action is needed on the MCP server -- the next request from that user's client
+4. No action is needed on the MCP server. The next request from that user's client
    will fail with a 401 or 403 from Redmine, which the server returns as an error.
 
 **Lost laptop / departed contractor:** same as above. Regenerate or lock in Redmine;
