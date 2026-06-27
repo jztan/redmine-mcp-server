@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `legacy-per-user` auth mode: per-request Redmine API key via an
+  `X-Redmine-API-Key` header, for Redmine instances too old for OAuth. Opt-in
+  and fail-closed (`REDMINE_PER_USER_TRUST_PROXY` required); keys are redacted
+  from logs; optional identity audit via `REDMINE_PER_USER_AUDIT_IDENTITY`.
+
 ## [2.4.0] - 2026-06-27
 ### Added
 - Promotional demo page under `pages/`, deployed to GitHub Pages on version tags via a new `deploy-demo.yml` workflow. It is a scripted, client-side walkthrough of an AI agent triaging a sample Redmine sprint backlog (list, read, reassign, comment, log time, close), with tool-call request/response JSON that matches the server's real response shapes, a Kanban board that updates as the agent works, and a light/dark theme toggle. No live Redmine is connected.
