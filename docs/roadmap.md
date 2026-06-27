@@ -3,9 +3,9 @@
 ## Project Status
 
 - **Current Version:** v2.4.0 (released 2026-06-27)
-- **On Develop (unreleased):** nothing queued
+- **On Develop (unreleased):** `legacy-per-user` auth mode (per-request API key via `X-Redmine-API-Key` header, for Redmine instances too old for OAuth; opt-in, fail-closed, keys redacted from logs)
 - **MCP Registry Status:** Published
-- **Test Suite:** 1309 unit tests + 85 integration tests. Integration tests gate on environment: a sandbox Redmine, plugin flags (`REDMINE_AGILE_ENABLED` etc.), and the destructive OAuth test behind `RUN_DESTRUCTIVE_TESTS=1`. Tests that can't run in the current environment skip cleanly with a clear reason. Run them locally with `python tests/run_tests.py --all` or `--integration`.
+- **Test Suite:** 1331 unit tests + 85 integration tests. Integration tests gate on environment: a sandbox Redmine, plugin flags (`REDMINE_AGILE_ENABLED` etc.), and the destructive OAuth test behind `RUN_DESTRUCTIVE_TESTS=1`. Tests that can't run in the current environment skip cleanly with a clear reason. Run them locally with `python tests/run_tests.py --all` or `--integration`.
 - **Tools:** 40 core + 5 plugin-gated + 1 admin-gated (maximum 46 with all flags enabled)
 
 ---
@@ -14,7 +14,7 @@
 
 **v2.4.0** (2026-06-27) shipped the promotional demo page (GitHub Pages, deployed on version tags), the `get_redmine_issue` fix that restores journal field-change `details` and stops dropping field-only journals ([#161](https://github.com/jztan/redmine-mcp-server/issues/161), [#163](https://github.com/jztan/redmine-mcp-server/pull/163)), a direct `joserfc` floor clearing CVE-2026-48990, and prompt-injection wrapping extended to journal field-change values. Recent lineage: hosted OAuth (`oauth-proxy` mode) landed in **v2.3.0** (2026-06-12), and **v2.3.1** (2026-06-20) cleared CVE dependency bumps and removed the unused `fastapi[standard]` tree. See [`CHANGELOG.md`](../CHANGELOG.md) for full per-release detail.
 
-Nothing is currently queued for the next release; `[Unreleased]` in [`CHANGELOG.md`](../CHANGELOG.md) is empty. The next substantial efforts are the MCP 2026-07-28 spec track and the interactive-UI (MCP Apps) work below.
+Queued for the next release: the `legacy-per-user` auth mode (merged to develop 2026-06-28), which lets each user supply their own Redmine API key in an `X-Redmine-API-Key` request header on one shared multi-tenant server. It is opt-in and fail-closed (`REDMINE_PER_USER_TRUST_PROXY` attestation required at startup), redacts keys to fingerprints in logs, adds a reachability-only `/health` probe, and offers optional per-request identity audit (`REDMINE_PER_USER_AUDIT_IDENTITY`). It targets self-hosted Redmine instances too old for OAuth; see [`legacy-per-user-auth.md`](legacy-per-user-auth.md) for the threat model. Beyond that, the next substantial efforts are the MCP 2026-07-28 spec track and the interactive-UI (MCP Apps) work below.
 
 ---
 
@@ -64,7 +64,7 @@ Committed direction (2026-06-27): become a reference adopter of the official [MC
 
 - [ ] **OpenTelemetry observability.** Optional `opentelemetry-sdk` dependency. Zero overhead when unconfigured; production-grade tracing (tool calls, Redmine API latency, error rates) when the OTEL SDK is present. Would need to document OTEL configuration in [`contributing.md`](contributing.md). Note: the 2026-07-28 spec deprecates protocol-level logging in favor of stderr or OpenTelemetry, so this item is increasingly aligned with the upstream direction.
 
-- [ ] **Enterprise-Managed Authorization (EMA).** Anthropic's [enterprise-managed auth](https://claude.com/blog/enterprise-managed-auth) (beta, Okta-first) lets a Claude Team/Enterprise admin provision connector access centrally through the org's IdP, so users inherit access by group membership instead of each running a per-connector OAuth flow. It ships as an optional, additive extension to the MCP authorization spec ([`modelcontextprotocol/ext-auth`](https://github.com/modelcontextprotocol/ext-auth)), so it would not disturb the existing `legacy`/`oauth`/`oauth-proxy` modes. The structural mismatch: EMA assumes an enterprise IdP sits above the resource server, whereas this server's authorization server is Redmine's own Doorkeeper. Supporting it would mean a fourth auth mode that trusts IdP-issued tokens and maps the IdP subject to a Redmine user. That mapping (likely a Redmine-side OmniAuth/SSO bridge or service-account impersonation model), not the MCP plumbing, is the real blocker. Relevant only to operators who already front Redmine with Okta/Entra under Claude Enterprise; the `oauth-proxy` mode already covers centralized-OAuth needs for most self-hosters. Revisit when the extension graduates from beta and a user with that topology asks.
+- [ ] **Enterprise-Managed Authorization (EMA).** Anthropic's [enterprise-managed auth](https://claude.com/blog/enterprise-managed-auth) (beta, Okta-first) lets a Claude Team/Enterprise admin provision connector access centrally through the org's IdP, so users inherit access by group membership instead of each running a per-connector OAuth flow. It ships as an optional, additive extension to the MCP authorization spec ([`modelcontextprotocol/ext-auth`](https://github.com/modelcontextprotocol/ext-auth)), so it would not disturb the existing `legacy`/`legacy-per-user`/`oauth`/`oauth-proxy` modes. The structural mismatch: EMA assumes an enterprise IdP sits above the resource server, whereas this server's authorization server is Redmine's own Doorkeeper. Supporting it would mean a fifth auth mode that trusts IdP-issued tokens and maps the IdP subject to a Redmine user. That mapping (likely a Redmine-side OmniAuth/SSO bridge or service-account impersonation model), not the MCP plumbing, is the real blocker. Relevant only to operators who already front Redmine with Okta/Entra under Claude Enterprise; the `oauth-proxy` mode already covers centralized-OAuth needs for most self-hosters. Revisit when the extension graduates from beta and a user with that topology asks.
 
 ---
 
@@ -87,4 +87,4 @@ For per-release detail (features, fixes, CVE patches, contributor credits, break
 
 ---
 
-**Last Updated:** 2026-06-27
+**Last Updated:** 2026-06-28
