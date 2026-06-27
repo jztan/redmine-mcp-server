@@ -140,3 +140,12 @@ def test_client_per_user_missing_header_raises():
     ):
         with pytest.raises(PerUserAuthError):
             _client._get_redmine_client()
+
+
+def test_handle_error_maps_per_user_auth_error():
+    from redmine_mcp_server._errors import _handle_redmine_error
+
+    err = PerUserAuthError("Per-user auth requires the X-Redmine-API-Key header.")
+    result = _handle_redmine_error(err, "listing trackers")
+    assert result["code"] == "PER_USER_AUTH"
+    assert "X-Redmine-API-Key" in result["error"]

@@ -80,6 +80,11 @@ def _handle_redmine_error(
     context = context or {}
     redmine_url = _client.REDMINE_URL or "REDMINE_URL not configured"
 
+    from ._per_user import PerUserAuthError  # lazy import avoids circular
+
+    if isinstance(e, PerUserAuthError):
+        return {"error": e.message, "code": "PER_USER_AUTH"}
+
     # Check SSLError BEFORE ConnectionError (SSLError inherits from ConnectionError)
     if isinstance(e, RequestsSSLError):
         logger.error(f"SSL error during {operation}: {e}")
