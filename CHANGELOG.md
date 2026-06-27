@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [2.4.0] - 2026-06-27
 ### Added
 - Promotional demo page under `pages/`, deployed to GitHub Pages on version tags via a new `deploy-demo.yml` workflow. It is a scripted, client-side walkthrough of an AI agent triaging a sample Redmine sprint backlog (list, read, reassign, comment, log time, close), with tool-call request/response JSON that matches the server's real response shapes, a Kanban board that updates as the agent works, and a light/dark theme toggle. No live Redmine is connected.
 
@@ -923,6 +925,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive authentication support (username/password and API key)
 - Docker containerization support
 
+[2.4.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.4.0
 [2.3.1]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.3.1
 [2.3.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.3.0
 [2.2.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.2.0
