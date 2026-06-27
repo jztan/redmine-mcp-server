@@ -2,8 +2,8 @@
 
 ## Project Status
 
-- **Current Version:** v2.3.1 (released 2026-06-20)
-- **On Develop (unreleased):** a `get_redmine_issue` fix that restores journal field-change `details` (and wraps those free-text values against prompt injection) ([#161](https://github.com/jztan/redmine-mcp-server/issues/161), [#163](https://github.com/jztan/redmine-mcp-server/pull/163))
+- **Current Version:** v2.4.0 (released 2026-06-27)
+- **On Develop (unreleased):** nothing queued; `[Unreleased]` in [`CHANGELOG.md`](../CHANGELOG.md) is empty
 - **MCP Registry Status:** Published
 - **Test Suite:** 1309 unit tests + 85 integration tests. Integration tests gate on environment: a sandbox Redmine, plugin flags (`REDMINE_AGILE_ENABLED` etc.), and the destructive OAuth test behind `RUN_DESTRUCTIVE_TESTS=1`. Tests that can't run in the current environment skip cleanly with a clear reason. Run them locally with `python tests/run_tests.py --all` or `--integration`.
 - **Tools:** 40 core + 5 plugin-gated + 1 admin-gated (maximum 46 with all flags enabled)
@@ -12,9 +12,9 @@
 
 ## Next Release
 
-**Journal history fix.** Develop carries a `get_redmine_issue` fix awaiting a release cut via `python scripts/release.py` per [`RELEASE_SOP.md`](../RELEASE_SOP.md): journal field-change `details` (status, assignee, custom-field edits) are returned again and field-only journals are no longer dropped, with those free-text values wrapped against prompt injection ([#161](https://github.com/jztan/redmine-mcp-server/issues/161), [#163](https://github.com/jztan/redmine-mcp-server/pull/163)).
+Nothing is currently queued; `[Unreleased]` in [`CHANGELOG.md`](../CHANGELOG.md) is empty. The next substantial effort is the MCP 2026-07-28 spec track below.
 
-Hosted OAuth (the `oauth-proxy` auth mode) shipped in **v2.3.0** (2026-06-12); **v2.3.1** (2026-06-20) followed with CVE-clearing dependency bumps and the removal of the unused `fastapi[standard]` tree. See `[Unreleased]` in [`CHANGELOG.md`](../CHANGELOG.md) for the full pending diff.
+**Latest release.** **v2.4.0** (2026-06-27) shipped the promotional demo page (GitHub Pages, deployed on version tags), the `get_redmine_issue` fix that restores journal field-change `details` and stops dropping field-only journals ([#161](https://github.com/jztan/redmine-mcp-server/issues/161), [#163](https://github.com/jztan/redmine-mcp-server/pull/163)), a direct `joserfc` floor clearing CVE-2026-48990, and prompt-injection wrapping extended to journal field-change values. Recent lineage: hosted OAuth (`oauth-proxy` mode) landed in **v2.3.0** (2026-06-12), and **v2.3.1** (2026-06-20) cleared CVE dependency bumps and removed the unused `fastapi[standard]` tree. See [`CHANGELOG.md`](../CHANGELOG.md) for full per-release detail.
 
 ---
 
@@ -42,7 +42,7 @@ The MCP spec [release candidate locked on 2026-05-21](https://blog.modelcontextp
 
 ## Under Consideration
 
-- [ ] **MCP Prompts (workflow layer).** The server exposes only tools today; MCP Prompts and Resources are unused. Add a curated set of named, parameterized prompts that compose the existing tools into one-invocation workflows, for example `triage-sprint`, `standup-digest`, `stale-issue-sweep`, `release-notes-from-issues`, and `timesheet-reconcile`. Each prompt encodes how to use the tools well (pagination defaults, which fields to fetch, read-only awareness, when to stop) so even a weaker client model executes the workflow correctly, and surfaces in clients as slash commands via standard `prompts/list` / `prompts/get`. FastMCP makes this a `@mcp.prompt()` decorator in a new `prompts.py`. This turns the server from a bag of API verbs into an opinionated Redmine co-pilot, makes the promo demo's sprint-triage narrative a real invokable capability instead of client-side fiction, and gives future MCP Apps work (already noted in the v3.1+ track) a set of workflows to render rather than a from-scratch effort. Document in [`tool-reference.md`](tool-reference.md).
+- [ ] **MCP Prompts (workflow layer) — parked, not planned.** The idea: named, parameterized prompts (`triage-sprint`, `standup-digest`, etc.) that compose the existing tools into one-invocation slash-command workflows via a `@mcp.prompt()` decorator in a new `prompts.py`. **Why it is parked, not scheduled:** there is no evidence of user demand, and the value-add is thin: a strong client model already orchestrates the tools from a plain-English request, so the only real benefit is correctness-scaffolding for weaker models plus saving a retyped paragraph on repeated workflows. The motives that survive scrutiny (making the promo demo's sprint-triage narrative a real capability instead of client-side fiction; seeding future MCP Apps work) are internal, not user pain. **If revisited:** validate cheaply by shipping exactly one prompt (`triage-sprint`, which the demo already narrates) and watch for any usage or request signal before committing to a "layer." Reconsider in earnest only if the MCP Apps track (v3.1+) lands and needs workflow definitions to render.
 
 - [ ] **OpenTelemetry observability.** Optional `opentelemetry-sdk` dependency. Zero overhead when unconfigured; production-grade tracing (tool calls, Redmine API latency, error rates) when the OTEL SDK is present. Would need to document OTEL configuration in [`contributing.md`](contributing.md). Note: the 2026-07-28 spec deprecates protocol-level logging in favor of stderr or OpenTelemetry, so this item is increasingly aligned with the upstream direction.
 
@@ -69,4 +69,4 @@ For per-release detail (features, fixes, CVE patches, contributor credits, break
 
 ---
 
-**Last Updated:** 2026-06-21
+**Last Updated:** 2026-06-27
