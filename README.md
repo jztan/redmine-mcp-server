@@ -107,7 +107,9 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `REDMINE_URL` | Yes | – | Base URL of your Redmine instance |
-| `REDMINE_AUTH_MODE` | No | `legacy` | Authentication mode: `legacy`, `oauth`, or `oauth-proxy` (see [Authentication](#authentication)) |
+| `REDMINE_AUTH_MODE` | No | `legacy` | Authentication mode: `legacy`, `legacy-per-user`, `oauth`, or `oauth-proxy` (see [Authentication](#authentication)) |
+| `REDMINE_PER_USER_TRUST_PROXY` | Yes* | `false` | Required for `legacy-per-user` mode. Operator attestation: "this server sits behind TLS and my proxy does not forward client `X-Forwarded-Proto`." |
+| `REDMINE_PER_USER_AUDIT_IDENTITY` | No | `false` | `legacy-per-user` only: resolve and log the Redmine user ID per request (adds one extra round-trip) |
 | `REDMINE_API_KEY` | Yes† | – | API key (legacy mode only) |
 | `REDMINE_USERNAME` | Yes† | – | Username for basic auth (legacy mode only) |
 | `REDMINE_PASSWORD` | Yes† | – | Password for basic auth (legacy mode only) |
@@ -145,6 +147,7 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS` | No | `{}` | JSON object mapping required custom field names to fallback values used when creating issues |
 | `REDMINE_ALLOW_PRIVATE_FETCH_URLS` | No | `false` | **Warning:** disables all SSRF protection for attachment fetching. Never set to `true` in production. |
 
+*\* Required when `REDMINE_AUTH_MODE=legacy-per-user`.*
 *† Required when `REDMINE_AUTH_MODE=legacy`. Either `REDMINE_API_KEY` or `REDMINE_USERNAME`+`REDMINE_PASSWORD` must be set. API key is recommended.*
 *‡ Required when `REDMINE_AUTH_MODE=oauth` or `REDMINE_AUTH_MODE=oauth-proxy`.*
 *§ Required when `REDMINE_AUTH_MODE=oauth-proxy`.*
@@ -286,6 +289,50 @@ REDMINE_MCP_JWT_SIGNING_KEY=...
 The upstream Redmine OAuth app should use `${REDMINE_MCP_BASE_URL}/auth/callback` as its redirect URI. If `REDMINE_OAUTH_CLIENT_ID` / `REDMINE_OAUTH_CLIENT_SECRET` are not set, the introspection credentials are reused for the upstream Redmine OAuth app.
 
 OAuthProxy uses FastMCP's default encrypted file storage under `FASTMCP_HOME/oauth-proxy/` for client registrations, transactions, and upstream token state. Mount `FASTMCP_HOME` to persistent storage in container deployments.
+
+### legacy-per-user mode (Redmine older than 6.1)
+
+If your Redmine instance is too old for OAuth, `legacy-per-user` mode lets each user's MCP client send its own Redmine API key in an `X-Redmine-API-Key` header. Each request runs as that user's Redmine identity with that user's permissions.
+
+**This is an advanced, opt-in mode.** It requires TLS end-to-end and a correctly configured reverse proxy. See [`docs/legacy-per-user-auth.md`](docs/legacy-per-user-auth.md) for the full threat model, firewall guidance, and revocation runbook before enabling it.
+
+<details>
+<summary><strong>Client configuration (legacy-per-user)</strong></summary>
+
+**`mcp-remote` (recommended):**
+
+```json
+{ "mcpServers": { "redmine": {
+  "command": "npx",
+  "args": ["mcp-remote", "https://your-host/mcp",
+           "--header", "X-Redmine-API-Key:${RM_KEY}"],
+  "env": { "RM_KEY": "<your redmine api key>" }
+}}}
+```
+
+Note the colon with no surrounding spaces in `X-Redmine-API-Key:${RM_KEY}` -- this avoids an arg-escaping bug in Cursor and Claude Desktop on Windows.
+
+**VS Code (`mcp.json`):**
+
+Use `.vscode/mcp.json` (workspace file) or the user profile `mcp.json`. The workspace `.mcp.json` silently drops `headers` (see microsoft/vscode#319528), so do not use that file. Pin VS Code 1.102 or newer.
+
+```json
+{
+  "servers": {
+    "redmine": {
+      "type": "http",
+      "url": "https://your-host/mcp",
+      "headers": { "X-Redmine-API-Key": "${input:rmKey}" },
+      "inputs": [{ "id": "rmKey", "type": "promptString",
+                   "description": "Redmine API key", "password": true }]
+    }
+  }
+}
+```
+
+**Unsupported:** any client that cannot set a custom request header, or that reserves the `Authorization` header for its own OAuth flow.
+
+</details>
 
 ## MCP Client Configuration
 
