@@ -221,16 +221,23 @@ For SSL troubleshooting, see the [Troubleshooting Guide](./docs/troubleshooting.
 
 ## Authentication
 
-The server supports three authentication modes, selected via `REDMINE_AUTH_MODE`.
+The server supports four authentication modes, selected via `REDMINE_AUTH_MODE`. It defaults to `legacy`, so existing deployments keep working with no changes; OAuth2 support is purely additive.
 
-> **Backward compatibility**: `REDMINE_AUTH_MODE` defaults to `legacy`, so all existing deployments continue to work without any configuration changes. OAuth2 support is purely additive — nothing breaks if you never set the variable.
+| Your situation | Mode | Redmine |
+|---|---|---|
+| Single shared credential, simplest setup | `legacy` (default) | any |
+| Multi-user, you control the MCP client | `oauth` | 6.1+ |
+| Hosted server, clients self-register (DCR) | `oauth-proxy` | 6.1+ |
+| Multi-user, Redmine too old for OAuth | `legacy-per-user` | < 6.1 |
+
+The advanced modes are collapsed below. For full setup, the [OAuth2 Setup Guide](./docs/oauth-setup.md) covers `oauth` and `oauth-proxy`, and the [legacy-per-user guide](./docs/legacy-per-user-auth.md) covers `legacy-per-user`.
 
 ### Legacy mode (default)
 
-Uses a single shared credential — either an API key or a username/password pair — configured once in `.env`. Every request to Redmine uses the same identity.
+A single shared credential (API key or username/password) configured once in `.env`. Every request to Redmine uses the same identity.
 
 ```bash
-REDMINE_AUTH_MODE=legacy        # or omit entirely — this is the default
+REDMINE_AUTH_MODE=legacy        # or omit entirely; this is the default
 REDMINE_URL=https://redmine.example.com
 REDMINE_API_KEY=your_api_key
 # OR:
@@ -238,66 +245,51 @@ REDMINE_API_KEY=your_api_key
 # REDMINE_PASSWORD=your_password
 ```
 
-### OAuth2 mode
+<details>
+<summary><strong>OAuth2 mode</strong> (multi-user, Redmine 6.1+)</summary>
 
-> **Requires Redmine 6.1 or newer.** OAuth2 support (via the Doorkeeper gem) was introduced in Redmine 6.1.
-
-Each MCP request carries its own `Authorization: Bearer <token>` header. Since v2.1, the server validates the token against Doorkeeper's RFC 7662 introspection endpoint (`POST /oauth/introspect`) on Redmine before forwarding it. This enables multi-user deployments where each user authenticates with their own Redmine account, with the token's scopes available to the server (unlocking future per-tool scope enforcement).
+Each MCP request carries its own `Authorization: Bearer <token>`, so every user authenticates with their own Redmine account. The server validates each token against Doorkeeper's introspection endpoint before forwarding it, and exposes the OAuth2 discovery and `/revoke` endpoints clients need.
 
 ```bash
 REDMINE_AUTH_MODE=oauth
 REDMINE_URL=https://redmine.example.com
 REDMINE_MCP_BASE_URL=https://redmine-mcp.example.com   # public URL of this server
 
-# Introspection client (register a confidential OAuth app in Redmine; see docs/oauth-setup.md)
+# Confidential OAuth app registered in Redmine admin (see setup guide)
 REDMINE_INTROSPECT_CLIENT_ID=...
 REDMINE_INTROSPECT_CLIENT_SECRET=...
 ```
 
-In OAuth mode the server also exposes OAuth2 discovery and token management endpoints:
+You register the OAuth app manually in Redmine admin → **Applications** (no Dynamic Client Registration). Full walkthrough, endpoint reference, and troubleshooting: [OAuth2 Setup Guide](./docs/oauth-setup.md).
 
-| Endpoint | Standard | Purpose |
-|----------|----------|---------|
-| `/.well-known/oauth-protected-resource/mcp` | RFC 9728 §3.1 | Tells clients where to find the authorization server (mounted by FastMCP `RemoteAuthProvider`) |
-| `/.well-known/oauth-authorization-server/mcp` | RFC 8414 | Advertises Redmine's Doorkeeper OAuth endpoints, scoped to this MCP resource |
-| `POST /revoke` | RFC 7009 | Revokes an OAuth2 token (proxies to Redmine's `/oauth/revoke`) |
+</details>
 
-Redmine uses the [Doorkeeper](https://github.com/doorkeeper-gem/doorkeeper) gem for OAuth2 but does not serve the RFC 8414 discovery document itself. This server serves path-scoped metadata on Redmine's behalf, pointing to Redmine's real `/oauth/authorize`, `/oauth/token`, and `/oauth/revoke` endpoints.
+<details>
+<summary><strong>OAuthProxy mode</strong> (hosted deployments with client self-registration)</summary>
 
-**Prerequisites for OAuth mode:**
-- An OAuth application registered in Redmine admin → **Applications** with the callback URL of your client
-- A client that handles the authorization code flow, stores the resulting token per user, and sends it as `Authorization: Bearer <token>` on every MCP request
-- No Dynamic Client Registration (DCR) is required — register the application manually in Redmine admin
-
-For step-by-step setup instructions, see the [OAuth2 Setup Guide](./docs/oauth-setup.md).
-
-### OAuthProxy mode
-
-For hosted MCP deployments, `REDMINE_AUTH_MODE=oauth-proxy` lets FastMCP act as the MCP-facing authorization server. FastMCP handles DCR/CIMD for MCP clients, then redirects users to Redmine as the upstream OAuth provider and external consent screen.
+FastMCP acts as the MCP-facing authorization server: it handles DCR for MCP clients, then redirects users to Redmine as the upstream OAuth provider for consent. Use this when clients (e.g. Claude Desktop, VS Code) expect to register themselves.
 
 ```bash
 REDMINE_AUTH_MODE=oauth-proxy
 REDMINE_URL=https://redmine.example.com
 REDMINE_MCP_BASE_URL=https://redmine-mcp.example.com   # public URL of this server
 
-# Introspection/upstream client (register a confidential OAuth app in Redmine; see docs/oauth-setup.md)
+# Confidential OAuth app registered in Redmine admin (see setup guide)
 REDMINE_INTROSPECT_CLIENT_ID=...
 REDMINE_INTROSPECT_CLIENT_SECRET=...
 REDMINE_MCP_JWT_SIGNING_KEY=...
 ```
 
-The upstream Redmine OAuth app should use `${REDMINE_MCP_BASE_URL}/auth/callback` as its redirect URI. If `REDMINE_OAUTH_CLIENT_ID` / `REDMINE_OAUTH_CLIENT_SECRET` are not set, the introspection credentials are reused for the upstream Redmine OAuth app.
+The upstream Redmine app must register `${REDMINE_MCP_BASE_URL}/auth/callback` as its redirect URI. Storage, scaling, and credential-reuse notes are in the [OAuth2 Setup Guide](./docs/oauth-setup.md).
 
-OAuthProxy uses FastMCP's default encrypted file storage under `FASTMCP_HOME/oauth-proxy/` for client registrations, transactions, and upstream token state. Mount `FASTMCP_HOME` to persistent storage in container deployments.
-
-### legacy-per-user mode (Redmine older than 6.1)
-
-If your Redmine instance is too old for OAuth, `legacy-per-user` mode lets each user's MCP client send its own Redmine API key in an `X-Redmine-API-Key` header. Each request runs as that user's Redmine identity with that user's permissions.
-
-**This is an advanced, opt-in mode.** It requires TLS end-to-end and a correctly configured reverse proxy. See [`docs/legacy-per-user-auth.md`](docs/legacy-per-user-auth.md) for the full threat model, firewall guidance, and revocation runbook before enabling it.
+</details>
 
 <details>
-<summary><strong>Client configuration (legacy-per-user)</strong></summary>
+<summary><strong>legacy-per-user mode</strong> (Redmine older than 6.1)</summary>
+
+For Redmine instances too old for OAuth, each user's MCP client sends its own Redmine API key in an `X-Redmine-API-Key` header. Each request runs as that user's identity with that user's permissions.
+
+**This is an advanced, opt-in mode.** It requires TLS end-to-end and a correctly configured reverse proxy. Read [`docs/legacy-per-user-auth.md`](docs/legacy-per-user-auth.md) for the threat model, firewall guidance, and revocation runbook before enabling it.
 
 **`mcp-remote` (recommended):**
 
@@ -337,6 +329,8 @@ Use `.vscode/mcp.json` (workspace file) or the user profile `mcp.json`. The work
 ## MCP Client Configuration
 
 The server exposes an HTTP endpoint at `http://127.0.0.1:8000/mcp`. Register it with your preferred MCP-compatible agent using the instructions below.
+
+> The examples below assume `legacy` or `oauth` mode. In `legacy-per-user` mode each client must also send an `X-Redmine-API-Key` header; see [legacy-per-user mode](#authentication) above for header-aware configs.
 
 <details>
 <summary><strong>Visual Studio Code (Native MCP Support)</strong></summary>
