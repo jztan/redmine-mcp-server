@@ -901,3 +901,42 @@ async def manage_project_member(
         "update": _update_project_member_action,
         "remove": _remove_project_member_action,
     }
+
+
+@mcp.tool()
+async def list_project_trackers(
+    project_id: Union[str, int],
+) -> List[Dict[str, Any]]:
+    """List the trackers (issue types) enabled for a specific Redmine project.
+
+    Unlike ``list_redmine_trackers`` (which returns every tracker defined in
+    the instance), this returns only the trackers available on the given
+    project. Use it to discover valid ``tracker_id`` values before creating
+    an issue in that project.
+
+    Args:
+        project_id: Project identifier (numeric id or string identifier).
+
+    Returns:
+        A list of tracker dicts with ``id`` and ``name``. On failure, a list
+        containing a single dict with an ``"error"`` key.
+
+    Examples:
+        >>> await list_project_trackers("my-project")
+        [{"id": 1, "name": "Bug"}, {"id": 2, "name": "Feature"}]
+    """
+    try:
+        project = _get_redmine_client().project.get(project_id, include="trackers")
+        trackers = getattr(project, "trackers", None) or []
+        return [
+            {"id": getattr(t, "id", None), "name": getattr(t, "name", "")}
+            for t in trackers
+        ]
+    except Exception as e:
+        return [
+            _handle_redmine_error(
+                e,
+                f"listing trackers for project {project_id}",
+                {"resource_type": "project", "resource_id": project_id},
+            )
+        ]

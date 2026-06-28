@@ -166,6 +166,7 @@ When enabled, the following tools return an error instead of executing
 - `delete_file`
 - `import_time_entries`
 - `update_checklist_item` (also requires `REDMINE_CHECKLISTS_ENABLED=true`)
+- `create_checklist_item` (also requires `REDMINE_CHECKLISTS_ENABLED=true`)
 - `manage_project_member` — all actions
 - `manage_issue_watcher` — all actions
 - `manage_issue_note` — all actions
@@ -620,7 +621,7 @@ List Redmine issues with flexible filtering and pagination support. A general-pu
 - `offset` (integer, optional): Number of issues to skip for pagination. Default: `0`
 - `include_pagination_info` (boolean, optional): Return structured response with metadata. Default: `false`
 - `fields` (array of strings, optional): List of field names to include in results. Default: all fields
-  - Available fields: `id`, `subject`, `description`, `project`, `status`, `priority`, `author`, `assigned_to`, `created_on`, `updated_on`
+  - Available fields: `id`, `subject`, `description`, `project`, `status`, `priority`, `tracker`, `author`, `assigned_to`, `created_on`, `updated_on` — `tracker` is returned by default
   - Special values: `["*"]` or `["all"]` for all fields
 
 **Returns:** List of issue dictionaries, or structured response with pagination metadata
@@ -686,7 +687,7 @@ Search issues using text queries with support for pagination, field selection, a
 - `offset` (integer, optional): Number of issues to skip for pagination. Default: `0`
 - `include_pagination_info` (boolean, optional): Return structured response with pagination metadata. Default: `false`
 - `fields` (array of strings, optional): List of field names to include in results. Default: `null` (all fields)
-  - Available fields: `id`, `subject`, `description`, `project`, `status`, `priority`, `author`, `assigned_to`, `created_on`, `updated_on`
+  - Available fields: `id`, `subject`, `description`, `project`, `status`, `priority`, `tracker`, `author`, `assigned_to`, `created_on`, `updated_on` — `tracker` is returned by default
   - Special values: `["*"]` or `["all"]` for all fields
 - `scope` (string, optional): Search scope. Default: `"all"`
   - Values: `"all"`, `"my_project"`, `"subprojects"`
@@ -1331,6 +1332,38 @@ List all trackers (issue types like Bug, Feature, Support). Use to discover vali
 
 ---
 
+### `list_project_trackers`
+
+List trackers enabled for a specific project. Use this instead of `list_redmine_trackers` when you need only the trackers applicable to a given project (project settings can restrict the instance-wide tracker list).
+
+**Parameters:**
+- `project_id` (integer or string, required): Project ID (numeric) or identifier (string)
+
+**Returns:** List of `{id, name}` dicts for trackers enabled on the project.
+
+**Example:**
+```json
+[
+  {"id": 1, "name": "Bug"},
+  {"id": 2, "name": "Feature"}
+]
+```
+
+**Usage:**
+```python
+# Discover which trackers a project accepts before creating an issue
+trackers = list_project_trackers(project_id="my-project")
+# [{"id": 1, "name": "Bug"}, {"id": 2, "name": "Feature"}]
+
+# Then create an issue with a valid tracker_id
+create_redmine_issue(project_id="my-project", subject="...", fields={"tracker_id": 1})
+```
+
+**Notes:**
+- Distinct from `list_redmine_trackers`, which returns all trackers configured instance-wide regardless of project membership. Use this tool when the project is known and you want to avoid passing a tracker ID that Redmine will reject.
+
+---
+
 ### `list_redmine_issue_statuses`
 
 List all issue statuses. Use to discover valid `status_id` values. `update_redmine_issue` also accepts a `status_name` field that internally resolves the ID.
@@ -1860,6 +1893,7 @@ Retrieve all checklist items for a Redmine issue.
 | `items[].id` | int | Checklist item ID |
 | `items[].subject` | string | Item text (wrapped in `<insecure-content>` tags) |
 | `items[].is_done` | bool | Whether the item is completed |
+| `items[].is_section` | bool | Whether the item is a section header (not a checkable item) |
 | `items[].position` | int | Position/order of the item |
 | `items[].created_at` | string | ISO timestamp of creation |
 | `items[].updated_at` | string | ISO timestamp of last update |
@@ -1900,6 +1934,51 @@ At least one optional parameter must be provided.
 - No fields provided: returns `{"error": "No fields to update..."}`
 - Invalid `is_done` type: returns `{"error": "is_done must be a boolean."}`
 - Invalid `position`: returns `{"error": "position must be a positive integer."}`
+
+---
+
+### `create_checklist_item`
+
+Add a new checklist item (or section header) to a Redmine issue's checklist. This is a **write operation** and is blocked in read-only mode. Requires the **RedmineUP Checklists Pro** plugin and `REDMINE_CHECKLISTS_ENABLED=true`.
+
+**Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `issue_id` | int | Yes | — | The ID of the issue to add the checklist item to |
+| `subject` | string | Yes | — | Text of the new checklist item or section header |
+| `is_section` | bool | No | `false` | When `true`, creates a section header rather than a checkable item |
+| `is_done` | bool | No | `false` | Initial done state for checkable items (ignored when `is_section=true`) |
+| `position` | int | No | `null` | 1-based position in the checklist. Omit to append at the end |
+
+**Returns:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `checklist_item_id` | int | ID of the newly created checklist item |
+| `issue_id` | int | The issue ID |
+| `subject` | string | Item text as stored |
+| `is_done` | bool | Done state |
+| `is_section` | bool | Whether the item is a section header |
+| `position` | int or null | Position in the checklist |
+
+**Error cases:**
+- Read-only mode: returns read-only error
+- Plugin disabled: returns `{"error": "Checklist support is disabled. Set REDMINE_CHECKLISTS_ENABLED=true..."}`
+- Invalid `issue_id`: returns `{"error": "issue_id must be a positive integer."}`
+- Blank `subject`: returns `{"error": "subject is required and cannot be blank."}`
+
+**Examples:**
+```python
+# Append a checkable item
+create_checklist_item(issue_id=123, subject="Write unit tests")
+
+# Append a section header (organises items visually)
+create_checklist_item(issue_id=123, subject="QA Phase", is_section=True)
+
+# Insert a pre-completed item at position 2
+create_checklist_item(issue_id=123, subject="Review spec", is_done=True, position=2)
+```
 
 ---
 

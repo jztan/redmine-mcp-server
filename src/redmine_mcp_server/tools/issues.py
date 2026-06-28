@@ -205,6 +205,7 @@ def _issue_to_dict(issue: Any, include_custom_fields: bool = False) -> Dict[str,
     status = getattr(issue, "status", None)
     priority = getattr(issue, "priority", None)
     author = getattr(issue, "author", None)
+    tracker = getattr(issue, "tracker", None)
 
     issue_dict = {
         "id": getattr(issue, "id", None),
@@ -218,6 +219,9 @@ def _issue_to_dict(issue: Any, include_custom_fields: bool = False) -> Dict[str,
         ),
         "priority": (
             {"id": priority.id, "name": priority.name} if priority is not None else None
+        ),
+        "tracker": (
+            {"id": tracker.id, "name": tracker.name} if tracker is not None else None
         ),
         "author": (
             {"id": author.id, "name": author.name} if author is not None else None
@@ -258,6 +262,7 @@ def _issue_to_dict_selective(
         - project: Project info (dict with id and name)
         - status: Status info (dict with id and name)
         - priority: Priority info (dict with id and name)
+        - tracker: Tracker/type info (dict with id and name, or None)
         - author: Author info (dict with id and name)
         - assigned_to: Assigned user info (dict with id and name, or None)
         - created_on: Creation timestamp (ISO format)
@@ -287,6 +292,7 @@ def _issue_to_dict_selective(
     status = getattr(issue, "status", None)
     priority = getattr(issue, "priority", None)
     author = getattr(issue, "author", None)
+    tracker = getattr(issue, "tracker", None)
 
     all_fields = {
         "id": getattr(issue, "id", None),
@@ -300,6 +306,9 @@ def _issue_to_dict_selective(
         ),
         "priority": (
             {"id": priority.id, "name": priority.name} if priority is not None else None
+        ),
+        "tracker": (
+            {"id": tracker.id, "name": tracker.name} if tracker is not None else None
         ),
         "author": (
             {"id": author.id, "name": author.name} if author is not None else None
@@ -664,7 +673,7 @@ async def list_redmine_issues(
             metadata (default: False).
         fields: List of field names to include in results (default: all).
             Available: id, subject, description, project, status, priority,
-            author, assigned_to, created_on, updated_on.
+            tracker, author, assigned_to, created_on, updated_on.
         filters: Additional Redmine API filter parameters as a dict. Use this
             for any filter not listed above (e.g., {"cf_1": "value"}).
 
@@ -878,7 +887,7 @@ async def search_redmine_issues(
             metadata (default: False).
         fields: List of field names to include in results (default: all).
             Available: id, subject, description, project, status, priority,
-            author, assigned_to, created_on, updated_on.
+            tracker, author, assigned_to, created_on, updated_on.
         scope: Search scope. Values: "all", "my_project", "subprojects".
         open_issues: Search only open issues (default: False).
         options: Additional Redmine Search API parameters as a dict.

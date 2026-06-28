@@ -13,6 +13,7 @@ from redmine_mcp_server._env import _is_checklists_enabled  # noqa: E402
 from redmine_mcp_server.tools.checklists import (  # noqa: E402
     _fetch_checklist_items,
     _update_checklist_item_api,
+    create_checklist_item,
     get_checklist,
     update_checklist_item,
 )
@@ -378,3 +379,67 @@ class TestUpdateChecklistItemIsDone:
             result = await update_checklist_item(checklist_item_id=10, is_done=True)
         assert result["success"] is True
         assert "is_done" in result["updated_fields"]
+
+
+# ---------------------------------------------------------------------------
+# is_section field exposure
+# ---------------------------------------------------------------------------
+
+
+class TestIsSectionExposed:
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    def test_fetch_includes_is_section(self, mock_redmine):
+        mock_redmine.engine.request.return_value = [
+            {"id": 1, "subject": "Header", "is_section": True, "position": 1},
+        ]
+        items = _fetch_checklist_items(42)
+        assert items[0]["is_section"] is True
+
+
+# ---------------------------------------------------------------------------
+# create_checklist_item tool
+# ---------------------------------------------------------------------------
+
+
+class TestCreateChecklistItem:
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_creates_and_returns_id(self, mock_redmine):
+        mock_redmine.engine.request.return_value = {"checklist": {"id": 99}}
+        with patch.dict(os.environ, {"REDMINE_CHECKLISTS_ENABLED": "true"}):
+            result = await create_checklist_item(issue_id=42, subject="Do it")
+        assert result["success"] is True
+        assert result["checklist_item_id"] == 99
+        assert result["is_section"] is False
+        url = mock_redmine.engine.request.call_args[0][1]
+        assert url == "http://localhost:3000/issues/42/checklists.json"
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_blocked_in_read_only(self, mock_redmine):
+        with patch.dict(
+            os.environ,
+            {"REDMINE_CHECKLISTS_ENABLED": "true", "REDMINE_MCP_READ_ONLY": "true"},
+        ):
+            result = await create_checklist_item(issue_id=42, subject="Do it")
+        assert "error" in result
+        mock_redmine.engine.request.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_disabled_when_flag_off(self, mock_redmine):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("REDMINE_CHECKLISTS_ENABLED", None)
+            result = await create_checklist_item(issue_id=42, subject="Do it")
+        assert "error" in result
+        mock_redmine.engine.request.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_rejects_blank_subject(self, mock_redmine):
+        with patch.dict(os.environ, {"REDMINE_CHECKLISTS_ENABLED": "true"}):
+            result = await create_checklist_item(issue_id=42, subject="   ")
+        assert "error" in result
+        mock_redmine.engine.request.assert_not_called()

@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `X-Redmine-API-Key` header, for Redmine instances too old for OAuth. Opt-in
   and fail-closed (`REDMINE_PER_USER_TRUST_PROXY` required); keys are redacted
   from logs; optional identity audit via `REDMINE_PER_USER_AUDIT_IDENTITY`.
+- `tracker` field in issue serialization and the `fields` selector for issue listing/search tools.
+- `list_project_trackers` tool for project-scoped tracker discovery.
+- `create_checklist_item` tool (RedmineUP Checklists) and `is_section` in checklist output.
 
 ## [2.4.0] - 2026-06-27
 ### Added

@@ -31,6 +31,7 @@ def _fetch_checklist_items(issue_id: int) -> List[Dict[str, Any]]:
                 "id": item.get("id"),
                 "subject": wrap_insecure_content(item.get("subject", "")),
                 "is_done": item.get("is_done", False),
+                "is_section": item.get("is_section", False),
                 "position": item.get("position"),
                 "created_at": str(item.get("created_at") or ""),
                 "updated_at": str(item.get("updated_at") or ""),
@@ -55,6 +56,25 @@ def _update_checklist_item_api(checklist_item_id: int, updates: Dict[str, Any]) 
         url,
         headers={"Content-Type": "application/json"},
         data=payload,
+    )
+
+
+def _create_checklist_item_api(issue_id: int, payload: Dict[str, Any]) -> Any:
+    """Create a checklist item via the RedmineUP Checklists endpoint.
+
+    Raises on any HTTP error (caller is responsible for catching).
+    """
+    # Lazy lookup so tests patching `_client.REDMINE_URL` are honored.
+    from .. import _client
+
+    client = _get_redmine_client()
+    url = f"{_client.REDMINE_URL}/issues/{issue_id}/checklists.json"
+    body = json.dumps({"checklist": payload})
+    return client.engine.request(
+        "post",
+        url,
+        headers={"Content-Type": "application/json"},
+        data=body,
     )
 
 
@@ -168,4 +188,80 @@ async def update_checklist_item(
             e,
             f"updating checklist item {checklist_item_id}",
             {"resource_type": "checklist_item", "resource_id": checklist_item_id},
+        )
+
+
+@mcp.tool()
+async def create_checklist_item(
+    issue_id: int,
+    subject: str,
+    is_section: bool = False,
+    is_done: bool = False,
+    position: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Create a new checklist item (or section header) on a Redmine issue.
+
+    Requires the RedmineUP Checklists plugin and
+    ``REDMINE_CHECKLISTS_ENABLED=true``. This is a write operation and is
+    blocked when ``REDMINE_MCP_READ_ONLY=true``. Set ``is_section=True`` to
+    create a bold section header with no checkbox.
+
+    Args:
+        issue_id: The ID of the issue to add the item to.
+        subject: The checklist item text (required, non-blank).
+        is_section: Whether this item is a section header (default False).
+        is_done: Initial done state (default False).
+        position: Optional 1-based ordering position.
+
+    Returns:
+        A success dict with the created ``checklist_item_id`` and echoed
+        fields, or an error dict on failure.
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    if not _is_checklists_enabled():
+        return {
+            "error": (
+                "Checklist support is disabled. "
+                "Set REDMINE_CHECKLISTS_ENABLED=true to enable it."
+            )
+        }
+
+    if not _is_positive_int(issue_id):
+        return {"error": "issue_id must be a positive integer."}
+
+    if not subject or not subject.strip():
+        return {"error": "subject is required and cannot be blank."}
+
+    if position is not None and not _is_positive_int(position):
+        return {"error": "position must be a positive integer."}
+
+    payload: Dict[str, Any] = {
+        "subject": subject.strip(),
+        "is_section": is_section,
+        "is_done": is_done,
+    }
+    if position is not None:
+        payload["position"] = position
+
+    try:
+        response = _create_checklist_item_api(issue_id, payload)
+        item_id = None
+        if isinstance(response, dict):
+            item_id = (response.get("checklist") or {}).get("id") or response.get("id")
+        return {
+            "success": True,
+            "issue_id": issue_id,
+            "checklist_item_id": item_id,
+            "subject": subject.strip(),
+            "is_section": is_section,
+            "is_done": is_done,
+            "position": position,
+        }
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"creating checklist item on issue {issue_id}",
+            {"resource_type": "checklist", "resource_id": issue_id},
         )

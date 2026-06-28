@@ -61,6 +61,12 @@ class TestIssueToDictSelective:
         mock_assigned.name = "Jane Smith"
         mock_issue.assigned_to = mock_assigned
 
+        # Mock tracker
+        mock_tracker = Mock()
+        mock_tracker.id = 4
+        mock_tracker.name = "Bug"
+        mock_issue.tracker = mock_tracker
+
         # Mock timestamps
         mock_issue.created_on = datetime(2024, 1, 15, 10, 30, 0)
         mock_issue.updated_on = datetime(2024, 1, 16, 14, 45, 0)
@@ -110,7 +116,7 @@ class TestIssueToDictSelective:
         expected = _issue_to_dict(mock_issue)
 
         assert set(result.keys()) == set(expected.keys())
-        assert len(result) == 10  # All 10 fields
+        assert len(result) == 11  # All 11 fields
         assert "id" in result
         assert "subject" in result
         assert "description" in result
@@ -121,7 +127,7 @@ class TestIssueToDictSelective:
         expected = _issue_to_dict(mock_issue)
 
         assert set(result.keys()) == set(expected.keys())
-        assert len(result) == 10
+        assert len(result) == 11
 
     def test_all_keyword_returns_all_fields(self, mock_issue):
         """Test that fields=["all"] returns all fields."""
@@ -129,7 +135,7 @@ class TestIssueToDictSelective:
         expected = _issue_to_dict(mock_issue)
 
         assert set(result.keys()) == set(expected.keys())
-        assert len(result) == 10
+        assert len(result) == 11
 
     def test_single_field_id(self, mock_issue):
         """Test selecting only the id field."""
@@ -229,6 +235,7 @@ class TestIssueToDictSelective:
             "project",
             "status",
             "priority",
+            "tracker",
             "author",
             "assigned_to",
             "created_on",
@@ -238,7 +245,7 @@ class TestIssueToDictSelective:
         expected = _issue_to_dict(mock_issue)
 
         assert set(result.keys()) == set(expected.keys())
-        assert len(result) == 10
+        assert len(result) == 11
 
     def test_invalid_field_name_ignored(self, mock_issue):
         """Test that invalid field names are silently ignored."""
@@ -337,7 +344,7 @@ class TestIssueToDictSelective:
         # Minimal should have fewer keys
         assert len(minimal_fields_result) < len(all_fields_result)
         assert len(minimal_fields_result) == 2
-        assert len(all_fields_result) == 10
+        assert len(all_fields_result) == 11
 
     def test_case_sensitive_field_names(self, mock_issue):
         """Test that field names are case-sensitive."""
@@ -362,3 +369,30 @@ class TestIssueToDictSelective:
         # Modify result1 and check result2 is not affected
         result1["project"]["name"] = "Modified"
         assert result2["project"]["name"] == "Test Project"
+
+    def test_issue_to_dict_includes_tracker(self, mock_issue):
+        """Test that _issue_to_dict includes tracker field."""
+        result = _issue_to_dict(mock_issue)
+        assert result["tracker"] == {"id": 4, "name": "Bug"}
+
+    def test_issue_to_dict_tracker_none_when_missing(self):
+        """Test that tracker is None when the attribute is explicitly None."""
+        issue = Mock()
+        issue.id = 999
+        issue.subject = "No Tracker Issue"
+        issue.description = None
+        issue.project = None
+        issue.status = None
+        issue.priority = None
+        issue.author = None
+        issue.assigned_to = None
+        issue.tracker = None
+        issue.created_on = None
+        issue.updated_on = None
+        result = _issue_to_dict(issue)
+        assert result["tracker"] is None
+
+    def test_selective_can_request_tracker_only(self, mock_issue):
+        """Test that tracker can be selected as a single field."""
+        result = _issue_to_dict_selective(mock_issue, ["id", "tracker"])
+        assert result == {"id": mock_issue.id, "tracker": {"id": 4, "name": "Bug"}}
