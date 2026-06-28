@@ -14,6 +14,8 @@ for all requests) and OAuth2 (not available on older Redmine). It is explicitly 
 and fail-closed: the server refuses to start the mode without an operator attestation
 flag, and every request without a valid key is immediately rejected.
 
+![Reverse proxy architecture for redmine-mcp-server in legacy-per-user mode](images/legacy-per-user-architecture.svg)
+
 ## When to use it
 
 Use `legacy-per-user` when:
