@@ -129,3 +129,71 @@ def test_resolve_local_file_rejects_empty(tmp_path, monkeypatch):
     f.write_bytes(b"")
     content, name, err = _resolve_local_file(str(f))
     assert err is not None
+
+
+import base64 as _b64  # noqa: E402
+
+from redmine_mcp_server.tools.files import _resolve_upload_content  # noqa: E402
+
+
+@pytest.mark.asyncio
+async def test_resolve_content_base64_requires_filename():
+    b64 = _b64.b64encode(b"data").decode("ascii")
+    content, name, err = await _resolve_upload_content(
+        filename=None, content_base64=b64, source_url=None, file_path=None
+    )
+    assert err is not None
+    assert "filename" in err["error"]
+
+
+@pytest.mark.asyncio
+async def test_resolve_content_base64_ok():
+    b64 = _b64.b64encode(b"data").decode("ascii")
+    content, name, err = await _resolve_upload_content(
+        filename="d.bin", content_base64=b64, source_url=None, file_path=None
+    )
+    assert err is None
+    assert content == b"data"
+    assert name == "d.bin"
+
+
+@pytest.mark.asyncio
+async def test_resolve_requires_exactly_one_source():
+    b64 = _b64.b64encode(b"data").decode("ascii")
+    _, _, none_err = await _resolve_upload_content(
+        filename="d.bin", content_base64=None, source_url=None, file_path=None
+    )
+    assert none_err is not None
+    _, _, both_err = await _resolve_upload_content(
+        filename="d.bin", content_base64=b64, source_url="http://x", file_path=None
+    )
+    assert both_err is not None
+
+
+@pytest.mark.asyncio
+async def test_resolve_file_path_derives_basename(tmp_path, monkeypatch):
+    _allow(monkeypatch, tmp_path)
+    f = tmp_path / "report.csv"
+    f.write_bytes(b"a,b")
+    content, name, err = await _resolve_upload_content(
+        filename=None, content_base64=None, source_url=None, file_path=str(f)
+    )
+    assert err is None
+    assert content == b"a,b"
+    assert name == "report.csv"
+
+
+@pytest.mark.asyncio
+async def test_resolve_source_url_uses_inferred_filename(monkeypatch):
+    async def fake_download(url):
+        return b"web-bytes", "inferred.png", None
+
+    monkeypatch.setattr(
+        "redmine_mcp_server.tools.files._download_file_url", fake_download
+    )
+    content, name, err = await _resolve_upload_content(
+        filename=None, content_base64=None, source_url="http://x/y", file_path=None
+    )
+    assert err is None
+    assert content == b"web-bytes"
+    assert name == "inferred.png"
