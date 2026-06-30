@@ -794,8 +794,18 @@ Creates a new issue in the specified project. Blocked when `REDMINE_MCP_READ_ONL
 - `extra_fields` (object|string, optional): Additional Redmine fields as:
   - an object (`{"priority_id": 3, "tracker_id": 1}`), or
   - a serialized JSON object string
+- `uploads` (list, optional): Files to attach to the issue. Maximum 10 items. Each item is an object with:
+  - Exactly ONE source key:
+    - `content_base64` (string): Raw file bytes encoded as base64. `filename` is required when using this source.
+    - `source_url` (string): HTTP(S) URL the server fetches. Filename is derived from the URL or `Content-Disposition` if omitted.
+    - `file_path` (string): Absolute path to a file already on the server. Must be inside `ATTACHMENTS_DIR` or a directory listed in `REDMINE_MCP_UPLOAD_FILE_ROOTS`. Filename is derived from the path if omitted.
+  - `filename` (string, optional): Name the attachment will have in Redmine. Required for `content_base64`; derived for other sources when omitted.
+  - `content_type` (string, optional): MIME type override (e.g. `"application/pdf"`).
+  - `description` (string, optional): Human-readable description for the attachment.
 
-**Returns:** Created issue dictionary
+**Returns:** Created issue dictionary. When `uploads` is provided and at least one attachment succeeds, the response includes:
+- `attachments` (list): Metadata for each attached file (id, filename, filesize, content_url, etc.).
+- `journal_id` (integer): ID of the journal entry created alongside the issue.
 
 **Name-keyed custom fields (#123):** `fields` accepts custom-field *names* directly. The tool resolves the name to a `custom_fields` entry via `list_project_issue_custom_fields` and rewrites the payload before sending it to Redmine. Ambiguous names (two custom fields that normalize to the same name) raise with an explicit error pointing at the id form.
 
@@ -822,7 +832,7 @@ create_redmine_issue(
 
 **Autofill retry:** if `REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true` is set and Redmine returns relevant custom-field validation errors, the server fetches project custom fields, auto-fills missing/invalid required custom fields from Redmine `default_value` or `REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS`, and retries once.
 
-**Example:**
+**Examples:**
 ```python
 # Create a bug report
 create_redmine_issue(
@@ -830,6 +840,32 @@ create_redmine_issue(
     subject="Login button not working",
     description="The login button does not respond to clicks",
     fields={"priority_id": 3, "tracker_id": 1}
+)
+
+# Create an issue with a file attached (from a server-side path)
+create_redmine_issue(
+    project_id=1,
+    subject="Performance report attached",
+    uploads=[
+        {
+            "file_path": "/app/attachments/report.pdf",
+            "content_type": "application/pdf",
+            "description": "Q2 performance report"
+        }
+    ]
+)
+
+# Create an issue with a file attached (from base64 content)
+create_redmine_issue(
+    project_id=1,
+    subject="Screenshot of error",
+    uploads=[
+        {
+            "content_base64": "<base64-encoded-bytes>",
+            "filename": "error-screenshot.png",
+            "content_type": "image/png"
+        }
+    ]
 )
 ```
 
@@ -842,8 +878,18 @@ Updates an existing issue with the provided fields. Blocked when `REDMINE_MCP_RE
 **Parameters:**
 - `issue_id` (integer, required): ID of the issue to update
 - `fields` (object, required): Dictionary of fields to update
+- `uploads` (list, optional): Files to attach to the issue. Maximum 10 items. Each item is an object with:
+  - Exactly ONE source key:
+    - `content_base64` (string): Raw file bytes encoded as base64. `filename` is required when using this source.
+    - `source_url` (string): HTTP(S) URL the server fetches. Filename is derived from the URL or `Content-Disposition` if omitted.
+    - `file_path` (string): Absolute path to a file already on the server. Must be inside `ATTACHMENTS_DIR` or a directory listed in `REDMINE_MCP_UPLOAD_FILE_ROOTS`. Filename is derived from the path if omitted.
+  - `filename` (string, optional): Name the attachment will have in Redmine. Required for `content_base64`; derived for other sources when omitted.
+  - `content_type` (string, optional): MIME type override (e.g. `"application/pdf"`).
+  - `description` (string, optional): Human-readable description for the attachment.
 
-**Returns:** Updated issue dictionary
+**Returns:** Updated issue dictionary. When `uploads` is provided and at least one attachment succeeds, the response includes:
+- `attachments` (list): Metadata for each attached file (id, filename, filesize, content_url, etc.).
+- `journal_id` (integer): ID of the journal entry the attachments were placed on.
 
 **Note:** You can use either `status_id` or `status_name` in fields. When `status_name` is provided, the tool automatically resolves the corresponding status ID.
 You can also update custom fields by name (for example `{"size": "S"}`) and the tool will resolve them to Redmine `custom_fields` entries using project custom-field metadata. You can still pass explicit `custom_fields` with field IDs.
@@ -852,7 +898,9 @@ When `REDMINE_AGILE_ENABLED=true`, you can also pass `story_points` (non-negativ
 
 **Note:** `story_points` is always intercepted before custom field resolution, regardless of the `REDMINE_AGILE_ENABLED` setting. If your Redmine instance has a custom field literally named `"story_points"`, it cannot be updated by name through this tool — use explicit `custom_fields` with its field ID instead (e.g. `{"custom_fields": [{"id": 42, "value": "8"}]}`).
 
-**Example:**
+**Attaching files to a journal note:** pass a `notes` key inside `fields` alongside `uploads`. The attachments will be associated with that journal note in the issue history.
+
+**Examples:**
 ```python
 # Update issue status using status name
 update_redmine_issue(
@@ -886,6 +934,32 @@ update_redmine_issue(
     fields={
         "story_points": 8
     }
+)
+
+# Attach a file from a URL and post a note referencing it
+update_redmine_issue(
+    issue_id=123,
+    fields={
+        "notes": "Attached the latest test report"
+    },
+    uploads=[
+        {
+            "source_url": "http://localhost:3012/attachments/report-uuid",
+            "filename": "test-report.pdf",
+            "content_type": "application/pdf"
+        }
+    ]
+)
+
+# Attach a server-side file (from ATTACHMENTS_DIR or REDMINE_MCP_UPLOAD_FILE_ROOTS)
+update_redmine_issue(
+    issue_id=123,
+    fields={},
+    uploads=[
+        {
+            "file_path": "/app/attachments/screenshot.png"
+        }
+    ]
 )
 ```
 
@@ -1704,23 +1778,25 @@ List all files uploaded to a Redmine project's **Files** section (not issue atta
 
 Upload a file to a Redmine project's Files section. Uses Redmine's standard two-step upload (`POST /uploads.json` for the token, then `POST /projects/{id}/files.json`).
 
-**Provide exactly ONE of `source_url` or `content_base64`:**
+**Provide exactly ONE of `source_url`, `content_base64`, or `file_path`:**
 - `source_url` (string) — the server downloads from an HTTP(S) URL. Use this when chaining from another MCP tool that returns a download URL (e.g., Google Drive MCP's `get_drive_file_download_url`), or when the file is served by a local MCP on `localhost`. **Preferred when a URL is available** — no need for the caller to download and re-encode.
 - `content_base64` (string) — raw file bytes encoded as base64. Use this only when the caller already has the bytes in memory.
+- `file_path` (string) — absolute path to a file already on the server. The path must be inside `ATTACHMENTS_DIR` or a directory listed in `REDMINE_MCP_UPLOAD_FILE_ROOTS`. Filename is derived from the path if `filename` is omitted.
 
 **Parameters:**
 - `project_id` (integer or string, required): Project identifier.
 - `filename` (string, optional): Name the file should have in Redmine.
   - Required when using `content_base64`.
-  - Optional with `source_url` — inferred from the URL path or server's `Content-Disposition` header if omitted, but always prefer passing an explicit filename.
+  - Optional with `source_url` or `file_path` — inferred from the URL path, `Content-Disposition` header, or file path if omitted, but always prefer passing an explicit filename.
 - `source_url` (string, conditional): HTTP(S) URL to download from.
 - `content_base64` (string, conditional): File content as base64.
+- `file_path` (string, conditional): Absolute path to a file on the server. Restricted to `ATTACHMENTS_DIR` and directories in `REDMINE_MCP_UPLOAD_FILE_ROOTS`.
 - `description` (string, optional): Human-readable description.
 - `version_id` (integer, optional): Version/release ID to attach the file to (use `list_redmine_versions` to discover valid IDs).
 
 **Returns:** Dictionary containing the uploaded file's metadata, or `{"error": "..."}` on failure.
 
-**Size limit:** 50 MiB. Larger files should be uploaded via Redmine's web UI.
+**Size limit:** 50 MiB per file. Larger files should be uploaded via Redmine's web UI.
 
 **Examples:**
 ```python
@@ -1740,6 +1816,13 @@ upload_file(
     filename="hello.txt",
     content_base64=content
 )
+
+# From a server-side file (must be in ATTACHMENTS_DIR or REDMINE_MCP_UPLOAD_FILE_ROOTS)
+upload_file(
+    project_id="web",
+    file_path="/app/attachments/export.csv",
+    description="Latest data export"
+)
 ```
 
 **URL fetch details:**
@@ -1751,6 +1834,7 @@ upload_file(
 **Notes:**
 - Respects `REDMINE_MCP_READ_ONLY`.
 - After successful upload, the tool re-fetches full metadata (filename, size, author, etc.) via `GET /attachments/{id}.json`, since Redmine returns HTTP 204 on create with no body.
+- `file_path` access is restricted by the server to prevent path traversal. Only paths inside `ATTACHMENTS_DIR` or explicitly allowed directories (`REDMINE_MCP_UPLOAD_FILE_ROOTS`) are permitted.
 
 ---
 
