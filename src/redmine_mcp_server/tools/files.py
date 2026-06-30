@@ -43,6 +43,9 @@ from ..server import mcp
 # file_path source (gated by REDMINE_MCP_UPLOAD_FILE_ROOTS).
 _FILE_UPLOAD_MAX_SIZE_BYTES = 50 * 1024 * 1024
 
+# Cap the number of attachments accepted in a single issue create/update call.
+_MAX_UPLOADS_PER_CALL = 10
+
 
 def _resolve_local_file(
     file_path: str,
@@ -180,6 +183,56 @@ async def _resolve_upload_content(
             },
         )
     return content_bytes, explicit, None
+
+
+async def _build_issue_uploads(
+    uploads: List[Dict[str, Any]],
+) -> tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    """Resolve and upload each entry, returning python-redmine upload descriptors.
+
+    Resolve and upload are interleaved per entry so peak memory stays bounded to
+    a single file. Returns ``(descriptors, None)`` on success or
+    ``([], {"error": ...})`` on the first failing entry, before any issue is
+    touched. Descriptor keys: token, filename, and optional content_type /
+    description.
+    """
+    if len(uploads) > _MAX_UPLOADS_PER_CALL:
+        return [], {
+            "error": (
+                f"Too many uploads: {len(uploads)} exceeds the limit of "
+                f"{_MAX_UPLOADS_PER_CALL} per call."
+            )
+        }
+
+    # Validate all entries are dicts before touching the client
+    for index, entry in enumerate(uploads):
+        if not isinstance(entry, dict):
+            return [], {"error": f"uploads[{index}] must be an object."}
+
+    client = _get_redmine_client()
+    descriptors: List[Dict[str, Any]] = []
+    for index, entry in enumerate(uploads):
+        content_bytes, final_name, resolve_error = await _resolve_upload_content(
+            filename=entry.get("filename"),
+            content_base64=entry.get("content_base64"),
+            source_url=entry.get("source_url"),
+            file_path=entry.get("file_path"),
+        )
+        if resolve_error is not None:
+            return [], {"error": f"uploads[{index}]: {resolve_error['error']}"}
+        try:
+            token = client.upload(io.BytesIO(content_bytes), filename=final_name)[
+                "token"
+            ]
+        except Exception as e:  # noqa: BLE001 - surfaced as an error dict
+            return [], {"error": f"uploads[{index}]: failed to upload. Details: {e}"}
+        descriptor: Dict[str, Any] = {"token": token, "filename": final_name}
+        if entry.get("content_type"):
+            descriptor["content_type"] = entry["content_type"]
+        if entry.get("description"):
+            descriptor["description"] = entry["description"]
+        descriptors.append(descriptor)
+    return descriptors, None
 
 
 def _file_to_dict(file_obj: Any) -> Dict[str, Any]:
