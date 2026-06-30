@@ -1382,6 +1382,14 @@ async def update_redmine_issue(
                         f"updating agile story_points for issue {issue_id}",
                         {"resource_type": "issue", "resource_id": issue_id},
                     )
+            if upload_descriptors:
+                updated_issue = _get_redmine_client().issue.get(
+                    issue_id, include="attachments,journals"
+                )
+                return _augment_with_upload_result(
+                    _issue_to_dict(updated_issue, include_custom_fields=True),
+                    updated_issue,
+                )
             updated_issue = _get_redmine_client().issue.get(issue_id)
             return _issue_to_dict(updated_issue, include_custom_fields=True)
         except Exception as retry_error:

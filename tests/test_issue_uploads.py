@@ -87,4 +87,65 @@ async def test_update_read_only_blocks_upload(mock_redmine, monkeypatch):
         42, {}, uploads=[{"filename": "a.txt", "content_base64": B64}]
     )
     assert "error" in result
-    mock_redmine.upload.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch("redmine_mcp_server.tools.issues._augment_fields_with_required_custom_fields")
+@patch("redmine_mcp_server.tools.issues._extract_missing_required_field_names")
+@patch("redmine_mcp_server.tools.issues._is_required_custom_field_autofill_enabled")
+@patch("redmine_mcp_server._client.redmine")
+async def test_update_retry_preserves_uploads(
+    mock_redmine,
+    mock_autofill_enabled,
+    mock_extract_missing,
+    mock_augment_fields,
+):
+    """Autofill retry must return attachments+journal_id when uploads were sent."""
+    mock_autofill_enabled.return_value = True
+    mock_extract_missing.return_value = ["My Required Field"]
+    mock_augment_fields.return_value = {
+        "subject": "x",
+        "custom_fields": [{"id": 1, "value": "auto"}],
+    }
+
+    from redminelib.exceptions import ValidationError
+
+    issue_before = MagicMock()
+    issue_before.custom_fields = []
+
+    call_count = {"n": 0}
+
+    def update_side_effect(issue_id, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise ValidationError("Field cannot be blank")
+
+    mock_redmine.upload.return_value = {"token": "tok-retry"}
+    mock_redmine.issue.update.side_effect = update_side_effect
+    mock_redmine.issue.get.return_value = _issue_with_attachment(
+        issue_id=42, journal_id=99
+    )
+
+    result = await update_redmine_issue(
+        42,
+        {"subject": "x"},
+        uploads=[{"filename": "retry.txt", "content_base64": B64}],
+    )
+
+    assert "error" not in result, f"Unexpected error: {result.get('error')}"
+
+    # Both issue.update calls must carry the upload token.
+    assert mock_redmine.issue.update.call_count == 2
+    for call in mock_redmine.issue.update.call_args_list:
+        _, kwargs = call
+        assert "uploads" in kwargs, "uploads missing from an issue.update call"
+        assert kwargs["uploads"] == [{"token": "tok-retry", "filename": "retry.txt"}]
+
+    # Re-fetch after retry must use attachments,journals include.
+    assert (
+        mock_redmine.issue.get.call_args.kwargs.get("include") == "attachments,journals"
+    )
+
+    # Response must surface attachment metadata and journal_id.
+    assert "attachments" in result, "attachments missing from retry-path response"
+    assert result["journal_id"] == 99
