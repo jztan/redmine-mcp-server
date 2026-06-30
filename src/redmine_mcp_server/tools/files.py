@@ -123,8 +123,7 @@ async def _resolve_upload_content(
             None,
             {
                 "error": (
-                    "Provide exactly ONE of content_base64 or source_url "
-                    "(or file_path for a server-side path)."
+                    "Provide exactly ONE of content_base64, source_url, or file_path."
                 )
             },
         )
@@ -142,7 +141,7 @@ async def _resolve_upload_content(
                 None,
                 {
                     "error": (
-                        "Could not infer filename from source_url. Pass a " "filename."
+                        "Could not infer filename from source_url. Pass a filename."
                     )
                 },
             )
