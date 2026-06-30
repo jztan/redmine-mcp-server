@@ -1078,6 +1078,7 @@ async def create_redmine_issue(
     description: str = "",
     fields: Optional[Union[Dict[str, Any], str]] = None,
     extra_fields: Optional[Union[Dict[str, Any], str]] = None,
+    uploads: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Create a new issue in Redmine. Open a ticket, file a bug,
     submit a feature request, log a support case, or report a task.
@@ -1123,6 +1124,20 @@ async def create_redmine_issue(
     issue_fields.pop("description", None)
     issue_fields.pop("extra_fields", None)
 
+    if "uploads" in issue_fields:
+        return {
+            "error": (
+                "Put attachments in the dedicated 'uploads' parameter, not in "
+                "'fields' or 'extra_fields'."
+            )
+        }
+
+    upload_descriptors: List[Dict[str, Any]] = []
+    if uploads:
+        upload_descriptors, upload_error = await _build_issue_uploads(uploads)
+        if upload_error is not None:
+            return upload_error
+
     # Resolve name-keyed custom fields (e.g. fields={"Department": "..."})
     # to id-keyed custom_fields entries Redmine expects. See #123 for
     # the cross-tool parity rationale.
@@ -1132,12 +1147,20 @@ async def create_redmine_issue(
         return {"error": str(e)}
 
     try:
+        create_kwargs = dict(issue_fields)
+        if upload_descriptors:
+            create_kwargs["uploads"] = upload_descriptors
         issue = _get_redmine_client().issue.create(
             project_id=project_id,
             subject=subject,
             description=description,
-            **issue_fields,
+            **create_kwargs,
         )
+        if upload_descriptors:
+            fetched = _get_redmine_client().issue.get(
+                issue.id, include="attachments,journals"
+            )
+            return _augment_with_upload_result(_issue_to_dict(fetched), fetched)
         return _issue_to_dict(issue)
     except ValidationError as e:
         if not _is_required_custom_field_autofill_enabled():
@@ -1171,12 +1194,20 @@ async def create_redmine_issue(
                 "Retrying issue creation with auto-filled custom fields: %s",
                 missing_names,
             )
+            retry_create_kwargs = dict(retry_fields)
+            if upload_descriptors:
+                retry_create_kwargs["uploads"] = upload_descriptors
             issue = _get_redmine_client().issue.create(
                 project_id=project_id,
                 subject=subject,
                 description=description,
-                **retry_fields,
+                **retry_create_kwargs,
             )
+            if upload_descriptors:
+                fetched = _get_redmine_client().issue.get(
+                    issue.id, include="attachments,journals"
+                )
+                return _augment_with_upload_result(_issue_to_dict(fetched), fetched)
             return _issue_to_dict(issue)
         except Exception as retry_error:
             # The retry failure may also be a ValidationError; surface the

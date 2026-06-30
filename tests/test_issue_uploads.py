@@ -9,7 +9,10 @@ from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from redmine_mcp_server.tools.issues import update_redmine_issue  # noqa: E402
+from redmine_mcp_server.tools.issues import (  # noqa: E402
+    create_redmine_issue,
+    update_redmine_issue,
+)
 
 B64 = base64.b64encode(b"file-bytes").decode("ascii")
 
@@ -149,3 +152,81 @@ async def test_update_retry_preserves_uploads(
     # Response must surface attachment metadata and journal_id.
     assert "attachments" in result, "attachments missing from retry-path response"
     assert result["journal_id"] == 99
+
+
+@pytest.mark.asyncio
+@patch("redmine_mcp_server._client.redmine")
+async def test_create_with_upload_passes_token(mock_redmine):
+    mock_redmine.upload.return_value = {"token": "tok-c"}
+    created = _issue_with_attachment(issue_id=50, journal_id=1)
+    mock_redmine.issue.create.return_value = created
+    mock_redmine.issue.get.return_value = created
+    result = await create_redmine_issue(
+        project_id=1,
+        subject="New",
+        uploads=[{"filename": "a.txt", "content_base64": B64}],
+    )
+    assert "error" not in result
+    _, kwargs = mock_redmine.issue.create.call_args
+    assert kwargs["uploads"] == [{"token": "tok-c", "filename": "a.txt"}]
+    assert result["attachments"][0]["id"] == 99
+
+
+@pytest.mark.asyncio
+@patch("redmine_mcp_server._client.redmine")
+async def test_create_rejects_uploads_in_fields_and_extra_fields(mock_redmine):
+    r1 = await create_redmine_issue(
+        project_id=1, subject="x", fields={"uploads": [{"a": 1}]}
+    )
+    assert "error" in r1 and "uploads" in r1["error"]
+    r2 = await create_redmine_issue(
+        project_id=1, subject="x", extra_fields={"uploads": [{"a": 1}]}
+    )
+    assert "error" in r2 and "uploads" in r2["error"]
+    mock_redmine.issue.create.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch("redmine_mcp_server._client.redmine")
+async def test_create_without_uploads_unchanged(mock_redmine):
+    created = _issue_with_attachment(issue_id=51)
+    mock_redmine.issue.create.return_value = created
+    result = await create_redmine_issue(project_id=1, subject="plain")
+    assert "attachments" not in result
+    assert "uploads" not in mock_redmine.issue.create.call_args.kwargs
+
+
+from redminelib.exceptions import ValidationError  # noqa: E402
+
+
+@pytest.mark.asyncio
+@patch("redmine_mcp_server._client.redmine")
+async def test_create_retry_preserves_uploads(mock_redmine, monkeypatch):
+    monkeypatch.setenv("REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS", "true")
+    mock_redmine.upload.return_value = {"token": "tok-cr"}
+    created = _issue_with_attachment(issue_id=60)
+    mock_redmine.issue.create.side_effect = [
+        ValidationError("Custom field cannot be blank"),
+        created,
+    ]
+    mock_redmine.issue.get.return_value = created
+    with (
+        patch(
+            "redmine_mcp_server.tools.issues._extract_missing_required_field_names",
+            return_value=["Department"],
+        ),
+        patch(
+            "redmine_mcp_server.tools.issues"
+            "._augment_fields_with_required_custom_fields",
+            return_value={"custom_fields": [{"id": 1, "value": "z"}]},
+        ),
+    ):
+        result = await create_redmine_issue(
+            project_id=1,
+            subject="New",
+            uploads=[{"filename": "a.txt", "content_base64": B64}],
+        )
+    assert "error" not in result
+    assert mock_redmine.issue.create.call_args_list[-1].kwargs["uploads"] == [
+        {"token": "tok-cr", "filename": "a.txt"}
+    ]
