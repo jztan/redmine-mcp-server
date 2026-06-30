@@ -93,6 +93,19 @@ async def test_update_read_only_blocks_upload(mock_redmine, monkeypatch):
 
 
 @pytest.mark.asyncio
+@patch("redmine_mcp_server._client.redmine")
+async def test_create_read_only_blocks_upload(mock_redmine, monkeypatch):
+    monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "true")
+    result = await create_redmine_issue(
+        project_id=1,
+        subject="x",
+        uploads=[{"filename": "a.txt", "content_base64": B64}],
+    )
+    assert "error" in result
+    mock_redmine.upload.assert_not_called()
+
+
+@pytest.mark.asyncio
 @patch("redmine_mcp_server.tools.issues._augment_fields_with_required_custom_fields")
 @patch("redmine_mcp_server.tools.issues._extract_missing_required_field_names")
 @patch("redmine_mcp_server.tools.issues._is_required_custom_field_autofill_enabled")
