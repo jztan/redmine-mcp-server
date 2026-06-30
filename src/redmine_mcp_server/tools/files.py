@@ -16,7 +16,12 @@ from redminelib.exceptions import ResourceNotFoundError
 
 from .._cleanup import _ensure_cleanup_started
 from .._client import _get_redmine_client, logger
-from .._env import _admin_tools_enabled, _get_int_env, _is_read_only_mode
+from .._env import (
+    _admin_tools_enabled,
+    _get_int_env,
+    _get_upload_file_roots,
+    _is_read_only_mode,
+)
 from .._errors import _READ_ONLY_ERROR, _handle_redmine_error
 from .._serialization import (
     _iter_capped,
@@ -37,6 +42,64 @@ from ..server import mcp
 # from resource exhaustion. Larger files should be uploaded via a different
 # mechanism (e.g., writing to disk first and passing a path).
 _FILE_UPLOAD_MAX_SIZE_BYTES = 50 * 1024 * 1024
+
+
+def _resolve_local_file(
+    file_path: str,
+) -> tuple[bytes, Optional[str], Optional[Dict[str, Any]]]:
+    """Read a local file for upload, gated by the configured allowlist roots.
+
+    Returns ``(content_bytes, basename, None)`` on success or
+    ``(b"", None, {"error": ...})`` on any validation failure.
+    """
+    resolved = os.path.realpath(file_path)
+    roots = _get_upload_file_roots()
+    allowed = False
+    for root in roots:
+        try:
+            if os.path.commonpath([resolved, root]) == root:
+                allowed = True
+                break
+        except ValueError:
+            # Different drives (Windows) or mixed abs/rel: not under this root.
+            continue
+    if not allowed:
+        return (
+            b"",
+            None,
+            {
+                "error": (
+                    "file_path is outside the allowed upload roots. Allowed "
+                    "roots default to ATTACHMENTS_DIR; widen them with the "
+                    "REDMINE_MCP_UPLOAD_FILE_ROOTS environment variable."
+                )
+            },
+        )
+    if os.path.isdir(resolved):
+        return b"", None, {"error": "file_path refers to a directory, not a file."}
+    if not os.path.isfile(resolved):
+        return b"", None, {"error": f"file_path does not exist: {file_path}"}
+    try:
+        with open(resolved, "rb") as fh:
+            content_bytes = fh.read()
+    except OSError as e:
+        return b"", None, {"error": f"Could not read file_path: {e}"}
+    if len(content_bytes) == 0:
+        return b"", None, {"error": "file_path content is empty."}
+    if len(content_bytes) > _FILE_UPLOAD_MAX_SIZE_BYTES:
+        size_mb = len(content_bytes) / (1024 * 1024)
+        limit_mb = _FILE_UPLOAD_MAX_SIZE_BYTES / (1024 * 1024)
+        return (
+            b"",
+            None,
+            {
+                "error": (
+                    f"File too large: {size_mb:.1f} MiB exceeds the "
+                    f"{limit_mb:.0f} MiB upload limit."
+                )
+            },
+        )
+    return content_bytes, os.path.basename(resolved), None
 
 
 def _file_to_dict(file_obj: Any) -> Dict[str, Any]:
