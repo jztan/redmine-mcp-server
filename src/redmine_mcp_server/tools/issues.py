@@ -34,6 +34,7 @@ from .._serialization import (
 )
 from .._validation import _is_positive_int
 from ..server import mcp
+from .files import _build_issue_uploads
 
 _VALID_ISSUE_RELATION_TYPES: Set[str] = {
     "relates",
@@ -438,6 +439,20 @@ def _attachments_to_list(issue: Any) -> List[Dict[str, Any]]:
     for attachment in iterator:
         attachments.append(_attachment_to_dict(attachment))
     return attachments
+
+
+def _newest_journal_id(issue: Any) -> Optional[int]:
+    """Return the id of the newest journal on an issue, or None."""
+    raw = getattr(issue, "journals", None) or []
+    ids = [getattr(j, "id", None) for j in raw if getattr(j, "id", None) is not None]
+    return max(ids) if ids else None
+
+
+def _augment_with_upload_result(result: Dict[str, Any], issue: Any) -> Dict[str, Any]:
+    """Add attachment metadata + newest journal_id to an issue result dict."""
+    result["attachments"] = _attachments_to_list(issue)
+    result["journal_id"] = _newest_journal_id(issue)
+    return result
 
 
 def _issue_relation_to_dict(relation: Any) -> Dict[str, Any]:
@@ -1206,7 +1221,11 @@ async def create_redmine_issue(
 
 
 @mcp.tool()
-async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[str, Any]:
+async def update_redmine_issue(
+    issue_id: int,
+    fields: Dict[str, Any],
+    uploads: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
     """Update an existing Redmine issue.
 
     In addition to standard Redmine fields, a ``status_name`` key may be
@@ -1226,6 +1245,20 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
 
     if _is_read_only_mode():
         return dict(_READ_ONLY_ERROR)
+
+    if "uploads" in fields:
+        return {
+            "error": (
+                "Put attachments in the dedicated 'uploads' parameter, not in "
+                "'fields'."
+            )
+        }
+
+    upload_descriptors: List[Dict[str, Any]] = []
+    if uploads:
+        upload_descriptors, upload_error = await _build_issue_uploads(uploads)
+        if upload_error is not None:
+            return upload_error
 
     update_fields = dict(fields)
 
@@ -1254,9 +1287,12 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
             logger.warning(f"Error resolving status name '{name}': {e}")
 
     try:
-        if update_fields:
+        if update_fields or upload_descriptors:
             update_fields = _map_named_custom_fields_for_update(issue_id, update_fields)
-            _get_redmine_client().issue.update(issue_id, **update_fields)
+            update_kwargs = dict(update_fields)
+            if upload_descriptors:
+                update_kwargs["uploads"] = upload_descriptors
+            _get_redmine_client().issue.update(issue_id, **update_kwargs)
         if agile_update_needed:
             try:
                 _apply_agile_story_points(issue_id, story_points)
@@ -1266,6 +1302,14 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
                     f"updating agile story_points for issue {issue_id}",
                     {"resource_type": "issue", "resource_id": issue_id},
                 )
+        if upload_descriptors:
+            updated_issue = _get_redmine_client().issue.get(
+                issue_id, include="attachments,journals"
+            )
+            return _augment_with_upload_result(
+                _issue_to_dict(updated_issue, include_custom_fields=True),
+                updated_issue,
+            )
         updated_issue = _get_redmine_client().issue.get(issue_id)
         return _issue_to_dict(updated_issue, include_custom_fields=True)
     except ValidationError as e:
@@ -1325,7 +1369,10 @@ async def update_redmine_issue(issue_id: int, fields: Dict[str, Any]) -> Dict[st
                 "Retrying issue update with auto-filled custom fields: %s",
                 missing_names,
             )
-            _get_redmine_client().issue.update(issue_id, **retry_fields)
+            retry_kwargs = dict(retry_fields)
+            if upload_descriptors:
+                retry_kwargs["uploads"] = upload_descriptors
+            _get_redmine_client().issue.update(issue_id, **retry_kwargs)
             if agile_update_needed:
                 try:
                     _apply_agile_story_points(issue_id, story_points)
