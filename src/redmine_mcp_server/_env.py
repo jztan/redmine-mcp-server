@@ -60,6 +60,31 @@ def _get_int_env(var_name: str, default: int) -> int:
         return default
 
 
+def _get_upload_file_roots() -> list[str]:
+    """Return realpath-resolved directory roots allowed as ``file_path`` upload
+    sources.
+
+    Always includes ``realpath(ATTACHMENTS_DIR)`` (default ``./attachments``),
+    where downloaded attachments are written. Additional roots come from
+    ``REDMINE_MCP_UPLOAD_FILE_ROOTS`` (``os.pathsep``-separated). Blank entries
+    are skipped and duplicates are removed while preserving order.
+    """
+    roots: list[str] = []
+
+    def _add(path: str) -> None:
+        resolved = os.path.realpath(path)
+        if resolved not in roots:
+            roots.append(resolved)
+
+    _add(os.getenv("ATTACHMENTS_DIR", "./attachments"))
+    raw = os.getenv("REDMINE_MCP_UPLOAD_FILE_ROOTS", "")
+    for entry in raw.split(os.pathsep):
+        entry = entry.strip()
+        if entry:
+            _add(entry)
+    return roots
+
+
 def get_secret(var_name: str) -> str | None:
     """Return a secret from an env var or Docker/Kubernetes-style file env var."""
     value = os.getenv(var_name)

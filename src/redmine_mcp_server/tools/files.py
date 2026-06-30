@@ -16,7 +16,12 @@ from redminelib.exceptions import ResourceNotFoundError
 
 from .._cleanup import _ensure_cleanup_started
 from .._client import _get_redmine_client, logger
-from .._env import _admin_tools_enabled, _get_int_env, _is_read_only_mode
+from .._env import (
+    _admin_tools_enabled,
+    _get_int_env,
+    _get_upload_file_roots,
+    _is_read_only_mode,
+)
 from .._errors import _READ_ONLY_ERROR, _handle_redmine_error
 from .._serialization import (
     _iter_capped,
@@ -34,9 +39,200 @@ from ..server import mcp
 # ---------------------------------------------------------------------------
 
 # Cap a single base64 file upload at ~50 MiB decoded to protect the server
-# from resource exhaustion. Larger files should be uploaded via a different
-# mechanism (e.g., writing to disk first and passing a path).
+# from resource exhaustion. For larger or already-on-disk files, use the
+# file_path source (gated by REDMINE_MCP_UPLOAD_FILE_ROOTS).
 _FILE_UPLOAD_MAX_SIZE_BYTES = 50 * 1024 * 1024
+
+# Cap the number of attachments accepted in a single issue create/update call.
+_MAX_UPLOADS_PER_CALL = 10
+
+
+def _resolve_local_file(
+    file_path: str,
+) -> tuple[bytes, Optional[str], Optional[Dict[str, Any]]]:
+    """Read a local file for upload, gated by the configured allowlist roots.
+
+    Returns ``(content_bytes, basename, None)`` on success or
+    ``(b"", None, {"error": ...})`` on any validation failure.
+    """
+    resolved = os.path.realpath(file_path)
+    roots = _get_upload_file_roots()
+    allowed = False
+    for root in roots:
+        try:
+            if os.path.commonpath([resolved, root]) == root:
+                allowed = True
+                break
+        except ValueError:
+            # Different drives (Windows) or mixed abs/rel: not under this root.
+            continue
+    if not allowed:
+        return (
+            b"",
+            None,
+            {
+                "error": (
+                    "file_path is outside the allowed upload roots. Allowed "
+                    "roots default to ATTACHMENTS_DIR; widen them with the "
+                    "REDMINE_MCP_UPLOAD_FILE_ROOTS environment variable."
+                )
+            },
+        )
+    if os.path.isdir(resolved):
+        return b"", None, {"error": "file_path refers to a directory, not a file."}
+    if not os.path.isfile(resolved):
+        return b"", None, {"error": f"file_path does not exist: {file_path}"}
+    try:
+        with open(resolved, "rb") as fh:
+            content_bytes = fh.read()
+    except OSError as e:
+        return b"", None, {"error": f"Could not read file_path: {e}"}
+    if len(content_bytes) == 0:
+        return b"", None, {"error": "file_path content is empty."}
+    if len(content_bytes) > _FILE_UPLOAD_MAX_SIZE_BYTES:
+        size_mb = len(content_bytes) / (1024 * 1024)
+        limit_mb = _FILE_UPLOAD_MAX_SIZE_BYTES / (1024 * 1024)
+        return (
+            b"",
+            None,
+            {
+                "error": (
+                    f"File too large: {size_mb:.1f} MiB exceeds the "
+                    f"{limit_mb:.0f} MiB upload limit."
+                )
+            },
+        )
+    return content_bytes, os.path.basename(resolved), None
+
+
+async def _resolve_upload_content(
+    *,
+    filename: Optional[str],
+    content_base64: Optional[str],
+    source_url: Optional[str],
+    file_path: Optional[str],
+) -> tuple[bytes, Optional[str], Optional[Dict[str, Any]]]:
+    """Resolve exactly one of content_base64 / source_url / file_path to bytes.
+
+    Returns ``(content_bytes, final_filename, None)`` or
+    ``(b"", None, {"error": ...})``. Filename rules: content_base64 requires an
+    explicit ``filename``; source_url falls back to the fetch-inferred filename;
+    file_path falls back to the basename. An explicit ``filename`` always wins.
+    """
+    sources = [s for s in (content_base64, source_url, file_path) if s]
+    if len(sources) != 1:
+        return (
+            b"",
+            None,
+            {
+                "error": (
+                    "Provide exactly ONE of content_base64, source_url, or file_path."
+                )
+            },
+        )
+
+    explicit = filename.strip() if filename and filename.strip() else None
+
+    if source_url:
+        content_bytes, inferred, fetch_err = await _download_file_url(source_url)
+        if fetch_err is not None:
+            return b"", None, fetch_err
+        final = explicit or inferred
+        if not final:
+            return (
+                b"",
+                None,
+                {
+                    "error": (
+                        "Could not infer filename from source_url. Pass a filename."
+                    )
+                },
+            )
+        return content_bytes, final, None
+
+    if file_path:
+        content_bytes, basename, file_err = _resolve_local_file(file_path)
+        if file_err is not None:
+            return b"", None, file_err
+        return content_bytes, explicit or basename, None
+
+    # content_base64
+    if not explicit:
+        return b"", None, {"error": "filename is required when using content_base64."}
+    try:
+        content_bytes = base64.b64decode(content_base64, validate=True)
+    except (binascii.Error, ValueError) as e:
+        return (
+            b"",
+            None,
+            {"error": f"content_base64 is not valid base64. Details: {e}"},
+        )
+    if len(content_bytes) == 0:
+        return b"", None, {"error": "Decoded file content is empty."}
+    if len(content_bytes) > _FILE_UPLOAD_MAX_SIZE_BYTES:
+        size_mb = len(content_bytes) / (1024 * 1024)
+        limit_mb = _FILE_UPLOAD_MAX_SIZE_BYTES / (1024 * 1024)
+        return (
+            b"",
+            None,
+            {
+                "error": (
+                    f"File too large: {size_mb:.1f} MiB exceeds the "
+                    f"{limit_mb:.0f} MiB upload limit."
+                )
+            },
+        )
+    return content_bytes, explicit, None
+
+
+async def _build_issue_uploads(
+    uploads: List[Dict[str, Any]],
+) -> tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    """Resolve and upload each entry, returning python-redmine upload descriptors.
+
+    Resolve and upload are interleaved per entry so peak memory stays bounded to
+    a single file. Returns ``(descriptors, None)`` on success or
+    ``([], {"error": ...})`` on the first failing entry, before any issue is
+    touched. Descriptor keys: token, filename, and optional content_type /
+    description.
+    """
+    if len(uploads) > _MAX_UPLOADS_PER_CALL:
+        return [], {
+            "error": (
+                f"Too many uploads: {len(uploads)} exceeds the limit of "
+                f"{_MAX_UPLOADS_PER_CALL} per call."
+            )
+        }
+
+    # Validate all entries are dicts before touching the client
+    for index, entry in enumerate(uploads):
+        if not isinstance(entry, dict):
+            return [], {"error": f"uploads[{index}] must be an object."}
+
+    client = _get_redmine_client()
+    descriptors: List[Dict[str, Any]] = []
+    for index, entry in enumerate(uploads):
+        content_bytes, final_name, resolve_error = await _resolve_upload_content(
+            filename=entry.get("filename"),
+            content_base64=entry.get("content_base64"),
+            source_url=entry.get("source_url"),
+            file_path=entry.get("file_path"),
+        )
+        if resolve_error is not None:
+            return [], {"error": f"uploads[{index}]: {resolve_error['error']}"}
+        try:
+            token = client.upload(io.BytesIO(content_bytes), filename=final_name)[
+                "token"
+            ]
+        except Exception as e:  # noqa: BLE001 - surfaced as an error dict
+            return [], {"error": f"uploads[{index}]: failed to upload. Details: {e}"}
+        descriptor: Dict[str, Any] = {"token": token, "filename": final_name}
+        if entry.get("content_type"):
+            descriptor["content_type"] = entry["content_type"]
+        if entry.get("description"):
+            descriptor["description"] = entry["description"]
+        descriptors.append(descriptor)
+    return descriptors, None
 
 
 def _file_to_dict(file_obj: Any) -> Dict[str, Any]:
@@ -349,6 +545,7 @@ async def upload_file(
     filename: Optional[str] = None,
     content_base64: Optional[str] = None,
     source_url: Optional[str] = None,
+    file_path: Optional[str] = None,
     description: Optional[str] = None,
     version_id: Optional[int] = None,
 ) -> Dict[str, Any]:
@@ -365,6 +562,8 @@ async def upload_file(
       URL is available — no need to download-then-re-encode.
     - ``content_base64``: raw file bytes encoded as base64. Use this
       only when the caller already has the file content in memory.
+    - ``file_path``: path to a file on the server, restricted to the
+      configured upload roots.
 
     Under the hood this performs Redmine's standard two-step upload:
     ``POST /uploads.json`` to get a token, then
@@ -377,9 +576,12 @@ async def upload_file(
             ``source_url`` — if omitted, inferred from the URL path.
             Always prefer passing an explicit filename.
         content_base64: File content encoded as a base64 string. Mutually
-            exclusive with ``source_url``.
+            exclusive with ``source_url`` and ``file_path``.
         source_url: HTTP(S) URL to download the file from. Mutually
-            exclusive with ``content_base64``.
+            exclusive with ``content_base64`` and ``file_path``.
+        file_path: Path to a file on the server, restricted to the
+            configured upload roots (``REDMINE_MCP_UPLOAD_FILE_ROOTS``).
+            Mutually exclusive with ``content_base64`` and ``source_url``.
         description: Optional human-readable description.
         version_id: Optional version/release ID to attach the file to
             (use ``list_redmine_versions`` to discover valid IDs).
@@ -413,56 +615,14 @@ async def upload_file(
     if _is_read_only_mode():
         return dict(_READ_ONLY_ERROR)
 
-    # Exactly one of content_base64 / source_url must be provided.
-    has_b64 = bool(content_base64)
-    has_url = bool(source_url)
-    if not has_b64 and not has_url:
-        return {"error": "Either content_base64 or source_url must be provided."}
-    if has_b64 and has_url:
-        return {
-            "error": ("Provide exactly ONE of content_base64 or source_url, not both.")
-        }
-
-    content_bytes: bytes
-
-    if has_url:
-        content_bytes, inferred_filename, fetch_error = await _download_file_url(
-            source_url
-        )
-        if fetch_error is not None:
-            return fetch_error
-        # If caller didn't pass a filename, fall back to the URL-inferred one.
-        if not filename or not filename.strip():
-            filename = inferred_filename
-        if not filename:
-            return {
-                "error": (
-                    "Could not infer filename from source_url. "
-                    "Please pass a filename argument."
-                )
-            }
-    else:
-        if not filename or not filename.strip():
-            return {"error": "filename is required when using content_base64."}
-
-        # Decode and validate size before any network call
-        try:
-            content_bytes = base64.b64decode(content_base64, validate=True)
-        except (binascii.Error, ValueError) as e:
-            return {"error": f"content_base64 is not valid base64. Details: {e}"}
-
-        if len(content_bytes) == 0:
-            return {"error": "Decoded file content is empty."}
-
-        if len(content_bytes) > _FILE_UPLOAD_MAX_SIZE_BYTES:
-            size_mb = len(content_bytes) / (1024 * 1024)
-            limit_mb = _FILE_UPLOAD_MAX_SIZE_BYTES / (1024 * 1024)
-            return {
-                "error": (
-                    f"File too large: {size_mb:.1f} MiB exceeds the "
-                    f"{limit_mb:.0f} MiB upload limit."
-                )
-            }
+    content_bytes, filename, resolve_error = await _resolve_upload_content(
+        filename=filename,
+        content_base64=content_base64,
+        source_url=source_url,
+        file_path=file_path,
+    )
+    if resolve_error is not None:
+        return resolve_error
 
     client = _get_redmine_client()
     try:

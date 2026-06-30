@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `create_redmine_issue` and `update_redmine_issue` now accept an `uploads`
+  parameter to attach files to an issue (and to a journal note when combined
+  with `notes`), resolving each file from `content_base64`, `source_url`, or a
+  new on-disk `file_path` source.
+- `upload_file` gains a `file_path` source for files already on the server.
+- New `REDMINE_MCP_UPLOAD_FILE_ROOTS` setting to allowlist `file_path` upload
+  directories (defaults to `ATTACHMENTS_DIR`).
 - `legacy-per-user` auth mode: per-request Redmine API key via an
   `X-Redmine-API-Key` header, for Redmine instances too old for OAuth. Opt-in
   and fail-closed (`REDMINE_PER_USER_TRUST_PROXY` required); keys are redacted

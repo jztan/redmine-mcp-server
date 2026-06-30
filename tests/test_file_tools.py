@@ -325,7 +325,7 @@ class TestUploadFile:
     async def test_missing_both_content_sources(self):
         result = await upload_file(project_id=10, filename="test.txt")
         assert "error" in result
-        assert "content_base64 or source_url" in result["error"]
+        assert "exactly ONE" in result["error"]
 
     @pytest.mark.asyncio
     async def test_both_content_sources_provided(self):

@@ -130,6 +130,7 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `REDMINE_PUBLIC_URL` | No | – | Publicly-reachable URL of your Redmine instance. When set, `content_url` values returned on attachments are rewritten from `REDMINE_URL`'s origin to this one (preserving path/query/fragment and any reverse-proxy subpath). Useful when `REDMINE_URL` is the internal container hostname unreachable from MCP clients. When unset, the raw URL Redmine echoes back is returned. |
 | `ATTACHMENTS_DIR` | No | `./attachments` | Directory for downloaded attachments |
 | `ATTACHMENT_MAX_DOWNLOAD_BYTES` | No | `209715200` (200 MB) | Cap applied to every `get_redmine_attachment` download regardless of content type. Exceeding the cap aborts the download mid-stream and deletes the partial file. |
+| `REDMINE_MCP_UPLOAD_FILE_ROOTS` | No | – | Extra directories allowed as `file_path` upload sources (OS path separator-separated). `ATTACHMENTS_DIR` is always allowed. Unset restricts uploads to `ATTACHMENTS_DIR` only. |
 | `AUTO_CLEANUP_ENABLED` | No | `true` | Toggle automatic cleanup of expired attachments |
 | `CLEANUP_INTERVAL_MINUTES` | No | `10` | Interval for cleanup task |
 | `ATTACHMENT_EXPIRES_MINUTES` | No | `60` | Expiry window for generated download URLs |
@@ -554,8 +555,8 @@ These tools require only a Redmine instance and credentials — no extra plugins
   - [`get_redmine_issue`](docs/tool-reference.md#get_redmine_issue) - Retrieve detailed issue information (supports journal pagination, watchers, relations, children)
   - [`list_redmine_issues`](docs/tool-reference.md#list_redmine_issues) - List issues with flexible filtering (project, status, assignee, etc.)
   - [`search_redmine_issues`](docs/tool-reference.md#search_redmine_issues) - Search issues by text query
-  - [`create_redmine_issue`](docs/tool-reference.md#create_redmine_issue) - Create new issues
-  - [`update_redmine_issue`](docs/tool-reference.md#update_redmine_issue) - Update existing issues
+  - [`create_redmine_issue`](docs/tool-reference.md#create_redmine_issue) - Create new issues, with optional file attachments via the `uploads` parameter
+  - [`update_redmine_issue`](docs/tool-reference.md#update_redmine_issue) - Update existing issues, with optional file attachments via the `uploads` parameter (combine with `notes` to attach files to a journal note)
   - [`delete_redmine_issue`](docs/tool-reference.md#delete_redmine_issue) - Hard-delete an issue with required confirmation flags and a cascade-impact preview before irreversible deletion.
   - [`copy_issue`](docs/tool-reference.md#copy_issue) - Duplicate an existing issue with optional field overrides
   - [`list_subtasks`](docs/tool-reference.md#list_subtasks) - List subtasks (child issues) of a given parent
@@ -586,7 +587,7 @@ These tools require only a Redmine instance and credentials — no extra plugins
 
 - **File Operations** (4 tools)
   - [`list_files`](docs/tool-reference.md#list_files) - List files uploaded to a project's Files section
-  - [`upload_file`](docs/tool-reference.md#upload_file) - Upload a new file (base64 content) to a project, optionally tied to a version
+  - [`upload_file`](docs/tool-reference.md#upload_file) - Upload a new file to a project (from base64 content, a URL, or a server-side `file_path`), optionally tied to a version
   - [`delete_file`](docs/tool-reference.md#delete_file) - Delete a file from a project
   - [`get_redmine_attachment`](docs/tool-reference.md#get_redmine_attachment) - Download an attachment (works in both HTTP and stdio mode)
 
