@@ -805,7 +805,7 @@ Creates a new issue in the specified project. Blocked when `REDMINE_MCP_READ_ONL
 
 **Returns:** Created issue dictionary. When `uploads` is provided and at least one attachment succeeds, the response includes:
 - `attachments` (list): Metadata for each attached file (id, filename, filesize, content_url, etc.).
-- `journal_id` (integer): ID of the journal entry created alongside the issue.
+- `journal_id` (integer): ID of the journal entry the attachments were placed on.
 
 **Name-keyed custom fields (#123):** `fields` accepts custom-field *names* directly. The tool resolves the name to a `custom_fields` entry via `list_project_issue_custom_fields` and rewrites the payload before sending it to Redmine. Ambiguous names (two custom fields that normalize to the same name) raise with an explicit error pointing at the id form.
 
