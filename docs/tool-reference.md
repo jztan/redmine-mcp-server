@@ -1781,13 +1781,13 @@ Upload a file to a Redmine project's Files section. Uses Redmine's standard two-
 **Provide exactly ONE of `source_url`, `content_base64`, or `file_path`:**
 - `source_url` (string) — the server downloads from an HTTP(S) URL. Use this when chaining from another MCP tool that returns a download URL (e.g., Google Drive MCP's `get_drive_file_download_url`), or when the file is served by a local MCP on `localhost`. **Preferred when a URL is available** — no need for the caller to download and re-encode.
 - `content_base64` (string) — raw file bytes encoded as base64. Use this only when the caller already has the bytes in memory.
-- `file_path` (string) — absolute path to a file already on the server. The path must be inside `ATTACHMENTS_DIR` or a directory listed in `REDMINE_MCP_UPLOAD_FILE_ROOTS`. Filename is derived from the path if `filename` is omitted.
+- `file_path` (string): absolute path to a file already on the server. The path must be inside `ATTACHMENTS_DIR` or a directory listed in `REDMINE_MCP_UPLOAD_FILE_ROOTS`. Filename is derived from the path if `filename` is omitted.
 
 **Parameters:**
 - `project_id` (integer or string, required): Project identifier.
 - `filename` (string, optional): Name the file should have in Redmine.
   - Required when using `content_base64`.
-  - Optional with `source_url` or `file_path` — inferred from the URL path, `Content-Disposition` header, or file path if omitted, but always prefer passing an explicit filename.
+  - Optional with `source_url` or `file_path`, inferred from the URL path, `Content-Disposition` header, or file path if omitted, but always prefer passing an explicit filename.
 - `source_url` (string, conditional): HTTP(S) URL to download from.
 - `content_base64` (string, conditional): File content as base64.
 - `file_path` (string, conditional): Absolute path to a file on the server. Restricted to `ATTACHMENTS_DIR` and directories in `REDMINE_MCP_UPLOAD_FILE_ROOTS`.
