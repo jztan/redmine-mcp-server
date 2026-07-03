@@ -1,6 +1,6 @@
 [project]
 name = "redmine-mcp-server"
-version = "2.4.0"
+version = "2.5.0"
 description = "MCP server that lets AI assistants manage Redmine issues, projects, wikis, and time tracking"
 readme = "README.md"
 license = {text = "MIT"}

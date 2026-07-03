@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-07-04
 ### Added
 - `create_redmine_issue` and `update_redmine_issue` now accept an `uploads`
   parameter to attach files to an issue (and to a journal note when combined
@@ -941,6 +942,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive authentication support (username/password and API key)
 - Docker containerization support
 
+[2.5.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.5.0
 [2.4.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.4.0
 [2.3.1]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.3.1
 [2.3.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.3.0
