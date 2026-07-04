@@ -431,6 +431,7 @@
             if (args.filters !== undefined) {
               state.filters = args.filters;
             }
+            maybeInitialLoad();
             return;
           }
           if (msg.method === "ui/notifications/tool-result") {
@@ -446,14 +447,24 @@
           }
         }
 
-        // --- auto-resize -------------------------------------------------
-        var lastHeight = 0;
+        // --- auto-resize (mirrors the ext-apps SDK technique) ------------
+        var lastW = 0;
+        var lastH = 0;
         function reportSize() {
           if (!state.ready) return;
-          var h = Math.ceil(document.documentElement.scrollHeight);
-          if (h === lastHeight) return;
-          lastHeight = h;
-          notify("ui/notifications/size-changed", { height: h });
+          // Measure true content height: momentarily let <html> grow to its
+          // content, otherwise a host-fixed iframe height clamps the reading
+          // and the board renders with an internal scrollbar instead.
+          var html = document.documentElement;
+          var prev = html.style.height;
+          html.style.height = "max-content";
+          var h = Math.ceil(html.getBoundingClientRect().height);
+          html.style.height = prev;
+          var w = Math.ceil(window.innerWidth);
+          if (w === lastW && h === lastH) return;
+          lastW = w;
+          lastH = h;
+          notify("ui/notifications/size-changed", { width: w, height: h });
         }
         var resizeQueued = false;
         function queueResize() {
@@ -658,15 +669,15 @@
           }
         }
 
-        // --- refresh -----------------------------------------------------
+        // --- data loading ------------------------------------------------
         function setBusy(on) {
           refreshBtn.disabled = on;
           refreshBtn.dataset.busy = on ? "1" : "0";
           refreshBtn.textContent = on ? "Refreshing…" : "Refresh";
         }
-        async function refresh() {
+        async function fetchBoard(isRefresh) {
           if (state.projectId === null || state.projectId === undefined) return;
-          setBusy(true);
+          if (isRefresh) setBusy(true);
           try {
             var result = await request("tools/call", {
               name: "get_triage_board_data",
@@ -674,10 +685,37 @@
             });
             applyResult(result);
           } catch (e) {
-            renderError(e.message || "Refresh failed.");
+            renderError(
+              e.message ||
+                (isRefresh
+                  ? "Refresh failed."
+                  : "The board could not load its issues.")
+            );
           } finally {
-            setBusy(false);
+            if (isRefresh) setBusy(false);
           }
+        }
+        function refresh() {
+          return fetchBoard(true);
+        }
+        // Some hosts push the entry-point tool result to the app; others
+        // (e.g. Claude Desktop) do not. Once the handshake is done and the
+        // project is known (from the tool-input notification), load the
+        // board ourselves so first paint never waits on a push that may
+        // never arrive.
+        var initialLoadStarted = false;
+        function maybeInitialLoad() {
+          if (
+            !state.ready ||
+            state.payload ||
+            initialLoadStarted ||
+            state.projectId === null ||
+            state.projectId === undefined
+          ) {
+            return;
+          }
+          initialLoadStarted = true;
+          fetchBoard(false);
         }
 
         // --- connect -----------------------------------------------------
@@ -690,12 +728,15 @@
           notify("ui/notifications/initialized");
           state.ready = true;
           reportSize();
+          maybeInitialLoad();
         }
 
         window.addEventListener("message", onMessage);
         window.addEventListener("resize", queueResize);
         if (window.ResizeObserver) {
-          new ResizeObserver(queueResize).observe(document.body);
+          var ro = new ResizeObserver(queueResize);
+          ro.observe(document.documentElement);
+          ro.observe(document.body);
         }
         refreshBtn.addEventListener("click", refresh);
         connect().catch(function () {});
