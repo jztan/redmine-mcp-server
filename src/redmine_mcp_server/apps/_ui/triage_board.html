@@ -78,7 +78,7 @@
         var PROTOCOL_VERSION = "2026-01-26";
         var nextId = 1;
         var pending = new Map(); // id -> {resolve, reject}
-        var state = { payload: null };
+        var state = { payload: null, projectId: null };
 
         var boardEl = document.getElementById("board");
         var projectNameEl = document.getElementById("project-name");
@@ -124,6 +124,14 @@
           if (msg.method === "ping") {
             if (msg.id !== undefined) {
               post({ jsonrpc: "2.0", id: msg.id, result: {} });
+            }
+            return;
+          }
+          if (msg.method === "ui/notifications/tool-input") {
+            var args = (msg.params && msg.params.arguments) || {};
+            if (args.project_id !== undefined && args.project_id !== null) {
+              state.projectId = args.project_id;
+              refreshBtn.disabled = false;
             }
             return;
           }
@@ -208,6 +216,10 @@
         function render(payload) {
           projectNameEl.textContent =
             (payload.project && payload.project.name) || "Triage Board";
+          if (payload.project && payload.project.id !== undefined &&
+              payload.project.id !== null) {
+            state.projectId = payload.project.id;
+          }
           if (payload.truncated) {
             truncatedEl.textContent = "showing first results";
             truncatedEl.hidden = false;
@@ -234,16 +246,16 @@
           err.className = "error";
           err.textContent = message || "Something went wrong.";
           boardEl.replaceChildren(err);
-          refreshBtn.disabled = !state.payload;
+          refreshBtn.disabled = state.projectId === null || state.projectId === undefined;
         }
 
         async function refresh() {
-          if (!state.payload) return;
+          if (state.projectId === null || state.projectId === undefined) return;
           refreshBtn.disabled = true;
           try {
             var result = await request("tools/call", {
               name: "get_triage_board_data",
-              arguments: { project_id: state.payload.project.id },
+              arguments: { project_id: state.projectId },
             });
             applyResult(result);
           } catch (e) {
