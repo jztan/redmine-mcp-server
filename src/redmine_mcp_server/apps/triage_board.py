@@ -73,6 +73,7 @@ async def _build_board_payload(
     issues_resp = await list_redmine_issues(
         project_id=project_id,
         status_id="*",
+        # "project" is fetched only for _project_name resolution, not per-issue.
         fields=_BOARD_FIELDS + ["project"],
         limit=_BOARD_LIMIT,
         include_pagination_info=True,

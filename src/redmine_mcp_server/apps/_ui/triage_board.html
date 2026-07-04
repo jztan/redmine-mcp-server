@@ -78,7 +78,7 @@
         var PROTOCOL_VERSION = "2026-01-26";
         var nextId = 1;
         var pending = new Map(); // id -> {resolve, reject}
-        var state = { payload: null, projectId: null };
+        var state = { payload: null, projectId: null, filters: null };
 
         var boardEl = document.getElementById("board");
         var projectNameEl = document.getElementById("project-name");
@@ -132,6 +132,9 @@
             if (args.project_id !== undefined && args.project_id !== null) {
               state.projectId = args.project_id;
               refreshBtn.disabled = false;
+            }
+            if (args.filters !== undefined) {
+              state.filters = args.filters;
             }
             return;
           }
@@ -255,7 +258,7 @@
           try {
             var result = await request("tools/call", {
               name: "get_triage_board_data",
-              arguments: { project_id: state.projectId },
+              arguments: { project_id: state.projectId, filters: state.filters },
             });
             applyResult(result);
           } catch (e) {
@@ -276,7 +279,7 @@
 
         window.addEventListener("message", onMessage);
         refreshBtn.addEventListener("click", refresh);
-        connect();
+        connect().catch(function () {});
       })();
     </script>
   </body>
