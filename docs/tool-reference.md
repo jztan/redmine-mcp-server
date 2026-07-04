@@ -1243,9 +1243,13 @@ manage_issue_category(action="delete", category_id=3, reassign_to_id=7)
 
 ### `show_triage_board`
 
-Render an interactive, read-only triage board of a project's issues (MCP
-Apps). Columns are issue statuses; cards show id, subject, assignee, and
-priority. Requires a client that supports MCP Apps rendering.
+Render an interactive triage board of a project's issues (MCP Apps). Columns
+are issue statuses; cards show id, subject, assignee, and priority. Drag a
+card to another status column to change the issue's status in Redmine (writes
+back via `update_redmine_issue`; the move reverts with an explanation if
+Redmine rejects the transition). Dragging is disabled when
+`REDMINE_MCP_READ_ONLY=true`. Requires a client that supports MCP Apps
+rendering.
 
 **Parameters:**
 - `project_id` (int | str, required): project to display.
