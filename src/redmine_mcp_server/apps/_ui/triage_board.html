@@ -408,7 +408,24 @@
           var id = nextId++;
           post({ jsonrpc: "2.0", id: id, method: method, params: params });
           return new Promise(function (resolve, reject) {
-            pending.set(id, { resolve: resolve, reject: reject });
+            // Reject and clean up if the host never answers, so a dropped
+            // reply cannot leave the request pending (and Refresh stuck).
+            var timer = setTimeout(function () {
+              if (pending.has(id)) {
+                pending.delete(id);
+                reject(new Error(method + " timed out"));
+              }
+            }, 15000);
+            pending.set(id, {
+              resolve: function (v) {
+                clearTimeout(timer);
+                resolve(v);
+              },
+              reject: function (e) {
+                clearTimeout(timer);
+                reject(e);
+              },
+            });
           });
         }
         function notify(method, params) {
