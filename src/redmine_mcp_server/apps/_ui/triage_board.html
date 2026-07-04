@@ -1,5 +1,271 @@
 <!doctype html>
 <html lang="en">
-  <head><meta charset="utf-8" /><title>Triage Board</title></head>
-  <body><div id="board">Loading triage board…</div></body>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Triage Board</title>
+    <style>
+      :root {
+        --bg: #f7f8fa; --fg: #1c2024; --muted: #6b7280;
+        --col-bg: #eceef1; --card-bg: #ffffff; --border: #d7dbe0;
+        --accent: #2f6feb;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #17191c; --fg: #e6e8eb; --muted: #9aa2ac;
+          --col-bg: #202327; --card-bg: #26292e; --border: #34383e;
+          --accent: #4c8dff;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; background: var(--bg); color: var(--fg);
+        font: 13px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      }
+      header {
+        display: flex; align-items: center; gap: 12px;
+        padding: 10px 14px; border-bottom: 1px solid var(--border);
+      }
+      header h1 { font-size: 14px; margin: 0; font-weight: 600; }
+      header .spacer { flex: 1; }
+      .notice { color: var(--muted); font-size: 12px; }
+      button#refresh-btn {
+        font: inherit; color: #fff; background: var(--accent);
+        border: 0; border-radius: 6px; padding: 6px 12px; cursor: pointer;
+      }
+      button#refresh-btn[disabled] { opacity: 0.6; cursor: default; }
+      .board { display: flex; gap: 12px; padding: 14px; overflow-x: auto; }
+      .col {
+        flex: 0 0 240px; background: var(--col-bg);
+        border-radius: 8px; padding: 8px; min-height: 80px;
+      }
+      .col h2 {
+        font-size: 12px; margin: 2px 4px 8px; font-weight: 600;
+        display: flex; justify-content: space-between; color: var(--muted);
+      }
+      .card {
+        background: var(--card-bg); border: 1px solid var(--border);
+        border-radius: 6px; padding: 8px; margin-bottom: 8px;
+      }
+      .card .id { color: var(--muted); font-size: 11px; }
+      .card .subject { margin: 2px 0 6px; }
+      .card .meta { display: flex; gap: 6px; flex-wrap: wrap; }
+      .chip {
+        font-size: 11px; color: var(--muted);
+        border: 1px solid var(--border); border-radius: 10px; padding: 1px 7px;
+      }
+      .empty, .error {
+        padding: 24px; color: var(--muted); text-align: center;
+      }
+      .error { color: #c0392b; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1 id="project-name">Triage Board</h1>
+      <span id="truncated-notice" class="notice" hidden></span>
+      <span class="spacer"></span>
+      <button id="refresh-btn" disabled>Refresh</button>
+    </header>
+    <div id="board" class="board">
+      <div class="empty">Loading triage board…</div>
+    </div>
+
+    <script>
+      (function () {
+        "use strict";
+        var PARENT = window.parent;
+        var PROTOCOL_VERSION = "2026-01-26";
+        var nextId = 1;
+        var pending = new Map(); // id -> {resolve, reject}
+        var state = { payload: null };
+
+        var boardEl = document.getElementById("board");
+        var projectNameEl = document.getElementById("project-name");
+        var truncatedEl = document.getElementById("truncated-notice");
+        var refreshBtn = document.getElementById("refresh-btn");
+
+        function post(msg) { PARENT.postMessage(msg, "*"); }
+
+        function request(method, params) {
+          var id = nextId++;
+          post({ jsonrpc: "2.0", id: id, method: method, params: params });
+          return new Promise(function (resolve, reject) {
+            pending.set(id, { resolve: resolve, reject: reject });
+          });
+        }
+
+        function notify(method, params) {
+          post({ jsonrpc: "2.0", method: method, params: params || {} });
+        }
+
+        function onMessage(event) {
+          if (event.source !== PARENT) return; // source validation
+          var msg = event.data;
+          if (!msg || msg.jsonrpc !== "2.0") return;
+
+          // Response to one of our own requests.
+          if (
+            msg.id !== undefined &&
+            (msg.result !== undefined || msg.error !== undefined)
+          ) {
+            var waiter = pending.get(msg.id);
+            if (!waiter) return;
+            pending.delete(msg.id);
+            if (msg.error) {
+              waiter.reject(new Error(msg.error.message || "request failed"));
+            } else {
+              waiter.resolve(msg.result);
+            }
+            return;
+          }
+
+          // Inbound request/notification from the host.
+          if (msg.method === "ping") {
+            if (msg.id !== undefined) {
+              post({ jsonrpc: "2.0", id: msg.id, result: {} });
+            }
+            return;
+          }
+          if (msg.method === "ui/notifications/tool-result") {
+            applyResult(msg.params);
+            return;
+          }
+          // Unknown request: reply method-not-found so the host is not left
+          // waiting. Unknown notifications are ignored.
+          if (msg.id !== undefined) {
+            post({
+              jsonrpc: "2.0", id: msg.id,
+              error: { code: -32601, message: "Method not found" },
+            });
+          }
+        }
+
+        function applyResult(result) {
+          if (!result) return;
+          var data = result.structuredContent;
+          if (result.isError) { renderError(extractError(result)); return; }
+          if (data && data.error) { renderError(String(data.error)); return; }
+          if (data) { state.payload = data; render(data); }
+        }
+
+        function extractError(result) {
+          try { return result.content[0].text; }
+          catch (e) { return "Tool call failed"; }
+        }
+
+        function groupByStatus(payload) {
+          var cols = {};
+          payload.statuses.forEach(function (s) { cols[s.id] = []; });
+          payload.issues.forEach(function (it) {
+            if (cols[it.status_id]) cols[it.status_id].push(it);
+          });
+          return cols;
+        }
+
+        function chip(text) {
+          var el = document.createElement("span");
+          el.className = "chip";
+          el.textContent = text;
+          return el;
+        }
+
+        function cardEl(issue) {
+          var card = document.createElement("div");
+          card.className = "card";
+          var idEl = document.createElement("div");
+          idEl.className = "id";
+          idEl.textContent = "#" + issue.id;
+          var subjEl = document.createElement("div");
+          subjEl.className = "subject";
+          subjEl.textContent = issue.subject || "";
+          var meta = document.createElement("div");
+          meta.className = "meta";
+          if (issue.assigned_to) meta.appendChild(chip(issue.assigned_to));
+          if (issue.priority) meta.appendChild(chip(issue.priority));
+          if (issue.tracker) meta.appendChild(chip(issue.tracker));
+          card.appendChild(idEl);
+          card.appendChild(subjEl);
+          card.appendChild(meta);
+          return card;
+        }
+
+        function columnEl(status, issues) {
+          var col = document.createElement("div");
+          col.className = "col";
+          var h = document.createElement("h2");
+          var nameSpan = document.createElement("span");
+          nameSpan.textContent = status.name;
+          var countSpan = document.createElement("span");
+          countSpan.textContent = String(issues.length);
+          h.appendChild(nameSpan);
+          h.appendChild(countSpan);
+          col.appendChild(h);
+          issues.forEach(function (it) { col.appendChild(cardEl(it)); });
+          return col;
+        }
+
+        function render(payload) {
+          projectNameEl.textContent =
+            (payload.project && payload.project.name) || "Triage Board";
+          if (payload.truncated) {
+            truncatedEl.textContent = "showing first results";
+            truncatedEl.hidden = false;
+          } else {
+            truncatedEl.hidden = true;
+          }
+          var cols = groupByStatus(payload);
+          var frag = document.createDocumentFragment();
+          payload.statuses.forEach(function (s) {
+            frag.appendChild(columnEl(s, cols[s.id] || []));
+          });
+          if (!payload.statuses.length) {
+            var empty = document.createElement("div");
+            empty.className = "empty";
+            empty.textContent = "No statuses to display.";
+            frag.appendChild(empty);
+          }
+          boardEl.replaceChildren(frag);
+          refreshBtn.disabled = false;
+        }
+
+        function renderError(message) {
+          var err = document.createElement("div");
+          err.className = "error";
+          err.textContent = message || "Something went wrong.";
+          boardEl.replaceChildren(err);
+          refreshBtn.disabled = !state.payload;
+        }
+
+        async function refresh() {
+          if (!state.payload) return;
+          refreshBtn.disabled = true;
+          try {
+            var result = await request("tools/call", {
+              name: "get_triage_board_data",
+              arguments: { project_id: state.payload.project.id },
+            });
+            applyResult(result);
+          } catch (e) {
+            renderError(e.message || "Refresh failed");
+          } finally {
+            refreshBtn.disabled = false;
+          }
+        }
+
+        async function connect() {
+          await request("ui/initialize", {
+            appInfo: { name: "redmine-triage-board", version: "1.0.0" },
+            appCapabilities: {},
+            protocolVersion: PROTOCOL_VERSION,
+          });
+          notify("ui/notifications/initialized");
+        }
+
+        window.addEventListener("message", onMessage);
+        refreshBtn.addEventListener("click", refresh);
+        connect();
+      })();
+    </script>
+  </body>
 </html>

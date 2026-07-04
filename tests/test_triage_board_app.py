@@ -122,3 +122,26 @@ async def test_backend_tool_is_app_only():
     ui = tool.meta["ui"]
     assert ui["visibility"] == ["app"]
     assert "resourceUri" not in ui
+
+
+@pytest.mark.asyncio
+async def test_html_speaks_extapps_protocol():
+    res = await mcp.get_resource("ui://redmine/triage-board.html")
+    html = await res.read()
+    for token in [
+        "ui/initialize",
+        "ui/notifications/initialized",
+        "ui/notifications/tool-result",
+        "get_triage_board_data",
+        "2026-01-26",
+        "postMessage",
+    ]:
+        assert token in html, token
+
+
+@pytest.mark.asyncio
+async def test_html_never_uses_innerhtml():
+    res = await mcp.get_resource("ui://redmine/triage-board.html")
+    html = await res.read()
+    # Issue data is user-controlled; rendering must avoid innerHTML entirely.
+    assert "innerHTML" not in html
