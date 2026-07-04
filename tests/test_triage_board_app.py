@@ -133,6 +133,7 @@ async def test_html_speaks_extapps_protocol():
         "ui/notifications/initialized",
         "ui/notifications/tool-result",
         "ui/notifications/tool-input",
+        "ui/notifications/size-changed",
         "get_triage_board_data",
         "2026-01-26",
         "postMessage",
