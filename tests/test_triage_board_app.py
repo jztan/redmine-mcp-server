@@ -137,6 +137,10 @@ async def test_html_speaks_extapps_protocol():
         "get_triage_board_data",
         "2026-01-26",
         "postMessage",
+        "update_redmine_issue",
+        "dragstart",
+        "drop",
+        "read_only",
     ]:
         assert token in html, token
 

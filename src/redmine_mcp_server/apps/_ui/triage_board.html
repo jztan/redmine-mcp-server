@@ -324,6 +324,58 @@
         color: var(--text-3);
       }
 
+      .card[draggable="true"] {
+        cursor: grab;
+      }
+      .card.dragging {
+        opacity: 0.5;
+        cursor: grabbing;
+      }
+      .card[data-busy="1"] {
+        opacity: 0.6;
+        pointer-events: none;
+      }
+      .col-body.drop-target {
+        outline: 2px dashed var(--accent);
+        outline-offset: 2px;
+        border-radius: 9px;
+      }
+      .ro-pill {
+        font-size: 10.5px;
+        font-weight: 600;
+        color: var(--text-2);
+        background: var(--panel-2);
+        border-radius: 9px;
+        padding: 1px 8px;
+      }
+      .ro-pill[hidden] {
+        display: none;
+      }
+      .toast {
+        position: fixed;
+        left: 50%;
+        bottom: 14px;
+        transform: translateX(-50%);
+        max-width: 90%;
+        padding: 8px 14px;
+        border-radius: 8px;
+        font-size: 12px;
+        font-weight: 500;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+        z-index: 10;
+      }
+      .toast[hidden] {
+        display: none;
+      }
+      .toast.error {
+        background: #e5484d;
+        color: #fff;
+      }
+      .toast.info {
+        background: var(--panel-2);
+        color: var(--text);
+      }
+
       .panel {
         margin: 6px 16px 18px;
         border: 1px solid var(--border);
@@ -349,6 +401,7 @@
     <header class="head">
       <h1 id="project-name">Triage board</h1>
       <span id="total" class="sub"></span>
+      <span id="ro-pill" class="ro-pill" hidden>Read-only</span>
       <span class="spacer"></span>
       <span id="stamp" class="stamp"></span>
       <button id="refresh-btn" class="btn" disabled>Refresh</button>
@@ -357,6 +410,7 @@
     <div id="root">
       <div class="panel" id="loading">Loading issues…</div>
     </div>
+    <div id="toast" class="toast" hidden></div>
 
     <script>
       (function () {
@@ -399,6 +453,12 @@
         var stampEl = document.getElementById("stamp");
         var truncatedEl = document.getElementById("truncated");
         var refreshBtn = document.getElementById("refresh-btn");
+        var roPill = document.getElementById("ro-pill");
+        var toastEl = document.getElementById("toast");
+        var readOnly = false;
+        var draggedCard = null;
+        var dragOriginBody = null;
+        var toastTimer = 0;
 
         // --- transport ---------------------------------------------------
         function post(msg) {
@@ -550,8 +610,195 @@
           return n;
         }
 
+        function showToast(message, kind) {
+          toastEl.textContent = message || "";
+          toastEl.className = "toast " + (kind === "info" ? "info" : "error");
+          toastEl.hidden = false;
+          if (toastTimer) clearTimeout(toastTimer);
+          toastTimer = setTimeout(function () {
+            toastEl.hidden = true;
+          }, 4000);
+        }
+
+        function statusNameById(statusId) {
+          var list = (state.payload && state.payload.statuses) || [];
+          for (var i = 0; i < list.length; i++) {
+            if (String(list[i].id) === String(statusId)) return list[i].name;
+          }
+          return null;
+        }
+
+        function setPayloadStatus(issueId, statusId) {
+          var issues = (state.payload && state.payload.issues) || [];
+          for (var i = 0; i < issues.length; i++) {
+            if (String(issues[i].id) === String(issueId)) {
+              issues[i].status_id = statusId;
+              return;
+            }
+          }
+        }
+
+        // Recompute per-column counts and empty-state placeholders from the
+        // live DOM, so moves and reverts never drift from the card positions.
+        function reflow() {
+          var cols = document.querySelectorAll(".col");
+          cols.forEach(function (col) {
+            var body = col.querySelector(".col-body");
+            var countEl = col.querySelector(".col-count");
+            if (!body) return;
+            var cards = body.querySelectorAll(".card");
+            if (countEl) countEl.textContent = String(cards.length);
+            var empty = body.querySelector(".col-empty");
+            if (cards.length === 0 && !empty) {
+              body.appendChild(el("div", "col-empty", "No issues"));
+            } else if (cards.length > 0 && empty) {
+              empty.remove();
+            }
+          });
+        }
+
+        function setCardBusy(card, on) {
+          card.dataset.busy = on ? "1" : "0";
+          card.draggable = !on && !readOnly;
+        }
+
+        function placeCardInStatus(card, statusId) {
+          var body = document.querySelector(
+            '.col-body[data-status-id="' + statusId + '"]'
+          );
+          if (body) {
+            body.appendChild(card);
+            card.dataset.statusId = String(statusId);
+          } else if (dragOriginBody) {
+            dragOriginBody.appendChild(card);
+          }
+          reflow();
+        }
+
+        function revertMove(card, originStatus) {
+          if (dragOriginBody) dragOriginBody.appendChild(card);
+          card.dataset.statusId = String(originStatus);
+          setPayloadStatus(card.dataset.issueId, originStatus);
+          reflow();
+        }
+
+        function reconcile(card, result, targetNum, originStatus) {
+          if (result && result.isError) {
+            revertMove(card, originStatus);
+            showToast(extractError(result), "error");
+            return;
+          }
+          var data = result && result.structuredContent;
+          if (data && data.error) {
+            revertMove(card, originStatus);
+            showToast(String(data.error), "error");
+            return;
+          }
+          var actual =
+            data && data.status && data.status.id != null
+              ? data.status.id
+              : null;
+          if (actual === null) {
+            setPayloadStatus(card.dataset.issueId, targetNum);
+            return; // no status echoed; trust the optimistic move
+          }
+          if (actual === targetNum) {
+            setPayloadStatus(card.dataset.issueId, actual);
+            return; // confirmed
+          }
+          // Redmine kept/changed to a different status than requested.
+          placeCardInStatus(card, actual);
+          setPayloadStatus(card.dataset.issueId, actual);
+          var name = statusNameById(actual);
+          showToast(
+            "Redmine kept it in " + (name || "status " + actual),
+            "error"
+          );
+        }
+
+        async function performMove(card, targetBody, targetStatus, originStatus) {
+          var issueId = parseInt(card.dataset.issueId, 10);
+          var targetNum = parseInt(targetStatus, 10);
+          targetBody.appendChild(card);
+          card.dataset.statusId = String(targetStatus);
+          setCardBusy(card, true);
+          setPayloadStatus(issueId, targetNum);
+          reflow();
+          try {
+            var result = await request("tools/call", {
+              name: "update_redmine_issue",
+              arguments: { issue_id: issueId, fields: { status_id: targetNum } },
+            });
+            reconcile(card, result, targetNum, originStatus);
+          } catch (e) {
+            revertMove(card, originStatus);
+            showToast(e.message || "Could not update the issue.", "error");
+          } finally {
+            setCardBusy(card, false);
+          }
+        }
+
+        function clearDropTargets() {
+          document.querySelectorAll(".col-body.drop-target").forEach(function (b) {
+            b.classList.remove("drop-target");
+          });
+        }
+
+        function onDragStart(e, card) {
+          if (card.dataset.busy === "1" || readOnly) {
+            e.preventDefault();
+            return;
+          }
+          draggedCard = card;
+          dragOriginBody = card.parentNode;
+          card.classList.add("dragging");
+          try {
+            e.dataTransfer.setData("text/plain", card.dataset.issueId);
+            e.dataTransfer.effectAllowed = "move";
+          } catch (x) {
+            /* older browsers */
+          }
+        }
+
+        function onDragEnd() {
+          if (draggedCard) draggedCard.classList.remove("dragging");
+          clearDropTargets();
+          draggedCard = null;
+        }
+
+        function onDragOver(e, body) {
+          if (!draggedCard) return;
+          e.preventDefault();
+          try {
+            e.dataTransfer.dropEffect = "move";
+          } catch (x) {
+            /* ignore */
+          }
+          body.classList.add("drop-target");
+        }
+
+        function onDrop(e, body) {
+          e.preventDefault();
+          body.classList.remove("drop-target");
+          var card = draggedCard;
+          if (!card) return;
+          var target = body.dataset.statusId;
+          var origin = card.dataset.statusId;
+          if (String(target) === String(origin)) return;
+          performMove(card, body, target, origin);
+        }
+
         function cardEl(issue) {
           var card = el("div", "card");
+          card.dataset.issueId = issue.id;
+          card.dataset.statusId = issue.status_id;
+          if (!readOnly) {
+            card.draggable = true;
+            card.addEventListener("dragstart", function (e) {
+              onDragStart(e, card);
+            });
+            card.addEventListener("dragend", onDragEnd);
+          }
           card.appendChild(el("span", "id", "#" + issue.id));
           card.appendChild(el("p", "subject", issue.subject || "Untitled"));
 
@@ -588,6 +835,18 @@
           col.appendChild(head);
 
           var body = el("div", "col-body");
+          body.dataset.statusId = status.id;
+          if (!readOnly) {
+            body.addEventListener("dragover", function (e) {
+              onDragOver(e, body);
+            });
+            body.addEventListener("dragleave", function () {
+              body.classList.remove("drop-target");
+            });
+            body.addEventListener("drop", function (e) {
+              onDrop(e, body);
+            });
+          }
           if (issues.length === 0) {
             body.appendChild(el("div", "col-empty", "No issues"));
           } else {
@@ -602,6 +861,8 @@
         function render(payload) {
           nameEl.textContent =
             (payload.project && payload.project.name) || "Triage board";
+          readOnly = !!payload.read_only;
+          roPill.hidden = !readOnly;
 
           var buckets = {};
           payload.statuses.forEach(function (s) {
