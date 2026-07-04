@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from fastmcp.apps.config import AppConfig, ResourceCSP
 
+from .._env import _is_read_only_mode
 from ..server import mcp
 from ..tools.enumeration import list_redmine_issue_statuses
 from ..tools.issues import list_redmine_issues
@@ -93,6 +94,7 @@ async def _build_board_payload(
         "issues": [_issue_row(i) for i in raw_issues],
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "truncated": bool(pagination.get("has_next")),
+        "read_only": _is_read_only_mode(),
     }
 
 

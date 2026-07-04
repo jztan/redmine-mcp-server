@@ -147,3 +147,21 @@ async def test_html_never_uses_innerhtml():
     html = await res.read()
     # Issue data is user-controlled; rendering must avoid innerHTML entirely.
     assert "innerHTML" not in html
+
+
+@pytest.mark.asyncio
+async def test_build_board_payload_read_only_true():
+    resp = {"issues": [_issue()], "pagination": {"has_next": False}}
+    ps, pi = _patch(_STATUSES, resp)
+    with ps, pi, patch.object(triage_board, "_is_read_only_mode", return_value=True):
+        payload = await triage_board._build_board_payload(9)
+    assert payload["read_only"] is True
+
+
+@pytest.mark.asyncio
+async def test_build_board_payload_read_only_false():
+    resp = {"issues": [_issue()], "pagination": {"has_next": False}}
+    ps, pi = _patch(_STATUSES, resp)
+    with ps, pi, patch.object(triage_board, "_is_read_only_mode", return_value=False):
+        payload = await triage_board._build_board_payload(9)
+    assert payload["read_only"] is False
