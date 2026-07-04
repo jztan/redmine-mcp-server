@@ -708,18 +708,21 @@
             setPayloadStatus(card.dataset.issueId, targetNum);
             return; // no status echoed; trust the optimistic move
           }
-          if (actual === targetNum) {
+          if (String(actual) === String(targetNum)) {
             setPayloadStatus(card.dataset.issueId, actual);
             return; // confirmed
           }
-          // Redmine kept/changed to a different status than requested.
+          // Redmine landed on a different status than requested: either it
+          // kept the issue put (transition not allowed) or a workflow rule
+          // routed it somewhere else.
           placeCardInStatus(card, actual, originStatus);
           setPayloadStatus(card.dataset.issueId, actual);
-          var name = statusNameById(actual);
-          showToast(
-            "Redmine kept it in " + (name || "status " + actual),
-            "error"
-          );
+          var name = statusNameById(actual) || "status " + actual;
+          if (String(actual) === String(originStatus)) {
+            showToast("Redmine kept it in " + name, "error");
+          } else {
+            showToast("Redmine moved it to " + name, "info");
+          }
         }
 
         async function performMove(card, targetBody, targetStatus, originStatus) {
