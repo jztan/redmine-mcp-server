@@ -8,64 +8,90 @@
       :root {
         --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
           Helvetica, Arial, sans-serif;
-        --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
-          monospace;
         --surface: #ffffff;
-        --panel: #f5f6f8;
-        --panel-2: #eceef1;
+        --panel: #f4f6f9;
+        --panel-2: #e9edf2;
         --card: #ffffff;
-        --border: #e5e8ec;
-        --border-strong: #d5d9df;
-        --text: #12141a;
-        --text-2: #565d6b;
-        --text-3: #949aa6;
-        --accent: #3366ff;
-        --accent-contrast: #ffffff;
-        --shadow: 0 1px 2px rgba(16, 20, 32, 0.06);
+        --border: #e6e9ee;
+        --border-strong: #d3d8e0;
+        --text: #171a20;
+        --text-2: #5a6472;
+        --text-3: #98a1b0;
+        --accent: #2f6bff;
+        --shadow: 0 1px 2px rgba(20, 26, 40, 0.05);
+        --prio-normal-bg: #eef2f8;
+        --prio-normal-fg: #5b6472;
+        --prio-low-bg: #eef1f5;
+        --prio-low-fg: #7a828e;
+        --prio-high-bg: #fbeccb;
+        --prio-high-fg: #9a5b06;
+        --prio-urgent-bg: #e5484d;
+        --prio-urgent-fg: #ffffff;
       }
       @media (prefers-color-scheme: dark) {
         :root {
-          --surface: #191b1f;
-          --panel: #212429;
-          --panel-2: #2a2e34;
-          --card: #282c32;
-          --border: #343941;
-          --border-strong: #424852;
-          --text: #e8eaee;
-          --text-2: #a2a9b4;
-          --text-3: #6d7480;
-          --accent: #5c86ff;
-          --accent-contrast: #0b0d10;
+          --surface: #1a1c20;
+          --panel: #232730;
+          --panel-2: #2c313b;
+          --card: #23262c;
+          --border: #333944;
+          --border-strong: #434a56;
+          --text: #e9ebef;
+          --text-2: #a3abb7;
+          --text-3: #6c7480;
+          --accent: #6f9bff;
           --shadow: none;
+          --prio-normal-bg: #2b313b;
+          --prio-normal-fg: #aab2bf;
+          --prio-low-bg: #2a2f38;
+          --prio-low-fg: #8b93a0;
+          --prio-high-bg: #3e3214;
+          --prio-high-fg: #e6b74d;
+          --prio-urgent-bg: #e5484d;
+          --prio-urgent-fg: #ffffff;
         }
       }
       :root[data-theme="light"] {
         --surface: #ffffff;
-        --panel: #f5f6f8;
-        --panel-2: #eceef1;
+        --panel: #f4f6f9;
+        --panel-2: #e9edf2;
         --card: #ffffff;
-        --border: #e5e8ec;
-        --border-strong: #d5d9df;
-        --text: #12141a;
-        --text-2: #565d6b;
-        --text-3: #949aa6;
-        --accent: #3366ff;
-        --accent-contrast: #ffffff;
-        --shadow: 0 1px 2px rgba(16, 20, 32, 0.06);
+        --border: #e6e9ee;
+        --border-strong: #d3d8e0;
+        --text: #171a20;
+        --text-2: #5a6472;
+        --text-3: #98a1b0;
+        --accent: #2f6bff;
+        --shadow: 0 1px 2px rgba(20, 26, 40, 0.05);
+        --prio-normal-bg: #eef2f8;
+        --prio-normal-fg: #5b6472;
+        --prio-low-bg: #eef1f5;
+        --prio-low-fg: #7a828e;
+        --prio-high-bg: #fbeccb;
+        --prio-high-fg: #9a5b06;
+        --prio-urgent-bg: #e5484d;
+        --prio-urgent-fg: #ffffff;
       }
       :root[data-theme="dark"] {
-        --surface: #191b1f;
-        --panel: #212429;
-        --panel-2: #2a2e34;
-        --card: #282c32;
-        --border: #343941;
-        --border-strong: #424852;
-        --text: #e8eaee;
-        --text-2: #a2a9b4;
-        --text-3: #6d7480;
-        --accent: #5c86ff;
-        --accent-contrast: #0b0d10;
+        --surface: #1a1c20;
+        --panel: #232730;
+        --panel-2: #2c313b;
+        --card: #23262c;
+        --border: #333944;
+        --border-strong: #434a56;
+        --text: #e9ebef;
+        --text-2: #a3abb7;
+        --text-3: #6c7480;
+        --accent: #6f9bff;
         --shadow: none;
+        --prio-normal-bg: #2b313b;
+        --prio-normal-fg: #aab2bf;
+        --prio-low-bg: #2a2f38;
+        --prio-low-fg: #8b93a0;
+        --prio-high-bg: #3e3214;
+        --prio-high-fg: #e6b74d;
+        --prio-urgent-bg: #e5484d;
+        --prio-urgent-fg: #ffffff;
       }
 
       * {
@@ -87,8 +113,8 @@
       .head {
         display: flex;
         align-items: baseline;
-        gap: 10px;
-        padding: 12px 16px 10px;
+        gap: 8px;
+        padding: 14px 16px 12px;
       }
       .head h1 {
         margin: 0;
@@ -96,7 +122,7 @@
         font-weight: 650;
         letter-spacing: -0.01em;
       }
-      .head .total {
+      .head .sub {
         font-size: 12px;
         color: var(--text-3);
         font-variant-numeric: tabular-nums;
@@ -152,164 +178,144 @@
 
       .board {
         display: flex;
-        gap: 10px;
+        gap: 14px;
         padding: 2px 16px 16px;
         overflow-x: auto;
         align-items: flex-start;
       }
       .col {
-        flex: 0 0 250px;
-        background: var(--panel);
-        border: 1px solid var(--border);
-        border-radius: 11px;
-        padding: 9px 9px 10px;
+        flex: 0 0 242px;
       }
       .col-head {
-        padding: 3px 3px 8px;
-      }
-      .col-top {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 8px;
-      }
-      .col-name {
         display: flex;
         align-items: center;
         gap: 7px;
-        min-width: 0;
+        padding: 0 2px 10px;
       }
       .dot {
-        width: 7px;
-        height: 7px;
+        width: 8px;
+        height: 8px;
         border-radius: 50%;
         flex: 0 0 auto;
       }
-      .col-name span {
-        font-size: 10.5px;
-        font-weight: 650;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        color: var(--text-2);
+      .col-name {
+        font-size: 12.5px;
+        font-weight: 600;
+        color: var(--text);
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
       }
       .col-count {
-        font-size: 17px;
-        font-weight: 650;
-        color: var(--text);
-        font-variant-numeric: tabular-nums;
-        line-height: 1;
-      }
-      .bar {
-        margin-top: 8px;
-        height: 3px;
-        border-radius: 2px;
+        margin-left: 1px;
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--text-2);
         background: var(--panel-2);
-        overflow: hidden;
+        border-radius: 9px;
+        padding: 1px 7px;
+        min-width: 20px;
+        text-align: center;
+        font-variant-numeric: tabular-nums;
+        flex: 0 0 auto;
       }
-      .bar > i {
-        display: block;
-        height: 100%;
-        border-radius: 2px;
-        min-width: 2px;
+
+      .col-body {
+        max-height: 358px;
+        overflow-y: auto;
+        overflow-x: hidden;
+        margin: 0 -3px;
+        padding: 0 3px 1px;
+        overscroll-behavior: contain;
+      }
+      .col-body::-webkit-scrollbar {
+        width: 8px;
+      }
+      .col-body::-webkit-scrollbar-thumb {
+        background: var(--border-strong);
+        border-radius: 4px;
+      }
+      .col-body::-webkit-scrollbar-track {
+        background: transparent;
       }
 
       .card {
-        position: relative;
         background: var(--card);
         border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 8px 10px 9px;
-        margin-top: 7px;
+        border-radius: 10px;
+        padding: 10px 12px 11px;
+        margin-bottom: 8px;
         box-shadow: var(--shadow);
-        overflow: hidden;
       }
-      .card::before {
-        content: "";
-        position: absolute;
-        left: 0;
-        top: 0;
-        bottom: 0;
-        width: 3px;
-        background: transparent;
-      }
-      .card[data-flag="1"]::before {
-        background: var(--flag);
-      }
-      .card-top {
-        display: flex;
-        align-items: center;
-        gap: 8px;
+      .card:last-child {
+        margin-bottom: 2px;
       }
       .id {
-        font-family: var(--font-mono);
-        font-size: 11px;
-        color: var(--text-3);
-        font-weight: 500;
-      }
-      .prio {
-        margin-left: auto;
-        font-size: 10px;
-        font-weight: 650;
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
-        color: var(--flag);
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--accent);
       }
       .subject {
-        margin: 4px 0 0;
-        font-size: 12.5px;
-        font-weight: 500;
+        margin: 3px 0 0;
+        font-size: 13px;
+        font-weight: 450;
         color: var(--text);
         line-height: 1.35;
       }
       .meta {
         display: flex;
         align-items: center;
-        gap: 6px;
-        margin-top: 7px;
-        flex-wrap: wrap;
-      }
-      .who {
-        display: inline-flex;
-        align-items: center;
-        gap: 5px;
-        font-size: 11px;
-        color: var(--text-2);
-        min-width: 0;
-      }
-      .who.none {
-        color: var(--text-3);
+        justify-content: space-between;
+        gap: 8px;
+        margin-top: 10px;
       }
       .ava {
-        width: 15px;
-        height: 15px;
+        width: 22px;
+        height: 22px;
         border-radius: 50%;
         flex: 0 0 auto;
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        font-size: 8px;
-        font-weight: 650;
-        color: var(--accent-contrast);
-        background: var(--accent);
+        font-size: 9px;
+        font-weight: 700;
+        color: #fff;
         text-transform: uppercase;
+        letter-spacing: 0.02em;
       }
-      .chip {
-        font-size: 10.5px;
-        color: var(--text-2);
-        background: var(--panel);
-        border: 1px solid var(--border);
-        border-radius: 5px;
-        padding: 1px 6px;
+      .ava.none {
+        background: transparent;
+        border: 1.5px dashed var(--border-strong);
+      }
+      .pill-prio {
+        font-size: 11px;
+        font-weight: 600;
+        padding: 2px 9px;
+        border-radius: 11px;
         white-space: nowrap;
+        flex: 0 0 auto;
       }
+      .pill-prio.normal {
+        background: var(--prio-normal-bg);
+        color: var(--prio-normal-fg);
+      }
+      .pill-prio.low {
+        background: var(--prio-low-bg);
+        color: var(--prio-low-fg);
+      }
+      .pill-prio.high {
+        background: var(--prio-high-bg);
+        color: var(--prio-high-fg);
+      }
+      .pill-prio.urgent {
+        background: var(--prio-urgent-bg);
+        color: var(--prio-urgent-fg);
+      }
+
       .col-empty {
-        margin-top: 4px;
         border: 1px dashed var(--border-strong);
-        border-radius: 8px;
-        padding: 14px 8px;
+        border-radius: 9px;
+        padding: 16px 8px;
         text-align: center;
         font-size: 11px;
         color: var(--text-3);
@@ -339,7 +345,7 @@
   <body>
     <header class="head">
       <h1 id="project-name">Triage board</h1>
-      <span id="total" class="total"></span>
+      <span id="total" class="sub"></span>
       <span class="spacer"></span>
       <span id="stamp" class="stamp"></span>
       <button id="refresh-btn" class="btn" disabled>Refresh</button>
@@ -355,15 +361,25 @@
 
         var PARENT = window.parent;
         var PROTOCOL_VERSION = "2026-01-26";
-        var ACCENTS = [
-          "#3366ff",
-          "#8b5cf6",
-          "#f59e0b",
+        var DOT_ACCENTS = [
+          "#94a3b8",
+          "#2f6bff",
           "#12b76a",
-          "#ec4899",
+          "#f59e0b",
+          "#8b5cf6",
           "#06aed4",
         ];
-        var CLOSED_ACCENT = "#98a2b3";
+        var CLOSED_DOT = "#94a3b8";
+        var AVATAR_COLORS = [
+          "#8b5cf6",
+          "#12b76a",
+          "#f59e0b",
+          "#2f6bff",
+          "#ec4899",
+          "#06aed4",
+          "#e5484d",
+          "#6366f1",
+        ];
 
         var nextId = 1;
         var pending = new Map();
@@ -477,25 +493,33 @@
         }
 
         // --- data helpers ------------------------------------------------
-        function statusAccent(status, openIndex) {
-          if (status && status.is_closed) return CLOSED_ACCENT;
-          return ACCENTS[openIndex % ACCENTS.length];
+        function statusDot(status, openIndex) {
+          if (status && status.is_closed) return CLOSED_DOT;
+          return DOT_ACCENTS[openIndex % DOT_ACCENTS.length];
         }
-        function priorityInfo(name) {
-          var n = (name || "").toLowerCase();
+        function priorityPill(name) {
+          if (!name) return null;
+          var n = name.toLowerCase();
           if (n.indexOf("immediate") >= 0 || n.indexOf("urgent") >= 0) {
-            return { flag: true, color: "#e5484d", label: name };
+            return { label: name, cls: "urgent" };
           }
-          if (n.indexOf("high") >= 0) {
-            return { flag: true, color: "#f59e0b", label: name };
-          }
-          return { flag: false, color: null, label: name };
+          if (n.indexOf("high") >= 0) return { label: name, cls: "high" };
+          if (n.indexOf("low") >= 0) return { label: name, cls: "low" };
+          return { label: name, cls: "normal" };
         }
         function initials(person) {
           var parts = String(person).trim().split(/\s+/);
           var a = parts[0] ? parts[0][0] : "";
           var b = parts.length > 1 ? parts[parts.length - 1][0] : "";
           return a + b || "?";
+        }
+        function avatarColor(person) {
+          var h = 0;
+          var s = String(person);
+          for (var i = 0; i < s.length; i++) {
+            h = (h * 31 + s.charCodeAt(i)) >>> 0;
+          }
+          return AVATAR_COLORS[h % AVATAR_COLORS.length];
         }
 
         // --- rendering (textContent / createElement only) ----------------
@@ -508,65 +532,50 @@
 
         function cardEl(issue) {
           var card = el("div", "card");
-          var prio = priorityInfo(issue.priority);
-          if (prio.flag) {
-            card.dataset.flag = "1";
-            card.style.setProperty("--flag", prio.color);
-          }
-
-          var top = el("div", "card-top");
-          top.appendChild(el("span", "id", "#" + issue.id));
-          if (prio.flag) top.appendChild(el("span", "prio", prio.label));
-          card.appendChild(top);
-
+          card.appendChild(el("span", "id", "#" + issue.id));
           card.appendChild(el("p", "subject", issue.subject || "Untitled"));
 
           var meta = el("div", "meta");
           if (issue.assigned_to) {
-            var who = el("span", "who");
-            who.appendChild(el("span", "ava", initials(issue.assigned_to)));
-            who.appendChild(el("span", null, issue.assigned_to));
-            meta.appendChild(who);
+            var ava = el("span", "ava", initials(issue.assigned_to));
+            ava.style.background = avatarColor(issue.assigned_to);
+            ava.title = issue.assigned_to;
+            meta.appendChild(ava);
           } else {
-            meta.appendChild(el("span", "who none", "Unassigned"));
+            var none = el("span", "ava none");
+            none.title = "Unassigned";
+            meta.appendChild(none);
           }
-          if (issue.tracker) meta.appendChild(el("span", "chip", issue.tracker));
+          var prio = priorityPill(issue.priority);
+          if (prio) {
+            meta.appendChild(el("span", "pill-prio " + prio.cls, prio.label));
+          } else {
+            meta.appendChild(el("span"));
+          }
           card.appendChild(meta);
           return card;
         }
 
-        function columnEl(status, issues, accent, maxCount) {
+        function columnEl(status, issues, dot) {
           var col = el("div", "col");
 
           var head = el("div", "col-head");
-          var row = el("div", "col-top");
-          var nameWrap = el("div", "col-name");
-          var dot = el("span", "dot");
-          dot.style.background = accent;
-          nameWrap.appendChild(dot);
-          nameWrap.appendChild(el("span", null, status.name));
-          row.appendChild(nameWrap);
-          row.appendChild(el("span", "col-count", String(issues.length)));
-          head.appendChild(row);
-
-          var bar = el("div", "bar");
-          var fill = el("i");
-          var pct =
-            maxCount > 0 ? Math.round((issues.length / maxCount) * 100) : 0;
-          fill.style.width = pct + "%";
-          fill.style.background = accent;
-          if (issues.length === 0) fill.style.opacity = "0";
-          bar.appendChild(fill);
-          head.appendChild(bar);
+          var dotEl = el("span", "dot");
+          dotEl.style.background = dot;
+          head.appendChild(dotEl);
+          head.appendChild(el("span", "col-name", status.name));
+          head.appendChild(el("span", "col-count", String(issues.length)));
           col.appendChild(head);
 
+          var body = el("div", "col-body");
           if (issues.length === 0) {
-            col.appendChild(el("div", "col-empty", "No issues"));
+            body.appendChild(el("div", "col-empty", "No issues"));
           } else {
             issues.forEach(function (it) {
-              col.appendChild(cardEl(it));
+              body.appendChild(cardEl(it));
             });
           }
+          col.appendChild(body);
           return col;
         }
 
@@ -606,21 +615,15 @@
             truncatedEl.hidden = true;
           }
 
-          var maxCount = 0;
-          payload.statuses.forEach(function (s) {
-            var c = buckets[s.id].length;
-            if (c > maxCount) maxCount = c;
-          });
-
           var board = el("div", "board");
           if (!payload.statuses.length) {
             board.appendChild(el("div", "panel", "No statuses to display."));
           } else {
             var openIndex = 0;
             payload.statuses.forEach(function (s) {
-              var accent = statusAccent(s, openIndex);
+              var dot = statusDot(s, openIndex);
               if (!s.is_closed) openIndex++;
-              board.appendChild(columnEl(s, buckets[s.id], accent, maxCount));
+              board.appendChild(columnEl(s, buckets[s.id], dot));
             });
           }
           rootEl.replaceChildren(board);
