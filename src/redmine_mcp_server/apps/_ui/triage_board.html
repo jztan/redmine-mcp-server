@@ -457,7 +457,6 @@
         var toastEl = document.getElementById("toast");
         var readOnly = false;
         var draggedCard = null;
-        var dragOriginBody = null;
         var toastTimer = 0;
 
         // --- transport ---------------------------------------------------
@@ -662,23 +661,30 @@
           card.draggable = !on && !readOnly;
         }
 
-        function placeCardInStatus(card, statusId) {
+        function placeCardInStatus(card, statusId, originStatus) {
           var body = document.querySelector(
             '.col-body[data-status-id="' + statusId + '"]'
           );
+          if (!body) {
+            body = document.querySelector(
+              '.col-body[data-status-id="' + originStatus + '"]'
+            );
+            statusId = originStatus;
+          }
           if (body) {
             body.appendChild(card);
             card.dataset.statusId = String(statusId);
-          } else if (dragOriginBody) {
-            dragOriginBody.appendChild(card);
           }
           reflow();
         }
 
         function revertMove(card, originStatus) {
-          if (dragOriginBody) dragOriginBody.appendChild(card);
+          var originBody = document.querySelector(
+            '.col-body[data-status-id="' + originStatus + '"]'
+          );
+          if (originBody) originBody.appendChild(card);
           card.dataset.statusId = String(originStatus);
-          setPayloadStatus(card.dataset.issueId, originStatus);
+          setPayloadStatus(card.dataset.issueId, parseInt(originStatus, 10));
           reflow();
         }
 
@@ -707,7 +713,7 @@
             return; // confirmed
           }
           // Redmine kept/changed to a different status than requested.
-          placeCardInStatus(card, actual);
+          placeCardInStatus(card, actual, originStatus);
           setPayloadStatus(card.dataset.issueId, actual);
           var name = statusNameById(actual);
           showToast(
@@ -750,7 +756,6 @@
             return;
           }
           draggedCard = card;
-          dragOriginBody = card.parentNode;
           card.classList.add("dragging");
           try {
             e.dataTransfer.setData("text/plain", card.dataset.issueId);
