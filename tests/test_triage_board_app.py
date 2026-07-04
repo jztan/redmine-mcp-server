@@ -92,3 +92,33 @@ async def test_build_board_payload_passes_through_issues_error():
     with ps, pi:
         payload = await triage_board._build_board_payload(9)
     assert payload == {"error": "no access"}
+
+
+# Importing the package registers the resource + tools on the shared mcp.
+from redmine_mcp_server import apps  # noqa: E402,F401
+from redmine_mcp_server.server import mcp  # noqa: E402
+
+
+@pytest.mark.asyncio
+async def test_ui_resource_registered():
+    res = await mcp.get_resource("ui://redmine/triage-board.html")
+    assert res.mime_type == "text/html;profile=mcp-app"
+    body = await res.read()
+    assert isinstance(body, str) and body.strip()
+
+
+@pytest.mark.asyncio
+async def test_show_triage_board_meta_points_at_ui():
+    tool = await mcp.get_tool("show_triage_board")
+    ui = tool.meta["ui"]
+    assert ui["resourceUri"] == "ui://redmine/triage-board.html"
+    assert ui["visibility"] == ["model"]
+    assert ui.get("csp", {}) == {}  # no external domains declared
+
+
+@pytest.mark.asyncio
+async def test_backend_tool_is_app_only():
+    tool = await mcp.get_tool("get_triage_board_data")
+    ui = tool.meta["ui"]
+    assert ui["visibility"] == ["app"]
+    assert "resourceUri" not in ui

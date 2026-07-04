@@ -1239,6 +1239,26 @@ manage_issue_category(action="delete", category_id=3, reassign_to_id=7)
 
 ---
 
+## MCP Apps (Interactive Tools)
+
+### `show_triage_board`
+
+Render an interactive, read-only triage board of a project's issues (MCP
+Apps). Columns are issue statuses; cards show id, subject, assignee, and
+priority. Requires a client that supports MCP Apps rendering.
+
+**Parameters:**
+- `project_id` (int | str, required): project to display.
+- `filters` (dict, optional): extra Redmine filters, same as `list_redmine_issues`.
+
+### `get_triage_board_data`
+
+Backend data source for the triage board's Refresh action. Returns the same
+payload as `show_triage_board` without a UI resource. Called by the board's
+iframe, not normally invoked directly.
+
+---
+
 ## Time Tracking
 
 ### `list_time_entries`
