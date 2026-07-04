@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Interactive `triage-board` MCP App (first slice of the Interactive UI /
+  `ext-apps` track): the new `show_triage_board` tool renders a project's issues
+  as a live, read-only board grouped by status inside clients that support the
+  MCP Apps extension, backed by a `ui://` HTML resource served over the existing
+  streamable-HTTP transport. A Refresh action re-fetches through the app-callable
+  `get_triage_board_data` tool. Self-loads, auto-resizes to fit, and verified
+  end-to-end in Claude Desktop.
 
 ## [2.5.0] - 2026-07-04
 ### Added

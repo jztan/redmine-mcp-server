@@ -5,7 +5,7 @@
 - **Current Version:** v2.5.0 (released 2026-07-04)
 - **MCP Registry Status:** Published
 - **Test Suite:** 1375 unit tests + 85 integration tests. Integration tests gate on environment: a sandbox Redmine, plugin flags (`REDMINE_AGILE_ENABLED` etc.), and the destructive OAuth test behind `RUN_DESTRUCTIVE_TESTS=1`. Tests that can't run in the current environment skip cleanly with a clear reason. Run them locally with `python tests/run_tests.py --all` or `--integration`.
-- **Tools:** 41 core + 6 plugin-gated + 1 admin-gated (maximum 48 with all flags enabled)
+- **Tools:** 43 core + 6 plugin-gated + 1 admin-gated (maximum 50 with all flags enabled). The core count includes the two `triage-board` tools (`show_triage_board`, plus the app-only `get_triage_board_data` which is registered but hidden from the model's tool list). Note: the 6 plugin tools are always registered and listed; their flag is enforced at call time (a disabled call returns an error), so disabling a plugin does not hide its tools. Only the 1 admin tool is conditionally registered (hidden unless `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`).
 
 ---
 
@@ -42,10 +42,13 @@ Committed direction (2026-06-27): become a reference adopter of the official [MC
 
 **First slice (proceeding).** A read-only `triage-board` that renders live issues from `list_redmine_issues`, proven end-to-end in one target client before any write-back is wired. It is the cheapest view and seeds the committed Apps work, so it proceeds without waiting on the #168 poll; the poll shapes view #2 onward. Two server-specific unknowns to settle in design: serving the `ui://` resource over the streamable-HTTP transport, and how the app's `tools/call` callbacks authenticate under the `oauth` / `oauth-proxy` modes (the auth-times-UI intersection is the genuinely hard part). Interactive writes (for example drag-to-reassign via `update_redmine_issue`) follow once rendering is proven.
 
-- [ ] Read-only `triage-board` slice rendered in one target client (proceeds now)
-- [ ] Resolve `ui://`-over-streamable-HTTP serving and app-callback auth under the OAuth modes
+- [x] Read-only `triage-board` slice rendered in one target client (Claude Desktop; self-loads, auto-resizes, columns fit the pane, styled to the #168 mockup)
+- [x] Serve the `ui://` resource over streamable-HTTP: resolved. A `ui://` resource is a normal MCP resource read via `resources/read` over the existing `/mcp` transport, so no new HTTP route was needed.
+- [ ] Verify app-callback auth under the OAuth modes: the app's `tools/call` callback is proven end-to-end under `legacy`, where it inherits the session's auth with no new surface. Re-verify under `oauth` / `oauth-proxy` (the app never contacts the server directly; the host forwards the call over its own authenticated connection, so this is expected to hold).
 - [ ] Drive traffic to [#168](https://github.com/jztan/redmine-mcp-server/discussions/168) via the visibility push to prioritize later views
 - [ ] Interactive write-back, plus additional views prioritized by the #168 signal
+
+> **Client note:** MCP hosts cache the `ui://` resource. After changing the board HTML, a server restart alone is not enough for an already-connected client (Claude Desktop) to pick it up: fully quit and reopen the client to refetch the resource.
 
 ---
 
