@@ -113,11 +113,29 @@ async def show_triage_board(
     project_id: Union[int, str],
     filters: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Render an interactive triage board of a project's issues.
+    """Show a project's issues as a live, interactive board (Kanban view).
 
-    Shows the project's issues grouped into columns by status inside
-    clients that support MCP Apps. Read-only. ``filters`` accepts the same
-    extra Redmine filter dict as ``list_redmine_issues``.
+    Use this whenever the user wants to see, view, browse, open, or triage
+    a project's issues visually instead of as a text list. Natural requests
+    that should call this tool include: "show me the board", "open the
+    issue board for <project>", "give me a kanban / board view", "let me
+    see project X's issues", "triage <project>", "what's the status
+    breakdown for <project>", or any ask to display, visualize, or get an
+    overview of a project's issues.
+
+    Renders the issues grouped into columns by status in clients that
+    support interactive MCP Apps; other clients still receive the same
+    structured data. Prefer this over ``list_redmine_issues`` when the goal
+    is to look at or work through a project's issues; use
+    ``list_redmine_issues`` when the user explicitly wants a plain list or
+    is filtering issues to feed another step. Read-only.
+
+    Args:
+        project_id: The project to display, as a numeric ID or string
+            identifier (e.g. ``1`` or ``"testing-project1"``).
+        filters: Optional extra Redmine filter dict, the same shape
+            ``list_redmine_issues`` accepts (e.g. ``{"assigned_to_id":
+            "me"}`` or ``{"tracker_id": 1}``).
     """
     return await _build_board_payload(project_id, filters)
 
