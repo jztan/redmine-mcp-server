@@ -1243,7 +1243,7 @@ manage_issue_category(action="delete", category_id=3, reassign_to_id=7)
 
 ### `show_triage_board`
 
-Render an interactive triage board of a project's issues (MCP Apps). Columns
+Render an interactive Kanban board of a project's issues (MCP Apps). Columns
 are issue statuses; cards show id, subject, assignee, and priority. Drag a
 card to another status column to change the issue's status in Redmine (writes
 back via `update_redmine_issue`; the move reverts with an explanation if
@@ -1257,7 +1257,7 @@ rendering.
 
 ### `get_triage_board_data`
 
-Backend data source for the triage board's Refresh action. Returns the same
+Backend data source for the Kanban board's Refresh action. Returns the same
 payload as `show_triage_board` without a UI resource. Called by the board's
 iframe, not normally invoked directly.
 
