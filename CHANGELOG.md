@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `update_redmine_issue` (an optimistic move that reverts with an explanation when
   Redmine rejects the transition); disabled in read-only mode. The board self-loads
   and auto-resizes to fit.
+### Fixed
+- Compatibility with fastmcp 3.4.3: the argument-validation middleware now also
+  unwraps fastmcp's own `ValidationError` (which since 3.4.3 wraps the underlying
+  pydantic error as its `__cause__`), so invalid tool arguments keep returning the
+  clean `INVALID_ARGUMENTS` envelope instead of a raw pydantic error dump. Still
+  compatible with earlier fastmcp 3.x releases.
 
 ## [2.5.0] - 2026-07-04
 ### Added

@@ -20,6 +20,16 @@ from fastmcp.tools.tool import ToolResult
 from mcp.types import TextContent
 from pydantic import ValidationError
 
+try:
+    # fastmcp >=3.4.3 wraps a tool's argument-validation failure in its
+    # own ValidationError (a FastMCPError, *not* a pydantic error) and
+    # exposes the original pydantic error as ``__cause__``
+    # (see PrefectHQ/fastmcp#4128). Older releases let the raw pydantic
+    # ValidationError propagate through the middleware instead.
+    from fastmcp.exceptions import ValidationError as FastMCPValidationError
+except ImportError:  # pragma: no cover - very old fastmcp without the symbol
+    FastMCPValidationError = ValidationError
+
 
 def _format_argument_error(exc: ValidationError) -> Dict[str, Any]:
     """Build the standard error envelope from a Pydantic ValidationError.
@@ -107,14 +117,24 @@ class CleanValidationErrorMiddleware(Middleware):
     async def on_call_tool(self, context, call_next):
         try:
             return await call_next(context)
-        except ValidationError as exc:
+        except (ValidationError, FastMCPValidationError) as exc:
             # Argument validation runs before the tool body, so any
             # ValidationError raised through here is caller-input-shaped.
             # (Tool bodies that raise ValidationError internally would
             # also be caught here, which is acceptable: such errors
             # almost always indicate bad data passed into a pydantic
             # model anyway.)
-            payload = _format_argument_error(exc)
+            #
+            # fastmcp >=3.4.3 wraps the pydantic error in its own
+            # ValidationError; unwrap to the underlying pydantic error so
+            # ``_format_argument_error`` can read ``.errors()``. On older
+            # versions ``exc`` already is the pydantic error. Anything
+            # whose cause is not a pydantic ValidationError is not an
+            # argument-validation failure we can format -- re-raise it.
+            pydantic_exc = exc if isinstance(exc, ValidationError) else exc.__cause__
+            if not isinstance(pydantic_exc, ValidationError):
+                raise
+            payload = _format_argument_error(pydantic_exc)
 
             # Honor FastMCP's output-schema wrap convention. Tools whose
             # return type is not a plain dict (e.g. Union[List, Dict])
