@@ -7,6 +7,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Interactive `triage-board` MCP App (Interactive UI / `ext-apps` track): the new
+  `show_triage_board` tool renders a project's issues as a live Kanban board
+  grouped by status inside clients that support the MCP Apps extension, backed
+  by a `ui://` HTML resource served over the existing streamable-HTTP transport,
+  with a Refresh action that re-fetches through the app-callable
+  `get_triage_board_data` tool.
+  Drag a card to another status column to change the issue's status in Redmine via
+  `update_redmine_issue` (an optimistic move that reverts with an explanation when
+  Redmine rejects the transition); disabled in read-only mode. The board self-loads
+  and auto-resizes to fit.
 
 ## [2.5.0] - 2026-07-04
 ### Added

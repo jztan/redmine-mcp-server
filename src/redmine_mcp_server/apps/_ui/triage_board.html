@@ -1,0 +1,1187 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Triage Board</title>
+    <style>
+      :root {
+        --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica,
+          Arial, sans-serif;
+        --surface: transparent;
+        --shell: rgba(255, 255, 255, 0.68);
+        --panel: rgba(234, 240, 248, 0.88);
+        --panel-2: rgba(223, 231, 243, 0.96);
+        --lane: rgba(255, 255, 255, 0.4);
+        --card: #ffffff;
+        --border: rgba(194, 205, 220, 0.78);
+        --border-strong: rgba(175, 188, 208, 0.9);
+        --text: #162033;
+        --text-2: #5f6b7c;
+        --text-3: #8d98aa;
+        --accent: #2563eb;
+        --accent-soft: rgba(219, 231, 255, 0.9);
+        --button-bg: rgba(248, 251, 255, 0.92);
+        --button-border: rgba(207, 217, 236, 0.95);
+        --shadow: 0 8px 24px rgba(31, 41, 55, 0.06);
+        --card-shadow: 0 3px 10px rgba(37, 99, 235, 0.05);
+        --wash: rgba(255, 255, 255, 0.16);
+        --prio-normal-bg: #edf2fa;
+        --prio-normal-fg: #5d6b80;
+        --prio-low-bg: #eef2f5;
+        --prio-low-fg: #748093;
+        --prio-high-bg: #fff1ce;
+        --prio-high-fg: #8d5d06;
+        --prio-urgent-bg: #e5484d;
+        --prio-urgent-fg: #ffffff;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --surface: transparent;
+          --shell: rgba(20, 24, 30, 0.55);
+          --panel: rgba(31, 36, 44, 0.96);
+          --panel-2: rgba(45, 51, 61, 0.98);
+          --lane: rgba(22, 27, 34, 0.9);
+          --card: #2b313b;
+          --border: rgba(96, 109, 129, 0.38);
+          --border-strong: rgba(120, 135, 159, 0.56);
+          --text: #f3f6fb;
+          --text-2: #b9c3d4;
+          --text-3: #8d99ad;
+          --accent: #73a7ff;
+          --accent-soft: rgba(61, 95, 160, 0.42);
+          --button-bg: rgba(44, 51, 63, 0.96);
+          --button-border: rgba(97, 113, 138, 0.62);
+          --shadow: 0 10px 30px rgba(0, 0, 0, 0.24);
+          --card-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+          --wash: rgba(255, 255, 255, 0.035);
+          --prio-normal-bg: #394352;
+          --prio-normal-fg: #c0c9d8;
+          --prio-low-bg: #343d4a;
+          --prio-low-fg: #aab4c5;
+          --prio-high-bg: #58461d;
+          --prio-high-fg: #ffd98a;
+        }
+      }
+      :root[data-theme="light"] {
+        --surface: transparent;
+        --shell: rgba(255, 255, 255, 0.68);
+        --panel: rgba(234, 240, 248, 0.88);
+        --panel-2: rgba(223, 231, 243, 0.96);
+        --lane: rgba(255, 255, 255, 0.4);
+        --card: #ffffff;
+        --border: rgba(194, 205, 220, 0.78);
+        --border-strong: rgba(175, 188, 208, 0.9);
+        --text: #162033;
+        --text-2: #5f6b7c;
+        --text-3: #8d98aa;
+        --accent: #2563eb;
+        --accent-soft: rgba(219, 231, 255, 0.9);
+        --button-bg: rgba(248, 251, 255, 0.92);
+        --button-border: rgba(207, 217, 236, 0.95);
+        --shadow: 0 8px 24px rgba(31, 41, 55, 0.06);
+        --card-shadow: 0 3px 10px rgba(37, 99, 235, 0.05);
+        --wash: rgba(255, 255, 255, 0.16);
+        --prio-normal-bg: #edf2fa;
+        --prio-normal-fg: #5d6b80;
+        --prio-low-bg: #eef2f5;
+        --prio-low-fg: #748093;
+        --prio-high-bg: #fff1ce;
+        --prio-high-fg: #8d5d06;
+      }
+      :root[data-theme="dark"] {
+        --surface: transparent;
+        --shell: rgba(20, 24, 30, 0.55);
+        --panel: rgba(31, 36, 44, 0.96);
+        --panel-2: rgba(45, 51, 61, 0.98);
+        --lane: rgba(22, 27, 34, 0.9);
+        --card: #2b313b;
+        --border: rgba(96, 109, 129, 0.38);
+        --border-strong: rgba(120, 135, 159, 0.56);
+        --text: #f3f6fb;
+        --text-2: #b9c3d4;
+        --text-3: #8d99ad;
+        --accent: #73a7ff;
+        --accent-soft: rgba(61, 95, 160, 0.42);
+        --button-bg: rgba(44, 51, 63, 0.96);
+        --button-border: rgba(97, 113, 138, 0.62);
+        --shadow: 0 10px 30px rgba(0, 0, 0, 0.24);
+        --card-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+        --wash: rgba(255, 255, 255, 0.035);
+        --prio-normal-bg: #394352;
+        --prio-normal-fg: #c0c9d8;
+        --prio-low-bg: #343d4a;
+        --prio-low-fg: #aab4c5;
+        --prio-high-bg: #58461d;
+        --prio-high-fg: #ffd98a;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        background: transparent;
+      }
+      body {
+        background: var(--surface);
+        color: var(--text);
+        font-family: var(--font-sans);
+        font-size: 13px;
+        line-height: 1.4;
+        -webkit-font-smoothing: antialiased;
+        padding: 10px 0 0;
+      }
+
+      .shell {
+        background: var(--shell);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        box-shadow: var(--shadow);
+        overflow: hidden;
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+      }
+      @media (prefers-color-scheme: dark) {
+        .shell {
+          border-color: rgba(87, 101, 122, 0.32);
+        }
+      }
+      :root[data-theme="dark"] .shell {
+        border-color: rgba(87, 101, 122, 0.32);
+      }
+
+      .head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 22px 24px 18px;
+        border-bottom: 1px solid var(--border);
+      }
+      .head-copy {
+        min-width: 0;
+      }
+      .head h1 {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 700;
+        letter-spacing: -0.03em;
+      }
+      .head .sub {
+        margin-top: 4px;
+        font-size: 12px;
+        color: var(--text-2);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .head-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .head .stamp {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--text-2);
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 7px 12px;
+        font-variant-numeric: tabular-nums;
+      }
+      .btn {
+        font: inherit;
+        font-size: 12px;
+        font-weight: 650;
+        color: var(--accent);
+        background: var(--button-bg);
+        border: 1px solid var(--button-border);
+        border-radius: 999px;
+        padding: 7px 13px;
+        cursor: pointer;
+        transition: background 0.12s ease, border-color 0.12s ease,
+          transform 0.12s ease;
+      }
+      .btn:hover:not([disabled]) {
+        background: var(--accent-soft);
+        border-color: var(--accent);
+        transform: translateY(-1px);
+      }
+      .btn:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+      .btn[disabled] {
+        opacity: 0.45;
+        cursor: default;
+      }
+      .btn[data-busy="1"] {
+        color: var(--text-3);
+      }
+
+      .notice {
+        margin: 16px 24px 0;
+        font-size: 11.5px;
+        color: var(--text-2);
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 10px 12px;
+      }
+      .notice[hidden] {
+        display: none;
+      }
+
+      .board {
+        display: flex;
+        flex-wrap: nowrap;
+        gap: 12px;
+        padding: 18px 18px 16px;
+        align-items: flex-start;
+        background: var(--panel);
+        overflow-x: auto;
+        overflow-y: hidden;
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+      }
+      .board::-webkit-scrollbar {
+        width: 0;
+        height: 0;
+      }
+      .col {
+        flex: 0 0 min(220px, calc((100% - 36px) / 4));
+        min-width: 220px;
+        background: var(--lane);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        padding: 12px;
+      }
+      .col-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 2px 12px;
+      }
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        flex: 0 0 auto;
+        box-shadow: 0 0 0 4px var(--card);
+      }
+      .col-name {
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .col-count {
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--text-2);
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 2px 8px;
+        min-width: 24px;
+        text-align: center;
+        font-variant-numeric: tabular-nums;
+        flex: 0 0 auto;
+      }
+
+      .col-body {
+        max-height: 358px;
+        overflow-y: auto;
+        overflow-x: hidden;
+        margin: 0 -2px;
+        padding: 0 2px 1px;
+        overscroll-behavior: contain;
+      }
+      .col-body::-webkit-scrollbar {
+        width: 8px;
+      }
+      .col-body::-webkit-scrollbar-thumb {
+        background: var(--border-strong);
+        border-radius: 4px;
+      }
+      .col-body::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 12px 13px 13px;
+        margin-bottom: 8px;
+        box-shadow: var(--card-shadow);
+      }
+      .card:last-child {
+        margin-bottom: 2px;
+      }
+      .id {
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--accent);
+      }
+      .subject {
+        margin: 6px 0 0;
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--text);
+        line-height: 1.45;
+      }
+      .meta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 8px 10px;
+        margin-top: 13px;
+      }
+      .ava {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        flex: 0 0 auto;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 10px;
+        font-weight: 700;
+        color: #fff;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+      }
+      .ava.none {
+        background: transparent;
+        border: 1.5px dashed var(--border-strong);
+      }
+      .pill-prio {
+        font-size: 11px;
+        font-weight: 700;
+        padding: 4px 10px;
+        border-radius: 999px;
+        white-space: nowrap;
+        flex: 0 0 auto;
+      }
+      .pill-prio.normal {
+        background: var(--prio-normal-bg);
+        color: var(--prio-normal-fg);
+      }
+      .pill-prio.low {
+        background: var(--prio-low-bg);
+        color: var(--prio-low-fg);
+      }
+      .pill-prio.high {
+        background: var(--prio-high-bg);
+        color: var(--prio-high-fg);
+      }
+      .pill-prio.urgent {
+        background: var(--prio-urgent-bg);
+        color: var(--prio-urgent-fg);
+      }
+
+      .col-empty {
+        border: 1px dashed var(--border-strong);
+        border-radius: 14px;
+        padding: 20px 10px;
+        text-align: center;
+        font-size: 11px;
+        color: var(--text-3);
+        background: var(--lane);
+      }
+
+      .card[draggable="true"] {
+        cursor: grab;
+      }
+      .card.dragging {
+        opacity: 0.5;
+        cursor: grabbing;
+      }
+      .card[data-busy="1"] {
+        opacity: 0.6;
+        pointer-events: none;
+      }
+      .col-body.drop-target {
+        outline: 2px dashed var(--accent);
+        outline-offset: 2px;
+        border-radius: 14px;
+      }
+      .ro-pill {
+        font-size: 10.5px;
+        font-weight: 700;
+        color: var(--text-2);
+        background: var(--accent-soft);
+        border: 1px solid var(--button-border);
+        border-radius: 999px;
+        padding: 5px 9px;
+      }
+      .ro-pill[hidden] {
+        display: none;
+      }
+      .toast {
+        position: fixed;
+        left: 50%;
+        bottom: 14px;
+        transform: translateX(-50%);
+        max-width: 90%;
+        padding: 8px 14px;
+        border-radius: 8px;
+        font-size: 12px;
+        font-weight: 500;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+        z-index: 10;
+      }
+      .toast[hidden] {
+        display: none;
+      }
+      .toast.error {
+        background: #e5484d;
+        color: #fff;
+      }
+      .toast.info {
+        background: var(--panel-2);
+        color: var(--text);
+      }
+
+      .panel {
+        margin: 24px;
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        padding: 28px 18px;
+        text-align: center;
+        color: var(--text-2);
+        font-size: 12.5px;
+        background: var(--wash);
+      }
+      .panel.error {
+        border-color: #e5484d33;
+        background: #e5484d0d;
+        color: #c0393e;
+      }
+      @media (prefers-color-scheme: dark) {
+        .panel.error {
+          color: #ffb2b0;
+        }
+      }
+      :root[data-theme="dark"] .panel.error {
+        color: #ffb2b0;
+      }
+
+      .foot {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 16px 24px 20px;
+        border-top: 1px solid var(--border);
+        background: var(--wash);
+        color: var(--text-2);
+        font-size: 11.5px;
+      }
+      .foot-note {
+        color: var(--text-3);
+        text-align: right;
+      }
+
+      @media (max-width: 720px) {
+        body {
+          padding-top: 8px;
+        }
+        .head,
+        .board,
+        .foot {
+          padding-left: 16px;
+          padding-right: 16px;
+        }
+        .head {
+          padding-top: 18px;
+          padding-bottom: 16px;
+          flex-direction: column;
+        }
+        .head-actions {
+          justify-content: flex-start;
+        }
+        .board {
+          flex-direction: column;
+          gap: 14px;
+          overflow-x: visible;
+        }
+        .col {
+          flex: none;
+          min-width: 0;
+          width: 100%;
+        }
+        .foot {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+        .foot-note {
+          text-align: left;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <section class="shell" aria-label="Issue board">
+      <header class="head">
+        <div class="head-copy">
+          <h1>Kanban</h1>
+          <div class="sub">
+            <span id="project-name">Loading project</span>
+            <span aria-hidden="true"> - </span>
+            <span id="total"></span>
+          </div>
+        </div>
+        <div class="head-actions">
+          <span id="ro-pill" class="ro-pill" hidden>Read-only</span>
+          <span id="stamp" class="stamp">via redmine-mcp-server</span>
+          <button id="refresh-btn" class="btn" disabled>Refresh</button>
+        </div>
+      </header>
+      <div id="truncated" class="notice" hidden></div>
+      <div id="root">
+        <div class="panel" id="loading">Loading issues...</div>
+      </div>
+      <div class="foot">
+        <span>Drag cards between statuses, or refresh to sync the latest state.</span>
+        <span class="foot-note">Status changes are sent with `update_redmine_issue`.</span>
+      </div>
+    </section>
+    <div id="toast" class="toast" hidden></div>
+
+    <script>
+      (function () {
+        "use strict";
+
+        var PARENT = window.parent;
+        var PROTOCOL_VERSION = "2026-01-26";
+        var DOT_ACCENTS = [
+          "#94a3b8",
+          "#2f6bff",
+          "#12b76a",
+          "#f59e0b",
+          "#8b5cf6",
+          "#06aed4",
+        ];
+        var CLOSED_DOT = "#94a3b8";
+        var AVATAR_COLORS = [
+          "#8b5cf6",
+          "#12b76a",
+          "#f59e0b",
+          "#2f6bff",
+          "#ec4899",
+          "#06aed4",
+          "#e5484d",
+          "#6366f1",
+        ];
+
+        var nextId = 1;
+        var pending = new Map();
+        var state = {
+          payload: null,
+          projectId: null,
+          filters: null,
+          ready: false,
+        };
+
+        var rootEl = document.getElementById("root");
+        var nameEl = document.getElementById("project-name");
+        var totalEl = document.getElementById("total");
+        var stampEl = document.getElementById("stamp");
+        var truncatedEl = document.getElementById("truncated");
+        var refreshBtn = document.getElementById("refresh-btn");
+        var roPill = document.getElementById("ro-pill");
+        var toastEl = document.getElementById("toast");
+        var readOnly = false;
+        var draggedCard = null;
+        var toastTimer = 0;
+
+        // --- transport ---------------------------------------------------
+        function post(msg) {
+          PARENT.postMessage(msg, "*");
+        }
+        function request(method, params) {
+          var id = nextId++;
+          post({ jsonrpc: "2.0", id: id, method: method, params: params });
+          return new Promise(function (resolve, reject) {
+            // Reject and clean up if the host never answers, so a dropped
+            // reply cannot leave the request pending (and Refresh stuck).
+            var timer = setTimeout(function () {
+              if (pending.has(id)) {
+                pending.delete(id);
+                reject(new Error(method + " timed out"));
+              }
+            }, 15000);
+            pending.set(id, {
+              resolve: function (v) {
+                clearTimeout(timer);
+                resolve(v);
+              },
+              reject: function (e) {
+                clearTimeout(timer);
+                reject(e);
+              },
+            });
+          });
+        }
+        function notify(method, params) {
+          post({ jsonrpc: "2.0", method: method, params: params || {} });
+        }
+
+        function onMessage(event) {
+          if (event.source !== PARENT) return;
+          var msg = event.data;
+          if (!msg || msg.jsonrpc !== "2.0") return;
+
+          if (
+            msg.id !== undefined &&
+            (msg.result !== undefined || msg.error !== undefined)
+          ) {
+            var waiter = pending.get(msg.id);
+            if (!waiter) return;
+            pending.delete(msg.id);
+            if (msg.error) {
+              waiter.reject(new Error(msg.error.message || "request failed"));
+            } else {
+              waiter.resolve(msg.result);
+            }
+            return;
+          }
+
+          if (msg.method === "ping") {
+            if (msg.id !== undefined) {
+              post({ jsonrpc: "2.0", id: msg.id, result: {} });
+            }
+            return;
+          }
+          if (msg.method === "ui/notifications/tool-input") {
+            var args = (msg.params && msg.params.arguments) || {};
+            if (args.project_id !== undefined && args.project_id !== null) {
+              state.projectId = args.project_id;
+              refreshBtn.disabled = false;
+            }
+            if (args.filters !== undefined) {
+              state.filters = args.filters;
+            }
+            maybeInitialLoad();
+            return;
+          }
+          if (msg.method === "ui/notifications/tool-result") {
+            applyResult(msg.params);
+            return;
+          }
+          if (msg.id !== undefined) {
+            post({
+              jsonrpc: "2.0",
+              id: msg.id,
+              error: { code: -32601, message: "Method not found" },
+            });
+          }
+        }
+
+        // --- auto-resize (mirrors the ext-apps SDK technique) ------------
+        var lastW = 0;
+        var lastH = 0;
+        function reportSize() {
+          if (!state.ready) return;
+          // Measure true content height: momentarily let <html> grow to its
+          // content, otherwise a host-fixed iframe height clamps the reading
+          // and the board renders with an internal scrollbar instead.
+          var html = document.documentElement;
+          var prev = html.style.height;
+          html.style.height = "max-content";
+          var h = Math.ceil(html.getBoundingClientRect().height);
+          html.style.height = prev;
+          var w = Math.ceil(window.innerWidth);
+          if (w === lastW && h === lastH) return;
+          lastW = w;
+          lastH = h;
+          notify("ui/notifications/size-changed", { width: w, height: h });
+        }
+        var resizeQueued = false;
+        function queueResize() {
+          if (resizeQueued) return;
+          resizeQueued = true;
+          requestAnimationFrame(function () {
+            resizeQueued = false;
+            reportSize();
+          });
+        }
+
+        // --- data helpers ------------------------------------------------
+        function statusDot(status, openIndex) {
+          if (status && status.is_closed) return CLOSED_DOT;
+          return DOT_ACCENTS[openIndex % DOT_ACCENTS.length];
+        }
+        function priorityPill(name) {
+          if (!name) return null;
+          var n = name.toLowerCase();
+          if (n.indexOf("immediate") >= 0 || n.indexOf("urgent") >= 0) {
+            return { label: name, cls: "urgent" };
+          }
+          if (n.indexOf("high") >= 0) return { label: name, cls: "high" };
+          if (n.indexOf("low") >= 0) return { label: name, cls: "low" };
+          return { label: name, cls: "normal" };
+        }
+        function initials(person) {
+          var parts = String(person).trim().split(/\s+/);
+          var a = parts[0] ? parts[0][0] : "";
+          var b = parts.length > 1 ? parts[parts.length - 1][0] : "";
+          return a + b || "?";
+        }
+        function avatarColor(person) {
+          var h = 0;
+          var s = String(person);
+          for (var i = 0; i < s.length; i++) {
+            h = (h * 31 + s.charCodeAt(i)) >>> 0;
+          }
+          return AVATAR_COLORS[h % AVATAR_COLORS.length];
+        }
+
+        // --- rendering (textContent / createElement only) ----------------
+        function el(tag, cls, text) {
+          var n = document.createElement(tag);
+          if (cls) n.className = cls;
+          if (text !== undefined) n.textContent = text;
+          return n;
+        }
+
+        function showToast(message, kind) {
+          toastEl.textContent = message || "";
+          toastEl.className = "toast " + (kind === "info" ? "info" : "error");
+          toastEl.hidden = false;
+          if (toastTimer) clearTimeout(toastTimer);
+          toastTimer = setTimeout(function () {
+            toastEl.hidden = true;
+          }, 4000);
+        }
+
+        function statusNameById(statusId) {
+          var list = (state.payload && state.payload.statuses) || [];
+          for (var i = 0; i < list.length; i++) {
+            if (String(list[i].id) === String(statusId)) return list[i].name;
+          }
+          return null;
+        }
+
+        function setPayloadStatus(issueId, statusId) {
+          var issues = (state.payload && state.payload.issues) || [];
+          for (var i = 0; i < issues.length; i++) {
+            if (String(issues[i].id) === String(issueId)) {
+              issues[i].status_id = statusId;
+              return;
+            }
+          }
+        }
+
+        // Recompute per-column counts and empty-state placeholders from the
+        // live DOM, so moves and reverts never drift from the card positions.
+        function reflow() {
+          var cols = document.querySelectorAll(".col");
+          cols.forEach(function (col) {
+            var body = col.querySelector(".col-body");
+            var countEl = col.querySelector(".col-count");
+            if (!body) return;
+            var cards = body.querySelectorAll(".card");
+            if (countEl) countEl.textContent = String(cards.length);
+            var empty = body.querySelector(".col-empty");
+            if (cards.length === 0 && !empty) {
+              body.appendChild(el("div", "col-empty", "No issues"));
+            } else if (cards.length > 0 && empty) {
+              empty.remove();
+            }
+          });
+        }
+
+        function setCardBusy(card, on) {
+          card.dataset.busy = on ? "1" : "0";
+          card.draggable = !on && !readOnly;
+        }
+
+        function placeCardInStatus(card, statusId, originStatus) {
+          var body = document.querySelector(
+            '.col-body[data-status-id="' + statusId + '"]'
+          );
+          if (!body) {
+            body = document.querySelector(
+              '.col-body[data-status-id="' + originStatus + '"]'
+            );
+            statusId = originStatus;
+          }
+          if (body) {
+            body.appendChild(card);
+            card.dataset.statusId = String(statusId);
+          }
+          reflow();
+        }
+
+        function revertMove(card, originStatus) {
+          var originBody = document.querySelector(
+            '.col-body[data-status-id="' + originStatus + '"]'
+          );
+          if (originBody) originBody.appendChild(card);
+          card.dataset.statusId = String(originStatus);
+          setPayloadStatus(card.dataset.issueId, parseInt(originStatus, 10));
+          reflow();
+        }
+
+        function reconcile(card, result, targetNum, originStatus) {
+          if (result && result.isError) {
+            revertMove(card, originStatus);
+            showToast(extractError(result), "error");
+            return;
+          }
+          var data = result && result.structuredContent;
+          if (data && data.error) {
+            revertMove(card, originStatus);
+            showToast(String(data.error), "error");
+            return;
+          }
+          var actual =
+            data && data.status && data.status.id != null
+              ? data.status.id
+              : null;
+          if (actual === null) {
+            setPayloadStatus(card.dataset.issueId, targetNum);
+            return; // no status echoed; trust the optimistic move
+          }
+          if (String(actual) === String(targetNum)) {
+            setPayloadStatus(card.dataset.issueId, actual);
+            return; // confirmed
+          }
+          // Redmine landed on a different status than requested: either it
+          // kept the issue put (transition not allowed) or a workflow rule
+          // routed it somewhere else.
+          placeCardInStatus(card, actual, originStatus);
+          setPayloadStatus(card.dataset.issueId, actual);
+          var name = statusNameById(actual) || "status " + actual;
+          if (String(actual) === String(originStatus)) {
+            showToast("Redmine kept it in " + name, "error");
+          } else {
+            showToast("Redmine moved it to " + name, "info");
+          }
+        }
+
+        async function performMove(card, targetBody, targetStatus, originStatus) {
+          var issueId = parseInt(card.dataset.issueId, 10);
+          var targetNum = parseInt(targetStatus, 10);
+          targetBody.appendChild(card);
+          card.dataset.statusId = String(targetStatus);
+          setCardBusy(card, true);
+          setPayloadStatus(issueId, targetNum);
+          reflow();
+          try {
+            var result = await request("tools/call", {
+              name: "update_redmine_issue",
+              arguments: { issue_id: issueId, fields: { status_id: targetNum } },
+            });
+            reconcile(card, result, targetNum, originStatus);
+          } catch (e) {
+            revertMove(card, originStatus);
+            showToast(e.message || "Could not update the issue.", "error");
+          } finally {
+            setCardBusy(card, false);
+          }
+        }
+
+        function clearDropTargets() {
+          document.querySelectorAll(".col-body.drop-target").forEach(function (b) {
+            b.classList.remove("drop-target");
+          });
+        }
+
+        function onDragStart(e, card) {
+          if (card.dataset.busy === "1" || readOnly) {
+            e.preventDefault();
+            return;
+          }
+          draggedCard = card;
+          card.classList.add("dragging");
+          try {
+            e.dataTransfer.setData("text/plain", card.dataset.issueId);
+            e.dataTransfer.effectAllowed = "move";
+          } catch (x) {
+            /* older browsers */
+          }
+        }
+
+        function onDragEnd() {
+          if (draggedCard) draggedCard.classList.remove("dragging");
+          clearDropTargets();
+          draggedCard = null;
+        }
+
+        function onDragOver(e, body) {
+          if (!draggedCard) return;
+          e.preventDefault();
+          try {
+            e.dataTransfer.dropEffect = "move";
+          } catch (x) {
+            /* ignore */
+          }
+          body.classList.add("drop-target");
+        }
+
+        function onDrop(e, body) {
+          e.preventDefault();
+          body.classList.remove("drop-target");
+          var card = draggedCard;
+          if (!card) return;
+          var target = body.dataset.statusId;
+          var origin = card.dataset.statusId;
+          if (String(target) === String(origin)) return;
+          performMove(card, body, target, origin);
+        }
+
+        function cardEl(issue) {
+          var card = el("div", "card");
+          card.dataset.issueId = issue.id;
+          card.dataset.statusId = issue.status_id;
+          if (!readOnly) {
+            card.draggable = true;
+            card.addEventListener("dragstart", function (e) {
+              onDragStart(e, card);
+            });
+            card.addEventListener("dragend", onDragEnd);
+          }
+          card.appendChild(el("span", "id", "#" + issue.id));
+          card.appendChild(el("p", "subject", issue.subject || "Untitled"));
+
+          var meta = el("div", "meta");
+          if (issue.assigned_to) {
+            var ava = el("span", "ava", initials(issue.assigned_to));
+            ava.style.background = avatarColor(issue.assigned_to);
+            ava.title = issue.assigned_to;
+            meta.appendChild(ava);
+          } else {
+            var none = el("span", "ava none");
+            none.title = "Unassigned";
+            meta.appendChild(none);
+          }
+          var prio = priorityPill(issue.priority);
+          if (prio) {
+            meta.appendChild(el("span", "pill-prio " + prio.cls, prio.label));
+          } else {
+            meta.appendChild(el("span"));
+          }
+          card.appendChild(meta);
+          return card;
+        }
+
+        function columnEl(status, issues, dot) {
+          var col = el("div", "col");
+
+          var head = el("div", "col-head");
+          var dotEl = el("span", "dot");
+          dotEl.style.background = dot;
+          head.appendChild(dotEl);
+          head.appendChild(el("span", "col-name", status.name));
+          head.appendChild(el("span", "col-count", String(issues.length)));
+          col.appendChild(head);
+
+          var body = el("div", "col-body");
+          body.dataset.statusId = status.id;
+          if (!readOnly) {
+            body.addEventListener("dragover", function (e) {
+              onDragOver(e, body);
+            });
+            body.addEventListener("dragleave", function () {
+              body.classList.remove("drop-target");
+            });
+            body.addEventListener("drop", function (e) {
+              onDrop(e, body);
+            });
+          }
+          if (issues.length === 0) {
+            body.appendChild(el("div", "col-empty", "No issues"));
+          } else {
+            issues.forEach(function (it) {
+              body.appendChild(cardEl(it));
+            });
+          }
+          col.appendChild(body);
+          return col;
+        }
+
+        function render(payload) {
+          nameEl.textContent =
+            (payload.project && payload.project.name) || "Unknown project";
+          readOnly = !!payload.read_only;
+          roPill.hidden = !readOnly;
+
+          var buckets = {};
+          payload.statuses.forEach(function (s) {
+            buckets[s.id] = [];
+          });
+          payload.issues.forEach(function (it) {
+            if (buckets[it.status_id]) buckets[it.status_id].push(it);
+          });
+
+          var total = payload.issues.length;
+          totalEl.textContent = total === 1 ? "1 issue" : total + " issues";
+
+          if (payload.generated_at) {
+            var d = new Date(payload.generated_at);
+            stampEl.textContent = isNaN(d.getTime())
+              ? "via redmine-mcp-server"
+              : "via redmine-mcp-server - Updated " +
+                d.toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                });
+          } else {
+            stampEl.textContent = "via redmine-mcp-server";
+          }
+
+          if (payload.truncated) {
+            truncatedEl.textContent =
+              "Showing the first " +
+              total +
+              " issues. Narrow with a filter to see the rest.";
+            truncatedEl.hidden = false;
+          } else {
+            truncatedEl.hidden = true;
+          }
+
+          var board = el("div", "board");
+          if (!payload.statuses.length) {
+            board.appendChild(el("div", "panel", "No statuses to display."));
+          } else {
+            var openIndex = 0;
+            payload.statuses.forEach(function (s) {
+              var dot = statusDot(s, openIndex);
+              if (!s.is_closed) openIndex++;
+              board.appendChild(columnEl(s, buckets[s.id], dot));
+            });
+          }
+          rootEl.replaceChildren(board);
+          refreshBtn.disabled = false;
+          queueResize();
+        }
+
+        function renderError(message) {
+          rootEl.replaceChildren(
+            el("div", "panel error", message || "Something went wrong.")
+          );
+          refreshBtn.disabled =
+            state.projectId === null || state.projectId === undefined;
+          queueResize();
+        }
+
+        function applyResult(result) {
+          if (!result) return;
+          if (result.isError) {
+            renderError(extractError(result));
+            return;
+          }
+          var data = result.structuredContent;
+          if (data && data.error) {
+            renderError(String(data.error));
+            return;
+          }
+          if (data) {
+            state.payload = data;
+            if (
+              data.project &&
+              data.project.id !== undefined &&
+              data.project.id !== null
+            ) {
+              state.projectId = data.project.id;
+            }
+            render(data);
+          }
+        }
+
+        function extractError(result) {
+          try {
+            return result.content[0].text;
+          } catch (e) {
+            return "The board could not load its issues.";
+          }
+        }
+
+        // --- data loading ------------------------------------------------
+        function setBusy(on) {
+          refreshBtn.disabled = on;
+          refreshBtn.dataset.busy = on ? "1" : "0";
+          refreshBtn.textContent = on ? "Refreshing..." : "Refresh";
+        }
+        async function fetchBoard(isRefresh) {
+          if (state.projectId === null || state.projectId === undefined) return;
+          if (isRefresh) setBusy(true);
+          try {
+            var result = await request("tools/call", {
+              name: "get_triage_board_data",
+              arguments: { project_id: state.projectId, filters: state.filters },
+            });
+            applyResult(result);
+          } catch (e) {
+            renderError(
+              e.message ||
+                (isRefresh
+                  ? "Refresh failed."
+                  : "The board could not load its issues.")
+            );
+          } finally {
+            if (isRefresh) setBusy(false);
+          }
+        }
+        function refresh() {
+          return fetchBoard(true);
+        }
+        // Some hosts push the entry-point tool result to the app; others
+        // (e.g. Claude Desktop) do not. Once the handshake is done and the
+        // project is known (from the tool-input notification), load the
+        // board ourselves so first paint never waits on a push that may
+        // never arrive.
+        var initialLoadStarted = false;
+        function maybeInitialLoad() {
+          if (
+            !state.ready ||
+            state.payload ||
+            initialLoadStarted ||
+            state.projectId === null ||
+            state.projectId === undefined
+          ) {
+            return;
+          }
+          initialLoadStarted = true;
+          fetchBoard(false);
+        }
+
+        // --- connect -----------------------------------------------------
+        async function connect() {
+          await request("ui/initialize", {
+            appInfo: { name: "redmine-triage-board", version: "1.0.0" },
+            appCapabilities: {},
+            protocolVersion: PROTOCOL_VERSION,
+          });
+          notify("ui/notifications/initialized");
+          state.ready = true;
+          reportSize();
+          maybeInitialLoad();
+        }
+
+        window.addEventListener("message", onMessage);
+        window.addEventListener("resize", queueResize);
+        if (window.ResizeObserver) {
+          var ro = new ResizeObserver(queueResize);
+          ro.observe(document.documentElement);
+          ro.observe(document.body);
+        }
+        refreshBtn.addEventListener("click", refresh);
+        connect().catch(function () {});
+      })();
+    </script>
+  </body>
+</html>

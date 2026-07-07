@@ -1239,6 +1239,30 @@ manage_issue_category(action="delete", category_id=3, reassign_to_id=7)
 
 ---
 
+## MCP Apps (Interactive Tools)
+
+### `show_triage_board`
+
+Render an interactive Kanban board of a project's issues (MCP Apps). Columns
+are issue statuses; cards show id, subject, assignee, and priority. Drag a
+card to another status column to change the issue's status in Redmine (writes
+back via `update_redmine_issue`; the move reverts with an explanation if
+Redmine rejects the transition). Dragging is disabled when
+`REDMINE_MCP_READ_ONLY=true`. Requires a client that supports MCP Apps
+rendering.
+
+**Parameters:**
+- `project_id` (int | str, required): project to display.
+- `filters` (dict, optional): extra Redmine filters, same as `list_redmine_issues`.
+
+### `get_triage_board_data`
+
+Backend data source for the Kanban board's Refresh action. Returns the same
+payload as `show_triage_board` without a UI resource. Called by the board's
+iframe, not normally invoked directly.
+
+---
+
 ## Time Tracking
 
 ### `list_time_entries`

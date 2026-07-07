@@ -27,6 +27,7 @@ logging.basicConfig(
 )
 
 from . import tools  # noqa: E402,F401  -- triggers @mcp.tool registration
+from . import apps  # noqa: E402,F401  -- triggers MCP App registration
 from . import _http_routes  # noqa: E402,F401  -- registers HTTP custom routes
 from .server import AUTH_PROVIDER, mcp  # noqa: E402
 from ._mount import (  # noqa: E402
