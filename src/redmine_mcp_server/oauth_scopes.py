@@ -24,7 +24,7 @@ Exclusions:
       scopes a Redmine doesn't recognize causes consent errors.
 """
 
-from ._env import _is_read_only_mode
+from ._env import _is_agile_enabled, _is_read_only_mode
 
 # Redmine permissions used by the read-only MCP tools.
 READ_SCOPES: list[str] = [
@@ -73,15 +73,32 @@ WRITE_SCOPES: list[str] = [
     "manage_members",  # manage_project_member
 ]
 
+# RedmineUP Agile plugin permissions, advertised only when the agile
+# feature is explicitly enabled (see below). Kept out of READ_SCOPES so
+# a non-agile deployment never advertises a scope Redmine can't resolve.
+AGILE_READ_SCOPES: list[str] = [
+    "view_agile_queries",  # get_redmine_issue agile fetch:
+    # AgileBoardsController#agile_data (GET
+    # /issues/{id}/agile_data.json)
+]
+
 
 def advertised_scopes() -> list[str]:
     """Return the OAuth scopes to advertise in discovery documents.
 
     Returns ``READ_SCOPES`` only when ``REDMINE_MCP_READ_ONLY`` is truthy
     (per :func:`_is_read_only_mode`); otherwise ``READ_SCOPES +
-    WRITE_SCOPES``. Always returns a fresh list so callers cannot mutate
-    the source of truth.
+    WRITE_SCOPES``. When ``REDMINE_AGILE_ENABLED`` is truthy (per
+    :func:`_is_agile_enabled`), the read-only :data:`AGILE_READ_SCOPES`
+    are appended in both modes so the OAuth token can reach the agile
+    endpoints. Gating on the same flag that gates the agile tools means a
+    non-agile Redmine never sees an unrecognized plugin scope. Always
+    returns a fresh list so callers cannot mutate the source of truth.
     """
     if _is_read_only_mode():
-        return list(READ_SCOPES)
-    return list(READ_SCOPES) + list(WRITE_SCOPES)
+        scopes = list(READ_SCOPES)
+    else:
+        scopes = list(READ_SCOPES) + list(WRITE_SCOPES)
+    if _is_agile_enabled():
+        scopes += list(AGILE_READ_SCOPES)
+    return scopes

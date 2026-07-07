@@ -112,6 +112,19 @@ class TestScopeConstants:
         assert "view_private_notes" in READ_SCOPES
         assert "view_private_notes" not in WRITE_SCOPES
 
+    def test_agile_read_scopes_contains_view_agile_queries(self):
+        """Issue #173: agile_data endpoint is gated on view_agile_queries."""
+        from redmine_mcp_server.oauth_scopes import AGILE_READ_SCOPES
+
+        assert "view_agile_queries" in AGILE_READ_SCOPES
+
+    def test_agile_scope_not_in_core_scope_lists(self):
+        """The agile scope is opt-in only; core lists stay plugin-free."""
+        from redmine_mcp_server.oauth_scopes import READ_SCOPES, WRITE_SCOPES
+
+        assert "view_agile_queries" not in READ_SCOPES
+        assert "view_agile_queries" not in WRITE_SCOPES
+
 
 # ---------------------------------------------------------------------------
 # advertised_scopes()
@@ -171,3 +184,34 @@ class TestAdvertisedScopes:
         assert "MUTATED" not in second
         # Module-level constant is also intact
         assert "MUTATED" not in READ_SCOPES
+
+    @pytest.mark.parametrize("value", ["true", "1", "yes", "on", "TRUE"])
+    def test_includes_agile_scope_when_agile_enabled(self, monkeypatch, value):
+        monkeypatch.delenv("REDMINE_MCP_READ_ONLY", raising=False)
+        monkeypatch.setenv("REDMINE_AGILE_ENABLED", value)
+        from redmine_mcp_server.oauth_scopes import advertised_scopes
+
+        assert "view_agile_queries" in advertised_scopes()
+
+    @pytest.mark.parametrize("value", ["false", "0", "no", "off", ""])
+    def test_excludes_agile_scope_when_agile_disabled(self, monkeypatch, value):
+        monkeypatch.delenv("REDMINE_MCP_READ_ONLY", raising=False)
+        monkeypatch.setenv("REDMINE_AGILE_ENABLED", value)
+        from redmine_mcp_server.oauth_scopes import advertised_scopes
+
+        assert "view_agile_queries" not in advertised_scopes()
+
+    def test_excludes_agile_scope_when_env_unset(self, monkeypatch):
+        monkeypatch.delenv("REDMINE_MCP_READ_ONLY", raising=False)
+        monkeypatch.delenv("REDMINE_AGILE_ENABLED", raising=False)
+        from redmine_mcp_server.oauth_scopes import advertised_scopes
+
+        assert "view_agile_queries" not in advertised_scopes()
+
+    def test_agile_scope_present_in_read_only_mode(self, monkeypatch):
+        """view_agile_queries is a read permission, so read-only keeps it."""
+        monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "true")
+        monkeypatch.setenv("REDMINE_AGILE_ENABLED", "true")
+        from redmine_mcp_server.oauth_scopes import advertised_scopes
+
+        assert "view_agile_queries" in advertised_scopes()

@@ -19,11 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Redmine rejects the transition); disabled in read-only mode. The board self-loads
   and auto-resizes to fit.
 ### Fixed
+- OAuth agile fields under `REDMINE_AGILE_ENABLED`: when the agile feature is
+  enabled, the server now advertises the `view_agile_queries` scope in its
+  OAuth discovery documents so issued tokens can reach
+  `AgileBoardsController#agile_data`. Previously the agile scope was excluded
+  along with other plugin scopes, so `get_redmine_issue` under `oauth` /
+  `oauth-proxy` mode always got a Redmine 403 for agile data (silently
+  swallowed) and never returned `story_points`, `agile_sprint_id`, or
+  `agile_position`. The scope is gated on the same `REDMINE_AGILE_ENABLED`
+  flag, so non-agile deployments never advertise a scope Redmine cannot
+  resolve.
 - Compatibility with fastmcp 3.4.3: the argument-validation middleware now also
   unwraps fastmcp's own `ValidationError` (which since 3.4.3 wraps the underlying
   pydantic error as its `__cause__`), so invalid tool arguments keep returning the
   clean `INVALID_ARGUMENTS` envelope instead of a raw pydantic error dump. Still
   compatible with earlier fastmcp 3.x releases.
+### Contributors
+- @LaurensRietveld — reported the missing OAuth agile scope and diagnosed the root cause ([#173](https://github.com/jztan/redmine-mcp-server/issues/173))
 
 ## [2.5.0] - 2026-07-04
 ### Added

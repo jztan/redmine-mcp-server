@@ -537,6 +537,15 @@ REDMINE_PUBLIC_URL=https://example.com/redmine
    - Access your Redmine administration panel
    - Go to Administration → Plugins and confirm the Agile plugin is listed
 
+5. **OAuth modes: re-authorize so the token carries the agile scope**
+   - Under `oauth` / `oauth-proxy` the token must include the
+     `view_agile_queries` scope, or the agile endpoint returns 403 even when
+     the user's role grants Agile permissions.
+   - The server advertises this scope automatically when `REDMINE_AGILE_ENABLED=true`.
+     If you enabled the flag after already authorizing, your existing token
+     predates the scope: reconnect the MCP client so it runs a fresh OAuth flow
+     and consents to the updated scope list.
+
 ### Custom Field Named "story_points" Cannot Be Updated by Name
 
 **Symptoms:**
