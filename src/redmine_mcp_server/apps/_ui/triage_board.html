@@ -6,92 +6,110 @@
     <title>Triage Board</title>
     <style>
       :root {
-        --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-          Helvetica, Arial, sans-serif;
-        --surface: #ffffff;
-        --panel: #f4f6f9;
-        --panel-2: #e9edf2;
+        --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica,
+          Arial, sans-serif;
+        --surface: transparent;
+        --shell: rgba(255, 255, 255, 0.68);
+        --panel: rgba(234, 240, 248, 0.88);
+        --panel-2: rgba(223, 231, 243, 0.96);
+        --lane: rgba(255, 255, 255, 0.4);
         --card: #ffffff;
-        --border: #e6e9ee;
-        --border-strong: #d3d8e0;
-        --text: #171a20;
-        --text-2: #5a6472;
-        --text-3: #98a1b0;
-        --accent: #2f6bff;
-        --shadow: 0 1px 2px rgba(20, 26, 40, 0.05);
-        --prio-normal-bg: #eef2f8;
-        --prio-normal-fg: #5b6472;
-        --prio-low-bg: #eef1f5;
-        --prio-low-fg: #7a828e;
-        --prio-high-bg: #fbeccb;
-        --prio-high-fg: #9a5b06;
+        --border: rgba(194, 205, 220, 0.78);
+        --border-strong: rgba(175, 188, 208, 0.9);
+        --text: #162033;
+        --text-2: #5f6b7c;
+        --text-3: #8d98aa;
+        --accent: #2563eb;
+        --accent-soft: rgba(219, 231, 255, 0.9);
+        --button-bg: rgba(248, 251, 255, 0.92);
+        --button-border: rgba(207, 217, 236, 0.95);
+        --shadow: 0 8px 24px rgba(31, 41, 55, 0.06);
+        --card-shadow: 0 3px 10px rgba(37, 99, 235, 0.05);
+        --prio-normal-bg: #edf2fa;
+        --prio-normal-fg: #5d6b80;
+        --prio-low-bg: #eef2f5;
+        --prio-low-fg: #748093;
+        --prio-high-bg: #fff1ce;
+        --prio-high-fg: #8d5d06;
         --prio-urgent-bg: #e5484d;
         --prio-urgent-fg: #ffffff;
       }
       @media (prefers-color-scheme: dark) {
         :root {
-          --surface: #1a1c20;
-          --panel: #232730;
-          --panel-2: #2c313b;
-          --card: #23262c;
-          --border: #333944;
-          --border-strong: #434a56;
-          --text: #e9ebef;
-          --text-2: #a3abb7;
-          --text-3: #6c7480;
-          --accent: #6f9bff;
-          --shadow: none;
-          --prio-normal-bg: #2b313b;
-          --prio-normal-fg: #aab2bf;
-          --prio-low-bg: #2a2f38;
-          --prio-low-fg: #8b93a0;
-          --prio-high-bg: #3e3214;
-          --prio-high-fg: #e6b74d;
-          --prio-urgent-bg: #e5484d;
-          --prio-urgent-fg: #ffffff;
+          --surface: transparent;
+          --shell: rgba(20, 24, 30, 0.55);
+          --panel: rgba(31, 36, 44, 0.96);
+          --panel-2: rgba(45, 51, 61, 0.98);
+          --lane: rgba(22, 27, 34, 0.9);
+          --card: #2b313b;
+          --border: rgba(96, 109, 129, 0.38);
+          --border-strong: rgba(120, 135, 159, 0.56);
+          --text: #f3f6fb;
+          --text-2: #b9c3d4;
+          --text-3: #8d99ad;
+          --accent: #73a7ff;
+          --accent-soft: rgba(61, 95, 160, 0.42);
+          --button-bg: rgba(44, 51, 63, 0.96);
+          --button-border: rgba(97, 113, 138, 0.62);
+          --shadow: 0 10px 30px rgba(0, 0, 0, 0.24);
+          --card-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+          --prio-normal-bg: #394352;
+          --prio-normal-fg: #c0c9d8;
+          --prio-low-bg: #343d4a;
+          --prio-low-fg: #aab4c5;
+          --prio-high-bg: #58461d;
+          --prio-high-fg: #ffd98a;
         }
       }
       :root[data-theme="light"] {
-        --surface: #ffffff;
-        --panel: #f4f6f9;
-        --panel-2: #e9edf2;
+        --surface: transparent;
+        --shell: rgba(255, 255, 255, 0.68);
+        --panel: rgba(234, 240, 248, 0.88);
+        --panel-2: rgba(223, 231, 243, 0.96);
+        --lane: rgba(255, 255, 255, 0.4);
         --card: #ffffff;
-        --border: #e6e9ee;
-        --border-strong: #d3d8e0;
-        --text: #171a20;
-        --text-2: #5a6472;
-        --text-3: #98a1b0;
-        --accent: #2f6bff;
-        --shadow: 0 1px 2px rgba(20, 26, 40, 0.05);
-        --prio-normal-bg: #eef2f8;
-        --prio-normal-fg: #5b6472;
-        --prio-low-bg: #eef1f5;
-        --prio-low-fg: #7a828e;
-        --prio-high-bg: #fbeccb;
-        --prio-high-fg: #9a5b06;
-        --prio-urgent-bg: #e5484d;
-        --prio-urgent-fg: #ffffff;
+        --border: rgba(194, 205, 220, 0.78);
+        --border-strong: rgba(175, 188, 208, 0.9);
+        --text: #162033;
+        --text-2: #5f6b7c;
+        --text-3: #8d98aa;
+        --accent: #2563eb;
+        --accent-soft: rgba(219, 231, 255, 0.9);
+        --button-bg: rgba(248, 251, 255, 0.92);
+        --button-border: rgba(207, 217, 236, 0.95);
+        --shadow: 0 8px 24px rgba(31, 41, 55, 0.06);
+        --card-shadow: 0 3px 10px rgba(37, 99, 235, 0.05);
+        --prio-normal-bg: #edf2fa;
+        --prio-normal-fg: #5d6b80;
+        --prio-low-bg: #eef2f5;
+        --prio-low-fg: #748093;
+        --prio-high-bg: #fff1ce;
+        --prio-high-fg: #8d5d06;
       }
       :root[data-theme="dark"] {
-        --surface: #1a1c20;
-        --panel: #232730;
-        --panel-2: #2c313b;
-        --card: #23262c;
-        --border: #333944;
-        --border-strong: #434a56;
-        --text: #e9ebef;
-        --text-2: #a3abb7;
-        --text-3: #6c7480;
-        --accent: #6f9bff;
-        --shadow: none;
-        --prio-normal-bg: #2b313b;
-        --prio-normal-fg: #aab2bf;
-        --prio-low-bg: #2a2f38;
-        --prio-low-fg: #8b93a0;
-        --prio-high-bg: #3e3214;
-        --prio-high-fg: #e6b74d;
-        --prio-urgent-bg: #e5484d;
-        --prio-urgent-fg: #ffffff;
+        --surface: transparent;
+        --shell: rgba(20, 24, 30, 0.55);
+        --panel: rgba(31, 36, 44, 0.96);
+        --panel-2: rgba(45, 51, 61, 0.98);
+        --lane: rgba(22, 27, 34, 0.9);
+        --card: #2b313b;
+        --border: rgba(96, 109, 129, 0.38);
+        --border-strong: rgba(120, 135, 159, 0.56);
+        --text: #f3f6fb;
+        --text-2: #b9c3d4;
+        --text-3: #8d99ad;
+        --accent: #73a7ff;
+        --accent-soft: rgba(61, 95, 160, 0.42);
+        --button-bg: rgba(44, 51, 63, 0.96);
+        --button-border: rgba(97, 113, 138, 0.62);
+        --shadow: 0 10px 30px rgba(0, 0, 0, 0.24);
+        --card-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+        --prio-normal-bg: #394352;
+        --prio-normal-fg: #c0c9d8;
+        --prio-low-bg: #343d4a;
+        --prio-low-fg: #aab4c5;
+        --prio-high-bg: #58461d;
+        --prio-high-fg: #ffd98a;
       }
 
       * {
@@ -100,6 +118,7 @@
       html,
       body {
         margin: 0;
+        background: transparent;
       }
       body {
         background: var(--surface);
@@ -108,48 +127,87 @@
         font-size: 13px;
         line-height: 1.4;
         -webkit-font-smoothing: antialiased;
+        padding: 10px 0 0;
+      }
+
+      .shell {
+        background: var(--shell);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        box-shadow: var(--shadow);
+        overflow: hidden;
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+      }
+      @media (prefers-color-scheme: dark) {
+        .shell {
+          border-color: rgba(87, 101, 122, 0.32);
+        }
+      }
+      :root[data-theme="dark"] .shell {
+        border-color: rgba(87, 101, 122, 0.32);
       }
 
       .head {
         display: flex;
-        align-items: baseline;
-        gap: 8px;
-        padding: 14px 16px 12px;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 22px 24px 18px;
+        border-bottom: 1px solid var(--border);
+      }
+      .head-copy {
+        min-width: 0;
       }
       .head h1 {
         margin: 0;
-        font-size: 14px;
-        font-weight: 650;
-        letter-spacing: -0.01em;
+        font-size: 20px;
+        font-weight: 700;
+        letter-spacing: -0.03em;
       }
       .head .sub {
+        margin-top: 4px;
         font-size: 12px;
-        color: var(--text-3);
+        color: var(--text-2);
         font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
-      .head .spacer {
-        flex: 1;
+      .head-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 10px;
+        flex-wrap: wrap;
       }
       .head .stamp {
         font-size: 11px;
-        color: var(--text-3);
+        font-weight: 600;
+        color: var(--text-2);
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 7px 12px;
         font-variant-numeric: tabular-nums;
       }
       .btn {
         font: inherit;
         font-size: 12px;
-        font-weight: 550;
+        font-weight: 650;
         color: var(--accent);
-        background: transparent;
-        border: 1px solid var(--border-strong);
-        border-radius: 7px;
-        padding: 5px 12px;
+        background: var(--button-bg);
+        border: 1px solid var(--button-border);
+        border-radius: 999px;
+        padding: 7px 13px;
         cursor: pointer;
-        transition: background 0.12s ease, border-color 0.12s ease;
+        transition: background 0.12s ease, border-color 0.12s ease,
+          transform 0.12s ease;
       }
       .btn:hover:not([disabled]) {
-        background: var(--panel);
+        background: var(--accent-soft);
         border-color: var(--accent);
+        transform: translateY(-1px);
       }
       .btn:focus-visible {
         outline: 2px solid var(--accent);
@@ -164,13 +222,13 @@
       }
 
       .notice {
-        margin: 0 16px 10px;
+        margin: 16px 24px 0;
         font-size: 11.5px;
         color: var(--text-2);
         background: var(--panel);
         border: 1px solid var(--border);
-        border-radius: 7px;
-        padding: 6px 10px;
+        border-radius: 14px;
+        padding: 10px 12px;
       }
       .notice[hidden] {
         display: none;
@@ -178,45 +236,58 @@
 
       .board {
         display: flex;
-        gap: 14px;
-        padding: 2px 16px 16px;
-        overflow-x: auto;
+        flex-wrap: nowrap;
+        gap: 12px;
+        padding: 18px 18px 16px;
         align-items: flex-start;
+        background: var(--panel);
+        overflow-x: auto;
+        overflow-y: hidden;
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+      }
+      .board::-webkit-scrollbar {
+        width: 0;
+        height: 0;
       }
       .col {
-        flex: 1 1 0;
-        min-width: 0;
-        max-width: 340px;
+        flex: 0 0 min(220px, calc((100% - 36px) / 4));
+        min-width: 220px;
+        background: var(--lane);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        padding: 12px;
       }
       .col-head {
         display: flex;
         align-items: center;
-        gap: 7px;
-        padding: 0 2px 10px;
+        gap: 8px;
+        padding: 0 2px 12px;
       }
       .dot {
-        width: 8px;
-        height: 8px;
+        width: 10px;
+        height: 10px;
         border-radius: 50%;
         flex: 0 0 auto;
+        box-shadow: 0 0 0 4px var(--card);
       }
       .col-name {
-        font-size: 12.5px;
-        font-weight: 600;
+        font-size: 13px;
+        font-weight: 700;
         color: var(--text);
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
       }
       .col-count {
-        margin-left: 1px;
         font-size: 11px;
-        font-weight: 600;
+        font-weight: 700;
         color: var(--text-2);
-        background: var(--panel-2);
-        border-radius: 9px;
-        padding: 1px 7px;
-        min-width: 20px;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 2px 8px;
+        min-width: 24px;
         text-align: center;
         font-variant-numeric: tabular-nums;
         flex: 0 0 auto;
@@ -226,8 +297,8 @@
         max-height: 358px;
         overflow-y: auto;
         overflow-x: hidden;
-        margin: 0 -3px;
-        padding: 0 3px 1px;
+        margin: 0 -2px;
+        padding: 0 2px 1px;
         overscroll-behavior: contain;
       }
       .col-body::-webkit-scrollbar {
@@ -244,43 +315,43 @@
       .card {
         background: var(--card);
         border: 1px solid var(--border);
-        border-radius: 10px;
-        padding: 10px 12px 11px;
+        border-radius: 16px;
+        padding: 12px 13px 13px;
         margin-bottom: 8px;
-        box-shadow: var(--shadow);
+        box-shadow: var(--card-shadow);
       }
       .card:last-child {
         margin-bottom: 2px;
       }
       .id {
         font-size: 12px;
-        font-weight: 600;
+        font-weight: 700;
         color: var(--accent);
       }
       .subject {
-        margin: 3px 0 0;
+        margin: 6px 0 0;
         font-size: 13px;
-        font-weight: 450;
+        font-weight: 500;
         color: var(--text);
-        line-height: 1.35;
+        line-height: 1.45;
       }
       .meta {
         display: flex;
         align-items: center;
         justify-content: space-between;
         flex-wrap: wrap;
-        gap: 6px 8px;
-        margin-top: 10px;
+        gap: 8px 10px;
+        margin-top: 13px;
       }
       .ava {
-        width: 22px;
-        height: 22px;
+        width: 28px;
+        height: 28px;
         border-radius: 50%;
         flex: 0 0 auto;
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        font-size: 9px;
+        font-size: 10px;
         font-weight: 700;
         color: #fff;
         text-transform: uppercase;
@@ -292,9 +363,9 @@
       }
       .pill-prio {
         font-size: 11px;
-        font-weight: 600;
-        padding: 2px 9px;
-        border-radius: 11px;
+        font-weight: 700;
+        padding: 4px 10px;
+        border-radius: 999px;
         white-space: nowrap;
         flex: 0 0 auto;
       }
@@ -317,11 +388,12 @@
 
       .col-empty {
         border: 1px dashed var(--border-strong);
-        border-radius: 9px;
-        padding: 16px 8px;
+        border-radius: 14px;
+        padding: 20px 10px;
         text-align: center;
         font-size: 11px;
         color: var(--text-3);
+        background: var(--lane);
       }
 
       .card[draggable="true"] {
@@ -338,15 +410,16 @@
       .col-body.drop-target {
         outline: 2px dashed var(--accent);
         outline-offset: 2px;
-        border-radius: 9px;
+        border-radius: 14px;
       }
       .ro-pill {
         font-size: 10.5px;
-        font-weight: 600;
+        font-weight: 700;
         color: var(--text-2);
-        background: var(--panel-2);
-        border-radius: 9px;
-        padding: 1px 8px;
+        background: var(--accent-soft);
+        border: 1px solid var(--button-border);
+        border-radius: 999px;
+        padding: 5px 9px;
       }
       .ro-pill[hidden] {
         display: none;
@@ -377,13 +450,14 @@
       }
 
       .panel {
-        margin: 6px 16px 18px;
+        margin: 24px;
         border: 1px solid var(--border);
-        border-radius: 10px;
-        padding: 22px 16px;
+        border-radius: 18px;
+        padding: 28px 18px;
         text-align: center;
         color: var(--text-2);
         font-size: 12.5px;
+        background: rgba(255, 255, 255, 0.2);
       }
       .panel.error {
         border-color: #e5484d33;
@@ -392,24 +466,93 @@
       }
       @media (prefers-color-scheme: dark) {
         .panel.error {
-          color: #ff9ea0;
+          color: #ffb2b0;
+        }
+      }
+      :root[data-theme="dark"] .panel.error {
+        color: #ffb2b0;
+      }
+
+      .foot {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 16px 24px 20px;
+        border-top: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.12);
+        color: var(--text-2);
+        font-size: 11.5px;
+      }
+      .foot-note {
+        color: var(--text-3);
+        text-align: right;
+      }
+
+      @media (max-width: 720px) {
+        body {
+          padding-top: 8px;
+        }
+        .head,
+        .board,
+        .foot {
+          padding-left: 16px;
+          padding-right: 16px;
+        }
+        .head {
+          padding-top: 18px;
+          padding-bottom: 16px;
+          flex-direction: column;
+        }
+        .head-actions {
+          justify-content: flex-start;
+        }
+        .board {
+          flex-direction: column;
+          gap: 14px;
+          overflow-x: visible;
+        }
+        .col {
+          flex: none;
+          min-width: 0;
+          width: 100%;
+        }
+        .foot {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+        .foot-note {
+          text-align: left;
         }
       }
     </style>
   </head>
   <body>
-    <header class="head">
-      <h1 id="project-name">Triage board</h1>
-      <span id="total" class="sub"></span>
-      <span id="ro-pill" class="ro-pill" hidden>Read-only</span>
-      <span class="spacer"></span>
-      <span id="stamp" class="stamp"></span>
-      <button id="refresh-btn" class="btn" disabled>Refresh</button>
-    </header>
-    <div id="truncated" class="notice" hidden></div>
-    <div id="root">
-      <div class="panel" id="loading">Loading issues…</div>
-    </div>
+    <section class="shell" aria-label="Issue board">
+      <header class="head">
+        <div class="head-copy">
+          <h1>Issue Board</h1>
+          <div class="sub">
+            <span id="project-name">Loading project</span>
+            <span aria-hidden="true"> - </span>
+            <span id="total"></span>
+          </div>
+        </div>
+        <div class="head-actions">
+          <span id="ro-pill" class="ro-pill" hidden>Read-only</span>
+          <span id="stamp" class="stamp">via redmine-mcp-server</span>
+          <button id="refresh-btn" class="btn" disabled>Refresh</button>
+        </div>
+      </header>
+      <div id="truncated" class="notice" hidden></div>
+      <div id="root">
+        <div class="panel" id="loading">Loading issues...</div>
+      </div>
+      <div class="foot">
+        <span>Drag cards between statuses, or refresh to sync the latest state.</span>
+        <span class="foot-note">Status changes are sent with `update_redmine_issue`.</span>
+      </div>
+    </section>
     <div id="toast" class="toast" hidden></div>
 
     <script>
@@ -868,7 +1011,7 @@
 
         function render(payload) {
           nameEl.textContent =
-            (payload.project && payload.project.name) || "Triage board";
+            (payload.project && payload.project.name) || "Unknown project";
           readOnly = !!payload.read_only;
           roPill.hidden = !readOnly;
 
@@ -886,12 +1029,14 @@
           if (payload.generated_at) {
             var d = new Date(payload.generated_at);
             stampEl.textContent = isNaN(d.getTime())
-              ? ""
-              : "Updated " +
+              ? "via redmine-mcp-server"
+              : "via redmine-mcp-server - Updated " +
                 d.toLocaleTimeString([], {
                   hour: "2-digit",
                   minute: "2-digit",
                 });
+          } else {
+            stampEl.textContent = "via redmine-mcp-server";
           }
 
           if (payload.truncated) {
@@ -965,7 +1110,7 @@
         function setBusy(on) {
           refreshBtn.disabled = on;
           refreshBtn.dataset.busy = on ? "1" : "0";
-          refreshBtn.textContent = on ? "Refreshing…" : "Refresh";
+          refreshBtn.textContent = on ? "Refreshing..." : "Refresh";
         }
         async function fetchBoard(isRefresh) {
           if (state.projectId === null || state.projectId === undefined) return;
