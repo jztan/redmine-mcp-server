@@ -534,7 +534,8 @@ Retrieve detailed information about a specific Redmine issue.
 - `include_relations` (boolean, optional): Include issue relations. Default: `false`
 - `include_children` (boolean, optional): Include child issues. Default: `false`
 
-**Returns:** Issue dictionary with details, journals, and attachments. When `REDMINE_AGILE_ENABLED=true`, also includes `story_points`, `agile_sprint_id`, and `agile_position` from the RedmineUP Agile plugin. When `REDMINE_TAGS_ENABLED=true`, also includes a `tags` array (`[{"id", "name"}, ...]`) from the AlphaNodes additional_tags plugin.
+
+**Returns:** Issue dictionary with details, journals, and attachments. Standard fields include `category`, `fixed_version` (target version), and `parent` (each `{id, ...}` or `None`), plus `start_date`, `due_date`, `closed_on` (ISO-8601 or `None`), `done_ratio`, `estimated_hours`, `spent_hours`, and `is_private`. Each is `None` when not set on the issue. When `REDMINE_AGILE_ENABLED=true`, also includes `story_points`, `agile_sprint_id`, and `agile_position` from the RedmineUP Agile plugin.
 
 **Attachment URLs (#110, #118):** each entry under `attachments` carries the canonical shape `{id, filename, filesize, content_type, description, content_url, author, created_on}` — identical to what `manage_redmine_wiki_page(action="get", include_attachments=True)` returns. When `REDMINE_PUBLIC_URL` is set, any `content_url` whose scheme+host+port matches `REDMINE_URL`'s origin is rewritten to use the public origin (preserving path, query, fragment, and any reverse-proxy subpath). When unset, the raw URL Redmine echoes back is returned — callers can fall back to [`get_redmine_attachment`](#get_redmine_attachment) for a sandbox-safe download URL via the MCP server's proxy.
 
@@ -546,6 +547,16 @@ Retrieve detailed information about a specific Redmine issue.
   "description": "<insecure-content-...>\nUsers cannot login...\n</insecure-content-...>",
   "status": {"id": 1, "name": "New"},
   "priority": {"id": 2, "name": "Normal"},
+  "category": {"id": 5, "name": "Backend"},
+  "fixed_version": {"id": 6, "name": "v2.0"},
+  "parent": {"id": 100},
+  "start_date": "2026-01-10",
+  "due_date": "2026-01-20",
+  "closed_on": null,
+  "done_ratio": 40,
+  "estimated_hours": 8.0,
+  "spent_hours": 3.5,
+  "is_private": false,
   "custom_fields": [{"id": 6, "name": "Size", "value": "S"}],
   "journals": [...],
   "attachments": [...]

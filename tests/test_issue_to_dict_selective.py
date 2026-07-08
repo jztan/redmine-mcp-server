@@ -67,6 +67,32 @@ class TestIssueToDictSelective:
         mock_tracker.name = "Bug"
         mock_issue.tracker = mock_tracker
 
+        # Mock category
+        mock_category = Mock()
+        mock_category.id = 5
+        mock_category.name = "Backend"
+        mock_issue.category = mock_category
+
+        # Mock fixed_version (target version)
+        mock_version = Mock()
+        mock_version.id = 6
+        mock_version.name = "v2.0"
+        mock_issue.fixed_version = mock_version
+
+        # Mock parent
+        mock_parent = Mock()
+        mock_parent.id = 100
+        mock_issue.parent = mock_parent
+
+        # Scheduling / progress / effort fields
+        mock_issue.start_date = datetime(2024, 1, 10, 0, 0, 0)
+        mock_issue.due_date = datetime(2024, 1, 20, 0, 0, 0)
+        mock_issue.done_ratio = 40
+        mock_issue.estimated_hours = 8.0
+        mock_issue.spent_hours = 3.5
+        mock_issue.is_private = False
+        mock_issue.closed_on = None
+
         # Mock timestamps
         mock_issue.created_on = datetime(2024, 1, 15, 10, 30, 0)
         mock_issue.updated_on = datetime(2024, 1, 16, 14, 45, 0)
@@ -104,6 +130,18 @@ class TestIssueToDictSelective:
         # No assigned_to (None)
         mock_issue.assigned_to = None
 
+        # Optional standard fields all unset
+        mock_issue.category = None
+        mock_issue.fixed_version = None
+        mock_issue.parent = None
+        mock_issue.start_date = None
+        mock_issue.due_date = None
+        mock_issue.done_ratio = None
+        mock_issue.estimated_hours = None
+        mock_issue.spent_hours = None
+        mock_issue.is_private = None
+        mock_issue.closed_on = None
+
         # No timestamps
         mock_issue.created_on = None
         mock_issue.updated_on = None
@@ -116,7 +154,7 @@ class TestIssueToDictSelective:
         expected = _issue_to_dict(mock_issue)
 
         assert set(result.keys()) == set(expected.keys())
-        assert len(result) == 11  # All 11 fields
+        assert len(result) == 21  # All fields
         assert "id" in result
         assert "subject" in result
         assert "description" in result
@@ -127,7 +165,7 @@ class TestIssueToDictSelective:
         expected = _issue_to_dict(mock_issue)
 
         assert set(result.keys()) == set(expected.keys())
-        assert len(result) == 11
+        assert len(result) == 21
 
     def test_all_keyword_returns_all_fields(self, mock_issue):
         """Test that fields=["all"] returns all fields."""
@@ -135,7 +173,7 @@ class TestIssueToDictSelective:
         expected = _issue_to_dict(mock_issue)
 
         assert set(result.keys()) == set(expected.keys())
-        assert len(result) == 11
+        assert len(result) == 21
 
     def test_single_field_id(self, mock_issue):
         """Test selecting only the id field."""
@@ -238,6 +276,16 @@ class TestIssueToDictSelective:
             "tracker",
             "author",
             "assigned_to",
+            "category",
+            "fixed_version",
+            "parent",
+            "start_date",
+            "due_date",
+            "done_ratio",
+            "estimated_hours",
+            "spent_hours",
+            "is_private",
+            "closed_on",
             "created_on",
             "updated_on",
         ]
@@ -245,7 +293,52 @@ class TestIssueToDictSelective:
         expected = _issue_to_dict(mock_issue)
 
         assert set(result.keys()) == set(expected.keys())
-        assert len(result) == 11
+        assert len(result) == 21
+
+    def test_standard_fields_populated(self, mock_issue):
+        """Standard fields from issue #174 are serialized when present."""
+        result = _issue_to_dict(mock_issue)
+
+        assert result["category"] == {"id": 5, "name": "Backend"}
+        assert result["fixed_version"] == {"id": 6, "name": "v2.0"}
+        assert result["parent"] == {"id": 100}
+        assert result["start_date"] == "2024-01-10T00:00:00"
+        assert result["due_date"] == "2024-01-20T00:00:00"
+        assert result["done_ratio"] == 40
+        assert result["estimated_hours"] == 8.0
+        assert result["spent_hours"] == 3.5
+        assert result["is_private"] is False
+        assert result["closed_on"] is None
+
+    def test_standard_fields_none_when_absent(self, mock_issue_minimal):
+        """Reference/date fields degrade to None rather than raising."""
+        result = _issue_to_dict(mock_issue_minimal)
+
+        for key in (
+            "category",
+            "fixed_version",
+            "parent",
+            "start_date",
+            "due_date",
+            "done_ratio",
+            "estimated_hours",
+            "spent_hours",
+            "is_private",
+            "closed_on",
+        ):
+            assert result[key] is None
+
+    def test_select_standard_field_subset(self, mock_issue):
+        """The new fields are individually selectable via field selection."""
+        result = _issue_to_dict_selective(
+            mock_issue, ["id", "fixed_version", "done_ratio"]
+        )
+
+        assert result == {
+            "id": 123,
+            "fixed_version": {"id": 6, "name": "v2.0"},
+            "done_ratio": 40,
+        }
 
     def test_invalid_field_name_ignored(self, mock_issue):
         """Test that invalid field names are silently ignored."""
@@ -344,7 +437,7 @@ class TestIssueToDictSelective:
         # Minimal should have fewer keys
         assert len(minimal_fields_result) < len(all_fields_result)
         assert len(minimal_fields_result) == 2
-        assert len(all_fields_result) == 11
+        assert len(all_fields_result) == 21
 
     def test_case_sensitive_field_names(self, mock_issue):
         """Test that field names are case-sensitive."""

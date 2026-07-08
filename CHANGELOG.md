@@ -18,7 +18,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `update_redmine_issue` (an optimistic move that reverts with an explanation when
   Redmine rejects the transition); disabled in read-only mode. The board self-loads
   and auto-resizes to fit.
+- `get_redmine_issue` now serializes ten standard Redmine issue fields its
+  "full context" output previously dropped: `category`, `fixed_version`
+  (target version), `parent`, `start_date`, `due_date`, `done_ratio`,
+  `estimated_hours`, `spent_hours`, `is_private`, and `closed_on`. The same
+  fields are mirrored in the `list_redmine_issues` / `search_redmine_issues`
+  `fields` selector, so they are individually selectable and included in the
+  default all-fields output. Values come off the already-loaded issue object,
+  so no extra Redmine request is made, and each field degrades to `None` when
+  unset. ([#174](https://github.com/jztan/redmine-mcp-server/issues/174))
 ### Fixed
+- `list_redmine_issues` total-count query is now bounded to a single request.
+  When `include_pagination_info=True`, the count query was built without a
+  limit, so python-redmine's ResourceSet materialized every matching issue
+  (chunk-by-chunk, dozens of sequential API requests for a large project) just
+  to read `total_count`, which could exceed the MCP `tools/call` timeout (seen
+  as "tools/call timed out" in the triage board's Kanban view). Redmine returns
+  the full `total_count` in the first page of any filtered response, so the
+  count query now fetches a single issue (`limit=1`) instead of the whole
+  result set.
 - OAuth agile fields under `REDMINE_AGILE_ENABLED`: when the agile feature is
   enabled, the server now advertises the `view_agile_queries` scope in its
   OAuth discovery documents so issued tokens can reach
@@ -36,6 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   compatible with earlier fastmcp 3.x releases.
 ### Contributors
 - @LaurensRietveld — reported the missing OAuth agile scope and diagnosed the root cause ([#173](https://github.com/jztan/redmine-mcp-server/issues/173))
+- @LaurensRietveld — expanded the full-issue serializer with standard issue fields ([#177](https://github.com/jztan/redmine-mcp-server/pull/177))
 
 ## [2.5.0] - 2026-07-04
 ### Added
