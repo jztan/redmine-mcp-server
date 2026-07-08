@@ -33,6 +33,7 @@ from .._env import (
     _is_dmsf_enabled,
     _is_products_enabled,
     _is_read_only_mode,
+    _is_tags_enabled,
 )
 from ..server import mcp
 
@@ -137,6 +138,7 @@ async def get_mcp_server_info() -> Dict[str, Any]:
                 "products": False,
                 "crm": False,
                 "dmsf": True,
+                "tags": False,
             },
         }
     """
@@ -153,5 +155,6 @@ async def get_mcp_server_info() -> Dict[str, Any]:
             "products": _is_products_enabled(),
             "crm": _is_crm_enabled(),
             "dmsf": _is_dmsf_enabled(),
+            "tags": _is_tags_enabled(),
         },
     }

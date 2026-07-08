@@ -61,6 +61,7 @@ async def test_reflects_plugin_flags(monkeypatch):
         "products",
         "crm",
         "dmsf",
+        "tags",
     }
 
 
