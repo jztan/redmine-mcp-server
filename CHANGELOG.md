@@ -63,9 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   clean `INVALID_ARGUMENTS` envelope instead of a raw pydantic error dump. Still
   compatible with earlier fastmcp 3.x releases.
 ### Contributors
-- @LaurensRietveld — reported the missing OAuth agile scope and diagnosed the root cause ([#173](https://github.com/jztan/redmine-mcp-server/issues/173))
-- @LaurensRietveld — expanded the full-issue serializer with standard issue fields ([#177](https://github.com/jztan/redmine-mcp-server/pull/177))
-- @LaurensRietveld — added optional AlphaNodes `additional_tags` plugin support (read + write) ([#178](https://github.com/jztan/redmine-mcp-server/pull/178))
+- @LaurensRietveld — reported the missing OAuth agile scope and diagnosed the root cause ([#173](https://github.com/jztan/redmine-mcp-server/issues/173)); expanded the full-issue serializer with standard issue fields ([#177](https://github.com/jztan/redmine-mcp-server/pull/177)); and added optional AlphaNodes `additional_tags` plugin support (read + write) ([#178](https://github.com/jztan/redmine-mcp-server/pull/178))
 
 ## [2.5.0] - 2026-07-04
 ### Added
