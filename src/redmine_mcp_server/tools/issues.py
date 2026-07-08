@@ -238,12 +238,9 @@ def _issue_to_dict(issue: Any, include_custom_fields: bool = False) -> Dict[str,
             if assigned is not None
             else None
         ),
-        # Standard fields returned by Redmine's default issue JSON. These carry
-        # workflow state clients routinely need (release targeting via
-        # fixed_version, categorization, scheduling dates, progress and effort)
-        # and are already present on the python-redmine object, so no extra
-        # HTTP request is needed. The sibling gantt serializer already exposed
-        # a subset of these; see GitHub issue #174.
+        # Standard fields returned by Redmine's default issue JSON.
+        # The sibling gantt serializer already exposes a subset of these.
+        # see GitHub issue #174.
         "category": (
             {"id": category.id, "name": category.name} if category is not None else None
         ),
