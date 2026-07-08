@@ -27,6 +27,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   default all-fields output. Values come off the already-loaded issue object,
   so no extra Redmine request is made, and each field degrades to `None` when
   unset. ([#174](https://github.com/jztan/redmine-mcp-server/issues/174))
+- AlphaNodes `additional_tags` plugin support (opt-in via `REDMINE_TAGS_ENABLED`,
+  off by default): `get_redmine_issue` returns a `tags` array (list of
+  `{id, name}`), and `create_redmine_issue` / `update_redmine_issue` accept a
+  `tag_list` (a list of names or a comma-separated string; `[]` clears all
+  tags). The `tag_list` is extracted before custom-field resolution so it never
+  collides with a same-named custom field. Under `oauth` / `oauth-proxy` the
+  `view_issue_tags` read scope (plus `create_issue_tags` / `edit_issue_tags`
+  outside read-only mode) is advertised only when the flag is enabled, and
+  `get_mcp_server_info` reports the `tags` plugin flag. Silently ignored when
+  the flag is off. ([#175](https://github.com/jztan/redmine-mcp-server/issues/175))
 ### Fixed
 - `list_redmine_issues` total-count query is now bounded to a single request.
   When `include_pagination_info=True`, the count query was built without a
@@ -55,6 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Contributors
 - @LaurensRietveld — reported the missing OAuth agile scope and diagnosed the root cause ([#173](https://github.com/jztan/redmine-mcp-server/issues/173))
 - @LaurensRietveld — expanded the full-issue serializer with standard issue fields ([#177](https://github.com/jztan/redmine-mcp-server/pull/177))
+- @LaurensRietveld — added optional AlphaNodes `additional_tags` plugin support (read + write) ([#178](https://github.com/jztan/redmine-mcp-server/pull/178))
 
 ## [2.5.0] - 2026-07-04
 ### Added
