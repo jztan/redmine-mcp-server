@@ -28,6 +28,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so no extra Redmine request is made, and each field degrades to `None` when
   unset. ([#174](https://github.com/jztan/redmine-mcp-server/issues/174))
 ### Fixed
+- `list_redmine_issues` total-count query is now bounded to a single request.
+  When `include_pagination_info=True`, the count query was built without a
+  limit, so python-redmine's ResourceSet materialized every matching issue
+  (chunk-by-chunk, dozens of sequential API requests for a large project) just
+  to read `total_count`, which could exceed the MCP `tools/call` timeout (seen
+  as "tools/call timed out" in the triage board's Kanban view). Redmine returns
+  the full `total_count` in the first page of any filtered response, so the
+  count query now fetches a single issue (`limit=1`) instead of the whole
+  result set.
 - OAuth agile fields under `REDMINE_AGILE_ENABLED`: when the agile feature is
   enabled, the server now advertises the `view_agile_queries` scope in its
   OAuth discovery documents so issued tokens can reach

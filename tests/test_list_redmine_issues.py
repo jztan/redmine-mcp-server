@@ -350,6 +350,34 @@ class TestListRedmineIssues:
         assert pagination["total"] == 100
 
     @pytest.mark.asyncio
+    async def test_pagination_count_query_is_bounded(self, mock_redmine):
+        """Count query must fetch a single issue, not the whole project.
+
+        Regression: without an explicit limit, python-redmine's ResourceSet
+        materializes every matching issue chunk-by-chunk just to compute
+        total_count, which can exceed the MCP tools/call timeout for large
+        projects (e.g. the triage board's Kanban view).
+        """
+        mock_issues = self.create_mock_issues(25)
+
+        first_call = Mock()
+        first_call.__iter__ = Mock(return_value=iter(mock_issues))
+        second_call = Mock()
+        second_call.__iter__ = Mock(return_value=iter([]))
+        second_call.total_count = 100
+
+        mock_redmine.issue.filter.side_effect = [first_call, second_call]
+
+        await list_redmine_issues(
+            project_id=1, limit=100, offset=0, include_pagination_info=True
+        )
+
+        # Two calls: the page query and the total-count query.
+        assert mock_redmine.issue.filter.call_count == 2
+        count_kwargs = mock_redmine.issue.filter.call_args_list[1][1]
+        assert count_kwargs["limit"] == 1
+
+    @pytest.mark.asyncio
     async def test_pagination_has_previous_true(self, mock_redmine):
         """Test has_previous=True when offset > 0."""
         mock_issues = self.create_mock_issues(10)

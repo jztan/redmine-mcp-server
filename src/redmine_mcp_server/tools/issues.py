@@ -879,13 +879,19 @@ async def list_redmine_issues(
 
         # Handle metadata response format
         if include_pagination_info:
-            # Get total count from a separate query without offset/limit
+            # Get total count from a separate query.
             try:
-                # Create clean query for total count (no pagination parameters)
-                count_filters = {**filters}
+                # Redmine returns the full ``total_count`` in the first page of
+                # any filtered response, so we only need to fetch a single
+                # issue to read it. Omitting the limit here would make
+                # python-redmine's ResourceSet materialize *every* matching
+                # issue (chunk-by-chunk, dozens of sequential requests for a
+                # large project) just to compute the count, which can exceed
+                # the MCP ``tools/call`` timeout.
+                count_filters = {**filters, "limit": 1, "offset": 0}
                 count_query = _get_redmine_client().issue.filter(**count_filters)
-                # Must evaluate the query first to get accurate total_count
-                list(count_query)  # Trigger evaluation
+                # Trigger a single request so total_count is populated.
+                list(count_query)
                 total_count = count_query.total_count
                 logging.debug(f"Got total count from separate query: {total_count}")
             except Exception as e:
