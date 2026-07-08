@@ -1343,6 +1343,8 @@ async def create_redmine_issue(
                 missing_names,
             )
             retry_create_kwargs = dict(retry_fields)
+            if tags_create_needed:
+                retry_create_kwargs["tag_list"] = tag_list
             if upload_descriptors:
                 retry_create_kwargs["uploads"] = upload_descriptors
             issue = _get_redmine_client().issue.create(
@@ -1571,6 +1573,8 @@ async def update_redmine_issue(
                 missing_names,
             )
             retry_kwargs = dict(retry_fields)
+            if tags_update_needed:
+                retry_kwargs["tag_list"] = tag_list
             if upload_descriptors:
                 retry_kwargs["uploads"] = upload_descriptors
             _get_redmine_client().issue.update(issue_id, **retry_kwargs)

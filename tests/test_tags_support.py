@@ -238,3 +238,89 @@ class TestUpdateRedmineIssueTags:
         _, kwargs = mock_redmine.issue.update.call_args
         assert "tag_list" not in kwargs
         assert kwargs.get("subject") == "X"
+
+
+class TestTagListSurvivesAutofillRetry:
+    """tag_list must be re-applied on the required-custom-field autofill retry.
+
+    When ``REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true`` and the first
+    create/update fails on a required custom field, the retry rebuilds its
+    kwargs from the field dict — which no longer carries ``tag_list`` (it was
+    extracted earlier). Without re-adding it, the retry would succeed but
+    silently drop the tags, mirroring the agile ``story_points`` re-apply.
+    """
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_tag_list_reapplied_on_create_retry(self, mock_redmine):
+        from redminelib.exceptions import ValidationError
+
+        category_field = Mock()
+        category_field.id = 6
+        category_field.name = "Project Category"
+        category_field.possible_values = [{"value": "Any"}, {"value": "Foo"}]
+        category_field.default_value = "Foo"
+
+        mock_project = Mock()
+        mock_project.issue_custom_fields = [category_field]
+        mock_redmine.project.get.return_value = mock_project
+
+        mock_redmine.issue.create.side_effect = [
+            ValidationError("Project Category cannot be blank"),
+            _make_minimal_issue(5),
+        ]
+
+        env = {
+            "REDMINE_TAGS_ENABLED": "true",
+            "REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS": "true",
+        }
+        with patch.dict(os.environ, env):
+            result = await create_redmine_issue(
+                project_id=41, subject="S", fields={"tag_list": ["a", "b"]}
+            )
+
+        assert "error" not in result
+        assert mock_redmine.issue.create.call_count == 2
+        retry_kwargs = mock_redmine.issue.create.call_args_list[1].kwargs
+        assert retry_kwargs.get("tag_list") == ["a", "b"]
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_tag_list_reapplied_on_update_retry(self, mock_redmine):
+        from redminelib.exceptions import ValidationError
+
+        location_field = Mock()
+        location_field.id = 8
+        location_field.name = "Location"
+        location_field.possible_values = [{"value": "Any"}, {"value": "Berlin"}]
+        location_field.default_value = "Any"
+
+        mock_project = Mock()
+        mock_project.issue_custom_fields = [location_field]
+        mock_redmine.project.get.return_value = mock_project
+
+        issue_for_project_lookup = Mock()
+        issue_for_project_lookup.project = Mock(id=41, name="Flatline")
+
+        mock_redmine.issue.update.side_effect = [
+            ValidationError("Location cannot be blank"),
+            None,
+        ]
+        mock_redmine.issue.get.side_effect = [
+            issue_for_project_lookup,
+            _make_minimal_issue(123, tags=[]),
+        ]
+
+        env = {
+            "REDMINE_TAGS_ENABLED": "true",
+            "REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS": "true",
+        }
+        with patch.dict(os.environ, env):
+            result = await update_redmine_issue(
+                123, {"subject": "New", "tag_list": ["a", "b"]}
+            )
+
+        assert "error" not in result
+        assert mock_redmine.issue.update.call_count == 2
+        retry_kwargs = mock_redmine.issue.update.call_args_list[1].kwargs
+        assert retry_kwargs.get("tag_list") == ["a", "b"]
