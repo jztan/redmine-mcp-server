@@ -2024,6 +2024,105 @@ class TestAgilePluginIntegration:
         ), f"Combined story_points + notes update failed: {result}"
 
 
+_TAGS_SKIP = pytest.mark.skipif(
+    not REDMINE_URL
+    or os.getenv("REDMINE_TAGS_ENABLED", "false").strip().lower()
+    not in {"1", "true", "yes", "on"},
+    reason="REDMINE_URL not configured or REDMINE_TAGS_ENABLED not true",
+)
+
+
+class TestTagsPluginIntegration:
+    """Integration tests for AlphaNodes additional_tags plugin support.
+
+    Requires:
+    - REDMINE_URL configured
+    - REDMINE_TAGS_ENABLED=true
+    - additional_tags plugin installed with issue tagging enabled
+    - view_issue_tags permission for the API user
+    - REDMINE_TAGS_TEST_ISSUE_ID pointing at a tagged issue (optional; the
+      test asserts the key shape rather than specific tag names)
+    """
+
+    @_TAGS_SKIP
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_get_issue_includes_tags_array(self):
+        """get_redmine_issue returns a `tags` list when REDMINE_TAGS_ENABLED=true."""
+        redmine = _get_redmine_or_none()
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        issue_id_env = os.getenv("REDMINE_TAGS_TEST_ISSUE_ID")
+        if issue_id_env:
+            issue_id = int(issue_id_env)
+        else:
+            try:
+                issues = list(redmine.issue.filter(status_id="*", limit=1))
+            except Exception:
+                pytest.skip("Could not list issues")
+            if not issues:
+                pytest.skip("No issues available to probe")
+            issue_id = issues[0].id
+
+        from redmine_mcp_server.tools.issues import get_redmine_issue
+
+        result = await get_redmine_issue(issue_id)
+
+        assert "error" not in result, f"get_redmine_issue failed: {result}"
+        assert "tags" in result, "tags key missing from result"
+        assert isinstance(result["tags"], list)
+        for tag in result["tags"]:
+            assert "name" in tag
+            assert "id" in tag
+
+    @_TAGS_SKIP
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_tag_list_write_roundtrip(self):
+        """create/update accept tag_list and get_redmine_issue reads it back.
+
+        Destructive (creates + deletes an issue), so it only runs when
+        REDMINE_TAGS_TEST_PROJECT_ID names a sandbox project to write to.
+        The caller/API user must hold create_issue_tags on that project.
+        """
+        project_id = os.getenv("REDMINE_TAGS_TEST_PROJECT_ID")
+        if not project_id:
+            pytest.skip("REDMINE_TAGS_TEST_PROJECT_ID not set")
+
+        from redmine_mcp_server.tools.issues import (
+            create_redmine_issue,
+            update_redmine_issue,
+            get_redmine_issue,
+            delete_redmine_issue,
+        )
+
+        created = await create_redmine_issue(
+            project_id=int(project_id),
+            subject="[MCP TAG VERIFY] delete me",
+            description="additional_tags write round-trip",
+            fields={"tag_list": ["mcp-verify-tag"]},
+        )
+        assert "error" not in created, f"create failed: {created}"
+        issue_id = created["id"]
+        try:
+            after_create = await get_redmine_issue(issue_id, include_journals=False)
+            names = {t["name"] for t in after_create.get("tags", [])}
+            assert (
+                "mcp-verify-tag" in names
+            ), f"tag not applied on create: {after_create.get('tags')}"
+
+            upd = await update_redmine_issue(
+                issue_id, {"tag_list": ["mcp-verify-tag", "mcp-verify-two"]}
+            )
+            assert "error" not in upd, f"update failed: {upd}"
+            after_update = await get_redmine_issue(issue_id, include_journals=False)
+            names = {t["name"] for t in after_update.get("tags", [])}
+            assert {"mcp-verify-tag", "mcp-verify-two"} <= names
+        finally:
+            await delete_redmine_issue(issue_id, confirm_delete=True)
+
+
 if __name__ == "__main__":
     # Run integration tests
     pytest.main([__file__, "-v", "-m", "integration", "--tb=short"])

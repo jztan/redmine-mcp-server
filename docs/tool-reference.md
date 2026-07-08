@@ -534,7 +534,7 @@ Retrieve detailed information about a specific Redmine issue.
 - `include_relations` (boolean, optional): Include issue relations. Default: `false`
 - `include_children` (boolean, optional): Include child issues. Default: `false`
 
-**Returns:** Issue dictionary with details, journals, and attachments. When `REDMINE_AGILE_ENABLED=true`, also includes `story_points`, `agile_sprint_id`, and `agile_position` from the RedmineUP Agile plugin.
+**Returns:** Issue dictionary with details, journals, and attachments. When `REDMINE_AGILE_ENABLED=true`, also includes `story_points`, `agile_sprint_id`, and `agile_position` from the RedmineUP Agile plugin. When `REDMINE_TAGS_ENABLED=true`, also includes a `tags` array (`[{"id", "name"}, ...]`) from the AlphaNodes additional_tags plugin.
 
 **Attachment URLs (#110, #118):** each entry under `attachments` carries the canonical shape `{id, filename, filesize, content_type, description, content_url, author, created_on}` — identical to what `manage_redmine_wiki_page(action="get", include_attachments=True)` returns. When `REDMINE_PUBLIC_URL` is set, any `content_url` whose scheme+host+port matches `REDMINE_URL`'s origin is rewritten to use the public origin (preserving path, query, fragment, and any reverse-proxy subpath). When unset, the raw URL Redmine echoes back is returned — callers can fall back to [`get_redmine_attachment`](#get_redmine_attachment) for a sandbox-safe download URL via the MCP server's proxy.
 
@@ -560,6 +560,16 @@ Retrieve detailed information about a specific Redmine issue.
   "story_points": 5,
   "agile_sprint_id": null,
   "agile_position": 2,
+  ...
+}
+```
+
+**With `REDMINE_TAGS_ENABLED=true`:**
+```json
+{
+  "id": 123,
+  "subject": "Bug in login form",
+  "tags": [{"id": 3, "name": "fast-track"}, {"id": null, "name": "backend"}],
   ...
 }
 ```
@@ -830,6 +840,17 @@ create_redmine_issue(
 - `missing_required_fields` (list of parsed field names)
 - `hint` — a tailored recovery message that branches on whether the missing fields look like standard Redmine fields (Subject / Priority / Tracker / etc.) or custom fields, calling out the `is_required` caveat for the latter (see [`list_project_issue_custom_fields`](#list_project_issue_custom_fields) for the underlying limitation).
 
+**Tags (`REDMINE_TAGS_ENABLED=true`):** pass a `tag_list` in `fields` to tag the new issue via the AlphaNodes additional_tags plugin — a list of names (`["fast-track", "backend"]`) or a comma-separated string (`"fast-track, backend"`). It is extracted before custom-field resolution (so it never collides with a same-named custom field) and requires `create_issue_tags` (to mint new tag names) or `edit_issue_tags` (existing tags only). Silently ignored when the flag is off.
+
+```python
+# Requires REDMINE_TAGS_ENABLED=true
+create_redmine_issue(
+    project_id=1,
+    subject="...",
+    fields={"tag_list": ["fast-track", "backend"]},
+)
+```
+
 **Autofill retry:** if `REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true` is set and Redmine returns relevant custom-field validation errors, the server fetches project custom fields, auto-fills missing/invalid required custom fields from Redmine `default_value` or `REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS`, and retries once.
 
 **Examples:**
@@ -897,6 +918,15 @@ You can also update custom fields by name (for example `{"size": "S"}`) and the 
 When `REDMINE_AGILE_ENABLED=true`, you can also pass `story_points` (non-negative integer or `null` to clear) and it will be written via the RedmineUP Agile plugin endpoint. If the plugin is disabled, `story_points` is silently ignored.
 
 **Note:** `story_points` is always intercepted before custom field resolution, regardless of the `REDMINE_AGILE_ENABLED` setting. If your Redmine instance has a custom field literally named `"story_points"`, it cannot be updated by name through this tool — use explicit `custom_fields` with its field ID instead (e.g. `{"custom_fields": [{"id": 42, "value": "8"}]}`).
+
+When `REDMINE_TAGS_ENABLED=true`, you can pass `tag_list` to set the issue's AlphaNodes additional_tags tags — a list of names or a comma-separated string; `[]` clears all tags. It replaces the full tag set (it is not additive), is intercepted before custom-field resolution (so a custom field named `"tag_list"` must use the explicit `custom_fields` id form), and requires `create_issue_tags` (new tags) or `edit_issue_tags` (existing tags only). A `tag_list` change is recorded in the issue journal. Silently ignored when the flag is off.
+
+```python
+# Requires REDMINE_TAGS_ENABLED=true — replaces the issue's tags
+update_redmine_issue(issue_id=123, fields={"tag_list": ["fast-track", "backend"]})
+# Clear all tags
+update_redmine_issue(issue_id=123, fields={"tag_list": []})
+```
 
 **Attaching files to a journal note:** pass a `notes` key inside `fields` alongside `uploads`. The attachments will be associated with that journal note in the issue history.
 
@@ -2375,7 +2405,7 @@ Return the MCP server's version, enabled-feature flags, and the identity of the 
 - `read_only_mode` (boolean): whether `REDMINE_MCP_READ_ONLY` is enabled. When `True`, all write tools refuse with the standard read-only error.
 - `auth_mode` (string): `"oauth"` or `"legacy"`.
 - `current_user` (dict or null): `{id, login, name}` for the authenticated Redmine user behind the configured API key. `null` when the server cannot reach Redmine (check `/health` for connectivity status). Use this to confirm who `assigned_to_id="me"` resolves to, which matters when a shared or robot API key is in use.
-- `plugin_flags` (dict): which plugin-gated tool families are enabled. Keys: `agile`, `checklists`, `products`, `crm`, `dmsf`. `True` means the corresponding `manage_*` / `get_*` tools are routable and will reach the underlying plugin endpoints; `False` means they will return a "feature disabled" error envelope.
+- `plugin_flags` (dict): which plugin-gated tool families are enabled. Keys: `agile`, `checklists`, `products`, `crm`, `dmsf`, `tags`. `True` means the corresponding `manage_*` / `get_*` tools are routable and will reach the underlying plugin endpoints (for `tags`, that `get_redmine_issue` returns a `tags` array); `False` means they will return a "feature disabled" error envelope (or, for `tags`, that the field is omitted).
 
 The response intentionally excludes credentials, internal hostnames, file-system paths, and any other operator config that a caller doesn't need to know to choose its call shape. Only flags that change *call shape* are surfaced.
 
@@ -2391,7 +2421,8 @@ The response intentionally excludes credentials, internal hostnames, file-system
         "checklists": false,
         "products": false,
         "crm": false,
-        "dmsf": true
+        "dmsf": true,
+        "tags": false
     }
 }
 ```

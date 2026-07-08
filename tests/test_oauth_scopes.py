@@ -215,3 +215,63 @@ class TestAdvertisedScopes:
         from redmine_mcp_server.oauth_scopes import advertised_scopes
 
         assert "view_agile_queries" in advertised_scopes()
+
+    @pytest.mark.parametrize("value", ["true", "1", "yes", "on", "TRUE"])
+    def test_includes_tags_scope_when_tags_enabled(self, monkeypatch, value):
+        monkeypatch.delenv("REDMINE_MCP_READ_ONLY", raising=False)
+        monkeypatch.setenv("REDMINE_TAGS_ENABLED", value)
+        from redmine_mcp_server.oauth_scopes import advertised_scopes
+
+        assert "view_issue_tags" in advertised_scopes()
+
+    @pytest.mark.parametrize("value", ["false", "0", "no", "off", ""])
+    def test_excludes_tags_scope_when_tags_disabled(self, monkeypatch, value):
+        monkeypatch.delenv("REDMINE_MCP_READ_ONLY", raising=False)
+        monkeypatch.setenv("REDMINE_TAGS_ENABLED", value)
+        from redmine_mcp_server.oauth_scopes import advertised_scopes
+
+        assert "view_issue_tags" not in advertised_scopes()
+
+    def test_excludes_tags_scope_when_env_unset(self, monkeypatch):
+        monkeypatch.delenv("REDMINE_MCP_READ_ONLY", raising=False)
+        monkeypatch.delenv("REDMINE_TAGS_ENABLED", raising=False)
+        from redmine_mcp_server.oauth_scopes import advertised_scopes
+
+        assert "view_issue_tags" not in advertised_scopes()
+
+    def test_tags_scope_present_in_read_only_mode(self, monkeypatch):
+        """view_issue_tags is a read permission, so read-only keeps it."""
+        monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "true")
+        monkeypatch.setenv("REDMINE_TAGS_ENABLED", "true")
+        from redmine_mcp_server.oauth_scopes import advertised_scopes
+
+        assert "view_issue_tags" in advertised_scopes()
+
+    def test_includes_tags_write_scopes_when_enabled_not_read_only(self, monkeypatch):
+        monkeypatch.delenv("REDMINE_MCP_READ_ONLY", raising=False)
+        monkeypatch.setenv("REDMINE_TAGS_ENABLED", "true")
+        from redmine_mcp_server.oauth_scopes import advertised_scopes
+
+        scopes = advertised_scopes()
+        assert "create_issue_tags" in scopes
+        assert "edit_issue_tags" in scopes
+
+    def test_excludes_tags_write_scopes_in_read_only_mode(self, monkeypatch):
+        """create/edit_issue_tags are write permissions: read-only drops them."""
+        monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "true")
+        monkeypatch.setenv("REDMINE_TAGS_ENABLED", "true")
+        from redmine_mcp_server.oauth_scopes import advertised_scopes
+
+        scopes = advertised_scopes()
+        assert "view_issue_tags" in scopes
+        assert "create_issue_tags" not in scopes
+        assert "edit_issue_tags" not in scopes
+
+    def test_excludes_tags_write_scopes_when_disabled(self, monkeypatch):
+        monkeypatch.delenv("REDMINE_MCP_READ_ONLY", raising=False)
+        monkeypatch.setenv("REDMINE_TAGS_ENABLED", "false")
+        from redmine_mcp_server.oauth_scopes import advertised_scopes
+
+        scopes = advertised_scopes()
+        assert "create_issue_tags" not in scopes
+        assert "edit_issue_tags" not in scopes

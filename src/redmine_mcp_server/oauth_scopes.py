@@ -24,7 +24,7 @@ Exclusions:
       scopes a Redmine doesn't recognize causes consent errors.
 """
 
-from ._env import _is_agile_enabled, _is_read_only_mode
+from ._env import _is_agile_enabled, _is_read_only_mode, _is_tags_enabled
 
 # Redmine permissions used by the read-only MCP tools.
 READ_SCOPES: list[str] = [
@@ -82,6 +82,26 @@ AGILE_READ_SCOPES: list[str] = [
     # /issues/{id}/agile_data.json)
 ]
 
+# AlphaNodes additional_tags plugin permissions, advertised only when the
+# tags feature is explicitly enabled (see below). Kept out of READ_SCOPES so
+# a deployment without the plugin never advertises a scope Redmine can't
+# resolve.
+TAGS_READ_SCOPES: list[str] = [
+    "view_issue_tags",  # get_redmine_issue tags array: the plugin injects
+    # ``tags`` into GET /issues/{id}.json only when the
+    # caller holds this permission.
+]
+
+# AlphaNodes additional_tags write permissions, advertised only when the tags
+# feature is enabled AND the server is not read-only. create_redmine_issue /
+# update_redmine_issue accept a ``tag_list``; the plugin's safe_attributes gate
+# requires create_issue_tags (may add new tags) or edit_issue_tags (existing
+# tags only), so both are advertised to cover either grant.
+TAGS_WRITE_SCOPES: list[str] = [
+    "create_issue_tags",
+    "edit_issue_tags",
+]
+
 
 def advertised_scopes() -> list[str]:
     """Return the OAuth scopes to advertise in discovery documents.
@@ -92,8 +112,11 @@ def advertised_scopes() -> list[str]:
     :func:`_is_agile_enabled`), the read-only :data:`AGILE_READ_SCOPES`
     are appended in both modes so the OAuth token can reach the agile
     endpoints. Gating on the same flag that gates the agile tools means a
-    non-agile Redmine never sees an unrecognized plugin scope. Always
-    returns a fresh list so callers cannot mutate the source of truth.
+    non-agile Redmine never sees an unrecognized plugin scope. The same
+    applies to :data:`TAGS_READ_SCOPES` under ``REDMINE_TAGS_ENABLED``;
+    :data:`TAGS_WRITE_SCOPES` are additionally appended unless the server
+    is read-only, since they gate ``tag_list`` writes. Always returns a
+    fresh list so callers cannot mutate the source of truth.
     """
     if _is_read_only_mode():
         scopes = list(READ_SCOPES)
@@ -101,4 +124,8 @@ def advertised_scopes() -> list[str]:
         scopes = list(READ_SCOPES) + list(WRITE_SCOPES)
     if _is_agile_enabled():
         scopes += list(AGILE_READ_SCOPES)
+    if _is_tags_enabled():
+        scopes += list(TAGS_READ_SCOPES)
+        if not _is_read_only_mode():
+            scopes += list(TAGS_WRITE_SCOPES)
     return scopes

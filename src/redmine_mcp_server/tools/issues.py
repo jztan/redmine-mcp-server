@@ -22,7 +22,7 @@ from .._custom_fields import (
     _parse_optional_object_payload,
 )
 from .._decorators import ActionMode, action_dispatch
-from .._env import _is_agile_enabled, _is_read_only_mode
+from .._env import _is_agile_enabled, _is_read_only_mode, _is_tags_enabled
 from .._errors import _READ_ONLY_ERROR, _handle_redmine_error
 from .._serialization import (
     _attachment_to_dict,
@@ -123,6 +123,67 @@ def _custom_fields_to_list(issue: Any) -> List[Dict[str, Any]]:
         )
 
     return custom_fields
+
+
+def _issue_tags_to_list(issue: Any) -> List[Dict[str, Any]]:
+    """Convert the AlphaNodes additional_tags ``tags`` array to a list.
+
+    The plugin injects a ``tags`` array into the single-issue API response
+    (``GET /issues/{id}.json``) when its ``active_issue_tags`` setting is on
+    and the caller holds ``view_issue_tags`` on the project. Entries look like
+    ``{"id": 3, "name": "fast-track"}``, but the plugin only emits ``id`` when
+    the issue's (sorted) ``tag_list`` exactly matches its tag records — so in
+    practice many responses are name-only (``{"name": "fast-track"}``). This
+    normalizes both to ``{"id", "name"}`` with ``id`` set to ``None`` when the
+    plugin omitted it; ``name`` is always the stable identifier.
+
+    Returns an empty list when the attribute is absent — which is also what a
+    caller lacking ``view_issue_tags`` sees, since the plugin then omits the
+    field entirely.
+    """
+    raw_tags = getattr(issue, "tags", None)
+    if not raw_tags:
+        return []
+
+    try:
+        iterator = iter(raw_tags)
+    except TypeError:
+        return []
+
+    tags: List[Dict[str, Any]] = []
+    for tag in iterator:
+        if isinstance(tag, dict):
+            tags.append({"id": tag.get("id"), "name": tag.get("name")})
+        else:
+            tags.append(
+                {"id": getattr(tag, "id", None), "name": getattr(tag, "name", None)}
+            )
+    return tags
+
+
+def _normalize_tag_list(value: Any) -> List[str]:
+    """Coerce a caller-supplied ``tag_list`` into a list of tag-name strings.
+
+    Accepts a list/tuple of names, a single comma-separated string, or
+    ``None`` (which clears all tags). Names are stripped and blanks dropped.
+    A comma-separated string is split into multiple tags, mirroring the
+    additional_tags plugin's own delimiter; Redmine's ``Array(tag_list)``
+    would otherwise treat ``"a,b"`` as one tag named ``"a,b"``.
+    """
+    if value is None:
+        return []
+    if isinstance(value, str):
+        parts: Any = value.split(",")
+    elif isinstance(value, (list, tuple)):
+        parts = value
+    else:
+        parts = [value]
+    result: List[str] = []
+    for part in parts:
+        name = str(part).strip()
+        if name:
+            result.append(name)
+    return result
 
 
 # Fields that Redmine's /search.json endpoint actually populates.
@@ -550,6 +611,10 @@ async def get_redmine_issue(
         ``story_points``, ``agile_sprint_id``, and ``agile_position``
         fetched from the RedmineUP Agile plugin endpoint (omitted
         silently on any failure).
+        When ``REDMINE_TAGS_ENABLED=true``, the result also includes a
+        ``tags`` array (``[{"id", "name"}, ...]``) from the AlphaNodes
+        additional_tags plugin. It is empty when the issue has no tags or
+        the caller lacks the ``view_issue_tags`` permission.
     """
 
     # Ensure cleanup task is started (lazy initialization)
@@ -623,6 +688,9 @@ async def get_redmine_issue(
                 }
                 for c in raw
             ]
+
+        if _is_tags_enabled():
+            result["tags"] = _issue_tags_to_list(issue)
 
         if _is_agile_enabled():
             try:
@@ -1098,6 +1166,11 @@ async def create_redmine_issue(
       relevant validation errors on required custom fields (e.g. blank/invalid)
       and
       ``REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true``.
+    - When ``REDMINE_TAGS_ENABLED=true``, a ``tag_list`` key in ``fields``
+      (list of names or comma-separated string) sets AlphaNodes
+      additional_tags tags on the new issue. Requires the
+      ``create_issue_tags``/``edit_issue_tags`` permission; silently ignored
+      when the feature is disabled (default).
     """
 
     if _is_read_only_mode():
@@ -1138,6 +1211,18 @@ async def create_redmine_issue(
         if upload_error is not None:
             return upload_error
 
+    # Extract tag_list (additional_tags plugin) before custom-field resolution
+    # so it is never mistaken for a same-named custom field. Dropped silently
+    # when the feature is disabled, mirroring the agile story_points handling.
+    tag_list = None
+    tags_create_needed = False
+    if _is_tags_enabled():
+        if "tag_list" in issue_fields:
+            tag_list = _normalize_tag_list(issue_fields.pop("tag_list"))
+            tags_create_needed = True
+    else:
+        issue_fields.pop("tag_list", None)
+
     # Resolve name-keyed custom fields (e.g. fields={"Department": "..."})
     # to id-keyed custom_fields entries Redmine expects. See #123 for
     # the cross-tool parity rationale.
@@ -1148,6 +1233,8 @@ async def create_redmine_issue(
 
     try:
         create_kwargs = dict(issue_fields)
+        if tags_create_needed:
+            create_kwargs["tag_list"] = tag_list
         if upload_descriptors:
             create_kwargs["uploads"] = upload_descriptors
         issue = _get_redmine_client().issue.create(
@@ -1269,6 +1356,14 @@ async def update_redmine_issue(
     ``REDMINE_AGILE_ENABLED=false`` (default), ``story_points`` is silently
     ignored.
 
+    When ``REDMINE_TAGS_ENABLED=true``, a ``tag_list`` key may be provided in
+    ``fields`` to set the issue's AlphaNodes additional_tags tags. Accepts a
+    list of tag names or a comma-separated string; ``[]`` clears all tags. It
+    is handled before custom-field resolution so it is never mistaken for a
+    same-named custom field, and requires the ``create_issue_tags`` (new tags)
+    or ``edit_issue_tags`` (existing tags only) permission. When
+    ``REDMINE_TAGS_ENABLED=false`` (default), ``tag_list`` is silently ignored.
+
     Non-standard keys in ``fields`` are treated as candidate custom-field names.
     When a matching project custom field is found, it is translated into
     ``custom_fields`` entries for Redmine update payloads.
@@ -1305,6 +1400,18 @@ async def update_redmine_issue(
     else:
         update_fields.pop("story_points", None)
 
+    # Extract tag_list (additional_tags plugin) before custom-field resolution
+    # so it is never mistaken for a same-named custom field. Explicit key
+    # presence check so tag_list=[] (clear all tags) still triggers the update.
+    tag_list = None
+    tags_update_needed = False
+    if _is_tags_enabled():
+        if "tag_list" in update_fields:
+            tag_list = _normalize_tag_list(update_fields.pop("tag_list"))
+            tags_update_needed = True
+    else:
+        update_fields.pop("tag_list", None)
+
     # Convert status name to id if requested
     if "status_name" in update_fields and "status_id" not in update_fields:
         name = str(update_fields.pop("status_name")).lower()
@@ -1318,9 +1425,11 @@ async def update_redmine_issue(
             logger.warning(f"Error resolving status name '{name}': {e}")
 
     try:
-        if update_fields or upload_descriptors:
+        if update_fields or upload_descriptors or tags_update_needed:
             update_fields = _map_named_custom_fields_for_update(issue_id, update_fields)
             update_kwargs = dict(update_fields)
+            if tags_update_needed:
+                update_kwargs["tag_list"] = tag_list
             if upload_descriptors:
                 update_kwargs["uploads"] = upload_descriptors
             _get_redmine_client().issue.update(issue_id, **update_kwargs)

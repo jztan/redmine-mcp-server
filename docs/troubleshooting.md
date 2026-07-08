@@ -546,6 +546,59 @@ REDMINE_PUBLIC_URL=https://example.com/redmine
      predates the scope: reconnect the MCP client so it runs a fresh OAuth flow
      and consents to the updated scope list.
 
+### Tags Missing from Issue Results
+
+**Symptoms:**
+- `tags` is empty or absent in `get_redmine_issue` even though `REDMINE_TAGS_ENABLED=true` and the issue has tags in the web UI
+
+**Solutions:**
+
+1. **Verify `REDMINE_TAGS_ENABLED` is set correctly**
+   ```bash
+   # In .env file
+   REDMINE_TAGS_ENABLED=true
+   ```
+
+2. **Grant `view_issue_tags` to the user's role**
+   - Go to **Administration → Roles and permissions**
+   - Click the role assigned to your API user
+   - Under the **Issue tracking** section, check **View issue tags** and save
+   - The additional_tags plugin omits the `tags` field from the API entirely
+     when the caller lacks this permission, so the MCP returns `[]`.
+
+3. **Enable issue tags in the plugin settings**
+   - Go to **Administration → Plugins → Additional Tags → Configure**
+   - Confirm issue tagging (`active_issue_tags`) is enabled
+
+4. **Verify the additional_tags plugin is installed**
+   - Go to **Administration → Plugins** and confirm *Additional Tags* is listed
+
+5. **OAuth modes: re-authorize so the token carries the tags scopes**
+   - Under `oauth` / `oauth-proxy` the token must include `view_issue_tags`
+     (read) and, for writing, `create_issue_tags` / `edit_issue_tags`. The
+     server advertises these automatically when `REDMINE_TAGS_ENABLED=true`
+     (the write scopes are dropped in read-only mode). If you enabled the flag
+     after authorizing, reconnect the MCP client so it runs a fresh OAuth flow
+     and consents to the updated scope list.
+
+**Note:** tags are only *returned* by `get_redmine_issue` (single-issue fetch).
+The plugin injects them into `GET /issues/{id}.json` only, so `list_redmine_issues`
+and `search_redmine_issues` do not include a `tags` field.
+
+### Setting Tags Has No Effect (`tag_list` silently ignored)
+
+**Symptoms:**
+- Passing `tag_list` to `create_redmine_issue` / `update_redmine_issue` succeeds but the tags are not applied
+
+**Solutions:**
+
+1. **Confirm `REDMINE_TAGS_ENABLED=true`** — otherwise `tag_list` is silently dropped (like `story_points` without the agile flag).
+2. **Grant the write permission** — the role needs **Create issue tags** (to introduce brand-new tag names) or **Edit issue tags** (which only permits tags that already exist project-wide). With only *Edit issue tags*, new names are silently discarded by the plugin.
+3. **OAuth modes** — the token must carry `create_issue_tags` / `edit_issue_tags`; these are write scopes, so a read-only deployment (`REDMINE_MCP_READ_ONLY=true`) does not advertise them.
+4. **Custom field named `tag_list`** — `tag_list` is intercepted before custom-field resolution, so a custom field with that exact name can't be set by name; use the explicit `custom_fields` id form for it.
+
+**Note:** `tag_list` **replaces** the issue's entire tag set (it is not additive). Fetch the current tags with `get_redmine_issue` first if you want to add to them.
+
 ### Custom Field Named "story_points" Cannot Be Updated by Name
 
 **Symptoms:**
