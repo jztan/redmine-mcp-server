@@ -207,6 +207,9 @@ def _issue_to_dict(issue: Any, include_custom_fields: bool = False) -> Dict[str,
     priority = getattr(issue, "priority", None)
     author = getattr(issue, "author", None)
     tracker = getattr(issue, "tracker", None)
+    category = getattr(issue, "category", None)
+    fixed_version = getattr(issue, "fixed_version", None)
+    parent = getattr(issue, "parent", None)
 
     issue_dict = {
         "id": getattr(issue, "id", None),
@@ -235,6 +238,25 @@ def _issue_to_dict(issue: Any, include_custom_fields: bool = False) -> Dict[str,
             if assigned is not None
             else None
         ),
+        # Standard fields returned by Redmine's default issue JSON.
+        # The sibling gantt serializer already exposes a subset of these.
+        # see GitHub issue #174.
+        "category": (
+            {"id": category.id, "name": category.name} if category is not None else None
+        ),
+        "fixed_version": (
+            {"id": fixed_version.id, "name": fixed_version.name}
+            if fixed_version is not None
+            else None
+        ),
+        "parent": ({"id": parent.id} if parent is not None else None),
+        "start_date": _safe_isoformat(getattr(issue, "start_date", None)),
+        "due_date": _safe_isoformat(getattr(issue, "due_date", None)),
+        "done_ratio": getattr(issue, "done_ratio", None),
+        "estimated_hours": getattr(issue, "estimated_hours", None),
+        "spent_hours": getattr(issue, "spent_hours", None),
+        "is_private": getattr(issue, "is_private", None),
+        "closed_on": _safe_isoformat(getattr(issue, "closed_on", None)),
         "created_on": _safe_isoformat(getattr(issue, "created_on", None)),
         "updated_on": _safe_isoformat(getattr(issue, "updated_on", None)),
     }
@@ -266,6 +288,16 @@ def _issue_to_dict_selective(
         - tracker: Tracker/type info (dict with id and name, or None)
         - author: Author info (dict with id and name)
         - assigned_to: Assigned user info (dict with id and name, or None)
+        - category: Issue category (dict with id and name, or None)
+        - fixed_version: Target version (dict with id and name, or None)
+        - parent: Parent issue (dict with id, or None)
+        - start_date: Scheduled start date (ISO format, or None)
+        - due_date: Scheduled due date (ISO format, or None)
+        - done_ratio: Completion percentage (int, or None)
+        - estimated_hours: Estimated effort in hours (float, or None)
+        - spent_hours: Logged effort in hours (float, or None)
+        - is_private: Whether the issue is private (bool, or None)
+        - closed_on: Closure timestamp (ISO format, or None)
         - created_on: Creation timestamp (ISO format)
         - updated_on: Last update timestamp (ISO format)
 
@@ -294,6 +326,9 @@ def _issue_to_dict_selective(
     priority = getattr(issue, "priority", None)
     author = getattr(issue, "author", None)
     tracker = getattr(issue, "tracker", None)
+    category = getattr(issue, "category", None)
+    fixed_version = getattr(issue, "fixed_version", None)
+    parent = getattr(issue, "parent", None)
 
     all_fields = {
         "id": getattr(issue, "id", None),
@@ -322,6 +357,22 @@ def _issue_to_dict_selective(
             if assigned is not None
             else None
         ),
+        "category": (
+            {"id": category.id, "name": category.name} if category is not None else None
+        ),
+        "fixed_version": (
+            {"id": fixed_version.id, "name": fixed_version.name}
+            if fixed_version is not None
+            else None
+        ),
+        "parent": ({"id": parent.id} if parent is not None else None),
+        "start_date": _safe_isoformat(getattr(issue, "start_date", None)),
+        "due_date": _safe_isoformat(getattr(issue, "due_date", None)),
+        "done_ratio": getattr(issue, "done_ratio", None),
+        "estimated_hours": getattr(issue, "estimated_hours", None),
+        "spent_hours": getattr(issue, "spent_hours", None),
+        "is_private": getattr(issue, "is_private", None),
+        "closed_on": _safe_isoformat(getattr(issue, "closed_on", None)),
         "created_on": _safe_isoformat(getattr(issue, "created_on", None)),
         "updated_on": _safe_isoformat(getattr(issue, "updated_on", None)),
     }
@@ -541,7 +592,11 @@ async def get_redmine_issue(
             ``journal_limit``). Defaults to ``0``.
 
     Returns:
-        A dictionary containing issue details. If ``include_journals`` is ``True``
+        A dictionary containing issue details, including the standard fields
+        ``category``, ``fixed_version`` (target version), ``parent``,
+        ``start_date``, ``due_date``, ``done_ratio``, ``estimated_hours``,
+        ``spent_hours``, ``is_private`` and ``closed_on`` (each ``None`` when
+        not set on the issue). If ``include_journals`` is ``True``
         and the issue has journals, they will be returned under the ``"journals"``
         key. If ``include_attachments`` is ``True`` and attachments exist they
         will be returned under the ``"attachments"`` key. On failure a dictionary
