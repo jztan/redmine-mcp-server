@@ -247,12 +247,20 @@
         background: var(--panel);
         overflow-x: auto;
         overflow-y: hidden;
-        scrollbar-width: none;
-        -ms-overflow-style: none;
+        /* Show a slim horizontal scrollbar so boards with more columns than
+           fit (e.g. 4+ statuses) read as scrollable instead of clipped. */
+        scrollbar-width: thin;
+        scrollbar-color: var(--border-strong) transparent;
       }
       .board::-webkit-scrollbar {
-        width: 0;
-        height: 0;
+        height: 8px;
+      }
+      .board::-webkit-scrollbar-thumb {
+        background: var(--border-strong);
+        border-radius: 4px;
+      }
+      .board::-webkit-scrollbar-track {
+        background: transparent;
       }
       .col {
         flex: 0 0 min(220px, calc((100% - 36px) / 4));
