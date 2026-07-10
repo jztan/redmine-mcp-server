@@ -384,7 +384,7 @@ def _split_contributors(section: str) -> tuple[str, str]:
     """Split a changelog section into (main_body, acknowledgements).
 
     The ### Contributors subsection is removed from the body and reformatted
-    as an Acknowledgements block that matches the existing release style.
+    as a Contributors block that matches the existing release style.
     Contributor credits are NEVER rewritten by the LLM: keeping this
     deterministic preserves @-mentions and PR links verbatim.
     """
@@ -575,8 +575,8 @@ def notes_file_path(project_root: Path, new_version: str) -> Path:
 
 
 def _ack_block(acknowledgements: str) -> str:
-    """Deterministic Acknowledgements block (contributor credits, verbatim)."""
-    return f"\n\n## Acknowledgements\n\n{acknowledgements}" if acknowledgements else ""
+    """Deterministic Contributors block (contributor credits, verbatim)."""
+    return f"\n\n## Contributors\n\n{acknowledgements}" if acknowledgements else ""
 
 
 def _install_and_links_section(new_version: str) -> str:
@@ -597,7 +597,7 @@ pip install {PACKAGE_NAME}=={new_version}
 def build_release_body(generated: str, acknowledgements: str, new_version: str) -> str:
     """Compose final notes: Claude-generated sections + deterministic tail.
 
-    Acknowledgements are appended verbatim (never LLM-rewritten) so
+    Contributor credits are appended verbatim (never LLM-rewritten) so
     contributor @-mentions and PR links are preserved exactly.
     """
     ack = _ack_block(acknowledgements)
@@ -653,7 +653,7 @@ Hard rules:
 - Keep every number exactly as written in the changelog.
 - Never use em dashes. Use a comma, colon, or hyphen instead.
 - Plain markdown only. No H1 headings. Do not add Installation, Links, or
-  Acknowledgements sections (they are appended separately).
+  Contributors sections (they are appended separately).
 
 Changelog section for {tag}:
 
@@ -752,7 +752,8 @@ def approve_release_notes(
     [r]egenerate with optional steering / [f]allback to raw changelog.
     Non-TTY: auto-accept the draft. Generation failure: prompt
     retry/fallback on a TTY, silent fallback otherwise. Never blocks the
-    release on the LLM. Acknowledgements are always appended deterministically.
+    release on the LLM. Contributor credits are always appended
+    deterministically.
     """
     tag = f"v{new_version}"
     interactive = sys.stdin.isatty()
