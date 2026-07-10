@@ -16,8 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `get_triage_board_data` tool.
   Drag a card to another status column to change the issue's status in Redmine via
   `update_redmine_issue` (an optimistic move that reverts with an explanation when
-  Redmine rejects the transition); disabled in read-only mode. The board self-loads
-  and auto-resizes to fit. Projects with more status columns than fit the width scroll
+  Redmine rejects the transition); disabled in read-only mode. The Kanban board
+  self-loads and auto-resizes to fit. Projects with more status columns than fit the width scroll
   horizontally with a visible scrollbar, so columns past the third stay reachable.
 - `get_redmine_issue` now serializes ten standard Redmine issue fields its
   "full context" output previously dropped: `category`, `fixed_version`
