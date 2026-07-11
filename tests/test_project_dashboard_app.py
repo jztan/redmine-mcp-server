@@ -321,3 +321,33 @@ def test_dashboard_html_is_self_contained():
     # tags, remote src/href, @import, CDN hosts) rather than bare "http".
     for bad in ["<link", 'src="http', 'src="//', 'href="http', "@import", "cdn."]:
         assert bad not in html, bad
+
+
+# Importing the package registers the resource + tools on the shared mcp.
+from redmine_mcp_server import apps  # noqa: E402,F401
+from redmine_mcp_server.server import mcp  # noqa: E402
+
+
+@pytest.mark.asyncio
+async def test_dashboard_ui_resource_registered():
+    res = await mcp.get_resource("ui://redmine/project-dashboard.html")
+    assert res.mime_type == "text/html;profile=mcp-app"
+    body = await res.read()
+    assert isinstance(body, str) and body.strip()
+
+
+@pytest.mark.asyncio
+async def test_show_project_dashboard_meta_points_at_ui():
+    tool = await mcp.get_tool("show_project_dashboard")
+    ui = tool.meta["ui"]
+    assert ui["resourceUri"] == "ui://redmine/project-dashboard.html"
+    assert ui["visibility"] == ["model"]
+    assert ui.get("csp", {}) == {}
+
+
+@pytest.mark.asyncio
+async def test_dashboard_backend_tool_is_app_only():
+    tool = await mcp.get_tool("get_project_dashboard_data")
+    ui = tool.meta["ui"]
+    assert ui["visibility"] == ["app"]
+    assert "resourceUri" not in ui

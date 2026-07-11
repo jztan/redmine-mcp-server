@@ -10,9 +10,13 @@ the carried open-issue rows client-side.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from importlib.resources import files
 from typing import Any, Dict, List, Optional, Union
 
+from fastmcp.apps.config import AppConfig, ResourceCSP
+
 from .._env import _is_read_only_mode
+from ..server import mcp
 from ..tools.enumeration import (
     list_redmine_issue_priorities,
     list_redmine_issue_statuses,
@@ -24,6 +28,11 @@ _RECENT_LIMIT = 6
 _OPEN_FIELDS = ["id", "subject", "status", "priority", "assigned_to", "due_date"]
 _RECENT_FIELDS = ["id", "subject", "status", "updated_on"]
 _UI_RESOURCE_URI = "ui://redmine/project-dashboard.html"
+_PROJECT_DASHBOARD_HTML = (
+    files("redmine_mcp_server.apps._ui")
+    .joinpath("project_dashboard.html")
+    .read_text(encoding="utf-8")
+)
 
 
 def _name(value: Any) -> Optional[str]:
@@ -226,3 +235,57 @@ async def _build_dashboard_payload(
         "truncated": bool(open_pag.get("has_next")),
         "read_only": _is_read_only_mode(),
     }
+
+
+@mcp.resource(_UI_RESOURCE_URI, mime_type="text/html;profile=mcp-app")
+def project_dashboard_ui() -> str:
+    """Serve the self-contained project-dashboard HTML view."""
+    return _PROJECT_DASHBOARD_HTML
+
+
+@mcp.tool(
+    app=AppConfig(
+        resource_uri=_UI_RESOURCE_URI,
+        visibility=["model"],
+        csp=ResourceCSP(),
+    )
+)
+async def show_project_dashboard(
+    project_id: Union[int, str],
+    filters: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Show a live project dashboard (health snapshot) for a project.
+
+    Use this whenever the user wants an overview, snapshot, health check,
+    or "how is project X doing" view: open vs closed counts, overdue and
+    due-this-week issues, an open-by-priority breakdown, and recent
+    activity. Natural requests include: "how is <project> doing", "show
+    the dashboard for <project>", "project overview / health / status at a
+    glance", or "what needs attention in <project>".
+
+    Renders an interactive dashboard in clients that support MCP Apps;
+    other clients receive the same structured data. Prefer
+    ``summarize_project_status`` when the user wants a written narrative
+    summary, and ``show_triage_board`` when they want to work issues in a
+    board. Read-only.
+
+    Args:
+        project_id: The project to display, as a numeric ID or string
+            identifier (e.g. ``1`` or ``"web"``).
+        filters: Optional extra Redmine filter dict, the same shape
+            ``list_redmine_issues`` accepts (e.g. ``{"tracker_id": 1}``).
+    """
+    return await _build_dashboard_payload(project_id, filters)
+
+
+@mcp.tool(app=AppConfig(visibility=["app"]))
+async def get_project_dashboard_data(
+    project_id: Union[int, str],
+    filters: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Backend data source for the project dashboard's Refresh button.
+
+    Returns the same payload as ``show_project_dashboard`` without a UI
+    resource; the dashboard's iframe calls this over ``tools/call``.
+    """
+    return await _build_dashboard_payload(project_id, filters)
