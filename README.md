@@ -684,7 +684,7 @@ Contributions are welcome! Please see our [contributing guide](./docs/contributi
 
 Thank you to everyone who has helped improve this project through code, reviews, testing, and feature requests:
 
-[@sebastianelsner](https://github.com/sebastianelsner) · [@mihajlovicjj](https://github.com/mihajlovicjj) · [@aadnehovda](https://github.com/aadnehovda) · [@martindglaser](https://github.com/martindglaser) · [@Vitexus](https://github.com/Vitexus) · [@timcomport](https://github.com/timcomport) · [@Bricklou](https://github.com/Bricklou)
+[@sebastianelsner](https://github.com/sebastianelsner) · [@mihajlovicjj](https://github.com/mihajlovicjj) · [@aadnehovda](https://github.com/aadnehovda) · [@martindglaser](https://github.com/martindglaser) · [@Vitexus](https://github.com/Vitexus) · [@timcomport](https://github.com/timcomport) · [@Bricklou](https://github.com/Bricklou) · [@LaurensRietveld](https://github.com/LaurensRietveld)
 
 <a href="https://github.com/jztan/redmine-mcp-server/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=jztan/redmine-mcp-server" alt="Contributors" />
