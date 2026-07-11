@@ -5,7 +5,7 @@
 - **Current Version:** v2.6.0 (released 2026-07-11)
 - **MCP Registry Status:** Published
 - **Test Suite:** 1443 unit tests + 87 integration tests. Integration tests gate on environment: a sandbox Redmine, plugin flags (`REDMINE_AGILE_ENABLED` etc.), and the destructive OAuth test behind `RUN_DESTRUCTIVE_TESTS=1`. Tests that can't run in the current environment skip cleanly with a clear reason. Run them locally with `python tests/run_tests.py --all` or `--integration`.
-- **Tools:** 43 core + 6 plugin-gated + 1 admin-gated (maximum 50 with all flags enabled). The core count includes the two `triage-board` tools (`show_triage_board`, plus the app-only `get_triage_board_data` which is registered but hidden from the model's tool list). Note: the 6 plugin tools are always registered and listed; their flag is enforced at call time (a disabled call returns an error), so disabling a plugin does not hide its tools. Only the 1 admin tool is conditionally registered (hidden unless `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`).
+- **Tools:** 45 core + 6 plugin-gated + 1 admin-gated (maximum 52 with all flags enabled). The core count includes the two `triage-board` tools (`show_triage_board`, plus the app-only `get_triage_board_data` which is registered but hidden from the model's tool list) and the two `project-dashboard` tools (`show_project_dashboard`, plus the app-only `get_project_dashboard_data`). Note: the 6 plugin tools are always registered and listed; their flag is enforced at call time (a disabled call returns an error), so disabling a plugin does not hide its tools. Only the 1 admin tool is conditionally registered (hidden unless `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`).
 
 ---
 
@@ -47,7 +47,8 @@ Committed direction (2026-06-27): become a reference adopter of the official [MC
 - [x] Verify app-callback auth under the OAuth modes: proven at the server level. Under `oauth`, the app-callback tool `get_triage_board_data` is accepted with a valid Doorkeeper Bearer token (returns live issues) and rejected with 401 when the token is missing or invalid, exactly like any tool call. Under `oauth-proxy`, the server boots, protects `/mcp` (401 without a token), and advertises OAuth discovery (`authorization-server` metadata plus resource metadata at `/.well-known/oauth-protected-resource/mcp`). The app never contacts the server directly; the host forwards the callback over its own authenticated connection, so once a token is in the session the callback inherits it. Remaining optional confirmation: the live browser OAuth login through Claude Desktop under `oauth-proxy` (token minting via DCR + Redmine login), which is orthogonal to the callback mechanism.
 - [x] Interactive write-back: drag-to-reassign issue status via `update_redmine_issue` (optimistic move, reverts on rejection; disabled in read-only mode). Shipped in v2.6.0.
 - [ ] Drive traffic to [#168](https://github.com/jztan/redmine-mcp-server/discussions/168) via the visibility push to prioritize later views
-- [ ] Additional views prioritized by the #168 signal (Gantt/timeline, project dashboard, time-sheet, sprint burndown)
+- [ ] Project dashboard view (open/closed, overdue, by-priority, recent activity): implemented on branch, pending live-client (Claude Desktop) verification before it is marked shipped
+- [ ] Additional views prioritized by the #168 signal (Gantt/timeline, time-sheet, burndown)
 
 > **Client note:** MCP hosts cache the `ui://` resource. After changing the board HTML, a server restart alone is not enough for an already-connected client (Claude Desktop) to pick it up: fully quit and reopen the client to refetch the resource.
 

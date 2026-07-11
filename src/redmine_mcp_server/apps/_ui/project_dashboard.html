@@ -1,0 +1,1108 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Project Dashboard</title>
+    <style>
+      :root {
+        --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica,
+          Arial, sans-serif;
+        --surface: transparent;
+        --shell: rgba(255, 255, 255, 0.68);
+        --panel: rgba(234, 240, 248, 0.88);
+        --panel-2: rgba(223, 231, 243, 0.96);
+        --lane: rgba(255, 255, 255, 0.4);
+        --card: #ffffff;
+        --border: rgba(194, 205, 220, 0.78);
+        --border-strong: rgba(175, 188, 208, 0.9);
+        --text: #162033;
+        --text-2: #5f6b7c;
+        --text-3: #8d98aa;
+        --accent: #2563eb;
+        --accent-soft: rgba(219, 231, 255, 0.9);
+        --button-bg: rgba(248, 251, 255, 0.92);
+        --button-border: rgba(207, 217, 236, 0.95);
+        --shadow: 0 8px 24px rgba(31, 41, 55, 0.06);
+        --card-shadow: 0 3px 10px rgba(37, 99, 235, 0.05);
+        --wash: rgba(255, 255, 255, 0.16);
+        --pos: #12b76a;
+        --neg: #e5484d;
+        --bar-track: rgba(148, 163, 184, 0.28);
+        --prio-urgent: #e5484d;
+        --prio-high: #f59e0b;
+        --prio-normal: #2563eb;
+        --prio-low: #94a3b8;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --shell: rgba(20, 24, 30, 0.55);
+          --panel: rgba(31, 36, 44, 0.96);
+          --panel-2: rgba(45, 51, 61, 0.98);
+          --lane: rgba(22, 27, 34, 0.9);
+          --card: #2b313b;
+          --border: rgba(96, 109, 129, 0.38);
+          --border-strong: rgba(120, 135, 159, 0.56);
+          --text: #f3f6fb;
+          --text-2: #b9c3d4;
+          --text-3: #8d99ad;
+          --accent: #73a7ff;
+          --accent-soft: rgba(61, 95, 160, 0.42);
+          --button-bg: rgba(44, 51, 63, 0.96);
+          --button-border: rgba(97, 113, 138, 0.62);
+          --shadow: 0 10px 30px rgba(0, 0, 0, 0.24);
+          --card-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+          --wash: rgba(255, 255, 255, 0.035);
+          --pos: #3fbf7f;
+          --neg: #ff6b6b;
+          --bar-track: rgba(148, 163, 184, 0.22);
+          --prio-normal: #73a7ff;
+          --prio-low: #7c899c;
+        }
+      }
+      :root[data-theme="light"] {
+        --shell: rgba(255, 255, 255, 0.68);
+        --panel: rgba(234, 240, 248, 0.88);
+        --panel-2: rgba(223, 231, 243, 0.96);
+        --card: #ffffff;
+        --border: rgba(194, 205, 220, 0.78);
+        --border-strong: rgba(175, 188, 208, 0.9);
+        --text: #162033;
+        --text-2: #5f6b7c;
+        --text-3: #8d98aa;
+        --accent: #2563eb;
+        --accent-soft: rgba(219, 231, 255, 0.9);
+        --button-bg: rgba(248, 251, 255, 0.92);
+        --button-border: rgba(207, 217, 236, 0.95);
+        --wash: rgba(255, 255, 255, 0.16);
+        --pos: #12b76a;
+        --neg: #e5484d;
+        --prio-normal: #2563eb;
+        --prio-low: #94a3b8;
+      }
+      :root[data-theme="dark"] {
+        --shell: rgba(20, 24, 30, 0.55);
+        --panel: rgba(31, 36, 44, 0.96);
+        --panel-2: rgba(45, 51, 61, 0.98);
+        --card: #2b313b;
+        --border: rgba(96, 109, 129, 0.38);
+        --border-strong: rgba(120, 135, 159, 0.56);
+        --text: #f3f6fb;
+        --text-2: #b9c3d4;
+        --text-3: #8d99ad;
+        --accent: #73a7ff;
+        --accent-soft: rgba(61, 95, 160, 0.42);
+        --button-bg: rgba(44, 51, 63, 0.96);
+        --button-border: rgba(97, 113, 138, 0.62);
+        --wash: rgba(255, 255, 255, 0.035);
+        --pos: #3fbf7f;
+        --neg: #ff6b6b;
+        --prio-normal: #73a7ff;
+        --prio-low: #7c899c;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        background: transparent;
+      }
+      body {
+        background: var(--surface);
+        color: var(--text);
+        font-family: var(--font-sans);
+        font-size: 13px;
+        line-height: 1.4;
+        -webkit-font-smoothing: antialiased;
+        padding: 10px 0 0;
+      }
+      .num {
+        font-variant-numeric: tabular-nums;
+      }
+
+      .shell {
+        background: var(--shell);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        box-shadow: var(--shadow);
+        overflow: hidden;
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+      }
+
+      .head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 22px 24px 18px;
+        border-bottom: 1px solid var(--border);
+      }
+      .head-copy {
+        min-width: 0;
+      }
+      .head h1 {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 700;
+        letter-spacing: -0.03em;
+      }
+      .head .sub {
+        margin-top: 4px;
+        font-size: 12px;
+        color: var(--text-2);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .head-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .head .stamp {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--text-2);
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 7px 12px;
+        font-variant-numeric: tabular-nums;
+      }
+      .btn {
+        font: inherit;
+        font-size: 12px;
+        font-weight: 650;
+        color: var(--accent);
+        background: var(--button-bg);
+        border: 1px solid var(--button-border);
+        border-radius: 999px;
+        padding: 7px 13px;
+        cursor: pointer;
+        transition: background 0.12s ease, border-color 0.12s ease,
+          transform 0.12s ease;
+      }
+      .btn:hover:not([disabled]) {
+        background: var(--accent-soft);
+        border-color: var(--accent);
+        transform: translateY(-1px);
+      }
+      .btn:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+      .btn[disabled] {
+        opacity: 0.45;
+        cursor: default;
+      }
+      .ro-pill {
+        font-size: 10.5px;
+        font-weight: 700;
+        color: var(--text-2);
+        background: var(--accent-soft);
+        border: 1px solid var(--button-border);
+        border-radius: 999px;
+        padding: 5px 9px;
+      }
+      .ro-pill[hidden] {
+        display: none;
+      }
+
+      .body {
+        background: var(--panel);
+        padding: 18px;
+      }
+      .notice {
+        margin: 0 0 14px;
+        font-size: 11.5px;
+        color: var(--text-2);
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 10px 12px;
+      }
+      .notice[hidden] {
+        display: none;
+      }
+      .grid {
+        display: grid;
+        gap: 14px;
+      }
+      .kpis {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+      }
+      .tile {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 16px;
+        box-shadow: var(--card-shadow);
+        cursor: pointer;
+        text-align: left;
+        font: inherit;
+        transition: transform 0.12s ease, border-color 0.12s ease;
+      }
+      .tile:hover:not([disabled]),
+      .tile:focus-visible {
+        transform: translateY(-1px);
+        border-color: var(--accent);
+        outline: none;
+      }
+      .tile:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+      .tile .figure {
+        font-size: 30px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        color: var(--text);
+        font-variant-numeric: tabular-nums;
+      }
+      .tile.alert .figure {
+        color: var(--neg);
+      }
+      .tile .label {
+        margin-top: 2px;
+        font-size: 12px;
+        color: var(--text-2);
+      }
+      .tile .hint {
+        margin-top: 6px;
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--text-3);
+      }
+      .tile .hint.pos {
+        color: var(--pos);
+      }
+      .tile .hint.neg {
+        color: var(--neg);
+      }
+
+      .two {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+      }
+      .panel-card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 16px 18px;
+        box-shadow: var(--card-shadow);
+      }
+      .panel-title {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--text-3);
+        margin: 0 0 12px;
+      }
+      .donut-row {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+      }
+      .donut {
+        flex: 0 0 auto;
+      }
+      .donut .center-num {
+        font-size: 22px;
+        font-weight: 700;
+        fill: var(--text);
+      }
+      .donut .center-lbl {
+        font-size: 9px;
+        fill: var(--text-2);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+      .legend {
+        font-size: 12px;
+        color: var(--text-2);
+      }
+      .legend .row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 6px;
+      }
+      .swatch {
+        width: 10px;
+        height: 10px;
+        border-radius: 3px;
+        flex: 0 0 auto;
+      }
+      .legend .total {
+        margin-top: 8px;
+        color: var(--text-3);
+        font-size: 11px;
+      }
+
+      .bars {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        gap: 10px 12px;
+        align-items: center;
+      }
+      .bar-label {
+        font-size: 12px;
+        color: var(--text-2);
+      }
+      .bar-track {
+        height: 8px;
+        border-radius: 999px;
+        background: var(--bar-track);
+        overflow: hidden;
+      }
+      .bar-fill {
+        height: 100%;
+        border-radius: 999px;
+        min-width: 0;
+      }
+      .bar-fill.urgent {
+        background: var(--prio-urgent);
+      }
+      .bar-fill.high {
+        background: var(--prio-high);
+      }
+      .bar-fill.normal {
+        background: var(--prio-normal);
+      }
+      .bar-fill.low {
+        background: var(--prio-low);
+      }
+      .bar-val {
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--text);
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+        cursor: pointer;
+      }
+
+      .feed .item {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        padding: 9px 0;
+        border-top: 1px solid var(--border);
+      }
+      .feed .item:first-child {
+        border-top: none;
+      }
+      .feed .fid {
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--accent);
+        flex: 0 0 auto;
+      }
+      .feed .fsub {
+        flex: 1 1 auto;
+        min-width: 0;
+        color: var(--text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .feed .fwhen {
+        flex: 0 0 auto;
+        color: var(--text-3);
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .drill-head {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+      .drill-head h2 {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 700;
+      }
+      .drow {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        padding: 9px 2px;
+        border-top: 1px solid var(--border);
+      }
+      .drow:first-child {
+        border-top: none;
+      }
+      .chip {
+        font-size: 10.5px;
+        font-weight: 700;
+        color: var(--text-2);
+        background: var(--panel-2);
+        border-radius: 999px;
+        padding: 2px 8px;
+        flex: 0 0 auto;
+      }
+
+      .panel {
+        margin: 8px 0;
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        padding: 28px 18px;
+        text-align: center;
+        color: var(--text-2);
+        font-size: 12.5px;
+        background: var(--wash);
+      }
+      .panel.error {
+        border-color: #e5484d33;
+        background: #e5484d0d;
+        color: #c0393e;
+      }
+      @media (prefers-color-scheme: dark) {
+        .panel.error {
+          color: #ffb2b0;
+        }
+      }
+      :root[data-theme="dark"] .panel.error {
+        color: #ffb2b0;
+      }
+
+      .foot {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 16px 24px 20px;
+        border-top: 1px solid var(--border);
+        background: var(--wash);
+        color: var(--text-2);
+        font-size: 11.5px;
+      }
+      .foot-note {
+        color: var(--text-3);
+        text-align: right;
+      }
+
+      @media (max-width: 720px) {
+        body {
+          padding-top: 8px;
+        }
+        .head,
+        .body,
+        .foot {
+          padding-left: 16px;
+          padding-right: 16px;
+        }
+        .head {
+          flex-direction: column;
+        }
+        .kpis {
+          grid-template-columns: 1fr 1fr;
+        }
+        .two {
+          grid-template-columns: 1fr;
+        }
+        .foot {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+        .foot-note {
+          text-align: left;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <section class="shell" aria-label="Project dashboard">
+      <header class="head">
+        <div class="head-copy">
+          <h1>Project Dashboard</h1>
+          <div class="sub">
+            <span id="project-name">Loading project</span>
+          </div>
+        </div>
+        <div class="head-actions">
+          <span id="ro-pill" class="ro-pill" hidden>Read-only</span>
+          <span id="stamp" class="stamp">via redmine-mcp-server</span>
+          <button id="refresh-btn" class="btn" disabled>Refresh</button>
+        </div>
+      </header>
+      <div class="body">
+        <div id="truncated" class="notice" hidden></div>
+        <div id="root">
+          <div class="panel" id="loading">Loading dashboard...</div>
+        </div>
+      </div>
+      <div class="foot">
+        <span>Click any figure to see the matching issues.</span>
+        <span class="foot-note">Backed by `list_redmine_issues`.</span>
+      </div>
+    </section>
+
+    <script>
+      (function () {
+        "use strict";
+
+        var PARENT = window.parent;
+        var PROTOCOL_VERSION = "2026-01-26";
+
+        var nextId = 1;
+        var pending = new Map();
+        var state = {
+          payload: null,
+          projectId: null,
+          filters: null,
+          ready: false,
+        };
+
+        var rootEl = document.getElementById("root");
+        var nameEl = document.getElementById("project-name");
+        var stampEl = document.getElementById("stamp");
+        var truncatedEl = document.getElementById("truncated");
+        var refreshBtn = document.getElementById("refresh-btn");
+        var roPill = document.getElementById("ro-pill");
+
+        // --- transport (mirrors triage_board.html) -----------------------
+        function post(msg) {
+          PARENT.postMessage(msg, "*");
+        }
+        function request(method, params) {
+          var id = nextId++;
+          post({ jsonrpc: "2.0", id: id, method: method, params: params });
+          return new Promise(function (resolve, reject) {
+            var timer = setTimeout(function () {
+              if (pending.has(id)) {
+                pending.delete(id);
+                reject(new Error(method + " timed out"));
+              }
+            }, 15000);
+            pending.set(id, {
+              resolve: function (v) {
+                clearTimeout(timer);
+                resolve(v);
+              },
+              reject: function (e) {
+                clearTimeout(timer);
+                reject(e);
+              },
+            });
+          });
+        }
+        function notify(method, params) {
+          post({ jsonrpc: "2.0", method: method, params: params || {} });
+        }
+
+        function onMessage(event) {
+          if (event.source !== PARENT) return;
+          var msg = event.data;
+          if (!msg || msg.jsonrpc !== "2.0") return;
+          if (
+            msg.id !== undefined &&
+            (msg.result !== undefined || msg.error !== undefined)
+          ) {
+            var waiter = pending.get(msg.id);
+            if (!waiter) return;
+            pending.delete(msg.id);
+            if (msg.error) {
+              waiter.reject(new Error(msg.error.message || "request failed"));
+            } else {
+              waiter.resolve(msg.result);
+            }
+            return;
+          }
+          if (msg.method === "ping") {
+            if (msg.id !== undefined) {
+              post({ jsonrpc: "2.0", id: msg.id, result: {} });
+            }
+            return;
+          }
+          if (msg.method === "ui/notifications/tool-input") {
+            var args = (msg.params && msg.params.arguments) || {};
+            if (args.project_id !== undefined && args.project_id !== null) {
+              state.projectId = args.project_id;
+              refreshBtn.disabled = false;
+            }
+            if (args.filters !== undefined) {
+              state.filters = args.filters;
+            }
+            maybeInitialLoad();
+            return;
+          }
+          if (msg.method === "ui/notifications/tool-result") {
+            applyResult(msg.params);
+            return;
+          }
+          if (msg.id !== undefined) {
+            post({
+              jsonrpc: "2.0",
+              id: msg.id,
+              error: { code: -32601, message: "Method not found" },
+            });
+          }
+        }
+
+        // --- auto-resize (mirrors triage_board.html) ---------------------
+        var lastW = 0;
+        var lastH = 0;
+        function reportSize() {
+          if (!state.ready) return;
+          var html = document.documentElement;
+          var prev = html.style.height;
+          html.style.height = "max-content";
+          var h = Math.ceil(html.getBoundingClientRect().height);
+          html.style.height = prev;
+          var w = Math.ceil(window.innerWidth);
+          if (w === lastW && h === lastH) return;
+          lastW = w;
+          lastH = h;
+          notify("ui/notifications/size-changed", { width: w, height: h });
+        }
+        var resizeQueued = false;
+        function queueResize() {
+          if (resizeQueued) return;
+          resizeQueued = true;
+          requestAnimationFrame(function () {
+            resizeQueued = false;
+            reportSize();
+          });
+        }
+
+        // --- helpers -----------------------------------------------------
+        function el(tag, cls, text) {
+          var n = document.createElement(tag);
+          if (cls) n.className = cls;
+          if (text !== undefined) n.textContent = text;
+          return n;
+        }
+        function priorityClass(name) {
+          var n = String(name || "").toLowerCase();
+          if (n.indexOf("immediate") >= 0 || n.indexOf("urgent") >= 0)
+            return "urgent";
+          if (n.indexOf("high") >= 0) return "high";
+          if (n.indexOf("low") >= 0) return "low";
+          return "normal";
+        }
+        function relTime(iso) {
+          if (!iso) return "";
+          var then = new Date(iso).getTime();
+          if (isNaN(then)) return "";
+          var mins = Math.max(0, Math.round((Date.now() - then) / 60000));
+          if (mins < 60) return mins + "m ago";
+          var hrs = Math.round(mins / 60);
+          if (hrs < 24) return hrs + "h ago";
+          return new Date(iso).toLocaleDateString();
+        }
+
+        // --- KPI tiles ---------------------------------------------------
+        function tile(figure, label, hint, hintCls, alert, onClick, aria) {
+          var b = el("button", "tile" + (alert ? " alert" : ""));
+          b.type = "button";
+          if (aria) b.setAttribute("aria-label", aria);
+          b.appendChild(el("div", "figure", String(figure)));
+          b.appendChild(el("div", "label", label));
+          if (hint) b.appendChild(el("div", "hint " + (hintCls || ""), hint));
+          if (onClick) b.addEventListener("click", onClick);
+          return b;
+        }
+
+        function kpiRow(p) {
+          var k = p.kpis;
+          var row = el("div", "kpis");
+          var openHint =
+            k.open_delta_week != null && k.open_delta_week > 0
+              ? "+" + k.open_delta_week + " this week"
+              : null;
+          row.appendChild(
+            tile(k.open, "Open issues", openHint, "pos", false, function () {
+              drillOpen();
+            }, k.open + " open issues")
+          );
+          row.appendChild(
+            tile(k.closed, "Closed", null, null, false, function () {
+              drillClosed();
+            }, k.closed + " closed issues")
+          );
+          row.appendChild(
+            tile(
+              k.overdue,
+              "Overdue",
+              k.overdue > 0 ? "needs attention" : "on track",
+              k.overdue > 0 ? "neg" : null,
+              k.overdue > 0,
+              function () {
+                drillFlag("is_overdue", "Overdue");
+              },
+              k.overdue + " overdue issues"
+            )
+          );
+          var dueHint =
+            k.due_unassigned > 0 ? k.due_unassigned + " unassigned" : null;
+          row.appendChild(
+            tile(k.due_this_week, "Due this week", dueHint, null, false,
+              function () {
+                drillFlag("due_soon", "Due this week");
+              }, k.due_this_week + " issues due this week")
+          );
+          return row;
+        }
+
+        // --- donut -------------------------------------------------------
+        var SVGNS = "http://www.w3.org/2000/svg";
+        function svg(tag, attrs) {
+          var n = document.createElementNS(SVGNS, tag);
+          for (var key in attrs) n.setAttribute(key, attrs[key]);
+          return n;
+        }
+        function donutPanel(p) {
+          var card = el("div", "panel-card");
+          card.appendChild(el("p", "panel-title", "Open vs Closed"));
+          var wrap = el("div", "donut-row");
+
+          var total = p.totals.total || 0;
+          var open = p.totals.open || 0;
+          var pct = total > 0 ? Math.round((open / total) * 100) : 0;
+          var r = 52;
+          var C = 2 * Math.PI * r;
+          var dash = total > 0 ? (open / total) * C : 0;
+
+          var s = svg("svg", {
+            class: "donut",
+            width: "128",
+            height: "128",
+            viewBox: "0 0 128 128",
+            role: "img",
+            "aria-label": open + " of " + total + " issues open, " + pct + "%",
+          });
+          s.appendChild(
+            svg("circle", {
+              cx: 64, cy: 64, r: r, fill: "none",
+              stroke: "var(--bar-track)", "stroke-width": 14,
+            })
+          );
+          var arc = svg("circle", {
+            cx: 64, cy: 64, r: r, fill: "none",
+            stroke: "var(--accent)", "stroke-width": 14,
+            "stroke-linecap": "round",
+            "stroke-dasharray": dash + " " + (C - dash),
+            "stroke-dashoffset": C / 4,
+            transform: "rotate(-90 64 64)",
+          });
+          s.appendChild(arc);
+          var num = svg("text", {
+            x: 64, y: 62, "text-anchor": "middle", class: "center-num num",
+          });
+          num.textContent = pct + "%";
+          s.appendChild(num);
+          var lbl = svg("text", {
+            x: 64, y: 78, "text-anchor": "middle", class: "center-lbl",
+          });
+          lbl.textContent = "open";
+          s.appendChild(lbl);
+          wrap.appendChild(s);
+
+          var legend = el("div", "legend");
+          var r1 = el("div", "row");
+          var sw1 = el("span", "swatch");
+          sw1.style.background = "var(--accent)";
+          r1.appendChild(sw1);
+          r1.appendChild(el("span", null, "Open · " + open));
+          legend.appendChild(r1);
+          var r2 = el("div", "row");
+          var sw2 = el("span", "swatch");
+          sw2.style.background = "var(--bar-track)";
+          r2.appendChild(sw2);
+          r2.appendChild(el("span", null, "Closed · " + (p.totals.closed || 0)));
+          legend.appendChild(r2);
+          legend.appendChild(
+            el("div", "total", total + " issues total in " + p.project.name)
+          );
+          wrap.appendChild(legend);
+          card.appendChild(wrap);
+          return card;
+        }
+
+        // --- priority bars -----------------------------------------------
+        function barsPanel(p) {
+          var card = el("div", "panel-card");
+          card.appendChild(el("p", "panel-title", "Open by priority"));
+          var grid = el("div", "bars");
+          var max = 0;
+          p.by_priority.forEach(function (b) {
+            if (b.count > max) max = b.count;
+          });
+          p.by_priority.forEach(function (b) {
+            grid.appendChild(el("div", "bar-label", b.name));
+            var track = el("div", "bar-track");
+            var fill = el("div", "bar-fill " + priorityClass(b.name));
+            fill.style.width = (max > 0 ? (b.count / max) * 100 : 0) + "%";
+            track.appendChild(fill);
+            grid.appendChild(track);
+            var val = el("div", "bar-val", String(b.count));
+            val.setAttribute("role", "button");
+            val.tabIndex = 0;
+            val.addEventListener("click", function () {
+              drillPriority(b.id, b.name);
+            });
+            val.addEventListener("keydown", function (e) {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                drillPriority(b.id, b.name);
+              }
+            });
+            grid.appendChild(val);
+          });
+          card.appendChild(grid);
+          return card;
+        }
+
+        // --- recent activity ---------------------------------------------
+        function feedPanel(p) {
+          var card = el("div", "panel-card");
+          card.appendChild(el("p", "panel-title", "Recent activity"));
+          var feed = el("div", "feed");
+          if (!p.recent.length) {
+            feed.appendChild(el("div", "panel", "No recent activity."));
+          } else {
+            p.recent.forEach(function (r) {
+              var item = el("div", "item");
+              item.appendChild(el("span", "fid", "#" + r.id));
+              item.appendChild(
+                el("span", "fsub", (r.subject || "Untitled") + " · updated")
+              );
+              item.appendChild(el("span", "fwhen", relTime(r.updated_on)));
+              feed.appendChild(item);
+            });
+          }
+          card.appendChild(feed);
+          return card;
+        }
+
+        // --- dashboard render --------------------------------------------
+        function render(p) {
+          nameEl.textContent =
+            (p.project && p.project.name) || "Unknown project";
+          roPill.hidden = !p.read_only;
+          if (p.generated_at) {
+            var d = new Date(p.generated_at);
+            stampEl.textContent = isNaN(d.getTime())
+              ? "via redmine-mcp-server"
+              : "via redmine-mcp-server · Updated " +
+                d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+          }
+          if (p.truncated) {
+            truncatedEl.textContent =
+              "Showing the first " +
+              p.open_issues.length +
+              " open issues. Breakdowns cover that subset.";
+            truncatedEl.hidden = false;
+          } else {
+            truncatedEl.hidden = true;
+          }
+          var grid = el("div", "grid");
+          grid.appendChild(kpiRow(p));
+          var two = el("div", "two");
+          two.appendChild(donutPanel(p));
+          two.appendChild(barsPanel(p));
+          grid.appendChild(two);
+          grid.appendChild(feedPanel(p));
+          rootEl.replaceChildren(grid);
+          refreshBtn.disabled = false;
+          queueResize();
+        }
+
+        // --- drill sub-view ----------------------------------------------
+        function drillListView(title, rows) {
+          var wrap = el("div");
+          var head = el("div", "drill-head");
+          var back = el("button", "btn", "← Back");
+          back.type = "button";
+          back.addEventListener("click", function () {
+            if (state.payload) render(state.payload);
+          });
+          head.appendChild(back);
+          head.appendChild(el("h2", null, title + " · " + rows.length +
+            (rows.length === 1 ? " issue" : " issues")));
+          wrap.appendChild(head);
+          var card = el("div", "panel-card");
+          if (!rows.length) {
+            card.appendChild(el("div", "panel", "No matching issues."));
+          } else {
+            rows.forEach(function (r) {
+              var row = el("div", "drow");
+              row.appendChild(el("span", "fid", "#" + r.id));
+              row.appendChild(el("span", "fsub", r.subject || "Untitled"));
+              if (r.status) row.appendChild(el("span", "chip", r.status));
+              if (r.assigned_to)
+                row.appendChild(el("span", "chip", r.assigned_to));
+              if (r.due_date)
+                row.appendChild(el("span", "fwhen", r.due_date));
+              card.appendChild(row);
+            });
+          }
+          wrap.appendChild(card);
+          rootEl.replaceChildren(wrap);
+          queueResize();
+        }
+
+        function fromOpen(pred) {
+          return (state.payload.open_issues || []).filter(pred);
+        }
+        function drillOpen() {
+          drillListView("Open", fromOpen(function () { return true; }));
+        }
+        function drillFlag(flag, title) {
+          drillListView(title, fromOpen(function (r) { return r[flag]; }));
+        }
+        function drillPriority(id, name) {
+          drillListView(
+            name,
+            fromOpen(function (r) { return String(r.priority_id) === String(id); })
+          );
+        }
+        async function drillClosed() {
+          drillListView("Closed", []);
+          rootEl.querySelector(".panel-card").replaceChildren(
+            el("div", "panel", "Loading closed issues...")
+          );
+          try {
+            var result = await request("tools/call", {
+              name: "list_redmine_issues",
+              arguments: {
+                project_id: state.projectId,
+                status_id: "closed",
+                fields: ["id", "subject", "status", "assigned_to"],
+                limit: 50,
+                filters: state.filters,
+              },
+            });
+            var data = result && result.structuredContent;
+            // FastMCP wraps non-object tool returns (list_redmine_issues returns Union[List, Dict])
+            // as {"result": ...}; unwrap before detecting list-vs-paginated shape.
+            if (data && data.result !== undefined) data = data.result;
+            var issues = Array.isArray(data) ? data : (data && data.issues) || [];
+            var rows = issues.map(function (i) {
+              var st = i.status || {};
+              var as = i.assigned_to || null;
+              return {
+                id: i.id,
+                subject: i.subject,
+                status: st.name,
+                assigned_to: as ? as.name : null,
+                due_date: null,
+              };
+            });
+            drillListView("Closed", rows);
+          } catch (e) {
+            rootEl.querySelector(".panel-card").replaceChildren(
+              el("div", "panel error", e.message || "Could not load closed issues.")
+            );
+          }
+        }
+
+        // --- result plumbing ---------------------------------------------
+        function extractError(result) {
+          try {
+            return result.content[0].text;
+          } catch (e) {
+            return "The dashboard could not load.";
+          }
+        }
+        function renderError(message) {
+          rootEl.replaceChildren(
+            el("div", "panel error", message || "Something went wrong.")
+          );
+          refreshBtn.disabled =
+            state.projectId === null || state.projectId === undefined;
+          queueResize();
+        }
+        function applyResult(result) {
+          if (!result) return;
+          if (result.isError) {
+            renderError(extractError(result));
+            return;
+          }
+          var data = result.structuredContent;
+          if (data && data.error) {
+            renderError(String(data.error));
+            return;
+          }
+          if (data) {
+            state.payload = data;
+            if (data.project && data.project.id != null) {
+              state.projectId = data.project.id;
+            }
+            render(data);
+          }
+        }
+
+        function setBusy(on) {
+          refreshBtn.disabled = on;
+          refreshBtn.textContent = on ? "Refreshing..." : "Refresh";
+        }
+        async function fetchData(isRefresh) {
+          if (state.projectId === null || state.projectId === undefined) return;
+          if (isRefresh) setBusy(true);
+          try {
+            var result = await request("tools/call", {
+              name: "get_project_dashboard_data",
+              arguments: { project_id: state.projectId, filters: state.filters },
+            });
+            applyResult(result);
+          } catch (e) {
+            renderError(e.message || "The dashboard could not load.");
+          } finally {
+            if (isRefresh) setBusy(false);
+          }
+        }
+        var initialLoadStarted = false;
+        function maybeInitialLoad() {
+          if (
+            !state.ready ||
+            state.payload ||
+            initialLoadStarted ||
+            state.projectId === null ||
+            state.projectId === undefined
+          ) {
+            return;
+          }
+          initialLoadStarted = true;
+          fetchData(false);
+        }
+
+        async function connect() {
+          await request("ui/initialize", {
+            appInfo: { name: "redmine-project-dashboard", version: "1.0.0" },
+            appCapabilities: {},
+            protocolVersion: PROTOCOL_VERSION,
+          });
+          notify("ui/notifications/initialized");
+          state.ready = true;
+          reportSize();
+          maybeInitialLoad();
+        }
+
+        window.addEventListener("message", onMessage);
+        window.addEventListener("resize", queueResize);
+        if (window.ResizeObserver) {
+          var ro = new ResizeObserver(queueResize);
+          ro.observe(document.documentElement);
+          ro.observe(document.body);
+        }
+        refreshBtn.addEventListener("click", function () {
+          fetchData(true);
+        });
+        connect().catch(function () {});
+      })();
+    </script>
+  </body>
+</html>

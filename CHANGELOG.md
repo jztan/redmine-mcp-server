@@ -7,6 +7,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Interactive `project-dashboard` MCP App: the new `show_project_dashboard`
+  tool renders a live project snapshot (open vs closed, overdue, due this
+  week, an open-by-priority breakdown, and recent activity) as an
+  interactive dashboard in clients that support the MCP Apps extension,
+  backed by a `ui://` HTML resource over the existing streamable-HTTP
+  transport. Clicking any figure drills into the matching issue list
+  in-panel; a Refresh action re-fetches through the app-callable
+  `get_project_dashboard_data` tool. Read-only.
 
 ## [2.6.0] - 2026-07-11
 ### Added
