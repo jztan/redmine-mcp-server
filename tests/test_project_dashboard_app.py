@@ -267,3 +267,57 @@ async def test_open_created_this_week_returns_none_on_error():
 
         got = await pd._open_created_this_week(9, date(2026, 7, 11), None)
     assert got is None
+
+
+from importlib.resources import files as _files  # noqa: E402
+
+
+def _dashboard_html():
+    return (
+        _files("redmine_mcp_server.apps._ui")
+        .joinpath("project_dashboard.html")
+        .read_text(encoding="utf-8")
+    )
+
+
+def test_dashboard_html_speaks_extapps_protocol():
+    html = _dashboard_html()
+    for token in [
+        "ui/initialize",
+        "ui/notifications/initialized",
+        "ui/notifications/tool-result",
+        "ui/notifications/tool-input",
+        "ui/notifications/size-changed",
+        "get_project_dashboard_data",
+        "2026-01-26",
+        "postMessage",
+        "read_only",
+    ]:
+        assert token in html, token
+
+
+def test_dashboard_html_never_uses_innerhtml():
+    assert "innerHTML" not in _dashboard_html()
+
+
+def test_dashboard_html_reuses_board_design_tokens():
+    html = _dashboard_html()
+    # Same design system as the board: token block + both theme scopes.
+    for token in [
+        "--accent",
+        "--panel",
+        "--card",
+        'data-theme="dark"',
+        "prefers-color-scheme: dark",
+        'class="shell"',
+    ]:
+        assert token in html, token
+
+
+def test_dashboard_html_is_self_contained():
+    html = _dashboard_html()
+    # No external load vectors (strict App CSP). The SVG namespace URI is a
+    # legitimate http:// string, so check for external *references* (link
+    # tags, remote src/href, @import, CDN hosts) rather than bare "http".
+    for bad in ["<link", 'src="http', 'src="//', 'href="http', "@import", "cdn."]:
+        assert bad not in html, bad
