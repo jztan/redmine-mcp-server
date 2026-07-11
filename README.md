@@ -24,7 +24,8 @@ A Model Context Protocol (MCP) server that integrates with Redmine project manag
 
 ## Features
 
-- **45 MCP Tools** (plus 1 operator tool gated by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`): Issues, projects, time tracking, wiki, Gantt, file operations, membership management, products, contacts (CRM), DMSF documents, and more
+- **49 MCP Tools** (plus 1 operator tool gated by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`): Issues, projects, time tracking, wiki, Gantt, file operations, membership management, products, contacts (CRM), DMSF documents, and more
+- **Interactive Kanban Board**: `show_triage_board` renders a live, drag-and-drop issue board right in the chat via the MCP Apps extension
 - **Flexible Authentication**: API key, username/password, or OAuth2 per-user tokens
 - **Prompt Injection Protection**: User-controlled content wrapped in boundary tags for safe LLM consumption
 - **Read-Only Mode**: Restrict to read-only operations via `REDMINE_MCP_READ_ONLY` environment variable
@@ -140,7 +141,7 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `REDMINE_SSL_CLIENT_CERT` | No | – | Path to client certificate for mutual TLS |
 | `REDMINE_MCP_READ_ONLY` | No | `false` | Block all write operations (create/update/delete) when set to `true` |
 | `REDMINE_AGILE_ENABLED` | No | `false` | Enable RedmineUP Agile plugin support: `get_redmine_issue` returns `story_points`, `agile_sprint_id`, `agile_position`; `update_redmine_issue` accepts `story_points` |
-| `REDMINE_CHECKLISTS_ENABLED` | No | `false` | Enable RedmineUP Checklists plugin support: `get_checklist`, `update_checklist_item` (requires Checklists Pro plugin) |
+| `REDMINE_CHECKLISTS_ENABLED` | No | `false` | Enable RedmineUP Checklists plugin support: `get_checklist`, `create_checklist_item`, `update_checklist_item` (requires Checklists Pro plugin) |
 | `REDMINE_PRODUCTS_ENABLED` | No | `false` | Enable RedmineUP Products plugin support: `manage_product` (action=list/get/create/update) |
 | `REDMINE_CRM_ENABLED` | No | `false` | Enable RedmineUP CRM plugin support: `manage_contact` (action=list/get/create/update/delete/assign_to_project/remove_from_project) |
 | `REDMINE_DMSF_ENABLED` | No | `false` | Enable DMSF document-management plugin support: `manage_document` (action=list/get/create/update). Requires `redmine_dmsf` plugin on the Redmine server. |
@@ -526,18 +527,18 @@ curl http://localhost:8000/health
 
 ## Available Tools
 
-This MCP server provides 45 tools for interacting with Redmine (plus 1 operator tool exposed by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`, and 5 plugin-gated tools that opt in via env vars, for a maximum of 46 when all enabled). For full documentation of every tool, see the [Tool Reference](./docs/tool-reference.md).
+This MCP server provides 49 tools for interacting with Redmine (plus 1 operator tool exposed by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`, for a maximum of 50). 6 of the 49 are plugin-gated and activate via env vars. For full documentation of every tool, see the [Tool Reference](./docs/tool-reference.md).
 
-**Core tools (40, always available):** Project Management (9), Issue Operations (13), Time Tracking (4), Discovery / Enumeration (6), Search & Wiki (2), File Operations (4), Gantt (1), Meta (1).
+**Core tools (43, always available):** Project Management (9), Issue Operations (13), Time Tracking (4), Discovery / Enumeration (7), Search & Wiki (2), File Operations (4), Gantt (1), Interactive Apps (2), Meta (1).
 
-**Plugin-gated tools (5, opt in via env var):** Checklists (2), Products (1), Contacts / CRM (1), Documents / DMSF (1). Each requires the matching Redmine plugin installed **and** its env flag set; they stay hidden from `tools/list` otherwise.
+**Plugin-gated tools (6, opt in via env var):** Checklists (3), Products (1), Contacts / CRM (1), Documents / DMSF (1). Each requires the matching Redmine plugin installed **and** its env flag set; they appear in `tools/list` either way but return a feature-disabled error until enabled.
 
 **Operator tools (1, admin-gated):** `cleanup_attachment_files`, registered only when `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`.
 
 <details>
 <summary><strong>Full tool list with descriptions</strong></summary>
 
-### Core tools (40, always available)
+### Core tools (43, always available)
 
 These tools require only a Redmine instance and credentials — no extra plugins or feature flags.
 
@@ -574,8 +575,9 @@ These tools require only a Redmine instance and credentials — no extra plugins
   - [`list_time_entry_activities`](docs/tool-reference.md#list_time_entry_activities) - Discover available activity types for time entries
   - [`import_time_entries`](docs/tool-reference.md#import_time_entries) - Bulk import time entries via sequential API calls with per-entry error reporting
 
-- **Discovery / Enumeration** (6 tools): help LLMs find valid IDs before calling create/update tools
+- **Discovery / Enumeration** (7 tools): help LLMs find valid IDs before calling create/update tools
   - [`list_redmine_trackers`](docs/tool-reference.md#list_redmine_trackers) - List all trackers (Bug, Feature, Support, etc.)
+  - [`list_project_trackers`](docs/tool-reference.md#list_project_trackers) - List the trackers enabled for a specific project
   - [`list_redmine_issue_statuses`](docs/tool-reference.md#list_redmine_issue_statuses) - List all issue statuses with their `is_closed` flag
   - [`list_redmine_issue_priorities`](docs/tool-reference.md#list_redmine_issue_priorities) - List all priority levels
   - [`list_redmine_users`](docs/tool-reference.md#list_redmine_users) - Filter/list users (admin-only; supports name and group filters)
@@ -595,15 +597,20 @@ These tools require only a Redmine instance and credentials — no extra plugins
 - **Gantt** (1 tool)
   - [`get_gantt_chart`](docs/tool-reference.md#get_gantt_chart) - Retrieve project timeline data: issues with dates, dependencies, and milestones
 
+- **Interactive Apps** (2 tools): render live UI in the chat via the [MCP Apps extension](https://github.com/modelcontextprotocol/ext-apps) (requires a client that supports it)
+  - [`show_triage_board`](docs/tool-reference.md#show_triage_board) - Render a project's issues as an interactive Kanban board grouped by status, with drag-to-change-status write-back
+  - [`get_triage_board_data`](docs/tool-reference.md#get_triage_board_data) - Board data source backing the board's Refresh action
+
 - **Meta** (1 tool)
   - [`get_mcp_server_info`](docs/tool-reference.md#get_mcp_server_info) - Report server version, auth mode, read-only state, the authenticated user (`current_user`), and which plugin-gated tool families are enabled. Use to detect deployment lag before relying on a recently-shipped fix, or to confirm who `assigned_to_id="me"` resolves to.
 
-### Plugin-gated tools (5, opt in via env var)
+### Plugin-gated tools (6, opt in via env var)
 
-These tools require a corresponding Redmine plugin installed on the server **and** the matching environment variable set to `true` on the MCP server. They stay completely hidden from `tools/list` when their flag is unset.
+These tools require a corresponding Redmine plugin installed on the server **and** the matching environment variable set to `true` on the MCP server. They appear in `tools/list` either way, but return a feature-disabled error until their flag is set.
 
-- **Checklists** (2 tools) — set `REDMINE_CHECKLISTS_ENABLED=true`; requires the [RedmineUP Checklists Pro plugin](https://www.redmineup.com/pages/plugins/checklists)
+- **Checklists** (3 tools) — set `REDMINE_CHECKLISTS_ENABLED=true`; requires the [RedmineUP Checklists Pro plugin](https://www.redmineup.com/pages/plugins/checklists)
   - [`get_checklist`](docs/tool-reference.md#get_checklist) - Retrieve all checklist items for an issue
+  - [`create_checklist_item`](docs/tool-reference.md#create_checklist_item) - Add a new checklist item to an issue
   - [`update_checklist_item`](docs/tool-reference.md#update_checklist_item) - Update a checklist item's text, done state, or position
 
 - **Products** (1 tool) — set `REDMINE_PRODUCTS_ENABLED=true`; requires the [RedmineUP Products plugin](https://www.redmineup.com/pages/plugins/products)

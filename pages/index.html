@@ -6,14 +6,14 @@
 <meta name="color-scheme" content="light" />
 
 <title>redmine-mcp-server · Your AI doesn't just read tickets. It works them.</title>
-<meta name="description" content="Watch an AI agent triage a Redmine backlog — search, read, reassign, comment, log time, and close issues — with the same 45 MCP tools it would use against your real Redmine. Scripted in-browser demo." />
+<meta name="description" content="Watch an AI agent triage a Redmine backlog with the same 49 MCP tools it would use against your real Redmine, including a live Kanban board rendered right in the chat. Scripted in-browser demo." />
 
 <link rel="canonical" href="https://redmine-mcp-server.jztan.com/" />
 
 <!-- Open Graph (LinkedIn, Facebook, Slack) -->
 <meta property="og:type" content="website" />
 <meta property="og:title" content="redmine-mcp-server · Your AI shouldn't just read tickets. It should work them." />
-<meta property="og:description" content="Watch an AI agent triage a Redmine sprint in your browser — reassign, comment, log time, close — using real MCP tool calls. No install required." />
+<meta property="og:description" content="Watch an AI agent triage a Redmine sprint in your browser, then drag cards on a live Kanban board it renders in the chat. Real MCP tool calls, no install required." />
 <meta property="og:url" content="https://redmine-mcp-server.jztan.com/" />
 <meta property="og:image" content="https://redmine-mcp-server.jztan.com/og-image.png" />
 <meta property="og:image:width" content="1200" />
@@ -23,7 +23,7 @@
 <!-- Twitter / X card -->
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="redmine-mcp-server · Your AI should work the backlog, not just read it" />
-<meta name="twitter:description" content="Watch an AI agent triage a Redmine sprint in your browser using real MCP tool calls. No install." />
+<meta name="twitter:description" content="Watch an AI agent triage a Redmine sprint in your browser. Now with a live Kanban board rendered in the chat. No install." />
 <meta name="twitter:image" content="https://redmine-mcp-server.jztan.com/og-image.png" />
 
 <!-- Structured data: SoftwareApplication -->
@@ -32,7 +32,7 @@
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
   "name": "redmine-mcp-server",
-  "description": "Production-ready MCP server that lets AI agents manage Redmine issues, projects, wikis, and time tracking. Works with Claude, Cursor, VS Code, and Codex.",
+  "description": "Production-ready MCP server that lets AI agents manage Redmine issues, projects, wikis, and time tracking, including an interactive Kanban board rendered in the chat via MCP Apps. Works with Claude, Cursor, VS Code, and Codex.",
   "applicationCategory": "DeveloperApplication",
   "operatingSystem": "Linux, macOS, Windows",
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
@@ -348,6 +348,22 @@
   .receipt-row b { display: block; font-family: var(--font-display); font-size: 24px; color: var(--text); letter-spacing: -0.01em; margin-bottom: 2px; }
 
   /* capability cards */
+  /* ── Kanban board (MCP Apps) ─────────────────────────────── */
+  section.board { background: var(--bg-subtle); padding: 64px 22px 56px; text-align: center; }
+  section.board .inner { max-width: 900px; margin: 0 auto; }
+  .board-badge { display: inline-block; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--accent); border: 1px solid var(--accent);
+    border-radius: 980px; padding: 4px 12px; margin-bottom: 14px; background: var(--bg-elev); }
+  .board-title { font-family: var(--font-display); font-size: clamp(26px, 4vw, 38px); font-weight: 600;
+    letter-spacing: -0.02em; margin: 0 0 8px; }
+  .board-sub { color: var(--text-secondary); font-size: 16px; max-width: 640px; margin: 0 auto 28px; }
+  .board-sub code { font-family: var(--font-mono); font-size: 0.9em; color: var(--text); }
+  .board-shot { width: 100%; max-width: 753px; height: auto; border: 1px solid var(--border);
+    border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); }
+  .board-note { font-size: 13px; color: var(--text-tertiary); margin: 16px auto 0; max-width: 560px; }
+  .board-note a { color: var(--accent); text-decoration: none; }
+  .board-note a:hover { text-decoration: underline; }
+
   section.caps { background: var(--bg); padding: 60px 22px 12px; }
   section.caps .inner { max-width: 1040px; margin: 0 auto; }
   .caps-title { font-family: var(--font-display); font-size: clamp(26px, 4vw, 38px); font-weight: 600; letter-spacing: -0.02em; text-align: center; margin: 0 0 8px; }
@@ -462,7 +478,7 @@
 <section class="hero">
   <div class="inner">
     <p class="hero-title">Your AI shouldn't just read tickets.<br />It should work them.</p>
-    <p class="hero-sub"><code>redmine-mcp-server</code> gives AI agents 45 tools to triage, update, comment on, and close Redmine issues — the way a project manager would.</p>
+    <p class="hero-sub"><code>redmine-mcp-server</code> gives AI agents 49 tools to triage, update, comment on, and close Redmine issues — the way a project manager would.</p>
     <div class="install-cmd hero-install">
       <span class="install-cmd-text" id="heroInstallCmd">pip install redmine-mcp-server</span>
       <button class="btn btn-ghost btn-icon" id="heroInstallCopyBtn" aria-label="Copy install command">
@@ -534,7 +550,7 @@
             <span class="cli-title">claude — ~/work/cartly-app</span>
           </div>
           <div class="cli-body" id="feed">
-            <div class="cc-welcome"><span class="cc-star">✻</span> Welcome to <b>Claude Code</b><span class="sub">redmine-mcp-server connected over MCP · 45 tools available</span></div>
+            <div class="cc-welcome"><span class="cc-star">✻</span> Welcome to <b>Claude Code</b><span class="sub">redmine-mcp-server connected over MCP · 49 tools available</span></div>
             <div class="cli-hint" id="feedPlaceholder">▸ press <b style="color:#d6d3cd">Run the agent</b> to start</div>
           </div>
           <div class="cc-input">
@@ -573,10 +589,32 @@
   </div>
 </section>
 
+<section class="board" id="board">
+  <div class="inner">
+    <span class="board-badge">New in v2.6.0</span>
+    <h2 class="board-title">The board, live in your chat.</h2>
+    <p class="board-sub">
+      The demo above simulates the loop. <code>show_triage_board</code> is the real thing:
+      an interactive Kanban board rendered inside the conversation through the official
+      MCP Apps extension. Drag a card to another column and the agent writes the status
+      change to Redmine via <code>update_redmine_issue</code>; if Redmine rejects the
+      transition, the card snaps back and explains why.
+    </p>
+    <img class="board-shot" src="triage-board-kanban.png" width="753" height="612"
+         alt="Interactive Kanban board rendered in the chat by show_triage_board, with issue cards grouped in open, in-progress, and closed columns" loading="lazy" />
+    <p class="board-note">
+      Needs an MCP client that renders MCP Apps. Shipped in
+      <a href="https://github.com/jztan/redmine-mcp-server/releases/tag/v2.6.0">v2.6.0</a>;
+      tried it? Leave feedback in
+      <a href="https://github.com/jztan/redmine-mcp-server/discussions/168">the discussion</a>.
+    </p>
+  </div>
+</section>
+
 <section class="caps">
   <div class="inner">
     <h2 class="caps-title">Far more than triage.</h2>
-    <p class="caps-sub">The demo shows one workflow. The same 45 tools cover the rest of Redmine.</p>
+    <p class="caps-sub">The demo shows one workflow. The same 49 tools cover the rest of Redmine.</p>
     <div class="caps-grid">
 
       <div class="cap-card">
@@ -599,14 +637,14 @@
 
       <div class="cap-card">
         <svg class="cap-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/></svg>
-        <p class="cap-head">Speaks <b>RedmineUP</b></p>
-        <p class="cap-desc">Contacts (CRM), products, and checklists from the commercial plugins, as first-class tools.</p>
+        <p class="cap-head">Speaks the <b>plugin ecosystem</b></p>
+        <p class="cap-desc">RedmineUP Agile, contacts (CRM), products, and checklists, plus DMSF documents and AlphaNodes issue tags, as first-class tools.</p>
       </div>
 
       <div class="cap-card">
         <svg class="cap-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-        <p class="cap-head"><b>OAuth2</b> multi-tenant</p>
-        <p class="cap-desc">Per-user tokens, so the agent acts as each user instead of one shared API key.</p>
+        <p class="cap-head">Multi-tenant <b>per-user auth</b></p>
+        <p class="cap-desc">OAuth2, OAuthProxy, or per-user API keys on older Redmine: the agent acts as each user, not one shared key.</p>
       </div>
 
       <div class="cap-card">
@@ -630,11 +668,11 @@
     </button>
   </div>
   <p class="other-tools">
-    The demo shows 4 of the server's 45 tools. The full set spans
+    The demo shows 4 of the server's 49 tools. The full set spans
     <code>list_redmine_issues</code>, <code>get_redmine_issue</code>, <code>update_redmine_issue</code>,
-    <code>manage_time_entry</code>, <code>manage_redmine_wiki_page</code>, <code>manage_project_member</code>,
-    <code>search_entire_redmine</code>, and more — covering issues, projects, wikis, time tracking,
-    versions, and CRM, plus OAuth multi-tenant auth and a read-only safety mode.
+    <code>show_triage_board</code>, <code>manage_time_entry</code>, <code>manage_redmine_wiki_page</code>,
+    <code>manage_project_member</code>, <code>search_entire_redmine</code>, and more — covering issues,
+    projects, wikis, time tracking, versions, and CRM, plus multi-tenant per-user auth (OAuth2, OAuthProxy, or per-user API keys) and a read-only safety mode.
   </p>
   <div class="links">
     <a class="link-btn" href="https://github.com/jztan/redmine-mcp-server">GitHub</a>
@@ -652,7 +690,7 @@
     </p>
     <h2>What it does</h2>
     <p>
-      Redmine has a capable REST API, but wiring an agent to it directly means handing the model raw HTTP access — which is slow, error-prone, and unsafe. redmine-mcp-server exposes 45 purpose-built tools instead. An agent can list and filter issues, read a ticket with its full history, update status and assignee, add notes, log time, manage wiki pages, and run global search — each as a single typed tool call with predictable, serialized JSON.
+      Redmine has a capable REST API, but wiring an agent to it directly means handing the model raw HTTP access — which is slow, error-prone, and unsafe. redmine-mcp-server exposes 49 purpose-built tools instead. An agent can list and filter issues, read a ticket with its full history, update status and assignee, add notes, log time, manage wiki pages, and run global search — each as a single typed tool call with predictable, serialized JSON. Since v2.6.0 it can also render an interactive Kanban board directly in the chat through the MCP Apps extension: <code>show_triage_board</code> draws a project's issues as drag-and-drop status columns, and every card move writes back to Redmine.
     </p>
     <h2>What the demo shows</h2>
     <p>
@@ -660,7 +698,7 @@
     </p>
     <h2>Install</h2>
     <p>
-      redmine-mcp-server is MIT-licensed and published on PyPI. Install with <code>pip install redmine-mcp-server</code>, then point it at your Redmine URL with an API key or OAuth. The source is on <a href="https://github.com/jztan/redmine-mcp-server">GitHub</a> and the package on <a href="https://pypi.org/project/redmine-mcp-server/">PyPI</a>. For the story behind it, see the <a href="https://blog.jztan.com/how-i-linked-a-legacy-system-to-a-modern-ai-agent/?utm_source=redmine-mcp-demo&utm_medium=referral&utm_campaign=demo-launch&utm_content=seo-body">blog post on linking a legacy system to a modern AI agent</a>.
+      redmine-mcp-server is MIT-licensed and published on PyPI. Install with <code>pip install redmine-mcp-server</code>, then point it at your Redmine URL with an API key, OAuth2, or per-user auth. The source is on <a href="https://github.com/jztan/redmine-mcp-server">GitHub</a> and the package on <a href="https://pypi.org/project/redmine-mcp-server/">PyPI</a>. For the story behind it, see the <a href="https://blog.jztan.com/how-i-linked-a-legacy-system-to-a-modern-ai-agent/?utm_source=redmine-mcp-demo&utm_medium=referral&utm_campaign=demo-launch&utm_content=seo-body">blog post on linking a legacy system to a modern AI agent</a>.
     </p>
     </div>
   </details>
@@ -895,7 +933,7 @@
   const PROMPT_TEXT = "triage the overdue issues in Sprint 14";
   const WELCOME_HTML =
     '<div class="cc-welcome"><span class="cc-star">✻</span> Welcome to <b>Claude Code</b>' +
-    '<span class="sub">redmine-mcp-server connected over MCP · 45 tools available</span></div>';
+    '<span class="sub">redmine-mcp-server connected over MCP · 49 tools available</span></div>';
   const HINT_HTML = '<div class="cli-hint" id="feedPlaceholder">▸ press <b style="color:#d6d3cd">Run the agent</b> to start</div>';
 
   let idx = 0, playing = false, animating = false, promptShown = false;
