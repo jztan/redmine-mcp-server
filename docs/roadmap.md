@@ -2,9 +2,9 @@
 
 ## Project Status
 
-- **Current Version:** v2.5.0 (released 2026-07-04)
+- **Current Version:** v2.6.0 (released 2026-07-11)
 - **MCP Registry Status:** Published
-- **Test Suite:** 1385 unit tests + 85 integration tests. Integration tests gate on environment: a sandbox Redmine, plugin flags (`REDMINE_AGILE_ENABLED` etc.), and the destructive OAuth test behind `RUN_DESTRUCTIVE_TESTS=1`. Tests that can't run in the current environment skip cleanly with a clear reason. Run them locally with `python tests/run_tests.py --all` or `--integration`.
+- **Test Suite:** 1443 unit tests + 87 integration tests. Integration tests gate on environment: a sandbox Redmine, plugin flags (`REDMINE_AGILE_ENABLED` etc.), and the destructive OAuth test behind `RUN_DESTRUCTIVE_TESTS=1`. Tests that can't run in the current environment skip cleanly with a clear reason. Run them locally with `python tests/run_tests.py --all` or `--integration`.
 - **Tools:** 43 core + 6 plugin-gated + 1 admin-gated (maximum 50 with all flags enabled). The core count includes the two `triage-board` tools (`show_triage_board`, plus the app-only `get_triage_board_data` which is registered but hidden from the model's tool list). Note: the 6 plugin tools are always registered and listed; their flag is enforced at call time (a disabled call returns an error), so disabling a plugin does not hide its tools. Only the 1 admin tool is conditionally registered (hidden unless `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`).
 
 ---
@@ -13,7 +13,7 @@
 
 The MCP spec [release candidate locked on 2026-05-21](https://blog.modelcontextprotocol.io/posts/2026-07-28-release-candidate/), with GA targeted for 2026-07-28. Protocol-level work is gated on FastMCP shipping support for the new spec; the goal is a single coordinated v3.0 release rather than two breaking cutovers.
 
-**Gate status (2026-07-04):** still closed. FastMCP latest is [v3.4.1](https://gofastmcp.com/changelog) (2026-06-05) with no 2026-07-28 support yet (stateless transport, per-request `_meta`, or the new OAuth/OIDC SEPs); it does carry Apps Phase 1 from v3.2.0, relevant to the Interactive UI (MCP Apps) track below. The official Python SDK targets beta 2026-06-30 and stable v2 2026-07-27. Spec timeline unchanged.
+**Gate status (2026-07-11):** still closed. The project now runs FastMCP [v3.4.3](https://gofastmcp.com/changelog), which still carries no 2026-07-28 support (stateless transport, per-request `_meta`, or the new OAuth/OIDC SEPs); it does carry Apps Phase 1 from v3.2.0, relied on by the Interactive UI (MCP Apps) track below (the `triage-board` slice shipped in v2.6.0). The official Python SDK targets beta 2026-06-30 and stable v2 2026-07-27. Spec timeline unchanged.
 
 **v3.0 scope (target: Q3 2026, gated on FastMCP):**
 
@@ -40,13 +40,14 @@ Committed direction (2026-06-27): become a reference adopter of the official [MC
 
 **Prioritizing views with feedback.** Five candidate views are mocked up and open for feedback in [discussion #168](https://github.com/jztan/redmine-mcp-server/discussions/168): issue board, Gantt/timeline, project dashboard, time-sheet, and sprint burndown. That signal prioritizes which views come *after* the first slice, not whether Apps ships at all: the direction is already committed, and #168 has had little reach so far because outreach has not run, so its current quiet is a distribution artifact rather than a demand signal. The plan is to drive traffic to it as part of the visibility push (link it from the MCP/Redmine community posts) so it becomes a real experiment.
 
-**First slice (proceeding).** A read-only `triage-board` that renders live issues from `list_redmine_issues`, proven end-to-end in one target client before any write-back is wired. It is the cheapest view and seeds the committed Apps work, so it proceeds without waiting on the #168 poll; the poll shapes view #2 onward. Two server-specific unknowns to settle in design: serving the `ui://` resource over the streamable-HTTP transport, and how the app's `tools/call` callbacks authenticate under the `oauth` / `oauth-proxy` modes (the auth-times-UI intersection is the genuinely hard part). Interactive writes (for example drag-to-reassign via `update_redmine_issue`) follow once rendering is proven.
+**First slice (shipped in v2.6.0).** A `triage-board` that renders live issues from `list_redmine_issues`, proven end-to-end in one target client. It was the cheapest view and seeds the committed Apps work, so it shipped without waiting on the #168 poll; the poll shapes view #2 onward. The two server-specific unknowns are settled: serving the `ui://` resource over the streamable-HTTP transport, and how the app's `tools/call` callbacks authenticate under the `oauth` / `oauth-proxy` modes (the auth-times-UI intersection, the genuinely hard part). Interactive write-back also shipped: dragging a card to another status column reassigns the issue's status via `update_redmine_issue` (an optimistic move that reverts with an explanation when Redmine rejects the transition; disabled in read-only mode).
 
 - [x] Read-only `triage-board` slice rendered in one target client (Claude Desktop; self-loads, auto-resizes, columns fit the pane, styled to the #168 mockup)
 - [x] Serve the `ui://` resource over streamable-HTTP: resolved. A `ui://` resource is a normal MCP resource read via `resources/read` over the existing `/mcp` transport, so no new HTTP route was needed.
 - [x] Verify app-callback auth under the OAuth modes: proven at the server level. Under `oauth`, the app-callback tool `get_triage_board_data` is accepted with a valid Doorkeeper Bearer token (returns live issues) and rejected with 401 when the token is missing or invalid, exactly like any tool call. Under `oauth-proxy`, the server boots, protects `/mcp` (401 without a token), and advertises OAuth discovery (`authorization-server` metadata plus resource metadata at `/.well-known/oauth-protected-resource/mcp`). The app never contacts the server directly; the host forwards the callback over its own authenticated connection, so once a token is in the session the callback inherits it. Remaining optional confirmation: the live browser OAuth login through Claude Desktop under `oauth-proxy` (token minting via DCR + Redmine login), which is orthogonal to the callback mechanism.
+- [x] Interactive write-back: drag-to-reassign issue status via `update_redmine_issue` (optimistic move, reverts on rejection; disabled in read-only mode). Shipped in v2.6.0.
 - [ ] Drive traffic to [#168](https://github.com/jztan/redmine-mcp-server/discussions/168) via the visibility push to prioritize later views
-- [ ] Interactive write-back, plus additional views prioritized by the #168 signal
+- [ ] Additional views prioritized by the #168 signal (Gantt/timeline, project dashboard, time-sheet, sprint burndown)
 
 > **Client note:** MCP hosts cache the `ui://` resource. After changing the board HTML, a server restart alone is not enough for an already-connected client (Claude Desktop) to pick it up: fully quit and reopen the client to refetch the resource.
 
@@ -81,4 +82,4 @@ For per-release detail (features, fixes, CVE patches, contributor credits, break
 
 ---
 
-**Last Updated:** 2026-07-04
+**Last Updated:** 2026-07-11
