@@ -1302,6 +1302,26 @@ Backend data source for the Kanban board's Refresh action. Returns the same
 payload as `show_triage_board` without a UI resource. Called by the board's
 iframe, not normally invoked directly.
 
+### `show_project_dashboard`
+
+Render a live project dashboard (health snapshot) for a project (MCP Apps):
+open vs closed counts, overdue and due-this-week issues, an open-by-priority
+breakdown, and recent activity. Clicking a figure drills into the matching
+issue list in-panel. Prefer `summarize_project_status` when the user wants a
+written narrative summary, and `show_triage_board` when they want to work
+issues in a board. Read-only. Requires a client that supports MCP Apps
+rendering.
+
+**Parameters:**
+- `project_id` (int | str, required): project to display.
+- `filters` (dict, optional): extra Redmine filters, same as `list_redmine_issues`.
+
+### `get_project_dashboard_data`
+
+Backend data source for the dashboard's Refresh action. Returns the same
+payload as `show_project_dashboard` without a UI resource. App-only; called
+by the dashboard's iframe, not normally invoked directly.
+
 ---
 
 ## Time Tracking

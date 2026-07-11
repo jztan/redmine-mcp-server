@@ -527,9 +527,9 @@ curl http://localhost:8000/health
 
 ## Available Tools
 
-This MCP server provides 49 tools for interacting with Redmine (plus 1 operator tool exposed by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`, for a maximum of 50). 6 of the 49 are plugin-gated and activate via env vars. For full documentation of every tool, see the [Tool Reference](./docs/tool-reference.md).
+This MCP server provides 51 tools for interacting with Redmine (plus 1 operator tool exposed by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`, for a maximum of 52). 6 of the 51 are plugin-gated and activate via env vars. For full documentation of every tool, see the [Tool Reference](./docs/tool-reference.md).
 
-**Core tools (43, always available):** Project Management (9), Issue Operations (13), Time Tracking (4), Discovery / Enumeration (7), Search & Wiki (2), File Operations (4), Gantt (1), Interactive Apps (2), Meta (1).
+**Core tools (45, always available):** Project Management (9), Issue Operations (13), Time Tracking (4), Discovery / Enumeration (7), Search & Wiki (2), File Operations (4), Gantt (1), Interactive Apps (4), Meta (1).
 
 **Plugin-gated tools (6, opt in via env var):** Checklists (3), Products (1), Contacts / CRM (1), Documents / DMSF (1). Each requires the matching Redmine plugin installed **and** its env flag set; they appear in `tools/list` either way but return a feature-disabled error until enabled.
 
@@ -538,7 +538,7 @@ This MCP server provides 49 tools for interacting with Redmine (plus 1 operator 
 <details>
 <summary><strong>Full tool list with descriptions</strong></summary>
 
-### Core tools (43, always available)
+### Core tools (45, always available)
 
 These tools require only a Redmine instance and credentials — no extra plugins or feature flags.
 
@@ -597,9 +597,11 @@ These tools require only a Redmine instance and credentials — no extra plugins
 - **Gantt** (1 tool)
   - [`get_gantt_chart`](docs/tool-reference.md#get_gantt_chart) - Retrieve project timeline data: issues with dates, dependencies, and milestones
 
-- **Interactive Apps** (2 tools): render live UI in the chat via the [MCP Apps extension](https://github.com/modelcontextprotocol/ext-apps) (requires a client that supports it)
+- **Interactive Apps** (4 tools): render live UI in the chat via the [MCP Apps extension](https://github.com/modelcontextprotocol/ext-apps) (requires a client that supports it)
   - [`show_triage_board`](docs/tool-reference.md#show_triage_board) - Render a project's issues as an interactive Kanban board grouped by status, with drag-to-change-status write-back
   - [`get_triage_board_data`](docs/tool-reference.md#get_triage_board_data) - Board data source backing the board's Refresh action
+  - [`show_project_dashboard`](docs/tool-reference.md#show_project_dashboard) - Render a live project snapshot (open/closed, overdue, due this week, open-by-priority, recent activity) as an interactive dashboard, with click-through drill-ins to matching issue lists
+  - [`get_project_dashboard_data`](docs/tool-reference.md#get_project_dashboard_data) - App-only data source backing the dashboard's Refresh action
 
 - **Meta** (1 tool)
   - [`get_mcp_server_info`](docs/tool-reference.md#get_mcp_server_info) - Report server version, auth mode, read-only state, the authenticated user (`current_user`), and which plugin-gated tool families are enabled. Use to detect deployment lag before relying on a recently-shipped fix, or to confirm who `assigned_to_id="me"` resolves to.
