@@ -1,3 +1,6 @@
+import pytest
+from unittest.mock import AsyncMock, patch
+
 from redmine_mcp_server.apps import project_dashboard as pd
 
 _PRIORITIES = [
@@ -119,3 +122,148 @@ def test_analyze_open_issues_overdue_and_due_counts():
 def test_project_name_prefers_first_issue_then_falls_back():
     assert pd._project_name([{"project": {"id": 9, "name": "Web"}}], 9) == "Web"
     assert pd._project_name([], "my-proj") == "my-proj"
+
+
+_STATUSES = [
+    {"id": 1, "name": "New", "is_closed": False},
+    {"id": 2, "name": "In Progress", "is_closed": False},
+    {"id": 5, "name": "Closed", "is_closed": True},
+]
+
+
+def _open_resp(issues, has_next=False, total=None):
+    pag = {"has_next": has_next}
+    if total is not None:
+        pag["total"] = total
+    return {"issues": issues, "pagination": pag}
+
+
+def _patch_calls(statuses, priorities, list_side_effect, delta=4):
+    return (
+        patch.object(
+            pd, "list_redmine_issue_statuses", AsyncMock(return_value=statuses)
+        ),
+        patch.object(
+            pd, "list_redmine_issue_priorities", AsyncMock(return_value=priorities)
+        ),
+        patch.object(
+            pd, "list_redmine_issues", AsyncMock(side_effect=list_side_effect)
+        ),
+        patch.object(pd, "_open_created_this_week", AsyncMock(return_value=delta)),
+    )
+
+
+@pytest.mark.asyncio
+async def test_build_payload_assembles_totals_and_kpis():
+    open_issue = _issue(
+        id=1, project={"id": 9, "name": "Web"}, due_date="2000-01-01"
+    )  # overdue vs any real "today"
+    side = [
+        _open_resp([open_issue], has_next=False, total=1),  # open fetch
+        _open_resp([], total=3),  # total count
+        [],  # recent (list)
+    ]
+    ps, pp, pl, pd_delta = _patch_calls(_STATUSES, _PRIORITIES, side)
+    with ps, pp, pl, pd_delta:
+        payload = await pd._build_dashboard_payload(9)
+    assert payload["project"] == {"id": 9, "name": "Web"}
+    assert payload["totals"] == {"total": 3, "open": 1, "closed": 2}
+    assert payload["kpis"]["open"] == 1
+    assert payload["kpis"]["closed"] == 2
+    assert payload["kpis"]["overdue"] == 1
+    assert payload["kpis"]["open_delta_week"] == 4
+    assert payload["statuses"] == _STATUSES
+    assert payload["priorities"] == [
+        {"id": 1, "name": "Low"},
+        {"id": 2, "name": "Normal"},
+        {"id": 3, "name": "High"},
+        {"id": 4, "name": "Urgent"},
+    ]
+    assert len(payload["open_issues"]) == 1
+    assert payload["truncated"] is False
+
+
+@pytest.mark.asyncio
+async def test_build_payload_recent_maps_is_closed():
+    recent = [
+        {
+            "id": 5,
+            "subject": "Done",
+            "status": {"id": 5, "name": "Closed"},
+            "updated_on": "2026-07-11T08:00:00Z",
+        },
+        {
+            "id": 6,
+            "subject": "Working",
+            "status": {"id": 2, "name": "In Progress"},
+            "updated_on": "2026-07-11T07:00:00Z",
+        },
+    ]
+    side = [_open_resp([], total=2), _open_resp([], total=2), recent]
+    ps, pp, pl, pd_delta = _patch_calls(_STATUSES, _PRIORITIES, side)
+    with ps, pp, pl, pd_delta:
+        payload = await pd._build_dashboard_payload(9)
+    assert payload["recent"][0] == {
+        "id": 5,
+        "subject": "Done",
+        "updated_on": "2026-07-11T08:00:00Z",
+        "status": "Closed",
+        "is_closed": True,
+    }
+    assert payload["recent"][1]["is_closed"] is False
+
+
+@pytest.mark.asyncio
+async def test_build_payload_truncated_flag():
+    side = [
+        _open_resp([_issue()], has_next=True, total=200),
+        _open_resp([], total=200),
+        [],
+    ]
+    ps, pp, pl, pd_delta = _patch_calls(_STATUSES, _PRIORITIES, side)
+    with ps, pp, pl, pd_delta:
+        payload = await pd._build_dashboard_payload(9)
+    assert payload["truncated"] is True
+
+
+@pytest.mark.asyncio
+async def test_build_payload_passes_through_statuses_error():
+    ps, pp, pl, pd_delta = _patch_calls({"error": "boom"}, _PRIORITIES, [])
+    with ps, pp, pl, pd_delta:
+        payload = await pd._build_dashboard_payload(9)
+    assert payload == {"error": "boom"}
+
+
+@pytest.mark.asyncio
+async def test_build_payload_passes_through_open_fetch_error():
+    side = [{"error": "no access"}]
+    ps, pp, pl, pd_delta = _patch_calls(_STATUSES, _PRIORITIES, side)
+    with ps, pp, pl, pd_delta:
+        payload = await pd._build_dashboard_payload(9)
+    assert payload == {"error": "no access"}
+
+
+@pytest.mark.asyncio
+async def test_build_payload_read_only_reflected():
+    side = [_open_resp([], total=0), _open_resp([], total=0), []]
+    ps, pp, pl, pd_delta = _patch_calls(_STATUSES, _PRIORITIES, side)
+    with (
+        ps,
+        pp,
+        pl,
+        pd_delta,
+        patch.object(pd, "_is_read_only_mode", return_value=True),
+    ):
+        payload = await pd._build_dashboard_payload(9)
+    assert payload["read_only"] is True
+
+
+@pytest.mark.asyncio
+async def test_open_created_this_week_returns_none_on_error():
+    with patch.object(
+        pd, "list_redmine_issues", AsyncMock(return_value={"error": "x"})
+    ):
+        from datetime import date
+
+        got = await pd._open_created_this_week(9, date(2026, 7, 11), None)
+    assert got is None
