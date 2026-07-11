@@ -986,6 +986,9 @@
               },
             });
             var data = result && result.structuredContent;
+            // FastMCP wraps non-object tool returns (list_redmine_issues returns Union[List, Dict])
+            // as {"result": ...}; unwrap before detecting list-vs-paginated shape.
+            if (data && data.result !== undefined) data = data.result;
             var issues = Array.isArray(data) ? data : (data && data.issues) || [];
             var rows = issues.map(function (i) {
               var st = i.status || {};

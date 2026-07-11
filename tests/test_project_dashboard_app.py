@@ -300,6 +300,13 @@ def test_dashboard_html_never_uses_innerhtml():
     assert "innerHTML" not in _dashboard_html()
 
 
+def test_dashboard_html_unwraps_fastmcp_result_envelope():
+    # The Closed drill calls a wrap-result tool (list_redmine_issues), whose
+    # structuredContent arrives as {"result": ...}; the view must unwrap it.
+    html = _dashboard_html()
+    assert "data.result !== undefined" in html
+
+
 def test_dashboard_html_reuses_board_design_tokens():
     html = _dashboard_html()
     # Same design system as the board: token block + both theme scopes.
