@@ -59,10 +59,10 @@ USER appuser
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://localhost:${SERVER_PORT:-8000}/health || exit 1
 
-# Expose port
+# Expose default port (informational only; override with SERVER_PORT env var)
 EXPOSE 8000
 
 # Default command
-CMD ["python", "-m", "uvicorn", "src.redmine_mcp_server.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["redmine-mcp-server"]
