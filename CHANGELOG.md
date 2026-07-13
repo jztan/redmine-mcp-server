@@ -17,6 +17,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in-panel; a Refresh action re-fetches through the app-callable
   `get_project_dashboard_data` tool. Read-only.
 
+### Fixed
+- Docker container now honors `SERVER_HOST` and `SERVER_PORT`. The Dockerfile
+  `CMD` previously hardcoded `--host 0.0.0.0 --port 8000` in the uvicorn
+  invocation, bypassing `main()` and leaving both env vars ineffective in the
+  container. The `CMD` now runs the installed `redmine-mcp-server` console
+  script, which reads both vars, and the `HEALTHCHECK` port follows
+  `${SERVER_PORT:-8000}`. The runtime image also sets `SERVER_HOST=0.0.0.0` as
+  a default so an ad-hoc `docker run` without a full env file still binds to a
+  reachable address (overridable via `env_file` or `-e`).
+
+### Contributors
+- @pdostal — fixed the Dockerfile to respect `SERVER_HOST`/`SERVER_PORT` env vars ([#179](https://github.com/jztan/redmine-mcp-server/pull/179))
+
 ## [2.6.0] - 2026-07-11
 ### Added
 - Interactive `triage-board` MCP App (Interactive UI / `ext-apps` track): the new
