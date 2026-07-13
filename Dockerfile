@@ -25,9 +25,13 @@ RUN uv venv /opt/venv && \
 FROM python:3.13-slim AS runtime
 
 # Set environment variables
+# SERVER_HOST/SERVER_PORT default to a reachable binding so ad-hoc
+# `docker run` works without a full env file; override via env_file or -e.
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PATH="/opt/venv/bin:$PATH"
+    PATH="/opt/venv/bin:$PATH" \
+    SERVER_HOST=0.0.0.0 \
+    SERVER_PORT=8000
 
 # Install system dependencies
 RUN apt-get update && \
