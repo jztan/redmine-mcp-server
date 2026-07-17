@@ -14,6 +14,10 @@ Model:
     tool's own invalid-action error surfaces.
   - ``admin`` scope bypasses the check entirely, matching Redmine's own
     semantics (admin bypasses per-permission checks).
+  - ``update_redmine_issue`` carries a notes-only carve-out: a call whose
+    ``fields`` contain nothing but ``notes``/``private_notes`` (no
+    ``uploads``) requires ``add_issue_notes`` instead of ``edit_issues``,
+    mirroring Redmine's own note-adding permission check.
   - No access token (legacy / legacy-per-user modes, background tasks)
     means no enforcement: those modes have no scopes to check.
   - ``list_tools`` responses are filtered to tools the token can use;
@@ -31,7 +35,7 @@ from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.middleware import Middleware
 
 from ._tool_error_middleware import build_error_tool_result
-from .oauth_scopes import TOOL_SCOPES, scopes_for_action, tool_visible
+from .oauth_scopes import TOOL_SCOPES, required_scopes_for_call, tool_visible_for
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +85,7 @@ class ScopeEnforcementMiddleware(Middleware):
             )
             return await build_error_tool_result(context, _unmapped_payload(tool_name))
 
-        required = scopes_for_action(entry, context.message.arguments)
+        required = required_scopes_for_call(tool_name, entry, context.message.arguments)
         if required is None:
             # Per-action entry with unknown/missing action: let the
             # tool's own validation produce the error.
@@ -113,6 +117,6 @@ class ScopeEnforcementMiddleware(Middleware):
         visible = []
         for tool in tools:
             entry = TOOL_SCOPES.get(tool.name)
-            if entry is not None and tool_visible(entry, granted):
+            if entry is not None and tool_visible_for(tool.name, entry, granted):
                 visible.append(tool)
         return visible

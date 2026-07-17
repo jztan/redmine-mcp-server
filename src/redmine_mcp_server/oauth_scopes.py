@@ -59,7 +59,7 @@ WRITE_SCOPES: list[str] = [
     "manage_issue_relations",  # manage_issue_relation
     "add_issue_watchers",  # manage_issue_watcher(action=add)
     "delete_issue_watchers",  # manage_issue_watcher(action=remove)
-    "add_issue_notes",  # update_redmine_issue (notes parameter)
+    "add_issue_notes",  # update_redmine_issue notes-only carve-out
     "edit_issue_notes",  # manage_issue_note(action=edit)
     "set_notes_private",  # manage_issue_note(action=set_private)
     "log_time",  # manage_time_entry(action=create), import_time_entries
@@ -225,7 +225,7 @@ TOOL_SCOPES: Dict[str, ToolScopeEntry] = {
     "upload_file": frozenset({"manage_files"}),
     "delete_file": frozenset({"manage_files"}),
     # Local attachment-store maintenance; no Redmine call. Registered
-    # only when REDMINE_ADMIN_TOOLS_ENABLED is truthy.
+    # only when REDMINE_MCP_EXPOSE_ADMIN_TOOLS is truthy.
     "cleanup_attachment_files": frozenset(),
     # --- documents ---
     "manage_document": {
@@ -282,6 +282,10 @@ def scopes_for_action(
     """
     if isinstance(entry, dict):
         action = (arguments or {}).get("action")
+        if not isinstance(action, str):
+            # Non-string actions cannot match a map key; pass through so
+            # argument validation rejects them cleanly.
+            return None
         return entry.get(action)
     return entry
 
@@ -291,3 +295,39 @@ def tool_visible(entry: ToolScopeEntry, token_scopes: set) -> bool:
     if isinstance(entry, dict):
         return any(req <= token_scopes for req in entry.values())
     return entry <= token_scopes
+
+
+# update_redmine_issue carve-out (#185 review): a notes-only update is
+# Redmine's "add a comment" operation. Redmine gates it on
+# add_issue_notes (Issue#notes_addable?), not edit_issues, so a
+# commenter token must pass and an edit-only token must be denied,
+# mirroring Redmine's own check. Attaching uploads or touching any
+# other field remains a real edit.
+_NOTES_ONLY_FIELDS = frozenset({"notes", "private_notes"})
+_NOTES_ONLY_SCOPES = frozenset({"add_issue_notes"})
+
+
+def _is_notes_only_update(arguments: Optional[dict]) -> bool:
+    args = arguments or {}
+    fields = args.get("fields")
+    if not isinstance(fields, dict) or not fields:
+        return False
+    if args.get("uploads"):
+        return False
+    return set(fields) <= _NOTES_ONLY_FIELDS
+
+
+def required_scopes_for_call(
+    tool_name: str, entry: ToolScopeEntry, arguments: Optional[dict]
+) -> Optional[frozenset]:
+    """Scope requirement for one call: per-tool carve-outs, then the map."""
+    if tool_name == "update_redmine_issue" and _is_notes_only_update(arguments):
+        return _NOTES_ONLY_SCOPES
+    return scopes_for_action(entry, arguments)
+
+
+def tool_visible_for(tool_name: str, entry: ToolScopeEntry, token_scopes: set) -> bool:
+    """Visibility for tools/list, including per-tool carve-outs."""
+    if tool_name == "update_redmine_issue":
+        return tool_visible(entry, token_scopes) or (_NOTES_ONLY_SCOPES <= token_scopes)
+    return tool_visible(entry, token_scopes)

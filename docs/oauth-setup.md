@@ -215,6 +215,9 @@ Notes:
 - RedmineUP plugin tools (`manage_product`, `manage_contact`,
   checklists) cannot require plugin scopes because those are not
   advertised; Redmine enforces its own plugin permissions for them.
+- A notes-only `update_redmine_issue` call (fields containing nothing but
+  `notes` / `private_notes`, no uploads) requires `add_issue_notes` instead
+  of `edit_issues`, mirroring Redmine's own note-adding permission.
 
 ### Tokens issued before scope enforcement
 

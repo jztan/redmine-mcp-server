@@ -48,7 +48,7 @@ class TestToolScopesMap:
             registered <= mapped
         ), f"tools missing from TOOL_SCOPES: {registered - mapped}"
         # cleanup_attachment_files registers only when
-        # REDMINE_ADMIN_TOOLS_ENABLED is truthy; it must still be mapped.
+        # REDMINE_MCP_EXPOSE_ADMIN_TOOLS is truthy; it must still be mapped.
         conditional = {"cleanup_attachment_files"}
         stale = mapped - registered - conditional
         assert not stale, f"stale TOOL_SCOPES entries: {stale}"
@@ -113,7 +113,9 @@ def _make_server():
     mcp.add_middleware(ScopeEnforcementMiddleware())
 
     @mcp.tool()
-    async def update_redmine_issue(issue_id: int) -> dict:
+    async def update_redmine_issue(
+        issue_id: int, fields: dict | None = None, uploads: list | None = None
+    ) -> dict:
         return {"updated": issue_id}
 
     @mcp.tool()
@@ -234,6 +236,96 @@ class TestCallToolGating:
         # Reaches the (test) tool body: no scope denial.
         assert result.structured_content == {"action": "explode"}
 
+    @pytest.mark.asyncio
+    async def test_non_string_action_does_not_deny_by_scope(self, scoped_token):
+        # A non-string action can't match a map key; the middleware must
+        # pass it through rather than crash or mis-deny. Whatever error
+        # surfaces belongs to argument validation, not scope enforcement.
+        scoped_token(["view_documents"])
+        async with Client(_make_server()) as client:
+            try:
+                result = await client.call_tool(
+                    "manage_document",
+                    {"action": ["create"], "project_id": "p"},
+                )
+            except Exception as exc:  # noqa: BLE001
+                assert "INSUFFICIENT_SCOPE" not in str(exc)
+                return
+        if result.content and getattr(result.content[0], "text", None):
+            assert "INSUFFICIENT_SCOPE" not in result.content[0].text
+
+
+class TestNotesOnlyCarveOut:
+    @pytest.mark.asyncio
+    async def test_notes_only_allowed_with_add_issue_notes(self, scoped_token):
+        scoped_token(["add_issue_notes"])
+        async with Client(_make_server()) as client:
+            result = await client.call_tool(
+                "update_redmine_issue",
+                {"issue_id": 1, "fields": {"notes": "hi"}},
+            )
+        assert result.structured_content == {"updated": 1}
+
+    @pytest.mark.asyncio
+    async def test_notes_only_denied_without_scope(self, scoped_token):
+        scoped_token([])
+        async with Client(_make_server()) as client:
+            result = await client.call_tool(
+                "update_redmine_issue",
+                {"issue_id": 1, "fields": {"notes": "hi"}},
+            )
+        payload = json.loads(result.content[0].text)
+        assert payload["code"] == "INSUFFICIENT_SCOPE"
+        assert "add_issue_notes" in payload["error"]
+
+    @pytest.mark.asyncio
+    async def test_mixed_fields_require_edit_issues(self, scoped_token):
+        scoped_token(["add_issue_notes"])
+        async with Client(_make_server()) as client:
+            result = await client.call_tool(
+                "update_redmine_issue",
+                {"issue_id": 1, "fields": {"subject": "x", "notes": "hi"}},
+            )
+        payload = json.loads(result.content[0].text)
+        assert payload["code"] == "INSUFFICIENT_SCOPE"
+        assert "edit_issues" in payload["error"]
+
+    @pytest.mark.asyncio
+    async def test_notes_with_uploads_require_edit_issues(self, scoped_token):
+        scoped_token(["add_issue_notes"])
+        async with Client(_make_server()) as client:
+            result = await client.call_tool(
+                "update_redmine_issue",
+                {
+                    "issue_id": 1,
+                    "fields": {"notes": "hi"},
+                    "uploads": [{"path": "f"}],
+                },
+            )
+        payload = json.loads(result.content[0].text)
+        assert payload["code"] == "INSUFFICIENT_SCOPE"
+        assert "edit_issues" in payload["error"]
+
+    @pytest.mark.asyncio
+    async def test_notes_only_denied_for_edit_issues_only_token(self, scoped_token):
+        # Mirrors Redmine: edit_issues alone cannot add notes.
+        scoped_token(["edit_issues"])
+        async with Client(_make_server()) as client:
+            result = await client.call_tool(
+                "update_redmine_issue",
+                {"issue_id": 1, "fields": {"notes": "hi"}},
+            )
+        payload = json.loads(result.content[0].text)
+        assert payload["code"] == "INSUFFICIENT_SCOPE"
+        assert "add_issue_notes" in payload["error"]
+
+    @pytest.mark.asyncio
+    async def test_list_tools_visible_with_add_issue_notes_only(self, scoped_token):
+        scoped_token(["add_issue_notes"])
+        async with Client(_make_server()) as client:
+            tools = {t.name for t in await client.list_tools()}
+        assert "update_redmine_issue" in tools
+
 
 class TestListToolsFiltering:
     @pytest.mark.asyncio
@@ -270,10 +362,7 @@ class TestListToolsFiltering:
 
 class TestServerWiring:
     def _middlewares(self, mcp_instance):
-        # FastMCP stores middleware on .middleware (list). Adjust the
-        # attribute name here if the installed fastmcp differs; check
-        # with: python -c "from fastmcp import FastMCP; m=FastMCP('x');"
-        # then: print([a for a in dir(m) if 'middle' in a.lower()])
+        # FastMCP stores registered middleware on .middleware
         return [type(m).__name__ for m in mcp_instance.middleware]
 
     def test_oauth_mode_registers_scope_middleware(self, monkeypatch):
