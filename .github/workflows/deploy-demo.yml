@@ -25,7 +25,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Inject demo version
         run: sed -i 's/__VERSION__/${{ github.ref_name }}/g' pages/index.html
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v3
         with:
           path: ./pages
