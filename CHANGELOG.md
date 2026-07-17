@@ -7,6 +7,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Security
+- OAuth token scopes are now enforced on MCP tool calls ([#185](https://github.com/jztan/redmine-mcp-server/issues/185)):
+  each tool requires the Redmine permission scopes it uses (per-action for
+  `manage_X` tools), unmapped tools are denied by default, `tools/list` is
+  filtered to the token's scopes, and the `admin` scope bypasses the check.
+  Enforcement is on by default; set `REDMINE_OAUTH_SCOPE_ENFORCEMENT=off`
+  as a temporary bridge while re-consenting tokens issued before this
+  release (see docs/oauth-setup.md, "Scope Enforcement"). Reported by
+  @stevehollis-orderflow.
+
+### Contributors
+- @stevehollis-orderflow — reported that OAuth token scopes were advertised but not enforced on tool calls, with a precise repro and a sound enforcement design ([#185](https://github.com/jztan/redmine-mcp-server/issues/185))
 
 ## [2.7.0] - 2026-07-20
 ### Added
@@ -24,22 +36,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wheels, and two `file_manager` tests that relied on pre-3.14 pathlib
   internals were rewritten to be version-independent.
 
-### Security
-- OAuth token scopes are now enforced on MCP tool calls ([#185](https://github.com/jztan/redmine-mcp-server/issues/185)):
-  each tool requires the Redmine permission scopes it uses (per-action for
-  `manage_X` tools), unmapped tools are denied by default, `tools/list` is
-  filtered to the token's scopes, and the `admin` scope bypasses the check.
-  Enforcement is on by default; set `REDMINE_OAUTH_SCOPE_ENFORCEMENT=off`
-  as a temporary bridge while re-consenting tokens issued before this
-  release (see docs/oauth-setup.md, "Scope Enforcement"). Reported by
-  @stevehollis-orderflow.
-- Raised security floors for two transitive dependencies via `[tool.uv]`
-  `constraint-dependencies`, clearing all known advisories from the audit:
-  `click>=8.3.3` (PYSEC-2026-2132) and `mcp>=1.28.1` (CVE-2026-52870,
-  CVE-2026-52869, CVE-2026-59950). Both are pulled in indirectly and not
-  imported directly; each constraint can be dropped once an upstream dependency
-  raises its own floor.
-
 ### Fixed
 - Docker container now honors `SERVER_HOST` and `SERVER_PORT`. The Dockerfile
   `CMD` previously hardcoded `--host 0.0.0.0 --port 8000` in the uvicorn
@@ -49,6 +45,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `${SERVER_PORT:-8000}`. The runtime image also sets `SERVER_HOST=0.0.0.0` as
   a default so an ad-hoc `docker run` without a full env file still binds to a
   reachable address (overridable via `env_file` or `-e`).
+
+### Security
+- Raised security floors for two transitive dependencies via `[tool.uv]`
+  `constraint-dependencies`, clearing all known advisories from the audit:
+  `click>=8.3.3` (PYSEC-2026-2132) and `mcp>=1.28.1` (CVE-2026-52870,
+  CVE-2026-52869, CVE-2026-59950). Both are pulled in indirectly and not
+  imported directly; each constraint can be dropped once an upstream dependency
+  raises its own floor.
 
 ### Contributors
 - @pdostal — fixed the Dockerfile to respect `SERVER_HOST`/`SERVER_PORT` env vars ([#179](https://github.com/jztan/redmine-mcp-server/pull/179))
