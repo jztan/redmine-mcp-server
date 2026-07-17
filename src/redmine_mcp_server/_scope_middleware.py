@@ -31,7 +31,7 @@ from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.middleware import Middleware
 
 from ._tool_error_middleware import build_error_tool_result
-from .oauth_scopes import TOOL_SCOPES, scopes_for_action, tool_visible  # noqa: F401
+from .oauth_scopes import TOOL_SCOPES, scopes_for_action, tool_visible
 
 logger = logging.getLogger(__name__)
 
@@ -99,3 +99,20 @@ class ScopeEnforcementMiddleware(Middleware):
             )
 
         return await call_next(context)
+
+    async def on_list_tools(self, context, call_next):
+        tools = await call_next(context)
+        token = get_access_token()
+        if token is None:
+            return tools
+
+        granted = set(token.scopes or [])
+        if "admin" in granted:
+            return tools
+
+        visible = []
+        for tool in tools:
+            entry = TOOL_SCOPES.get(tool.name)
+            if entry is not None and tool_visible(entry, granted):
+                visible.append(tool)
+        return visible

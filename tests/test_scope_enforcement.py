@@ -233,3 +233,36 @@ class TestCallToolGating:
             )
         # Reaches the (test) tool body: no scope denial.
         assert result.structured_content == {"action": "explode"}
+
+
+class TestListToolsFiltering:
+    @pytest.mark.asyncio
+    async def test_no_token_sees_all(self, monkeypatch):
+        monkeypatch.setattr(scope_mw, "get_access_token", lambda: None)
+        async with Client(_make_server()) as client:
+            tools = {t.name for t in await client.list_tools()}
+        assert "update_redmine_issue" in tools
+        assert "not_in_map_tool" in tools
+
+    @pytest.mark.asyncio
+    async def test_scoped_token_sees_only_permitted(self, scoped_token):
+        scoped_token(["view_documents"])
+        async with Client(_make_server()) as client:
+            tools = {t.name for t in await client.list_tools()}
+        # Dict entry visible because ANY action (list/get) is permitted.
+        assert "manage_document" in tools
+        # frozenset() entry: always visible to authenticated tokens.
+        assert "get_current_user" in tools
+        # Missing scope: hidden.
+        assert "update_redmine_issue" not in tools
+        assert "list_redmine_issues" not in tools
+        # Unmapped: hidden (deny-by-default).
+        assert "not_in_map_tool" not in tools
+
+    @pytest.mark.asyncio
+    async def test_admin_sees_all(self, scoped_token):
+        scoped_token(["admin"])
+        async with Client(_make_server()) as client:
+            tools = {t.name for t in await client.list_tools()}
+        assert "not_in_map_tool" in tools
+        assert "update_redmine_issue" in tools
