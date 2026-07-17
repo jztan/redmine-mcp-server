@@ -27,6 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a default so an ad-hoc `docker run` without a full env file still binds to a
   reachable address (overridable via `env_file` or `-e`).
 
+### Security
+- Raised security floors for two transitive dependencies via `[tool.uv]`
+  `constraint-dependencies`, clearing all known advisories from the audit:
+  `click>=8.3.3` (PYSEC-2026-2132) and `mcp>=1.28.1` (CVE-2026-52870,
+  CVE-2026-52869, CVE-2026-59950). Both are pulled in indirectly and not
+  imported directly; each constraint can be dropped once an upstream dependency
+  raises its own floor.
+
 ### Contributors
 - @pdostal — fixed the Dockerfile to respect `SERVER_HOST`/`SERVER_PORT` env vars ([#179](https://github.com/jztan/redmine-mcp-server/pull/179))
 
