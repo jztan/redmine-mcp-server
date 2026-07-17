@@ -111,6 +111,40 @@ def _format_argument_error(exc: ValidationError) -> Dict[str, Any]:
     return payload
 
 
+async def build_error_tool_result(context, payload: Dict[str, Any]) -> ToolResult:
+    """Build a ToolResult carrying an error envelope for a tool call.
+
+    Honors FastMCP's output-schema wrap convention. Tools whose return
+    type is not a plain dict (e.g. Union[List, Dict]) get an
+    outputSchema with ``x-fastmcp-wrap-result: True``; the client-side
+    parser looks for the value under a ``result`` key and trips a
+    misleading "Output validation error: 'result' is a required
+    property" if we hand it a flat dict instead. Detect that case and
+    mirror the wrapping so the envelope reaches the caller intact
+    regardless of return-type shape.
+    """
+    wrap_result = False
+    try:
+        fastmcp_ctx = getattr(context, "fastmcp_context", None)
+        if fastmcp_ctx is not None:
+            tool = await fastmcp_ctx.fastmcp.get_tool(context.message.name)
+            output_schema = getattr(tool, "output_schema", None) or {}
+            wrap_result = bool(output_schema.get("x-fastmcp-wrap-result"))
+    except Exception:
+        # Tool lookup failures are non-fatal: the envelope is still
+        # readable via ``content``; the only cost is that strict
+        # clients may surface the wrap-result mismatch.
+        wrap_result = False
+
+    structured: Dict[str, Any] = {"result": payload} if wrap_result else payload
+    meta = {"fastmcp": {"wrap_result": True}} if wrap_result else None
+    return ToolResult(
+        content=[TextContent(type="text", text=json.dumps(payload))],
+        structured_content=structured,
+        meta=meta,
+    )
+
+
 class CleanValidationErrorMiddleware(Middleware):
     """Catches argument-validation Pydantic errors at the tool boundary."""
 
@@ -135,33 +169,4 @@ class CleanValidationErrorMiddleware(Middleware):
             if not isinstance(pydantic_exc, ValidationError):
                 raise
             payload = _format_argument_error(pydantic_exc)
-
-            # Honor FastMCP's output-schema wrap convention. Tools whose
-            # return type is not a plain dict (e.g. Union[List, Dict])
-            # get an outputSchema with ``x-fastmcp-wrap-result: True``;
-            # the client-side parser looks for the value under a
-            # ``result`` key and trips a misleading
-            # "Output validation error: 'result' is a required property"
-            # if we hand it a flat dict instead. Detect that case and
-            # mirror the wrapping so the envelope reaches the caller
-            # intact regardless of return-type shape.
-            wrap_result = False
-            try:
-                fastmcp_ctx = getattr(context, "fastmcp_context", None)
-                if fastmcp_ctx is not None:
-                    tool = await fastmcp_ctx.fastmcp.get_tool(context.message.name)
-                    output_schema = getattr(tool, "output_schema", None) or {}
-                    wrap_result = bool(output_schema.get("x-fastmcp-wrap-result"))
-            except Exception:
-                # Tool lookup failures are non-fatal: the envelope is
-                # still readable via ``content``; the only cost is that
-                # strict clients may surface the wrap-result mismatch.
-                wrap_result = False
-
-            structured: Dict[str, Any] = {"result": payload} if wrap_result else payload
-            meta = {"fastmcp": {"wrap_result": True}} if wrap_result else None
-            return ToolResult(
-                content=[TextContent(type="text", text=json.dumps(payload))],
-                structured_content=structured,
-                meta=meta,
-            )
+            return await build_error_tool_result(context, payload)
