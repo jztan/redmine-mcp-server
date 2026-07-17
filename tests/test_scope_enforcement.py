@@ -266,3 +266,42 @@ class TestListToolsFiltering:
             tools = {t.name for t in await client.list_tools()}
         assert "not_in_map_tool" in tools
         assert "update_redmine_issue" in tools
+
+
+class TestServerWiring:
+    def _middlewares(self, mcp_instance):
+        # FastMCP stores middleware on .middleware (list). Adjust the
+        # attribute name here if the installed fastmcp differs; check
+        # with: python -c "from fastmcp import FastMCP; m=FastMCP('x');"
+        # then: print([a for a in dir(m) if 'middle' in a.lower()])
+        return [type(m).__name__ for m in mcp_instance.middleware]
+
+    def test_oauth_mode_registers_scope_middleware(self, monkeypatch):
+        monkeypatch.delenv("REDMINE_OAUTH_SCOPE_ENFORCEMENT", raising=False)
+        from redmine_mcp_server.server import _register_middlewares
+
+        instance = FastMCP("wiring-test")
+        _register_middlewares(instance, auth_provider=object())
+        names = self._middlewares(instance)
+        assert "CleanValidationErrorMiddleware" in names
+        assert "ScopeEnforcementMiddleware" in names
+
+    def test_legacy_mode_skips_scope_middleware(self, monkeypatch):
+        monkeypatch.delenv("REDMINE_OAUTH_SCOPE_ENFORCEMENT", raising=False)
+        from redmine_mcp_server.server import _register_middlewares
+
+        instance = FastMCP("wiring-test")
+        _register_middlewares(instance, auth_provider=None)
+        names = self._middlewares(instance)
+        assert "ScopeEnforcementMiddleware" not in names
+
+    def test_flag_off_skips_and_warns(self, monkeypatch, caplog):
+        monkeypatch.setenv("REDMINE_OAUTH_SCOPE_ENFORCEMENT", "off")
+        from redmine_mcp_server.server import _register_middlewares
+
+        instance = FastMCP("wiring-test")
+        with caplog.at_level("WARNING"):
+            _register_middlewares(instance, auth_provider=object())
+        names = self._middlewares(instance)
+        assert "ScopeEnforcementMiddleware" not in names
+        assert any("scope enforcement" in r.message.lower() for r in caplog.records)

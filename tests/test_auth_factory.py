@@ -82,7 +82,11 @@ class TestBuildRemoteAuth:
             _auth.build_remote_auth()
 
     def test_required_scopes_unset_on_verifier(self, monkeypatch):
-        """required_scopes intentionally unset — we advertise but don't enforce."""
+        """required_scopes stays unset: it is a global AND over every token.
+
+        Per-tool enforcement lives in ScopeEnforcementMiddleware (#185),
+        driven by oauth_scopes.TOOL_SCOPES.
+        """
         monkeypatch.setenv("REDMINE_URL", "https://redmine.example.com")
         monkeypatch.setenv("REDMINE_MCP_BASE_URL", "http://localhost:3040")
         monkeypatch.setenv("REDMINE_INTROSPECT_CLIENT_ID", "cid")

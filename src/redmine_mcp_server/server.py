@@ -15,11 +15,15 @@ tokens with the same introspection endpoint. In legacy mode the instance is
 built without ``auth=`` and behaves as before.
 """
 
+import logging
 import os
 
 from fastmcp import FastMCP
 
+from ._env import _is_scope_enforcement_enabled
 from ._tool_error_middleware import CleanValidationErrorMiddleware
+
+logger = logging.getLogger(__name__)
 
 REDMINE_AUTH_MODE = os.environ.get("REDMINE_AUTH_MODE", "legacy").lower()
 
@@ -42,7 +46,30 @@ def _select_auth_provider(auth_mode: str):
     return None
 
 
+def _register_middlewares(mcp_instance, auth_provider) -> None:
+    """Attach tool-boundary middlewares.
+
+    Extracted so tests can exercise the registration logic on a fresh
+    FastMCP instance without reloading this module.
+    """
+    mcp_instance.add_middleware(CleanValidationErrorMiddleware())
+    if auth_provider is None:
+        # Legacy modes carry no OAuth scopes; nothing to enforce.
+        return
+    if _is_scope_enforcement_enabled():
+        from ._scope_middleware import ScopeEnforcementMiddleware
+
+        mcp_instance.add_middleware(ScopeEnforcementMiddleware())
+    else:
+        logger.warning(
+            "OAuth scope enforcement is DISABLED "
+            "(REDMINE_OAUTH_SCOPE_ENFORCEMENT=off): any active token can "
+            "call any tool. Re-enable after tokens are re-consented with "
+            "the required scopes."
+        )
+
+
 AUTH_PROVIDER = _select_auth_provider(REDMINE_AUTH_MODE)
 
 mcp = FastMCP("redmine_mcp_tools", auth=AUTH_PROVIDER)
-mcp.add_middleware(CleanValidationErrorMiddleware())
+_register_middlewares(mcp, AUTH_PROVIDER)

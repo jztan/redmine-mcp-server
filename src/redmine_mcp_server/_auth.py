@@ -53,9 +53,9 @@ class RedmineAuthProvider(RemoteAuthProvider):
             introspection_url=str(self.redmine_endpoint("/oauth/introspect")),
             client_id=introspect_client_id,
             client_secret=introspect_client_secret,
-            # required_scopes is intentionally unset: today we advertise scopes
-            # but do not gate tool calls on them. Per-tool scope enforcement is
-            # a follow-up roadmap item.
+            # required_scopes is intentionally unset: it would apply a
+            # global AND over every token. Per-tool enforcement lives in
+            # ScopeEnforcementMiddleware (#185).
         )
 
         super().__init__(
