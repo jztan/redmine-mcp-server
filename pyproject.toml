@@ -71,6 +71,13 @@ dev = [
     "pre-commit>=3.0.0,<5",
 ]
 
+[tool.uv]
+# Security floors for transitive dependencies (not imported directly). Drop each
+# entry once an upstream dependency raises its own floor past these versions.
+#   click < 8.3.3  -> PYSEC-2026-2132 (via uvicorn / rich-click stack)
+#   mcp   < 1.28.1 -> CVE-2026-52870, CVE-2026-52869, CVE-2026-59950 (via fastmcp-slim)
+constraint-dependencies = ["click>=8.3.3", "mcp>=1.28.1"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
