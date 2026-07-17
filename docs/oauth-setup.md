@@ -194,6 +194,44 @@ Set this in Redmine's OAuth app (Step 1) to match your client:
 > **Note on DCR:** Some clients (Claude Desktop, VS Code) expect Dynamic Client Registration. Redmine's Doorkeeper does not support DCR, so you must pre-register the app manually (Step 1) and configure the client with the `client_id`/`client_secret`.
 > Use `REDMINE_AUTH_MODE=oauth-proxy` when MCP clients need DCR/CIMD onboarding.
 
+## Scope Enforcement
+
+The server enforces OAuth scopes per tool (on by default). Every MCP
+tool maps to the Redmine permission scopes it needs, and a
+call is refused with code `INSUFFICIENT_SCOPE` when the access token
+does not carry them. `tools/list` only shows the tools the token can
+use. Tokens with the `admin` scope bypass the check, matching Redmine's
+own semantics.
+
+The authoritative tool-to-scope map is `TOOL_SCOPES` in
+`src/redmine_mcp_server/oauth_scopes.py`.
+
+Notes:
+
+- The map gates each tool's base permission. Argument-conditional
+  permissions (for example `manage_subtasks` when changing
+  `parent_issue_id`, or tag scopes for `tag_list`) are still enforced
+  by Redmine itself.
+- RedmineUP plugin tools (`manage_product`, `manage_contact`,
+  checklists) cannot require plugin scopes because those are not
+  advertised; Redmine enforces its own plugin permissions for them.
+
+### Tokens issued before scope enforcement
+
+Tokens obtained before scopes were requested (or from OAuth apps with a
+blank scope list) introspect with empty scopes and will be denied for
+every tool. Fix: update the OAuth application's scopes in Redmine,
+disconnect and re-authorize the MCP client so a new consent grants the
+scopes. As a temporary bridge you can set:
+
+```bash
+REDMINE_OAUTH_SCOPE_ENFORCEMENT=off
+```
+
+which restores the pre-enforcement behavior (any active token can call
+any tool) and logs a warning at startup. Re-enable it once clients have
+re-consented.
+
 ## Migrating from Legacy Mode
 
 1. Set `REDMINE_AUTH_MODE=oauth` and restart — no downtime needed
