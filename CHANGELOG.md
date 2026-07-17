@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transport. Clicking any figure drills into the matching issue list
   in-panel; a Refresh action re-fetches through the app-callable
   `get_project_dashboard_data` tool. Read-only.
+- Python 3.14 support: 3.14 is now in the CI test matrix and declared in the
+  package classifiers. The locked `watchfiles` dependency (pulled in via
+  `fastmcp`) was upgraded from 1.0.5 to 1.2.0, the first line with cp314
+  wheels, and two `file_manager` tests that relied on pre-3.14 pathlib
+  internals were rewritten to be version-independent.
 
 ### Fixed
 - Docker container now honors `SERVER_HOST` and `SERVER_PORT`. The Dockerfile
