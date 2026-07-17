@@ -147,50 +147,53 @@ class TestGetStorageStats:
         assert stats["total_mb"] == 0.0
 
     def test_stats_permission_denied(self, tmp_path, file_manager):
-        """Test continues on unreadable files/directories."""
+        """Test skips directories whose contents cannot be listed."""
         content = b"Test content"
         expires_at = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
         create_attachment(tmp_path, "uuid-1", content, expires_at)
 
-        # Mock stat to raise OSError for individual files
-        original_stat = Path.stat
+        original_iterdir = Path.iterdir
 
-        def mock_stat(self, **kwargs):
-            if self.name == "test_file.txt":
+        def mock_iterdir(self):
+            if self.name == "uuid-1":
                 raise OSError("Permission denied")
-            return original_stat(self, **kwargs)
+            return original_iterdir(self)
 
-        with patch.object(Path, "stat", mock_stat):
+        with patch.object(Path, "iterdir", mock_iterdir):
             stats = file_manager.get_storage_stats()
 
-        # Should continue and return partial results (0 since file stat failed)
+        # Should skip the unreadable directory and return partial results
         assert stats["total_files"] == 0
         assert stats["total_bytes"] == 0
 
     def test_stats_stat_failure_for_size(self, tmp_path, file_manager):
-        """Test handles OSError when stat() fails for file size only.
+        """Test handles OSError when stat() fails for the file size fetch.
 
-        This test specifically targets lines 99-101 by allowing is_file() to
-        succeed (first stat call) but failing on the size fetch (second stat).
+        The file passes the is_file() check but the stat() call for its size
+        fails. is_file() is patched directly rather than relying on it calling
+        the patched stat(), because that delegation is a pathlib internal that
+        changed in Python 3.14.
         """
         content = b"Test content"
         expires_at = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
         create_attachment(tmp_path, "uuid-1", content, expires_at)
 
         original_stat = Path.stat
-        call_count = [0]
+        original_is_file = Path.is_file
+
+        def mock_is_file(self, **kwargs):
+            if self.name == "test_file.txt":
+                return True
+            return original_is_file(self, **kwargs)
 
         def mock_stat(self, **kwargs):
-            # Allow is_file() check (first call per file)
-            # Fail on size fetch (second call per file)
             if self.name == "test_file.txt":
-                call_count[0] += 1
-                if call_count[0] > 1:
-                    raise OSError("Permission denied")
+                raise OSError("Permission denied")
             return original_stat(self, **kwargs)
 
-        with patch.object(Path, "stat", mock_stat):
-            stats = file_manager.get_storage_stats()
+        with patch.object(Path, "is_file", mock_is_file):
+            with patch.object(Path, "stat", mock_stat):
+                stats = file_manager.get_storage_stats()
 
         # File was counted but size couldn't be fetched
         assert stats["total_files"] == 1
