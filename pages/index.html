@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="light" />
 
 <title>redmine-mcp-server · Your AI doesn't just read tickets. It works them.</title>
-<meta name="description" content="Watch an AI agent triage a Redmine backlog with the same 49 MCP tools it would use against your real Redmine, including a live Kanban board rendered right in the chat. Scripted in-browser demo." />
+<meta name="description" content="Watch an AI agent triage a Redmine backlog with the same 51 MCP tools it would use against your real Redmine, including a live Kanban board and project dashboard rendered right in the chat. Scripted in-browser demo." />
 
 <link rel="canonical" href="https://redmine-mcp-server.jztan.com/" />
 
@@ -32,7 +32,7 @@
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
   "name": "redmine-mcp-server",
-  "description": "Production-ready MCP server that lets AI agents manage Redmine issues, projects, wikis, and time tracking, including an interactive Kanban board rendered in the chat via MCP Apps. Works with Claude, Cursor, VS Code, and Codex.",
+  "description": "Production-ready MCP server that lets AI agents manage Redmine issues, projects, wikis, and time tracking, including an interactive Kanban board and project dashboard rendered in the chat via MCP Apps. Works with Claude, Cursor, VS Code, and Codex.",
   "applicationCategory": "DeveloperApplication",
   "operatingSystem": "Linux, macOS, Windows",
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
@@ -360,6 +360,32 @@
   .board-sub code { font-family: var(--font-mono); font-size: 0.9em; color: var(--text); }
   .board-shot { width: 100%; max-width: 753px; height: auto; border: 1px solid var(--border);
     border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); }
+  /* App carousel (App Store style: side arrows on desktop, swipe on mobile) */
+  .carousel { position: relative; margin-top: 8px; }
+  .car-viewport { overflow-x: auto; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch;
+    scrollbar-width: none; -ms-overflow-style: none; }
+  .car-viewport::-webkit-scrollbar { width: 0; height: 0; display: none; }
+  .car-track { display: flex; }
+  .car-slide { flex: 0 0 100%; scroll-snap-align: center; display: flex; flex-direction: column;
+    align-items: center; padding: 0 12px; }
+  .app-name { font-family: var(--font-display); font-size: clamp(20px, 3vw, 27px); font-weight: 600;
+    letter-spacing: -0.015em; margin: 0 0 8px; }
+  .app-desc { color: var(--text-secondary); font-size: 15px; max-width: 620px; margin: 0 auto 22px; line-height: 1.5; }
+  .app-desc code { font-family: var(--font-mono); font-size: 0.9em; color: var(--text); }
+  .slide-shot { max-width: 100%; max-height: 460px; width: auto; height: auto;
+    border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); }
+  .car-arrow { position: absolute; top: 50%; transform: translateY(-50%); z-index: 5;
+    width: 42px; height: 42px; border-radius: 50%; border: 1px solid var(--border);
+    background: var(--bg-elev); color: var(--text); font-size: 20px; line-height: 1; padding: 0;
+    cursor: pointer; box-shadow: var(--shadow-md); display: flex; align-items: center; justify-content: center;
+    transition: background 0.15s ease, opacity 0.2s ease; }
+  .car-arrow:hover { background: var(--bg-subtle); }
+  .car-prev { left: 0; } .car-next { right: 0; }
+  .car-dots { display: flex; gap: 8px; justify-content: center; margin-top: 22px; }
+  .car-dot { width: 8px; height: 8px; border-radius: 50%; border: none; padding: 0;
+    background: var(--border-strong); cursor: pointer; transition: width 0.2s ease, background 0.2s ease; }
+  .car-dot.is-active { background: var(--accent); width: 22px; border-radius: 4px; }
+  @media (max-width: 640px) { .car-arrow { display: none; } }
   .board-note { font-size: 13px; color: var(--text-tertiary); margin: 16px auto 0; max-width: 560px; }
   .board-note a { color: var(--accent); text-decoration: none; }
   .board-note a:hover { text-decoration: underline; }
@@ -478,7 +504,7 @@
 <section class="hero">
   <div class="inner">
     <p class="hero-title">Your AI shouldn't just read tickets.<br />It should work them.</p>
-    <p class="hero-sub"><code>redmine-mcp-server</code> gives AI agents 49 tools to triage, update, comment on, and close Redmine issues — the way a project manager would.</p>
+    <p class="hero-sub"><code>redmine-mcp-server</code> gives AI agents 51 tools to triage, update, comment on, and close Redmine issues — the way a project manager would.</p>
     <div class="install-cmd hero-install">
       <span class="install-cmd-text" id="heroInstallCmd">pip install redmine-mcp-server</span>
       <button class="btn btn-ghost btn-icon" id="heroInstallCopyBtn" aria-label="Copy install command">
@@ -550,7 +576,7 @@
             <span class="cli-title">claude — ~/work/cartly-app</span>
           </div>
           <div class="cli-body" id="feed">
-            <div class="cc-welcome"><span class="cc-star">✻</span> Welcome to <b>Claude Code</b><span class="sub">redmine-mcp-server connected over MCP · 49 tools available</span></div>
+            <div class="cc-welcome"><span class="cc-star">✻</span> Welcome to <b>Claude Code</b><span class="sub">redmine-mcp-server connected over MCP · 51 tools available</span></div>
             <div class="cli-hint" id="feedPlaceholder">▸ press <b style="color:#d6d3cd">Run the agent</b> to start</div>
           </div>
           <div class="cc-input">
@@ -591,30 +617,121 @@
 
 <section class="board" id="board">
   <div class="inner">
-    <span class="board-badge">New in v2.6.0</span>
-    <h2 class="board-title">The board, live in your chat.</h2>
+    <span class="board-badge">MCP Apps</span>
+    <h2 class="board-title">Live apps, right in your chat.</h2>
     <p class="board-sub">
-      The demo above simulates the loop. <code>show_triage_board</code> is the real thing:
-      an interactive Kanban board rendered inside the conversation through the official
-      MCP Apps extension. Drag a card to another column and the agent writes the status
-      change to Redmine via <code>update_redmine_issue</code>; if Redmine rejects the
-      transition, the card snaps back and explains why.
+      The demo above simulates the loop. These are the real thing: interactive apps
+      rendered inside the conversation through the official MCP Apps extension, driven
+      by the same tool calls.
     </p>
-    <img class="board-shot" src="triage-board-kanban.png" width="753" height="612"
-         alt="Interactive Kanban board rendered in the chat by show_triage_board, with issue cards grouped in open, in-progress, and closed columns" loading="lazy" />
+
+    <div class="carousel" id="appCarousel">
+      <div class="car-viewport" id="carViewport">
+        <div class="car-track" id="carTrack">
+          <div class="car-slide">
+            <h3 class="app-name">A live project dashboard.</h3>
+            <p class="app-desc">
+              <code>show_project_dashboard</code> renders open vs closed, overdue, due this
+              week, an open-by-priority breakdown, and recent activity. Click any figure to
+              drill into the matching issue list in-panel, and hit Refresh to re-fetch. It is
+              read-only.
+            </p>
+            <img class="slide-shot" src="project-dashboard.png" width="766" height="825"
+                 alt="Interactive project dashboard rendered in the chat by show_project_dashboard, showing open vs closed counts, overdue and due-this-week figures, an open-by-priority breakdown, and recent activity" loading="lazy" />
+          </div>
+
+          <div class="car-slide">
+            <h3 class="app-name">A drag-and-drop triage board.</h3>
+            <p class="app-desc">
+              <code>show_triage_board</code> draws a project's issues as an interactive Kanban
+              board. Drag a card to another column and the agent writes the status change to
+              Redmine via <code>update_redmine_issue</code>; if Redmine rejects the transition,
+              the card snaps back and explains why.
+            </p>
+            <img class="slide-shot" src="triage-board-kanban.png" width="753" height="612"
+                 alt="Interactive Kanban board rendered in the chat by show_triage_board, with issue cards grouped in open, in-progress, and closed columns" loading="lazy" />
+          </div>
+        </div>
+      </div>
+      <button class="car-arrow car-prev" id="carPrev" type="button" aria-label="Previous app">&lsaquo;</button>
+      <button class="car-arrow car-next" id="carNext" type="button" aria-label="Next app">&rsaquo;</button>
+    </div>
+
+    <div class="car-dots" id="carDots">
+      <button class="car-dot is-active" type="button" data-i="0" aria-label="Show project dashboard"></button>
+      <button class="car-dot" type="button" data-i="1" aria-label="Show triage board"></button>
+    </div>
+
     <p class="board-note">
-      Needs an MCP client that renders MCP Apps. Shipped in
-      <a href="https://github.com/jztan/redmine-mcp-server/releases/tag/v2.6.0">v2.6.0</a>;
-      tried it? Leave feedback in
+      Both need an MCP client that renders MCP Apps. Tried them? Leave feedback in
       <a href="https://github.com/jztan/redmine-mcp-server/discussions/168">the discussion</a>.
     </p>
   </div>
 </section>
 
+<script>
+  (function () {
+    const car = document.getElementById("appCarousel");
+    const vp = document.getElementById("carViewport");
+    const track = document.getElementById("carTrack");
+    if (!car || !vp || !track) return;
+    const slides = Array.from(track.children);
+    const dots = Array.from(document.querySelectorAll("#carDots .car-dot"));
+    const prev = document.getElementById("carPrev");
+    const next = document.getElementById("carNext");
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const smooth = reduce ? "auto" : "smooth";
+    const DELAY = 5500;
+    let cur = 0, timer = null, paused = false, stopped = reduce;
+
+    function sync() {
+      dots.forEach((d, i) => d.classList.toggle("is-active", i === cur));
+      if (prev) prev.style.opacity = cur === 0 ? "0.35" : "1";
+      if (next) next.style.opacity = cur === slides.length - 1 ? "0.35" : "1";
+    }
+    function go(i) {
+      cur = Math.max(0, Math.min(slides.length - 1, i));
+      vp.scrollTo({ left: cur * vp.clientWidth, behavior: smooth });
+      sync();
+    }
+
+    // ── Auto-advance: cycles every DELAY, pauses on hover/focus, and
+    //    stops for good the moment the visitor navigates it themselves. ──
+    function halt() { if (timer) { clearInterval(timer); timer = null; } }
+    function start() {
+      if (stopped || paused || timer) return;
+      timer = setInterval(() => go(cur >= slides.length - 1 ? 0 : cur + 1), DELAY);
+    }
+    function stop() { stopped = true; halt(); }
+
+    if (prev) prev.addEventListener("click", () => { stop(); go(cur - 1); });
+    if (next) next.addEventListener("click", () => { stop(); go(cur + 1); });
+    dots.forEach((d, i) => d.addEventListener("click", () => { stop(); go(i); }));
+    car.addEventListener("pointerdown", stop);
+    car.addEventListener("mouseenter", () => { paused = true; halt(); });
+    car.addEventListener("mouseleave", () => { paused = false; start(); });
+    car.addEventListener("focusin", () => { paused = true; halt(); });
+    car.addEventListener("focusout", () => { paused = false; start(); });
+    document.addEventListener("visibilitychange", () => { document.hidden ? halt() : start(); });
+
+    let raf = 0;
+    vp.addEventListener("scroll", () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        const i = Math.round(vp.scrollLeft / vp.clientWidth);
+        if (i !== cur) { cur = i; sync(); }
+      });
+    });
+    sync();
+    start();
+  })();
+</script>
+
 <section class="caps">
   <div class="inner">
     <h2 class="caps-title">Far more than triage.</h2>
-    <p class="caps-sub">The demo shows one workflow. The same 49 tools cover the rest of Redmine.</p>
+    <p class="caps-sub">The demo shows one workflow. The same 51 tools cover the rest of Redmine.</p>
     <div class="caps-grid">
 
       <div class="cap-card">
@@ -668,11 +785,12 @@
     </button>
   </div>
   <p class="other-tools">
-    The demo shows 4 of the server's 49 tools. The full set spans
+    The demo shows 4 of the server's 51 tools. The full set spans
     <code>list_redmine_issues</code>, <code>get_redmine_issue</code>, <code>update_redmine_issue</code>,
-    <code>show_triage_board</code>, <code>manage_time_entry</code>, <code>manage_redmine_wiki_page</code>,
-    <code>manage_project_member</code>, <code>search_entire_redmine</code>, and more — covering issues,
-    projects, wikis, time tracking, versions, and CRM, plus multi-tenant per-user auth (OAuth2, OAuthProxy, or per-user API keys) and a read-only safety mode.
+    <code>show_triage_board</code>, <code>show_project_dashboard</code>, <code>manage_time_entry</code>,
+    <code>manage_redmine_wiki_page</code>, <code>manage_project_member</code>, <code>search_entire_redmine</code>,
+    and more — covering issues, projects, wikis, time tracking, versions, and CRM, plus multi-tenant
+    per-user auth (OAuth2, OAuthProxy, or per-user API keys) and a read-only safety mode.
   </p>
   <div class="links">
     <a class="link-btn" href="https://github.com/jztan/redmine-mcp-server">GitHub</a>
@@ -690,7 +808,7 @@
     </p>
     <h2>What it does</h2>
     <p>
-      Redmine has a capable REST API, but wiring an agent to it directly means handing the model raw HTTP access — which is slow, error-prone, and unsafe. redmine-mcp-server exposes 49 purpose-built tools instead. An agent can list and filter issues, read a ticket with its full history, update status and assignee, add notes, log time, manage wiki pages, and run global search — each as a single typed tool call with predictable, serialized JSON. Since v2.6.0 it can also render an interactive Kanban board directly in the chat through the MCP Apps extension: <code>show_triage_board</code> draws a project's issues as drag-and-drop status columns, and every card move writes back to Redmine.
+      Redmine has a capable REST API, but wiring an agent to it directly means handing the model raw HTTP access — which is slow, error-prone, and unsafe. redmine-mcp-server exposes 51 purpose-built tools instead. An agent can list and filter issues, read a ticket with its full history, update status and assignee, add notes, log time, manage wiki pages, and run global search — each as a single typed tool call with predictable, serialized JSON. It can also render interactive apps directly in the chat through the MCP Apps extension: <code>show_triage_board</code> draws a project's issues as drag-and-drop status columns that write back to Redmine, and <code>show_project_dashboard</code> renders a live, read-only project snapshot with click-through drill-ins to matching issue lists.
     </p>
     <h2>What the demo shows</h2>
     <p>
@@ -933,7 +1051,7 @@
   const PROMPT_TEXT = "triage the overdue issues in Sprint 14";
   const WELCOME_HTML =
     '<div class="cc-welcome"><span class="cc-star">✻</span> Welcome to <b>Claude Code</b>' +
-    '<span class="sub">redmine-mcp-server connected over MCP · 49 tools available</span></div>';
+    '<span class="sub">redmine-mcp-server connected over MCP · 51 tools available</span></div>';
   const HINT_HTML = '<div class="cli-hint" id="feedPlaceholder">▸ press <b style="color:#d6d3cd">Run the agent</b> to start</div>';
 
   let idx = 0, playing = false, animating = false, promptShown = false;
