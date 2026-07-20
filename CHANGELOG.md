@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [2.7.0] - 2026-07-20
 ### Added
 - Interactive `project-dashboard` MCP App: the new `show_project_dashboard`
   tool renders a live project snapshot (open vs closed, overdue, due this
@@ -1037,6 +1039,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive authentication support (username/password and API key)
 - Docker containerization support
 
+[2.7.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.7.0
 [2.6.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.6.0
 [2.5.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.5.0
 [2.4.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.4.0
