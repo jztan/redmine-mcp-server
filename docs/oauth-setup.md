@@ -235,6 +235,30 @@ which restores the pre-enforcement behavior (any active token can call
 any tool) and logs a warning at startup. Re-enable it once clients have
 re-consented.
 
+### Cursor and self-AS discovery
+
+Some MCP clients (for example Cursor) discover the authorization server by
+probing its canonical RFC 8414 well-known location. Because stock `oauth`
+mode names Redmine as the authorization server and no released Redmine
+Doorkeeper serves `/.well-known/oauth-authorization-server`, those clients
+fail discovery.
+
+Set `REDMINE_OAUTH_DISCOVERY_AS=self` so this server advertises itself as the
+authorization server (issuer = `REDMINE_MCP_BASE_URL`) and serves the RFC 8414
+document at its own canonical well-known location. Authorize and token
+requests still go directly to Redmine `/oauth/authorize` and `/oauth/token`,
+so the client keeps using its static confidential client registered in
+Redmine. This mode is opt-in; the default `redmine` mode is unchanged.
+
+If the Redmine OAuth Application enables only a subset of permissions, also
+set `REDMINE_MCP_SCOPES` to that subset so the advertised `scopes_supported`
+matches what the Application can grant and consent does not fail with
+`invalid_scope`.
+
+The `oauth-proxy` mode is a different model (this server proxies authorize and
+token and issues its own client registrations); it is the alternative when you
+want a full authorization-server gateway rather than direct-to-Redmine consent.
+
 ## Migrating from Legacy Mode
 
 1. Set `REDMINE_AUTH_MODE=oauth` and restart — no downtime needed
