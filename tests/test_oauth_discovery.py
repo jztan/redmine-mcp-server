@@ -262,3 +262,28 @@ async def test_redmine_mode_unchanged_regression(oauth_app):
         asm = (await client.get("/.well-known/oauth-authorization-server/mcp")).json()
     assert asm["issuer"] == "https://r.example.com/"
     assert asm["authorization_endpoint"] == "https://r.example.com/oauth/authorize"
+
+
+@pytest.mark.asyncio
+async def test_self_mode_serves_canonical_root_well_known(monkeypatch):
+    """Self mode serves AS metadata at the issuer's canonical root location."""
+    app = _build_self_mode_app(monkeypatch)  # base has no path -> root
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        root = await client.get("/.well-known/oauth-authorization-server")
+        suffixed = await client.get("/.well-known/oauth-authorization-server/mcp")
+
+    assert root.status_code == 200
+    assert suffixed.status_code == 200
+    assert root.json()["issuer"] == "http://localhost:3040/"
+
+
+@pytest.mark.asyncio
+async def test_redmine_mode_root_well_known_still_404(oauth_app):
+    """Default mode must NOT serve the root AS well-known (would break #140 clients)."""
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=oauth_app), base_url="http://test"
+    ) as client:
+        r = await client.get("/.well-known/oauth-authorization-server")
+    assert r.status_code == 404

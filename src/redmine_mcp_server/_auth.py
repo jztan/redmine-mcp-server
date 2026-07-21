@@ -157,17 +157,28 @@ class RedmineAuthProvider(RemoteAuthProvider):
     def get_routes(self, mcp_path: str | None = None) -> list[Route]:
         routes = super().get_routes(mcp_path)
         base_path = urlparse(str(self.base_url)).path.rstrip("/")
-        metadata_path = f"{base_path}{mcp_path or ''}"
+        suffix_path = f"{base_path}{mcp_path or ''}"
 
-        routes.append(
-            Route(
-                f"/.well-known/oauth-authorization-server{metadata_path}",
-                endpoint=cors_middleware(
-                    self.oauth_authorization_server, ["GET", "OPTIONS"]
-                ),
-                methods=["GET", "OPTIONS"],
+        as_paths = [f"/.well-known/oauth-authorization-server{suffix_path}"]
+        if self.discovery_as == "self":
+            # RFC 8414 3.1 canonical location for issuer = base_url: insert the
+            # well-known suffix between host and the base path (root when the
+            # base URL has no path). Served in addition to the suffixed path so
+            # clients probing either location succeed.
+            canonical = f"/.well-known/oauth-authorization-server{base_path}"
+            if canonical not in as_paths:
+                as_paths.append(canonical)
+
+        for as_path in as_paths:
+            routes.append(
+                Route(
+                    as_path,
+                    endpoint=cors_middleware(
+                        self.oauth_authorization_server, ["GET", "OPTIONS"]
+                    ),
+                    methods=["GET", "OPTIONS"],
+                )
             )
-        )
         routes.append(Route("/revoke", self.revoke_token, methods=["POST"]))
         return routes
 
