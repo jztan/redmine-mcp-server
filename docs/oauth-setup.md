@@ -255,6 +255,13 @@ set `REDMINE_MCP_SCOPES` to that subset so the advertised `scopes_supported`
 matches what the Application can grant and consent does not fail with
 `invalid_scope`.
 
+`REDMINE_MCP_SCOPES` is a subset of the scopes this server already advertises
+(the Redmine permissions its tools actually use), not a mirror of the
+Application's full permission list. Permissions your Application grants but no
+MCP tool uses (for example `view_gantt`, `copy_issues`, `edit_own_time_entries`)
+are not in that set and are rejected at boot; leave them out of
+`REDMINE_MCP_SCOPES`. The boot error lists the full set of accepted scopes.
+
 Note: `REDMINE_OAUTH_DISCOVERY_AS` and `REDMINE_MCP_SCOPES` apply to `oauth`
 mode only and are ignored in `oauth-proxy` mode, where this server is the
 authorization-server gateway.
