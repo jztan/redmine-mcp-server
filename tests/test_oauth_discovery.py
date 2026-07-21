@@ -216,3 +216,49 @@ async def test_scopes_subset_narrows_both_documents(monkeypatch):
 
     assert pr["scopes_supported"] == ["view_project", "view_issues"]
     assert asm["scopes_supported"] == ["view_project", "view_issues"]
+
+
+def _build_self_mode_app(monkeypatch, base_url="http://localhost:3040"):
+    monkeypatch.setenv("REDMINE_URL", "https://r.example.com")
+    monkeypatch.setenv("REDMINE_MCP_BASE_URL", base_url)
+    monkeypatch.setenv("REDMINE_INTROSPECT_CLIENT_ID", "cid")
+    monkeypatch.setenv("REDMINE_INTROSPECT_CLIENT_SECRET", "csec")
+    monkeypatch.delenv("REDMINE_MCP_READ_ONLY", raising=False)
+    monkeypatch.delenv("REDMINE_MCP_SCOPES", raising=False)
+    monkeypatch.setenv("REDMINE_OAUTH_DISCOVERY_AS", "self")
+
+    from redmine_mcp_server import _auth, oauth_scopes
+
+    importlib.reload(oauth_scopes)
+    importlib.reload(_auth)
+
+    auth_provider = _auth.build_remote_auth()
+    return FastMCP("self_as_test", auth=auth_provider).http_app(stateless_http=True)
+
+
+@pytest.mark.asyncio
+async def test_self_mode_advertises_base_as_issuer_and_as(monkeypatch):
+    app = _build_self_mode_app(monkeypatch)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        pr = (await client.get("/.well-known/oauth-protected-resource/mcp")).json()
+        asm = (await client.get("/.well-known/oauth-authorization-server/mcp")).json()
+
+    # issuer + authorization_servers name the MCP base, not Redmine
+    assert asm["issuer"] == "http://localhost:3040/"
+    assert [str(u) for u in pr["authorization_servers"]] == ["http://localhost:3040/"]
+    # ...but authorize/token still point at Redmine /oauth/*
+    assert asm["authorization_endpoint"] == "https://r.example.com/oauth/authorize"
+    assert asm["token_endpoint"] == "https://r.example.com/oauth/token"
+
+
+@pytest.mark.asyncio
+async def test_redmine_mode_unchanged_regression(oauth_app):
+    """Default (redmine) mode still names Redmine as issuer + AS (preserves #140)."""
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=oauth_app), base_url="http://test"
+    ) as client:
+        asm = (await client.get("/.well-known/oauth-authorization-server/mcp")).json()
+    assert asm["issuer"] == "https://r.example.com/"
+    assert asm["authorization_endpoint"] == "https://r.example.com/oauth/authorize"

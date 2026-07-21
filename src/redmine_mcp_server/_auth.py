@@ -30,7 +30,7 @@ import logging
 import os
 from urllib.parse import urlparse
 
-from ._env import require_introspection_credentials
+from ._env import require_introspection_credentials, _oauth_discovery_as
 from .oauth_scopes import configured_advertised_scopes
 
 logger = logging.getLogger(__name__)
@@ -47,8 +47,15 @@ class RedmineAuthProvider(RemoteAuthProvider):
         introspect_client_id: str,
         introspect_client_secret: str,
         scopes_supported: list[str],
+        discovery_as: str = "redmine",
     ):
         self.redmine_url = redmine_url
+        self.discovery_as = discovery_as
+        # In self-AS mode the MCP server is the authorization server that
+        # clients discover (issuer = base_url); authorize/token still target
+        # Redmine. In redmine mode the issuer names Redmine (post-#140).
+        issuer_source = base_url if discovery_as == "self" else str(redmine_url)
+        self.issuer = AnyHttpUrl(issuer_source)
         verifier = IntrospectionTokenVerifier(
             introspection_url=str(self.redmine_endpoint("/oauth/introspect")),
             client_id=introspect_client_id,
@@ -60,7 +67,7 @@ class RedmineAuthProvider(RemoteAuthProvider):
 
         super().__init__(
             token_verifier=verifier,
-            authorization_servers=[redmine_url],
+            authorization_servers=[self.issuer],
             base_url=base_url,
             scopes_supported=scopes_supported,
             resource_name="Redmine MCP Server",
@@ -75,7 +82,7 @@ class RedmineAuthProvider(RemoteAuthProvider):
     async def oauth_authorization_server(self, request: Request):
         """RFC 8414 authorization-server metadata for Redmine Doorkeeper."""
         metadata = OAuthMetadata(
-            issuer=self.redmine_url,
+            issuer=self.issuer,
             authorization_endpoint=self.redmine_endpoint("/oauth/authorize"),
             token_endpoint=self.redmine_endpoint("/oauth/token"),
             revocation_endpoint=self.redmine_endpoint("/oauth/revoke"),
@@ -188,4 +195,5 @@ def build_remote_auth() -> RedmineAuthProvider:
         introspect_client_id=client_id,
         introspect_client_secret=client_secret,
         scopes_supported=configured_advertised_scopes(),
+        discovery_as=_oauth_discovery_as(),
     )
