@@ -165,7 +165,7 @@ def configured_advertised_scopes() -> list[str]:
     if invalid:
         raise RuntimeError(
             "REDMINE_MCP_SCOPES contains scope(s) not advertised in this "
-            f"mode: {', '.join(invalid)}. Allowed: {', '.join(full)}."
+            f"mode: {', '.join(dict.fromkeys(invalid))}. Allowed: {', '.join(full)}."
         )
 
     requested_set = set(requested)

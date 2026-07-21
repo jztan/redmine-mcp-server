@@ -255,6 +255,10 @@ set `REDMINE_MCP_SCOPES` to that subset so the advertised `scopes_supported`
 matches what the Application can grant and consent does not fail with
 `invalid_scope`.
 
+Note: `REDMINE_OAUTH_DISCOVERY_AS` and `REDMINE_MCP_SCOPES` apply to `oauth`
+mode only and are ignored in `oauth-proxy` mode, where this server is the
+authorization-server gateway.
+
 The `oauth-proxy` mode is a different model (this server proxies authorize and
 token and issues its own client registrations); it is the alternative when you
 want a full authorization-server gateway rather than direct-to-Redmine consent.

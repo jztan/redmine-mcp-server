@@ -59,3 +59,13 @@ def test_write_scope_rejected_in_read_only_mode(monkeypatch):
     )
     with pytest.raises(RuntimeError, match="edit_issues"):
         mod.configured_advertised_scopes()
+
+
+def test_duplicate_invalid_scope_not_repeated_in_error(monkeypatch):
+    mod = _reload_scopes(monkeypatch, REDMINE_MCP_SCOPES="nope nope")
+    with pytest.raises(RuntimeError) as exc:
+        mod.configured_advertised_scopes()
+    # "nope" appears once in the invalid-scopes portion, not twice
+    msg = str(exc.value)
+    invalid_part = msg.split("Allowed:")[0]
+    assert invalid_part.count("nope") == 1
