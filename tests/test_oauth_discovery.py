@@ -188,3 +188,102 @@ async def test_authenticated_app_mounts_remote_auth_under_base_url_path(monkeypa
     assert asm.status_code == 200
     assert mounted_prm.status_code == 404
     assert mcp_get.status_code == 405
+
+
+@pytest.mark.asyncio
+async def test_scopes_subset_narrows_both_documents(monkeypatch):
+    """REDMINE_MCP_SCOPES restricts scopes_supported in both discovery docs."""
+    monkeypatch.setenv("REDMINE_URL", "https://r.example.com")
+    monkeypatch.setenv("REDMINE_MCP_BASE_URL", "http://localhost:3040")
+    monkeypatch.setenv("REDMINE_INTROSPECT_CLIENT_ID", "cid")
+    monkeypatch.setenv("REDMINE_INTROSPECT_CLIENT_SECRET", "csec")
+    monkeypatch.delenv("REDMINE_MCP_READ_ONLY", raising=False)
+    monkeypatch.setenv("REDMINE_MCP_SCOPES", "view_project view_issues")
+
+    from redmine_mcp_server import _auth, oauth_scopes
+
+    importlib.reload(oauth_scopes)
+    importlib.reload(_auth)
+
+    auth_provider = _auth.build_remote_auth()
+    app = FastMCP("scope_subset_test", auth=auth_provider).http_app(stateless_http=True)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        pr = (await client.get("/.well-known/oauth-protected-resource/mcp")).json()
+        asm = (await client.get("/.well-known/oauth-authorization-server/mcp")).json()
+
+    assert pr["scopes_supported"] == ["view_project", "view_issues"]
+    assert asm["scopes_supported"] == ["view_project", "view_issues"]
+
+
+def _build_self_mode_app(monkeypatch, base_url="http://localhost:3040"):
+    monkeypatch.setenv("REDMINE_URL", "https://r.example.com")
+    monkeypatch.setenv("REDMINE_MCP_BASE_URL", base_url)
+    monkeypatch.setenv("REDMINE_INTROSPECT_CLIENT_ID", "cid")
+    monkeypatch.setenv("REDMINE_INTROSPECT_CLIENT_SECRET", "csec")
+    monkeypatch.delenv("REDMINE_MCP_READ_ONLY", raising=False)
+    monkeypatch.delenv("REDMINE_MCP_SCOPES", raising=False)
+    monkeypatch.setenv("REDMINE_OAUTH_DISCOVERY_AS", "self")
+
+    from redmine_mcp_server import _auth, oauth_scopes
+
+    importlib.reload(oauth_scopes)
+    importlib.reload(_auth)
+
+    auth_provider = _auth.build_remote_auth()
+    return FastMCP("self_as_test", auth=auth_provider).http_app(stateless_http=True)
+
+
+@pytest.mark.asyncio
+async def test_self_mode_advertises_base_as_issuer_and_as(monkeypatch):
+    app = _build_self_mode_app(monkeypatch)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        pr = (await client.get("/.well-known/oauth-protected-resource/mcp")).json()
+        asm = (await client.get("/.well-known/oauth-authorization-server/mcp")).json()
+
+    # issuer + authorization_servers name the MCP base, not Redmine
+    assert asm["issuer"] == "http://localhost:3040/"
+    assert [str(u) for u in pr["authorization_servers"]] == ["http://localhost:3040/"]
+    # ...but authorize/token still point at Redmine /oauth/*
+    assert asm["authorization_endpoint"] == "https://r.example.com/oauth/authorize"
+    assert asm["token_endpoint"] == "https://r.example.com/oauth/token"
+
+
+@pytest.mark.asyncio
+async def test_redmine_mode_unchanged_regression(oauth_app):
+    """Default (redmine) mode still names Redmine as issuer + AS (preserves #140)."""
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=oauth_app), base_url="http://test"
+    ) as client:
+        asm = (await client.get("/.well-known/oauth-authorization-server/mcp")).json()
+    assert asm["issuer"] == "https://r.example.com/"
+    assert asm["authorization_endpoint"] == "https://r.example.com/oauth/authorize"
+
+
+@pytest.mark.asyncio
+async def test_self_mode_serves_canonical_root_well_known(monkeypatch):
+    """Self mode serves AS metadata at the issuer's canonical root location."""
+    app = _build_self_mode_app(monkeypatch)  # base has no path -> root
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        root = await client.get("/.well-known/oauth-authorization-server")
+        suffixed = await client.get("/.well-known/oauth-authorization-server/mcp")
+
+    assert root.status_code == 200
+    assert suffixed.status_code == 200
+    assert root.json()["issuer"] == "http://localhost:3040/"
+
+
+@pytest.mark.asyncio
+async def test_redmine_mode_root_well_known_still_404(oauth_app):
+    """Default mode must NOT serve the root AS well-known (would break #140 clients)."""
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=oauth_app), base_url="http://test"
+    ) as client:
+        r = await client.get("/.well-known/oauth-authorization-server")
+    assert r.status_code == 404

@@ -7,6 +7,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Opt-in self-AS OAuth discovery profile ([#188](https://github.com/jztan/redmine-mcp-server/issues/188)):
+  set `REDMINE_OAUTH_DISCOVERY_AS=self` so the server advertises itself as the
+  authorization server (issuer = `REDMINE_MCP_BASE_URL`) and serves RFC 8414
+  metadata at its own canonical well-known location, while authorize and token
+  requests still target Redmine `/oauth/*`. Lets clients that probe the
+  authorization server's canonical location (e.g. Cursor) complete OAuth in
+  stock `oauth` mode. Default (`redmine`) behavior is unchanged.
+- Advertise a subset of OAuth scopes in discovery via `REDMINE_MCP_SCOPES`
+  ([#189](https://github.com/jztan/redmine-mcp-server/issues/189)): when the
+  Redmine OAuth Application enables only a subset of permissions, advertising a
+  matching `scopes_supported` avoids `invalid_scope` at consent for clients
+  that request the full advertised list.
+
 ### Security
 - OAuth token scopes are now enforced on MCP tool calls ([#185](https://github.com/jztan/redmine-mcp-server/issues/185)):
   each tool requires the Redmine permission scopes it uses (per-action for
@@ -19,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Contributors
 - @stevehollis-orderflow — reported that OAuth token scopes were advertised but not enforced on tool calls, with a precise repro and a sound enforcement design ([#185](https://github.com/jztan/redmine-mcp-server/issues/185))
+- @stevehollis-orderflow — reported the Cursor OAuth discovery incompatibility and the scope-subset gap, with precise repros ([#188](https://github.com/jztan/redmine-mcp-server/issues/188), [#189](https://github.com/jztan/redmine-mcp-server/issues/189))
 
 ## [2.7.0] - 2026-07-20
 ### Added

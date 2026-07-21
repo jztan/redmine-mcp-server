@@ -24,6 +24,7 @@ Exclusions:
       scopes a Redmine doesn't recognize causes consent errors.
 """
 
+import os
 from typing import Dict, Optional, Union
 
 from ._env import _is_agile_enabled, _is_read_only_mode, _is_tags_enabled
@@ -134,6 +135,41 @@ def advertised_scopes() -> list[str]:
         if not _is_read_only_mode():
             scopes += list(TAGS_WRITE_SCOPES)
     return scopes
+
+
+def configured_advertised_scopes() -> list[str]:
+    """Return the advertised scopes, optionally narrowed by REDMINE_MCP_SCOPES.
+
+    When ``REDMINE_MCP_SCOPES`` (space-separated) is set, discovery advertises
+    exactly that subset instead of the full :func:`advertised_scopes`. This
+    lets a deployment whose Redmine OAuth Application enables only a subset of
+    permissions advertise a matching ``scopes_supported`` so consent does not
+    request scopes the Application never grants (#189). Independent of #185,
+    which gates on *token* scopes.
+
+    Every requested scope must be a member of the current-mode
+    :func:`advertised_scopes` (respecting read-only / agile / tags gating);
+    an out-of-set or unknown entry raises ``RuntimeError`` so the server fails
+    fast at boot rather than advertising a scope its own tools cannot use.
+    The result preserves :func:`advertised_scopes` ordering and is duplicate
+    free, so both discovery documents stay identical and deterministic.
+    """
+    full = advertised_scopes()
+    raw = os.getenv("REDMINE_MCP_SCOPES")
+    if raw is None or not raw.strip():
+        return full
+
+    requested = raw.split()
+    allowed = set(full)
+    invalid = [s for s in requested if s not in allowed]
+    if invalid:
+        raise RuntimeError(
+            "REDMINE_MCP_SCOPES contains scope(s) not advertised in this "
+            f"mode: {', '.join(dict.fromkeys(invalid))}. Allowed: {', '.join(full)}."
+        )
+
+    requested_set = set(requested)
+    return [s for s in full if s in requested_set]
 
 
 # ---------------------------------------------------------------------------
