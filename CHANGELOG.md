@@ -32,8 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   @stevehollis-orderflow.
 
 ### Contributors
-- @stevehollis-orderflow — reported that OAuth token scopes were advertised but not enforced on tool calls, with a precise repro and a sound enforcement design ([#185](https://github.com/jztan/redmine-mcp-server/issues/185))
-- @stevehollis-orderflow — reported the Cursor OAuth discovery incompatibility and the scope-subset gap, with precise repros ([#188](https://github.com/jztan/redmine-mcp-server/issues/188), [#189](https://github.com/jztan/redmine-mcp-server/issues/189))
+- @stevehollis-orderflow — reported that OAuth token scopes were advertised but not enforced on tool calls ([#185](https://github.com/jztan/redmine-mcp-server/issues/185)), the Cursor OAuth discovery incompatibility ([#188](https://github.com/jztan/redmine-mcp-server/issues/188)), and the scope-subset gap ([#189](https://github.com/jztan/redmine-mcp-server/issues/189)), each with a precise repro and a sound fix design
 
 ## [2.7.0] - 2026-07-20
 ### Added
