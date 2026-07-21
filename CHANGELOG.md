@@ -7,6 +7,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Security
+- OAuth token scopes are now enforced on MCP tool calls ([#185](https://github.com/jztan/redmine-mcp-server/issues/185)):
+  each tool requires the Redmine permission scopes it uses (per-action for
+  `manage_X` tools), unmapped tools are denied by default, `tools/list` is
+  filtered to the token's scopes, and the `admin` scope bypasses the check.
+  Enforcement is on by default; set `REDMINE_OAUTH_SCOPE_ENFORCEMENT=off`
+  as a temporary bridge while re-consenting tokens issued before this
+  release (see docs/oauth-setup.md, "Scope Enforcement"). Reported by
+  @stevehollis-orderflow.
+
+### Contributors
+- @stevehollis-orderflow — reported that OAuth token scopes were advertised but not enforced on tool calls, with a precise repro and a sound enforcement design ([#185](https://github.com/jztan/redmine-mcp-server/issues/185))
 
 ## [2.7.0] - 2026-07-20
 ### Added

@@ -44,6 +44,16 @@ def _is_dmsf_enabled() -> bool:
     return _is_true_env("REDMINE_DMSF_ENABLED", "false")
 
 
+def _is_scope_enforcement_enabled() -> bool:
+    """Check if per-tool OAuth scope enforcement is enabled (#185).
+
+    Default on. Set REDMINE_OAUTH_SCOPE_ENFORCEMENT=off to restore the
+    pre-enforcement behavior (any active token can call any tool) while
+    users re-consent tokens with the required scopes.
+    """
+    return _is_true_env("REDMINE_OAUTH_SCOPE_ENFORCEMENT", "true")
+
+
 def _admin_tools_enabled() -> bool:
     """Check if operator-facing admin tools are exposed on the MCP surface.
 
