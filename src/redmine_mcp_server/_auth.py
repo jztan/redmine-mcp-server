@@ -5,8 +5,8 @@ Builds a RemoteAuthProvider that:
     (POST {REDMINE_URL}/oauth/introspect).
   - Mounts RFC 9728 protected-resource metadata at
     /.well-known/oauth-protected-resource/mcp.
-  - Advertises scopes_supported from oauth_scopes.advertised_scopes()
-    (filtered when REDMINE_MCP_READ_ONLY=true).
+  - Advertises scopes_supported from oauth_scopes.configured_advertised_scopes()
+    (filtered by REDMINE_MCP_READ_ONLY and REDMINE_MCP_SCOPES).
 
 The MCP server's introspection client_id/secret are read from
 REDMINE_INTROSPECT_CLIENT_ID / REDMINE_INTROSPECT_CLIENT_SECRET. The
@@ -31,7 +31,7 @@ import os
 from urllib.parse import urlparse
 
 from ._env import require_introspection_credentials
-from .oauth_scopes import advertised_scopes
+from .oauth_scopes import configured_advertised_scopes
 
 logger = logging.getLogger(__name__)
 
@@ -187,5 +187,5 @@ def build_remote_auth() -> RedmineAuthProvider:
         base_url=base_url,
         introspect_client_id=client_id,
         introspect_client_secret=client_secret,
-        scopes_supported=advertised_scopes(),
+        scopes_supported=configured_advertised_scopes(),
     )

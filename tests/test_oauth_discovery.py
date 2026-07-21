@@ -188,3 +188,31 @@ async def test_authenticated_app_mounts_remote_auth_under_base_url_path(monkeypa
     assert asm.status_code == 200
     assert mounted_prm.status_code == 404
     assert mcp_get.status_code == 405
+
+
+@pytest.mark.asyncio
+async def test_scopes_subset_narrows_both_documents(monkeypatch):
+    """REDMINE_MCP_SCOPES restricts scopes_supported in both discovery docs."""
+    monkeypatch.setenv("REDMINE_URL", "https://r.example.com")
+    monkeypatch.setenv("REDMINE_MCP_BASE_URL", "http://localhost:3040")
+    monkeypatch.setenv("REDMINE_INTROSPECT_CLIENT_ID", "cid")
+    monkeypatch.setenv("REDMINE_INTROSPECT_CLIENT_SECRET", "csec")
+    monkeypatch.delenv("REDMINE_MCP_READ_ONLY", raising=False)
+    monkeypatch.setenv("REDMINE_MCP_SCOPES", "view_project view_issues")
+
+    from redmine_mcp_server import _auth, oauth_scopes
+
+    importlib.reload(oauth_scopes)
+    importlib.reload(_auth)
+
+    auth_provider = _auth.build_remote_auth()
+    app = FastMCP("scope_subset_test", auth=auth_provider).http_app(stateless_http=True)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        pr = (await client.get("/.well-known/oauth-protected-resource/mcp")).json()
+        asm = (await client.get("/.well-known/oauth-authorization-server/mcp")).json()
+
+    assert pr["scopes_supported"] == ["view_project", "view_issues"]
+    assert asm["scopes_supported"] == ["view_project", "view_issues"]
