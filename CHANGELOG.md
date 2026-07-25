@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [2.8.0] - 2026-07-25
 ### Added
 - Opt-in self-AS OAuth discovery profile ([#188](https://github.com/jztan/redmine-mcp-server/issues/188)):
   set `REDMINE_OAUTH_DISCOVERY_AS=self` so the server advertises itself as the
@@ -1065,6 +1067,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive authentication support (username/password and API key)
 - Docker containerization support
 
+[2.8.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.8.0
 [2.7.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.7.0
 [2.6.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.6.0
 [2.5.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.5.0
