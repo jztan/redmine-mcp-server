@@ -9,15 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - Write support for agile sprint and position via `update_redmine_issue`
-  ([#193](https://github.com/jztan/redmine-mcp-server/issues/193)): a nested
-  `agile_data_attributes` dict in `fields` may now carry `agile_sprint_id`
-  (set to `0`/null to remove the issue from its sprint), `position`, and
-  `story_points`, routed to the RedmineUP Agile plugin endpoint the same way
-  top-level `story_points` already was. Previously `agile_sprint_id` was
+  ([#193](https://github.com/jztan/redmine-mcp-server/issues/193)):
+  `agile_sprint_id` (set to `0`/null to remove the issue from its sprint) and
+  `position` may now be set, given either top-level in `fields` or nested under
+  an `agile_data_attributes` dict, routed to the RedmineUP Agile plugin endpoint
+  the same way `story_points` already was. Previously `agile_sprint_id` was
   silently dropped, so issues could not be moved to/from a sprint through the
-  MCP server. The updated issue is now augmented with the resulting
-  `story_points`, `agile_sprint_id`, and `agile_position` so the change can be
-  verified from the response.
+  MCP server. Writes are applied in place — the current `agile_data` row (id and
+  existing values) is carried forward — so changing one agile field never nulls
+  the others. The updated issue is augmented with the resulting `story_points`,
+  `agile_sprint_id`, and `agile_position` so the change can be verified from the
+  response.
 
 ## [2.8.0] - 2026-07-25
 ### Added

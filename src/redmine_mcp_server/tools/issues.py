@@ -49,10 +49,11 @@ _VALID_ISSUE_RELATION_TYPES: Set[str] = {
 }
 
 
-def _fetch_agile_data(issue_id: int) -> Dict[str, Any]:
-    """Fetch agile fields for an issue from the RedmineUP Agile endpoint.
+def _fetch_agile_data_raw(issue_id: int) -> Dict[str, Any]:
+    """Fetch the raw RedmineUP ``agile_data`` record for an issue.
 
-    Returns a dict with story_points, agile_sprint_id, and agile_position.
+    Returns the plugin's ``agile_data`` object verbatim — including its ``id``
+    and ``position`` — or an empty dict when the issue has no agile_data.
     Raises on any HTTP error (caller is responsible for catching).
     """
     # Lazy lookup so tests patching
@@ -62,7 +63,16 @@ def _fetch_agile_data(issue_id: int) -> Dict[str, Any]:
     client = _get_redmine_client()
     url = f"{_client.REDMINE_URL}/issues/{issue_id}/agile_data.json"
     payload = client.engine.request("get", url)
-    agile_data = payload.get("agile_data", {}) or {}
+    return payload.get("agile_data", {}) or {}
+
+
+def _fetch_agile_data(issue_id: int) -> Dict[str, Any]:
+    """Fetch agile fields for an issue from the RedmineUP Agile endpoint.
+
+    Returns a dict with story_points, agile_sprint_id, and agile_position.
+    Raises on any HTTP error (caller is responsible for catching).
+    """
+    agile_data = _fetch_agile_data_raw(issue_id)
     return {
         "story_points": agile_data.get("story_points"),
         "agile_sprint_id": agile_data.get("agile_sprint_id"),
@@ -73,21 +83,47 @@ def _fetch_agile_data(issue_id: int) -> Dict[str, Any]:
 def _apply_agile_data(issue_id: int, agile_attrs: Dict[str, Any]) -> None:
     """Write agile fields for an issue via the RedmineUP Agile endpoint.
 
-    ``agile_attrs`` is passed through as ``agile_data_attributes`` on the issue
-    PUT, so it accepts any of the plugin's writable keys — ``story_points``,
-    ``agile_sprint_id``, and ``position``. python-redmine's core ``issue.update``
-    does not understand ``agile_data_attributes``, so these must be sent to the
-    plugin directly here rather than through the standard update path.
+    ``agile_attrs`` may contain any of the plugin's writable keys —
+    ``story_points``, ``agile_sprint_id``, and ``position``. python-redmine's
+    core ``issue.update`` does not understand ``agile_data_attributes``, so these
+    must be sent to the plugin directly here rather than through the standard
+    update path.
 
-    Raises on any HTTP error (caller is responsible for catching).
+    The plugin declares ``accepts_nested_attributes_for :agile_data`` without
+    ``update_only: true``, so a nested payload that omits the existing row's
+    ``id`` *replaces* the agile_data row and nulls every field not included. To
+    update in place, this first reads the current row and carries its ``id`` and
+    existing values forward, then overlays the requested changes — so setting one
+    field (e.g. the sprint) never wipes the others. An explicit ``None``/``0`` in
+    ``agile_attrs`` still clears its field, since requested values take priority.
+
+    Raises on any HTTP error from the write (caller is responsible for catching).
     """
     # Lazy lookup so tests patching
     # `_client.REDMINE_URL` are observed at call time.
     from .. import _client
 
     client = _get_redmine_client()
+
+    # Read the current row so the write updates in place instead of replacing it.
+    # A read failure (e.g. no agile_data row yet) falls back to a plain create.
+    try:
+        current = _fetch_agile_data_raw(issue_id)
+    except Exception:
+        current = {}
+
+    attrs: Dict[str, Any] = {}
+    row_id = current.get("id")
+    if row_id is not None:
+        attrs["id"] = row_id
+    for key in ("story_points", "agile_sprint_id", "position"):
+        value = current.get(key)
+        if value is not None:
+            attrs[key] = value
+    attrs.update(agile_attrs)  # requested changes win (incl. explicit None/0)
+
     url = f"{_client.REDMINE_URL}/issues/{issue_id}.json"
-    payload = json.dumps({"issue": {"agile_data_attributes": agile_attrs}})
+    payload = json.dumps({"issue": {"agile_data_attributes": attrs}})
     client.engine.request(
         "put",
         url,
@@ -1438,12 +1474,14 @@ async def update_redmine_issue(
     provided in ``fields``. When present and ``status_id`` is not supplied, the
     function will look up the corresponding status ID and use it for the update.
 
-    When ``REDMINE_AGILE_ENABLED=true``, RedmineUP Agile fields may also be set.
-    A top-level ``story_points`` key is supported, and a nested
-    ``agile_data_attributes`` dict may carry ``story_points``, ``agile_sprint_id``
-    (set to ``0``/null to remove the issue from its sprint), and ``position``.
-    These are routed to the Agile plugin endpoint separately rather than through
-    the standard Redmine update, and the returned issue is augmented with the
+    When ``REDMINE_AGILE_ENABLED=true``, RedmineUP Agile fields may also be set:
+    ``story_points``, ``agile_sprint_id`` (set to ``0``/null to remove the issue
+    from its sprint), and ``position`` (also accepted as ``agile_position``). Each
+    may be given top-level in ``fields`` or nested under an ``agile_data_attributes``
+    dict. They are routed to the Agile plugin endpoint separately rather than
+    through the standard Redmine update; untouched agile fields are preserved (the
+    update happens in place, so setting only the sprint does not clear
+    ``story_points``/``position``). The returned issue is augmented with the
     resulting ``story_points``, ``agile_sprint_id``, and ``agile_position`` so the
     change can be verified from the response. When ``REDMINE_AGILE_ENABLED=false``
     (default), these agile keys are silently ignored.
@@ -1482,28 +1520,36 @@ async def update_redmine_issue(
 
     # Extract agile fields — python-redmine's core update does not understand
     # ``agile_data_attributes``, so they must be routed to the RedmineUP Agile
-    # plugin endpoint separately. Two spellings are accepted:
-    #   * a top-level ``story_points`` (kept for backwards compatibility), and
-    #   * a nested ``agile_data_attributes`` dict, which is the only way to reach
-    #     the plugin's other writable fields — most importantly ``agile_sprint_id``
-    #     (sprint / board membership) and ``position``.
-    # Explicit key-presence checks so a null/0 value (which clears the field or
-    # removes the issue from its sprint) still triggers the write.
+    # plugin endpoint separately. Each writable field may be given either
+    # top-level (like ``story_points``) or nested under an ``agile_data_attributes``
+    # dict; the nested form mirrors the raw plugin payload. The writable fields are
+    # ``story_points``, ``agile_sprint_id`` (sprint / board membership; ``0``/null
+    # removes the issue from its sprint), and ``position`` (read back as
+    # ``agile_position``, accepted under either name). Explicit key-presence checks
+    # so a null/0 value still triggers the write, and ``_apply_agile_data`` carries
+    # untouched fields forward so a subset update never nulls the rest.
     agile_attrs: Dict[str, Any] = {}
     if _is_agile_enabled():
-        if "story_points" in update_fields:
-            agile_attrs["story_points"] = update_fields.pop("story_points")
         nested = update_fields.pop("agile_data_attributes", None)
+        sources = [update_fields]
         if isinstance(nested, dict):
-            writable = ("story_points", "agile_sprint_id", "position", "agile_position")
-            for key in writable:
-                if key in nested:
-                    # _fetch_agile_data exposes the read alias ``agile_position``;
-                    # normalize it to the plugin's ``position`` on the write path.
+            sources.append(nested)
+        for source in sources:
+            for key in (
+                "story_points",
+                "agile_sprint_id",
+                "position",
+                "agile_position",
+            ):
+                if key in source:
+                    value = source[key] if source is nested else source.pop(key)
+                    # ``agile_position`` is the read alias; the plugin writes
+                    # ``position``.
                     write_key = "position" if key == "agile_position" else key
-                    agile_attrs[write_key] = nested[key]
+                    agile_attrs[write_key] = value
     else:
-        update_fields.pop("story_points", None)
+        for key in ("story_points", "agile_sprint_id", "position", "agile_position"):
+            update_fields.pop(key, None)
         update_fields.pop("agile_data_attributes", None)
     agile_update_needed = bool(agile_attrs)
 
