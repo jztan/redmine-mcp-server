@@ -21,6 +21,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `agile_sprint_id`, and `agile_position` so the change can be verified from the
   response.
 
+### Fixed
+- `update_redmine_issue` no longer accepts an unusable `agile_data_attributes`
+  value in silence. A value that is not an object, or one carrying a key outside
+  the writable agile fields, now returns an error naming what was rejected
+  instead of reporting success for a write that never happened.
+- A failed read of the current `agile_data` row no longer falls back to a write
+  that replaces the row. Only a missing row (HTTP 404) takes the create path;
+  any other error is surfaced, so a transient failure cannot null the agile
+  fields it was unable to read.
+
+### Contributors
+- @knasiotis — reported the dropped `agile_sprint_id` write and implemented
+  agile sprint/position support, including the in-place `agile_data` fix
+  ([#194](https://github.com/jztan/redmine-mcp-server/pull/194))
+
 ## [2.8.0] - 2026-07-25
 ### Added
 - Opt-in self-AS OAuth discovery profile ([#188](https://github.com/jztan/redmine-mcp-server/issues/188)):

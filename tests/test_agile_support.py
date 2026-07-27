@@ -9,6 +9,8 @@ from unittest.mock import Mock, call, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+from redminelib.exceptions import AuthError, ResourceNotFoundError  # noqa: E402
+
 from redmine_mcp_server._env import _is_agile_enabled  # noqa: E402
 from redmine_mcp_server.tools.issues import (  # noqa: E402
     _apply_agile_data,
@@ -207,11 +209,11 @@ class TestApplyAgileData:
 
     @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
     @patch("redmine_mcp_server._client.redmine")
-    def test_read_failure_falls_back_to_requested_only(self, mock_redmine):
-        # If the current-row read fails, still attempt the write with just the
-        # requested change rather than aborting.
+    def test_missing_row_falls_back_to_requested_only(self, mock_redmine):
+        # A 404 means there is no agile_data row (or the endpoint is absent), so
+        # there is nothing to preserve: still write the requested change.
         mock_redmine.engine.request.side_effect = [
-            Exception("no agile_data"),
+            ResourceNotFoundError,
             Mock(),
         ]
 
@@ -220,6 +222,19 @@ class TestApplyAgileData:
         assert mock_redmine.engine.request.call_args_list[1] == _put_call(
             {"agile_sprint_id": 3}
         )
+
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    def test_read_failure_other_than_missing_row_aborts_the_write(self, mock_redmine):
+        # An id-less PUT replaces the row and nulls the fields it omits. If the
+        # read failed for any reason other than "no row", we do not know what we
+        # would be destroying, so the write must not proceed.
+        mock_redmine.engine.request.side_effect = [AuthError, Mock()]
+
+        with pytest.raises(AuthError):
+            _apply_agile_data(42, {"agile_sprint_id": 3})
+
+        assert mock_redmine.engine.request.call_count == 1
 
 
 class TestGetRedmineIssueAgile:
@@ -487,6 +502,39 @@ class TestUpdateRedmineIssueAgile:
         # ...and no agile HTTP call is made.
         mock_redmine.engine.request.assert_not_called()
         assert result["id"] == 1
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_rejects_unrecognized_agile_data_attributes_key(self, mock_redmine):
+        # Silently dropping a near-miss key reproduces the bug #193 was about:
+        # a success response for a write that never happened.
+        mock_redmine.issue.update.return_value = True
+        mock_redmine.issue.get.return_value = _make_minimal_issue(1)
+
+        with patch.dict(os.environ, {"REDMINE_AGILE_ENABLED": "true"}):
+            result = await update_redmine_issue(
+                1, {"agile_data_attributes": {"sprint_id": 9}}
+            )
+
+        assert "sprint_id" in result["error"]
+        mock_redmine.issue.update.assert_not_called()
+        mock_redmine.engine.request.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_rejects_non_dict_agile_data_attributes(self, mock_redmine):
+        # Some clients stringify nested objects; that must not vanish silently.
+        mock_redmine.issue.update.return_value = True
+        mock_redmine.issue.get.return_value = _make_minimal_issue(1)
+
+        with patch.dict(os.environ, {"REDMINE_AGILE_ENABLED": "true"}):
+            result = await update_redmine_issue(
+                1, {"agile_data_attributes": '{"agile_sprint_id": 9}'}
+            )
+
+        assert "agile_data_attributes" in result["error"]
+        mock_redmine.issue.update.assert_not_called()
+        mock_redmine.engine.request.assert_not_called()
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.redmine")

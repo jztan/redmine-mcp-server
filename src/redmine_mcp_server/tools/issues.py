@@ -49,6 +49,12 @@ _VALID_ISSUE_RELATION_TYPES: Set[str] = {
 }
 
 
+# RedmineUP Agile fields writable through ``update_redmine_issue``. The plugin
+# stores the third as ``position``; ``agile_position`` is the alias it is read
+# back under and is accepted on the write path too.
+_WRITABLE_AGILE_KEYS = ("story_points", "agile_sprint_id", "position", "agile_position")
+
+
 def _fetch_agile_data_raw(issue_id: int) -> Dict[str, Any]:
     """Fetch the raw RedmineUP ``agile_data`` record for an issue.
 
@@ -106,10 +112,14 @@ def _apply_agile_data(issue_id: int, agile_attrs: Dict[str, Any]) -> None:
     client = _get_redmine_client()
 
     # Read the current row so the write updates in place instead of replacing it.
-    # A read failure (e.g. no agile_data row yet) falls back to a plain create.
+    # A 404 means there is no agile_data row (or no such endpoint) and therefore
+    # nothing to preserve, so fall back to a plain create. Any other failure is
+    # left to propagate: without the current row the write below would be the
+    # id-less payload that replaces the record, and we would be nulling fields we
+    # never managed to read.
     try:
         current = _fetch_agile_data_raw(issue_id)
-    except Exception:
+    except ResourceNotFoundError:
         current = {}
 
     attrs: Dict[str, Any] = {}
@@ -1532,15 +1542,30 @@ async def update_redmine_issue(
     if _is_agile_enabled():
         nested = update_fields.pop("agile_data_attributes", None)
         sources = [update_fields]
-        if isinstance(nested, dict):
+        if nested is not None:
+            # Reject unusable nested payloads rather than dropping them. A
+            # silently ignored write is the failure mode #193 reported: the tool
+            # reports success while nothing changed.
+            if not isinstance(nested, dict):
+                return {
+                    "error": (
+                        "'agile_data_attributes' must be an object, got "
+                        f"{type(nested).__name__}. Example: "
+                        '{"agile_data_attributes": {"agile_sprint_id": 5}}'
+                    )
+                }
+            unknown = [k for k in nested if k not in _WRITABLE_AGILE_KEYS]
+            if unknown:
+                return {
+                    "error": (
+                        "Unknown key(s) in 'agile_data_attributes': "
+                        f"{', '.join(sorted(unknown))}. Writable agile fields "
+                        f"are: {', '.join(_WRITABLE_AGILE_KEYS)}."
+                    )
+                }
             sources.append(nested)
         for source in sources:
-            for key in (
-                "story_points",
-                "agile_sprint_id",
-                "position",
-                "agile_position",
-            ):
+            for key in _WRITABLE_AGILE_KEYS:
                 if key in source:
                     value = source[key] if source is nested else source.pop(key)
                     # ``agile_position`` is the read alias; the plugin writes
@@ -1548,7 +1573,7 @@ async def update_redmine_issue(
                     write_key = "position" if key == "agile_position" else key
                     agile_attrs[write_key] = value
     else:
-        for key in ("story_points", "agile_sprint_id", "position", "agile_position"):
+        for key in _WRITABLE_AGILE_KEYS:
             update_fields.pop(key, None)
         update_fields.pop("agile_data_attributes", None)
     agile_update_needed = bool(agile_attrs)
