@@ -1,5 +1,7 @@
 # Redmine MCP Server
 
+[![MCP Toplist](https://mcptoplist.com/badge/io.github.jztan%2Fredmine-mcp-server.svg)](https://mcptoplist.com/server/io.github.jztan%2Fredmine-mcp-server)
+
 [![PyPI Version](https://img.shields.io/pypi/v/redmine-mcp-server.svg)](https://pypi.org/project/redmine-mcp-server/)
 [![License](https://img.shields.io/github/license/jztan/redmine-mcp-server.svg)](LICENSE)
 [![Python Version](https://img.shields.io/pypi/pyversions/redmine-mcp-server.svg)](https://pypi.org/project/redmine-mcp-server/)
