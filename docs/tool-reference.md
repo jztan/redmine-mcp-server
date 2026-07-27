@@ -926,9 +926,25 @@ Updates an existing issue with the provided fields. Blocked when `REDMINE_MCP_RE
 **Note:** You can use either `status_id` or `status_name` in fields. When `status_name` is provided, the tool automatically resolves the corresponding status ID.
 You can also update custom fields by name (for example `{"size": "S"}`) and the tool will resolve them to Redmine `custom_fields` entries using project custom-field metadata. You can still pass explicit `custom_fields` with field IDs.
 
-When `REDMINE_AGILE_ENABLED=true`, you can also pass `story_points` (non-negative integer or `null` to clear) and it will be written via the RedmineUP Agile plugin endpoint. If the plugin is disabled, `story_points` is silently ignored.
+When `REDMINE_AGILE_ENABLED=true`, you can also set RedmineUP Agile fields, written via the Agile plugin endpoint:
 
-**Note:** `story_points` is always intercepted before custom field resolution, regardless of the `REDMINE_AGILE_ENABLED` setting. If your Redmine instance has a custom field literally named `"story_points"`, it cannot be updated by name through this tool — use explicit `custom_fields` with its field ID instead (e.g. `{"custom_fields": [{"id": 42, "value": "8"}]}`).
+- `story_points` — non-negative integer, or `null` to clear.
+- `agile_sprint_id` — the sprint (board) the issue belongs to; `0`/`null` removes it from its sprint.
+- `position` — position within the sprint/backlog (read back as `agile_position`; accepted under either name).
+
+Each may be given top-level in `fields` or nested under an `agile_data_attributes` dict (both forms are equivalent):
+
+```python
+# Move issue to sprint 117 (top-level or nested are equivalent)
+update_redmine_issue(issue_id=123, fields={"agile_sprint_id": 117})
+update_redmine_issue(issue_id=123, fields={"agile_data_attributes": {"agile_sprint_id": 117}})
+# Remove from its sprint
+update_redmine_issue(issue_id=123, fields={"agile_sprint_id": 0})
+```
+
+Updates are applied **in place**: the tool reads the current `agile_data` row and carries the existing values (and row id) forward, so changing one agile field (e.g. the sprint) does not clear the others. The updated issue is returned with the resulting `story_points`, `agile_sprint_id`, and `agile_position` so the change can be verified from the response. If the plugin is disabled, these agile keys are silently ignored.
+
+**Note:** these agile keys are always intercepted before custom field resolution, regardless of the `REDMINE_AGILE_ENABLED` setting. If your Redmine instance has a custom field literally named `"story_points"` (or `"agile_sprint_id"`/`"position"`), it cannot be updated by name through this tool — use explicit `custom_fields` with its field ID instead (e.g. `{"custom_fields": [{"id": 42, "value": "8"}]}`).
 
 When `REDMINE_TAGS_ENABLED=true`, you can pass `tag_list` to set the issue's AlphaNodes additional_tags tags — a list of names or a comma-separated string; `[]` clears all tags. It replaces the full tag set (it is not additive), is intercepted before custom-field resolution (so a custom field named `"tag_list"` must use the explicit `custom_fields` id form), and requires `create_issue_tags` (new tags) or `edit_issue_tags` (existing tags only). A `tag_list` change is recorded in the issue journal. Silently ignored when the flag is off.
 
