@@ -8,7 +8,7 @@
 [![Coverage](https://codecov.io/gh/jztan/redmine-mcp-server/branch/master/graph/badge.svg)](https://codecov.io/gh/jztan/redmine-mcp-server)
 [![Downloads](https://pepy.tech/badge/redmine-mcp-server)](https://pepy.tech/project/redmine-mcp-server)
 
-A Model Context Protocol (MCP) server that integrates with Redmine project management systems. This server provides seamless access to Redmine data through MCP tools, enabling AI assistants to interact with your Redmine instance.
+A Model Context Protocol (MCP) server that connects AI assistants to Redmine. It exposes your Redmine instance's projects, issues, time tracking, wiki pages, and files as MCP tools.
 
 **mcp-name: io.github.jztan/redmine-mcp-server**
 
@@ -30,9 +30,9 @@ A Model Context Protocol (MCP) server that integrates with Redmine project manag
 - **Prompt Injection Protection**: User-controlled content wrapped in boundary tags for safe LLM consumption
 - **Read-Only Mode**: Restrict to read-only operations via `REDMINE_MCP_READ_ONLY` environment variable
 - **HTTP File Serving**: Secure attachment access via UUID-based URLs with automatic expiry
-- **Pagination Support**: Efficiently handle large result sets with configurable limits
-- **MCP Compliant**: Full Model Context Protocol support with FastMCP and HTTP transport
-- **Docker Ready**: Complete containerization support
+- **Pagination Support**: Handle large result sets with configurable limits
+- **MCP Compliant**: Built on FastMCP with HTTP transport
+- **Docker Ready**: Dockerfile, docker-compose setup, and prebuilt images on GHCR
 
 ## Quick Start
 
@@ -116,7 +116,7 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `REDMINE_PASSWORD` | Yes† | – | Password for basic auth (legacy mode only) |
 | `REDMINE_MCP_BASE_URL` | Yes‡ | `http://localhost:3040` | Public base URL of this server, no trailing slash (OAuth modes only) |
 | `FASTMCP_STREAMABLE_HTTP_PATH` | No | `/mcp` | MCP transport path inside `REDMINE_MCP_BASE_URL` |
-| `REDMINE_INTROSPECT_CLIENT_ID` | Yes‡ | – | Doorkeeper OAuth client ID used by the MCP server to introspect Bearer tokens (RFC 7662). Register a confidential OAuth app in Redmine — see [`docs/oauth-setup.md`](docs/oauth-setup.md) Step 2. |
+| `REDMINE_INTROSPECT_CLIENT_ID` | Yes‡ | – | Doorkeeper OAuth client ID used by the MCP server to introspect Bearer tokens (RFC 7662). Register a confidential OAuth app in Redmine (see [`docs/oauth-setup.md`](docs/oauth-setup.md) Step 2). |
 | `REDMINE_INTROSPECT_CLIENT_SECRET` | Yes‡ | – | Secret for the introspection client |
 | `REDMINE_MCP_JWT_SIGNING_KEY` | Yes§ | – | Stable signing/encryption key used by FastMCP OAuthProxy tokens and storage |
 | `REDMINE_OAUTH_CLIENT_ID` | No | – | Optional upstream Redmine OAuth client ID for `oauth-proxy`; defaults to `REDMINE_INTROSPECT_CLIENT_ID` |
@@ -306,7 +306,7 @@ For Redmine instances too old for OAuth, each user's MCP client sends its own Re
 }}}
 ```
 
-Note the colon with no surrounding spaces in `X-Redmine-API-Key:${RM_KEY}` -- this avoids an arg-escaping bug in Cursor and Claude Desktop on Windows.
+Note the colon with no surrounding spaces in `X-Redmine-API-Key:${RM_KEY}`. This avoids an arg-escaping bug in Cursor and Claude Desktop on Windows.
 
 **VS Code (`mcp.json`):**
 
@@ -541,7 +541,7 @@ This MCP server provides 51 tools for interacting with Redmine (plus 1 operator 
 
 ### Core tools (45, always available)
 
-These tools require only a Redmine instance and credentials — no extra plugins or feature flags.
+These tools require only a Redmine instance and credentials, with no extra plugins or feature flags.
 
 - **Project Management** (9 tools)
   - [`list_redmine_projects`](docs/tool-reference.md#list_redmine_projects) - List all accessible projects
@@ -611,23 +611,23 @@ These tools require only a Redmine instance and credentials — no extra plugins
 
 These tools require a corresponding Redmine plugin installed on the server **and** the matching environment variable set to `true` on the MCP server. They appear in `tools/list` either way, but return a feature-disabled error until their flag is set.
 
-- **Checklists** (3 tools) — set `REDMINE_CHECKLISTS_ENABLED=true`; requires the [RedmineUP Checklists Pro plugin](https://www.redmineup.com/pages/plugins/checklists)
+- **Checklists** (3 tools): set `REDMINE_CHECKLISTS_ENABLED=true`; requires the [RedmineUP Checklists Pro plugin](https://www.redmineup.com/pages/plugins/checklists)
   - [`get_checklist`](docs/tool-reference.md#get_checklist) - Retrieve all checklist items for an issue
   - [`create_checklist_item`](docs/tool-reference.md#create_checklist_item) - Add a new checklist item to an issue
   - [`update_checklist_item`](docs/tool-reference.md#update_checklist_item) - Update a checklist item's text, done state, or position
 
-- **Products** (1 tool) — set `REDMINE_PRODUCTS_ENABLED=true`; requires the [RedmineUP Products plugin](https://www.redmineup.com/pages/plugins/products)
+- **Products** (1 tool): set `REDMINE_PRODUCTS_ENABLED=true`; requires the [RedmineUP Products plugin](https://www.redmineup.com/pages/plugins/products)
   - [`manage_product`](docs/tool-reference.md#manage_product) - List, get, create, or update products
 
-- **Contacts (CRM)** (1 tool) — set `REDMINE_CRM_ENABLED=true`; requires the [RedmineUP CRM plugin](https://www.redmineup.com/pages/plugins/crm)
+- **Contacts (CRM)** (1 tool): set `REDMINE_CRM_ENABLED=true`; requires the [RedmineUP CRM plugin](https://www.redmineup.com/pages/plugins/crm)
   - [`manage_contact`](docs/tool-reference.md#manage_contact) - List, get, create, update, delete, or assign/remove project association for contacts
 
-- **Documents (DMSF)** (1 tool) — set `REDMINE_DMSF_ENABLED=true`; requires the [`redmine_dmsf` plugin](https://github.com/danmunn/redmine_dmsf)
+- **Documents (DMSF)** (1 tool): set `REDMINE_DMSF_ENABLED=true`; requires the [`redmine_dmsf` plugin](https://github.com/danmunn/redmine_dmsf)
   - [`manage_document`](docs/tool-reference.md#manage_document) - List, get, create (upload), or update (new revision) DMSF documents
 
 ### Operator tools (1, admin-gated)
 
-Hidden from `tools/list` by default. Set `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true` to register them on the MCP surface. The underlying background tasks run regardless of this flag — exposing them only adds the option to drive them through MCP.
+Hidden from `tools/list` by default. Set `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true` to register them on the MCP surface. The underlying background tasks run regardless of this flag; exposing them only adds the option to drive them through MCP.
 
 - [`cleanup_attachment_files`](docs/tool-reference.md#cleanup_attachment_files) - Manually trigger cleanup of expired attachment files (the background cleanup task runs automatically regardless)
 
