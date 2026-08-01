@@ -73,25 +73,27 @@ After v2.0, the codebase is organized by resource:
 
 ### Tool implementations
 
-Tools live under `src/redmine_mcp_server/tools/`, one file per Redmine resource:
+Tools live under `src/redmine_mcp_server/tools/`, one file per Redmine resource; the interactive MCP Apps tools live under `src/redmine_mcp_server/apps/`:
 
 | File | Tools |
 |---|---|
-| `tools/projects.py` | Project listing, versions, members, roles, modules (9 tools) |
+| `tools/projects.py` | Project listing, versions, members, roles, modules (10 tools) |
 | `tools/issues.py` | Issues, search, copy, delete, relations, watchers, notes, categories, subtasks, private notes (13 tools) |
 | `tools/time_tracking.py` | Time entries, activities, bulk import (4 tools) |
 | `tools/wiki.py` | Wiki page CRUD + rename (1 tool, 6 actions) |
 | `tools/files.py` | File upload/download/delete + attachment URLs (4 tools, plus `cleanup_attachment_files` admin-gated) |
 | `tools/enumeration.py` | Trackers, statuses, priorities, users, queries (6 tools) |
 | `tools/search.py` | Global search across resources (1 tool) |
-| `tools/checklists.py` | RedmineUP Checklists plugin (2 tools, gated) |
+| `tools/checklists.py` | RedmineUP Checklists plugin (3 tools, gated) |
 | `tools/gantt.py` | Gantt chart composite read tool (1 tool) |
 | `tools/products.py` | RedmineUP Products plugin (1 tool, gated) |
 | `tools/contacts.py` | RedmineUP CRM plugin (1 tool, gated) |
 | `tools/documents.py` | DMSF plugin documents (1 tool with list/get/create/update actions, gated) |
 | `tools/meta.py` | Server introspection: `get_mcp_server_info` (1 tool, always available) |
+| `apps/triage_board.py` | Interactive Kanban triage board MCP App (2 tools) |
+| `apps/project_dashboard.py` | Interactive project dashboard MCP App (2 tools) |
 
-Total: **45 MCP tools** unconditionally registered, **plus 1 admin-gated** (`cleanup_attachment_files`, enabled by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`) for a maximum of 46.
+Total: **51 MCP tools** unconditionally registered, **plus 1 admin-gated** (`cleanup_attachment_files`, enabled by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`) for a maximum of 52.
 
 Each `tools/<resource>.py` also owns its resource-specific serializers (`_X_to_dict` helpers).
 
@@ -558,7 +560,8 @@ redmine-mcp-server/
 ├── src/redmine_mcp_server/
 │   ├── main.py              # Entry point; build_authenticated_app() mounts the MCP app + discovery routes (oauth / oauth-proxy)
 │   ├── server.py            # Owns the shared `mcp = FastMCP(...)` instance; _select_auth_provider() picks the auth provider
-│   ├── tools/               # 13 per-resource tool modules (45 MCP tools + 1 admin-gated)
+│   ├── tools/               # 13 per-resource tool modules (47 MCP tools + 1 admin-gated)
+│   ├── apps/                # Interactive MCP Apps: triage board + project dashboard (4 tools)
 │   ├── _auth.py             # RedmineAuthProvider (introspection + AS-metadata + revoke), oauth mode
 │   ├── _oauth_proxy.py      # OAuthProxy factory (DCR + authorize/token/revoke proxy), oauth-proxy mode
 │   ├── _mount.py            # Public base-URL / MCP-path / mount-prefix helpers
