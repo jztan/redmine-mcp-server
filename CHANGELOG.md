@@ -7,6 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Community health files: `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1),
+  `SECURITY.md` (private vulnerability reporting, deployment model, and threat
+  model), and a pull request template. `docs/contributing.md` updated to
+  reference them and to defer the release process to `scripts/release.py`.
 
 ## [2.9.0] - 2026-08-01
 ### Added

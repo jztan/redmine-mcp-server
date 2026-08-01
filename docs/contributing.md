@@ -480,28 +480,11 @@ async def test_function_error():
 
 ### PR Template:
 
-```markdown
-## Description
-Brief description of changes
-
-## Related Issue
-Fixes #123
-
-## Changes Made
-- List of changes
-- Additional context
-
-## Testing
-- [ ] Unit tests added/updated
-- [ ] Integration tests pass
-- [ ] Manual testing completed
-
-## Checklist
-- [ ] Code follows style guidelines
-- [ ] Documentation updated
-- [ ] Tests added/updated
-- [ ] CHANGELOG updated
-```
+GitHub pre-fills new pull requests from
+[`.github/PULL_REQUEST_TEMPLATE.md`](../.github/PULL_REQUEST_TEMPLATE.md).
+Fill in the Summary, Changes, and Testing sections and work through its
+checklist (tests, formatting, CHANGELOG, docs, no manual version bumps,
+and both deployment methods verified).
 
 ### Review Process:
 
@@ -532,21 +515,20 @@ docker-compose up
 
 ## Release Process
 
-Maintainers follow this process for releases:
-
-1. Update version in `pyproject.toml`
-2. Update `CHANGELOG.md`
-3. Update `server.json`
-4. Create git tag: `git tag -a vX.Y.Z -m "Release vX.Y.Z"`
-5. Push tag: `git push origin vX.Y.Z`
-6. GitHub Actions automatically publishes to PyPI
-7. Create GitHub Release with notes
+Releases are driven entirely by `scripts/release.py`. The script owns every
+version-touching action (`pyproject.toml`, `server.json`, `uv.lock`,
+`CHANGELOG.md`), the gitflow ceremony, tagging, the GitHub release, and the
+MCP Registry publish. **Never bump versions by hand**; contributors only add
+entries under `## [Unreleased]` in `CHANGELOG.md`.
 
 See [RELEASE_SOP.md](../RELEASE_SOP.md) for complete release procedures.
 
 ## Community Guidelines
 
 ### Code of Conduct
+
+This project follows the [Contributor Covenant Code of Conduct](../CODE_OF_CONDUCT.md).
+In short:
 
 - Be respectful and professional
 - Welcome newcomers
@@ -558,6 +540,7 @@ See [RELEASE_SOP.md](../RELEASE_SOP.md) for complete release procedures.
 - **GitHub Issues**: Bug reports and feature requests
 - **Pull Requests**: Code contributions
 - **Discussions**: General questions and ideas
+- **Security issues**: Report privately via GitHub Security Advisories, see [SECURITY.md](../SECURITY.md)
 
 ### Getting Help
 
