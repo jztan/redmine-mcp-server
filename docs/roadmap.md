@@ -2,18 +2,18 @@
 
 ## Project Status
 
-- **Current Version:** v2.8.0 (released 2026-07-25)
+- **Current Version:** v2.9.0 (released 2026-08-01)
 - **MCP Registry Status:** Published
-- **Test Suite:** 1522 unit tests + 87 integration tests. Integration tests gate on environment: a sandbox Redmine, plugin flags (`REDMINE_AGILE_ENABLED` etc.), and the destructive OAuth test behind `RUN_DESTRUCTIVE_TESTS=1`. Tests that can't run in the current environment skip cleanly with a clear reason. Run them locally with `python tests/run_tests.py --all` or `--integration`.
+- **Test Suite:** 1533 unit tests + 87 integration tests. Integration tests gate on environment: a sandbox Redmine, plugin flags (`REDMINE_AGILE_ENABLED` etc.), and the destructive OAuth test behind `RUN_DESTRUCTIVE_TESTS=1`. Tests that can't run in the current environment skip cleanly with a clear reason. Run them locally with `python tests/run_tests.py --all` or `--integration`.
 - **Tools:** 45 core + 6 plugin-gated + 1 admin-gated (maximum 52 with all flags enabled). The core count includes the two `triage-board` tools (`show_triage_board`, plus the app-only `get_triage_board_data` which is registered but hidden from the model's tool list) and the two `project-dashboard` tools (`show_project_dashboard`, plus the app-only `get_project_dashboard_data`). Note: the 6 plugin tools are always registered and listed; their flag is enforced at call time (a disabled call returns an error), so disabling a plugin does not hide its tools. Only the 1 admin tool is conditionally registered (hidden unless `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`).
 
 ---
 
 ## Tracking MCP 2026-07-28
 
-The MCP spec [release candidate locked on 2026-05-21](https://blog.modelcontextprotocol.io/posts/2026-07-28-release-candidate/), with GA targeted for 2026-07-28. Protocol-level work is gated on FastMCP shipping support for the new spec; the goal is a single coordinated v3.0 release rather than two breaking cutovers.
+The MCP spec [shipped on 2026-07-28](https://blog.modelcontextprotocol.io/posts/2026-07-28/) as scheduled: stateless protocol core (the `initialize` handshake and `Mcp-Session-Id` header are gone; protocol version, client identity, and capabilities travel in per-request `_meta`), the six OAuth/OIDC hardening SEPs, cacheable list results, and a formal extensions framework. Protocol-level work remains gated on FastMCP shipping stable support for the new spec; the goal is a single coordinated v3.0 release rather than two breaking cutovers.
 
-**Gate status (2026-07-25):** still closed, three days out from the GA target. The project now runs FastMCP [v3.4.4](https://gofastmcp.com/changelog) (2026-07-08), which still carries no 2026-07-28 support (stateless transport, per-request `_meta`, or the new OAuth/OIDC SEPs); it does carry Apps Phase 1 from v3.2.0, relied on by the Interactive UI (MCP Apps) track below (the `triage-board` slice shipped in v2.6.0, the `project-dashboard` view in v2.7.0). The official Python SDK targets beta 2026-06-30 and stable v2 2026-07-27. Spec timeline unchanged.
+**Gate status (2026-08-01):** opening, but not open. FastMCP released [v4.0.0b1](https://gofastmcp.com/changelog) on 2026-07-28, explicitly targeting the new spec: sessionless 2026-07-28 protocol with dual-serving of handshake-era clients from one deployment, stateless session state, the authorization SEPs (identity assertion per SEP-990, scope step-up per SEP-2350), and background tasks via the `io.modelcontextprotocol/tasks` extension (SEP-2663). It is still a beta; this project pins `fastmcp>=3.0.0,<4` and runs v3.4.5, which carries the Apps Phase 1 support (from v3.2.0) relied on by the Interactive UI (MCP Apps) track below (the `triage-board` slice shipped in v2.6.0, the `project-dashboard` view in v2.7.0). The v3.0 work starts when FastMCP 4 reaches a stable release worth migrating to.
 
 **v3.0 scope (target: Q3 2026, gated on FastMCP):**
 
@@ -26,11 +26,11 @@ The MCP spec [release candidate locked on 2026-05-21](https://blog.modelcontextp
 
 **v3.1+ (post-spec GA):**
 
-- [ ] **Tasks Extension** for long-running operations: bulk `import_time_entries`, `search_entire_redmine`, `summarize_project_status`.
+- [ ] **Tasks Extension** for long-running operations: bulk `import_time_entries`, `search_entire_redmine`, `summarize_project_status`. Shipped in the final spec as the `io.modelcontextprotocol/tasks` extension (SEP-2663), and FastMCP 4 beta already carries background-task support, so this can ride the same migration.
 
 Interactive UI via MCP Apps moved out of this list into its own near-term track below, since Apps already shipped (Jan 2026) and is not gated on the 2026-07-28 spec.
 
-**Out of scope for this track:** Roots and Sampling are deprecated by 2026-07-28 but the project does not use them, so the 12-month removal window is a no-op.
+**Out of scope for this track:** SEP-2577 deprecates Roots, Sampling, and Logging in 2026-07-28, but the project uses none of them (no client-facing MCP logging either), so the removal window is a no-op.
 
 ---
 
@@ -79,4 +79,4 @@ For per-release detail (features, fixes, CVE patches, contributor credits, break
 
 ---
 
-**Last Updated:** 2026-07-25
+**Last Updated:** 2026-08-01
