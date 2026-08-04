@@ -30,6 +30,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that replaces the row. Only a missing row (HTTP 404) takes the create path;
   any other error is surfaced, so a transient failure cannot null the agile
   fields it was unable to read.
+- `manage_redmine_wiki_page` no longer fails against Redmine 7.0 with
+  `'dict' object has no attribute 'id'`. Redmine 7.0 added a `project` ref to
+  the wiki page API response
+  ([Redmine #43569](https://www.redmine.org/issues/43569)), and python-redmine
+  hands that field over as a plain dict rather than a resource object, so
+  serializing it raised. This broke `get`, `create`, `update`, and `rename` —
+  the write actions changed the page and only then failed, reporting an error
+  for a change that had in fact been applied. The ref is now read in either
+  shape and those actions return the page again. `list` and `delete` were
+  unaffected, as are Redmine versions before 7.0, which omit the field.
 
 ### Contributors
 - @knasiotis — reported the dropped `agile_sprint_id` write and implemented
