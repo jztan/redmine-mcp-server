@@ -502,6 +502,15 @@ class TestRedmineIntegration:
             assert "Updated" in update_result["text"]
             assert update_result["version"] >= 2  # Version should increment
 
+            # Redmine 7.0+ returns a project ref (Redmine #43569); older
+            # versions omit the key. Where present it must carry the real
+            # id/name rather than being blanked out during serialization.
+            for result in (create_result, read_result, update_result):
+                project = result.get("project")
+                if project is not None:
+                    assert project["id"], f"project id missing: {project}"
+                    assert project["name"], f"project name missing: {project}"
+
             # 4. Delete the wiki page
             delete_result = await manage_redmine_wiki_page(
                 action="delete",
