@@ -8,6 +8,7 @@ from .._errors import _handle_redmine_error
 from .._serialization import (
     _attachment_to_dict,
     _iter_capped,
+    _named_ref,
     _safe_isoformat,
     wrap_insecure_content,
 )
@@ -49,17 +50,13 @@ def _wiki_page_to_dict(
 
     # Add author info
     if hasattr(wiki_page, "author"):
-        result["author"] = {
-            "id": wiki_page.author.id,
-            "name": wiki_page.author.name,
-        }
+        result["author"] = _named_ref(wiki_page.author)
 
-    # Add project info
+    # Add project info. Only Redmine 7.0+ returns this field (Redmine
+    # #43569); on older versions the hasattr guard omits the key. It
+    # arrives as a plain dict rather than a resource -- see _named_ref.
     if hasattr(wiki_page, "project"):
-        result["project"] = {
-            "id": wiki_page.project.id,
-            "name": wiki_page.project.name,
-        }
+        result["project"] = _named_ref(wiki_page.project)
 
     # Process attachments if requested. Routes through the shared
     # _attachment_to_dict helper so wiki and issue attachments produce
