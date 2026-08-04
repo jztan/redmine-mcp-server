@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   environment whenever `REDMINE_SSL_VERIFY=false` or `REDMINE_SSL_CERT` is set,
   and carry `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` over explicitly so proxy
   support is unaffected.
+- Explicit SSL settings now log a warning naming environment variables that
+  work against them: a CA bundle in `REQUESTS_CA_BUNDLE` / `CURL_CA_BUNDLE`
+  (now ignored), and an `https://` proxy in `HTTPS_PROXY` / `ALL_PROXY`, whose
+  own certificate is verified regardless of `REDMINE_SSL_VERIFY` and whose
+  failure is reported against the Redmine host.
 - The httpx-based call sites now honor `REDMINE_SSL_VERIFY`,
   `REDMINE_SSL_CERT`, and `REDMINE_SSL_CLIENT_CERT`: attachment downloads,
   `get_mcp_server_info`, the `/health` probes, and OAuth token revocation.

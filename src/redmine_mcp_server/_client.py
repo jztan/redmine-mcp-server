@@ -111,6 +111,36 @@ def _proxies_from_env() -> dict:
     return getproxies()
 
 
+def _warn_on_conflicting_ssl_env() -> None:
+    """Name environment variables that fight an explicit SSL setting.
+
+    Both cases below produced the same "certificate verify failed" symptom in
+    issue #197, so say out loud what is present instead of leaving the next
+    reporter to guess.
+    """
+    ca_vars = [v for v in ("REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE") if os.getenv(v)]
+    if ca_vars:
+        logger.warning(
+            "Ignoring CA bundle from the environment (%s) for Redmine "
+            "connections: REDMINE_SSL_VERIFY / REDMINE_SSL_CERT takes "
+            "precedence.",
+            ", ".join(ca_vars),
+        )
+
+    proxy_vars = [
+        v
+        for v in ("HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy")
+        if (os.getenv(v) or "").lower().startswith("https://")
+    ]
+    if proxy_vars:
+        logger.warning(
+            "An HTTPS proxy is configured (%s). Its own certificate is "
+            "verified regardless of REDMINE_SSL_VERIFY, and a failure there "
+            "is reported against the Redmine host.",
+            ", ".join(proxy_vars),
+        )
+
+
 # Build SSL requests config from environment (used by _get_redmine_client)
 def _build_requests_config() -> dict:
     requests_config = {}
@@ -128,6 +158,7 @@ def _build_requests_config() -> dict:
         logger.info("Using client certificate for mutual TLS")
 
     if "verify" in requests_config:
+        _warn_on_conflicting_ssl_env()
         # requests fills an unset per-request `verify` from REQUESTS_CA_BUNDLE
         # / CURL_CA_BUNDLE, and that value beats `session.verify`. Since
         # python-redmine never passes a per-request verify, an env CA bundle

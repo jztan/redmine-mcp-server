@@ -266,3 +266,57 @@ class TestHttpxCallSitesUseSSLConfig:
             )
 
         assert calls and "verify" not in calls[0]
+
+
+class TestConflictingEnvDiagnostics:
+    """Explicit SSL settings warn about env vars that would fight them."""
+
+    def test_ca_bundle_env_is_reported(self, caplog):
+        with (
+            patch.object(_client, "REDMINE_SSL_VERIFY", False),
+            patch.dict(
+                os.environ, {"REQUESTS_CA_BUNDLE": "/etc/ssl/corp.pem"}, clear=True
+            ),
+        ):
+            with caplog.at_level("WARNING", logger="redmine_mcp_server"):
+                _client._build_requests_config()
+
+        assert "REQUESTS_CA_BUNDLE" in caplog.text
+
+    def test_https_proxy_is_reported(self, caplog):
+        with (
+            patch.object(_client, "REDMINE_SSL_VERIFY", False),
+            patch.object(_client, "REDMINE_URL", "https://redmine.local"),
+            patch.dict(
+                os.environ, {"HTTPS_PROXY": "https://proxy.local:3128"}, clear=True
+            ),
+        ):
+            with caplog.at_level("WARNING", logger="redmine_mcp_server"):
+                _client._build_requests_config()
+
+        assert "HTTPS_PROXY" in caplog.text
+
+    def test_clean_env_says_nothing(self, caplog):
+        with (
+            patch.object(_client, "REDMINE_SSL_VERIFY", False),
+            patch.dict(os.environ, {}, clear=True),
+        ):
+            with caplog.at_level("WARNING", logger="redmine_mcp_server"):
+                _client._build_requests_config()
+
+        assert "REQUESTS_CA_BUNDLE" not in caplog.text
+        assert "HTTPS_PROXY" not in caplog.text
+
+    def test_default_verification_says_nothing(self, caplog):
+        with (
+            patch.object(_client, "REDMINE_SSL_VERIFY", True),
+            patch.object(_client, "REDMINE_SSL_CERT", None),
+            patch.object(_client, "REDMINE_SSL_CLIENT_CERT", None),
+            patch.dict(
+                os.environ, {"REQUESTS_CA_BUNDLE": "/etc/ssl/corp.pem"}, clear=True
+            ),
+        ):
+            with caplog.at_level("WARNING", logger="redmine_mcp_server"):
+                _client._build_requests_config()
+
+        assert "REQUESTS_CA_BUNDLE" not in caplog.text
