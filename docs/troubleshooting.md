@@ -123,6 +123,10 @@ This guide covers common issues and solutions for the Redmine MCP Server.
 
    Disabling SSL verification makes your connection vulnerable to man-in-the-middle attacks. Never use in production.
 
+   The server pins this choice: when `REDMINE_SSL_VERIFY=false` or `REDMINE_SSL_CERT` is set, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`, and `SSL_CERT_FILE` in the environment are ignored for Redmine connections, since they would otherwise override the setting. Proxy variables (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`) still apply.
+
+   If verification still fails with `certificate verify failed` after disabling it, check whether an HTTPS proxy is in play: with `HTTPS_PROXY=https://...`, the proxy's own certificate is verified regardless of this setting, and the error is reported against the destination host.
+
 5. **Certificate File Not Found**
 
    **Symptoms:**

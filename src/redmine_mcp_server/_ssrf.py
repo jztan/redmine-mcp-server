@@ -176,7 +176,7 @@ def _extract_content_disposition_filename(value: str) -> Optional[str]:
 
 
 def _make_pinned_client(
-    hostname: Optional[str], resolved_ip: Optional[str]
+    hostname: Optional[str], resolved_ip: Optional[str], url: Optional[str] = None
 ) -> httpx.AsyncClient:
     """Build an httpx.AsyncClient for downloading a source_url.
 
@@ -194,9 +194,19 @@ def _make_pinned_client(
 
     The ``hostname`` / ``resolved_ip`` arguments are kept in the
     signature for future pinning work; they're currently unused.
+
+    ``url`` scopes the configured Redmine SSL settings (REDMINE_SSL_VERIFY /
+    REDMINE_SSL_CERT) to downloads from the Redmine host itself, so a relaxed
+    setting never follows an attachment redirect to a third-party host.
     """
     _ = (hostname, resolved_ip)  # silence unused-arg linters
-    return httpx.AsyncClient(timeout=_DOWNLOAD_TIMEOUT, follow_redirects=False)
+    from ._client import httpx_ssl_kwargs
+
+    return httpx.AsyncClient(
+        timeout=_DOWNLOAD_TIMEOUT,
+        follow_redirects=False,
+        **httpx_ssl_kwargs(url),
+    )
 
 
 def _validate_fetch_url(
@@ -300,7 +310,7 @@ async def _download_file_url(
                 return b"", None, err_dict
 
             async with _make_pinned_client(
-                hostname=hostname, resolved_ip=resolved_ip
+                hostname=hostname, resolved_ip=resolved_ip, url=current_url
             ) as hc:
                 async with hc.stream("GET", current_url) as response:
                     # Follow redirects ourselves so every hop is revalidated.
