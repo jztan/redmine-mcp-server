@@ -13,6 +13,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   model), and a pull request template. `docs/contributing.md` updated to
   reference them and to defer the release process to `scripts/release.py`.
 
+### Fixed
+- `manage_redmine_wiki_page` no longer fails against Redmine 7.0 with
+  `'dict' object has no attribute 'id'`. Redmine 7.0 added a `project` ref to
+  the wiki page API response
+  ([Redmine #43569](https://www.redmine.org/issues/43569)), and python-redmine
+  hands that field over as a plain dict rather than a resource object, so
+  serializing it raised. This broke `get`, `create`, `update`, and `rename`:
+  the write actions changed the page and only then failed, reporting an error
+  for a change that had in fact been applied. The ref is now read in either
+  shape and those actions return the page again. `list` and `delete` were
+  unaffected, as are Redmine versions before 7.0, which omit the field.
+
+### Contributors
+- @azelcs — diagnosed and fixed the Redmine 7.0 wiki page serialization crash,
+  including the silent dict-ref data loss in `_named_ref`
+  ([#200](https://github.com/jztan/redmine-mcp-server/pull/200))
+
 ## [2.9.0] - 2026-08-01
 ### Added
 - Write support for agile sprint and position via `update_redmine_issue`
@@ -37,24 +54,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that replaces the row. Only a missing row (HTTP 404) takes the create path;
   any other error is surfaced, so a transient failure cannot null the agile
   fields it was unable to read.
-- `manage_redmine_wiki_page` no longer fails against Redmine 7.0 with
-  `'dict' object has no attribute 'id'`. Redmine 7.0 added a `project` ref to
-  the wiki page API response
-  ([Redmine #43569](https://www.redmine.org/issues/43569)), and python-redmine
-  hands that field over as a plain dict rather than a resource object, so
-  serializing it raised. This broke `get`, `create`, `update`, and `rename` —
-  the write actions changed the page and only then failed, reporting an error
-  for a change that had in fact been applied. The ref is now read in either
-  shape and those actions return the page again. `list` and `delete` were
-  unaffected, as are Redmine versions before 7.0, which omit the field.
 
 ### Contributors
 - @knasiotis — reported the dropped `agile_sprint_id` write and implemented
   agile sprint/position support, including the in-place `agile_data` fix
   ([#194](https://github.com/jztan/redmine-mcp-server/pull/194))
-- @azelcs — diagnosed and fixed the Redmine 7.0 wiki page serialization crash,
-  including the silent dict-ref data loss in `_named_ref`
-  ([#200](https://github.com/jztan/redmine-mcp-server/pull/200))
 
 ## [2.8.0] - 2026-07-25
 ### Added
