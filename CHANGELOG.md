@@ -53,6 +53,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - @azelcs — diagnosed and fixed the Redmine 7.0 wiki page serialization crash,
   including the silent dict-ref data loss in `_named_ref`
   ([#200](https://github.com/jztan/redmine-mcp-server/pull/200))
+- @fionnb — reported that SSL verification still failed with
+  `REDMINE_SSL_VERIFY=false`, with logs and a `tools/call` repro that showed the
+  disabled-verification warning immediately followed by
+  `certificate verify failed`
+  ([#197](https://github.com/jztan/redmine-mcp-server/issues/197))
 
 ## [2.9.0] - 2026-08-01
 ### Added
