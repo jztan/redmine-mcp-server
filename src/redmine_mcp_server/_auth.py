@@ -30,6 +30,7 @@ import logging
 import os
 from urllib.parse import urlparse
 
+from ._client import httpx_ssl_kwargs
 from ._env import require_introspection_credentials, _oauth_discovery_as
 from .oauth_scopes import configured_advertised_scopes
 
@@ -132,7 +133,7 @@ class RedmineAuthProvider(RemoteAuthProvider):
                 },
             )
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(**httpx_ssl_kwargs()) as client:
             try:
                 response = await client.post(
                     str(self.redmine_endpoint("/oauth/revoke")),

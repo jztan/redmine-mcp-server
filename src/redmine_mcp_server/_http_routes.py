@@ -19,7 +19,7 @@ from typing import Optional
 
 import httpx
 
-from ._client import REDMINE_AUTH_MODE
+from ._client import REDMINE_AUTH_MODE, httpx_ssl_kwargs
 from ._env import (
     get_health_introspection_ttl_seconds,
     get_introspection_credentials,
@@ -55,7 +55,7 @@ async def _probe_introspection_uncached() -> tuple[str, Optional[str]]:
         "Accept": "application/json",
     }
     try:
-        async with httpx.AsyncClient(timeout=5) as client:
+        async with httpx.AsyncClient(timeout=5, **httpx_ssl_kwargs()) as client:
             r = await client.post(
                 f"{redmine_url}/oauth/introspect",
                 headers=headers,
@@ -129,7 +129,7 @@ async def _probe_redmine_legacy() -> tuple[str, str | None]:
         else:
             headers = {}
             auth = (REDMINE_USERNAME, REDMINE_PASSWORD)
-        async with httpx.AsyncClient(timeout=5) as client:
+        async with httpx.AsyncClient(timeout=5, **httpx_ssl_kwargs()) as client:
             r = await client.get(url, headers=headers, auth=auth)
         if r.status_code == 200:
             return "ok", None
@@ -155,7 +155,7 @@ async def _probe_redmine_reachable() -> tuple[str, str | None]:
         return "unconfigured", "REDMINE_URL not set"
     url = REDMINE_URL.rstrip("/") + "/users/current.json"
     try:
-        async with httpx.AsyncClient(timeout=5) as client:
+        async with httpx.AsyncClient(timeout=5, **httpx_ssl_kwargs()) as client:
             await client.get(url)
         return "reachable_unauthenticated", None
     except httpx.RequestError as exc:

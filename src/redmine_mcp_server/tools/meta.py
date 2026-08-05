@@ -68,7 +68,7 @@ async def _fetch_current_user_info() -> Optional[Dict[str, Any]]:
         else:
             return None
 
-        async with httpx.AsyncClient(timeout=5) as client:
+        async with httpx.AsyncClient(timeout=5, **_client.httpx_ssl_kwargs()) as client:
             r = await client.get(url, headers=headers, auth=auth)
         if r.status_code != 200:
             return None

@@ -19,7 +19,8 @@ Tests patch this module's attributes directly, e.g.
 import logging
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 from fastmcp.server.dependencies import get_access_token, get_http_request
@@ -63,13 +64,11 @@ REDMINE_SSL_CERT = os.getenv("REDMINE_SSL_CERT")
 REDMINE_SSL_CLIENT_CERT = os.getenv("REDMINE_SSL_CLIENT_CERT")
 
 
-# Build SSL requests config from environment (used by _get_redmine_client)
-def _build_requests_config() -> dict:
-    requests_config = {}
+def _resolve_ssl_verify() -> Union[bool, str]:
+    """Resolve the verify setting: False, a validated CA path, or True."""
     if not REDMINE_SSL_VERIFY:
-        requests_config["verify"] = False
-        logger.warning("SSL verification is DISABLED - use only for development!")
-    elif REDMINE_SSL_CERT:
+        return False
+    if REDMINE_SSL_CERT:
         cert_path = Path(REDMINE_SSL_CERT).resolve()
         if not cert_path.exists():
             raise FileNotFoundError(
@@ -80,17 +79,139 @@ def _build_requests_config() -> dict:
             raise ValueError(
                 f"SSL certificate path must be a file, not directory: {cert_path}"
             )
-        requests_config["verify"] = str(cert_path)
-        logger.info(f"Using custom SSL certificate: {cert_path}")
-    if REDMINE_SSL_CLIENT_CERT:
-        if "," in REDMINE_SSL_CLIENT_CERT:
-            cert, key = REDMINE_SSL_CLIENT_CERT.split(",", 1)
-            requests_config["cert"] = (cert.strip(), key.strip())
-            logger.info("Using client certificate for mutual TLS")
-        else:
-            requests_config["cert"] = REDMINE_SSL_CLIENT_CERT
-            logger.info("Using client certificate for mutual TLS")
+        return str(cert_path)
+    return True
+
+
+def _resolve_client_cert() -> Optional[Union[str, tuple]]:
+    """Resolve the client certificate for mutual TLS, if configured."""
+    if not REDMINE_SSL_CLIENT_CERT:
+        return None
+    if "," in REDMINE_SSL_CLIENT_CERT:
+        cert, key = REDMINE_SSL_CLIENT_CERT.split(",", 1)
+        return (cert.strip(), key.strip())
+    return REDMINE_SSL_CLIENT_CERT
+
+
+def _proxies_from_env() -> dict:
+    """Read proxy settings from the environment for the Redmine URL.
+
+    Needed because pinning ``trust_env=False`` on the session (see
+    ``_build_requests_config``) also switches off requests' own proxy
+    env handling, including NO_PROXY.
+    """
+    from requests.utils import getproxies, should_bypass_proxies
+
+    url = globals()["REDMINE_URL"]
+    try:
+        if url and should_bypass_proxies(url, no_proxy=None):
+            return {}
+    except Exception:  # malformed URL: fall through to the env proxies
+        pass
+    return getproxies()
+
+
+def _warn_on_conflicting_ssl_env() -> None:
+    """Name environment variables that fight an explicit SSL setting.
+
+    Both cases below produced the same "certificate verify failed" symptom in
+    issue #197, so say out loud what is present instead of leaving the next
+    reporter to guess.
+    """
+    ca_vars = [v for v in ("REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE") if os.getenv(v)]
+    if ca_vars:
+        logger.warning(
+            "Ignoring CA bundle from the environment (%s) for Redmine "
+            "connections: REDMINE_SSL_VERIFY / REDMINE_SSL_CERT takes "
+            "precedence.",
+            ", ".join(ca_vars),
+        )
+
+    proxy_vars = [
+        v
+        for v in ("HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy")
+        if (os.getenv(v) or "").lower().startswith("https://")
+    ]
+    if proxy_vars:
+        logger.warning(
+            "An HTTPS proxy is configured (%s). Its own certificate is "
+            "verified regardless of REDMINE_SSL_VERIFY, and a failure there "
+            "is reported against the Redmine host.",
+            ", ".join(proxy_vars),
+        )
+
+
+# Build SSL requests config from environment (used by _get_redmine_client)
+def _build_requests_config() -> dict:
+    requests_config = {}
+    verify = _resolve_ssl_verify()
+    if verify is False:
+        requests_config["verify"] = False
+        logger.warning("SSL verification is DISABLED - use only for development!")
+    elif verify is not True:
+        requests_config["verify"] = verify
+        logger.info(f"Using custom SSL certificate: {verify}")
+
+    client_cert = _resolve_client_cert()
+    if client_cert is not None:
+        requests_config["cert"] = client_cert
+        logger.info("Using client certificate for mutual TLS")
+
+    if "verify" in requests_config:
+        _warn_on_conflicting_ssl_env()
+        # requests fills an unset per-request `verify` from REQUESTS_CA_BUNDLE
+        # / CURL_CA_BUNDLE, and that value beats `session.verify`. Since
+        # python-redmine never passes a per-request verify, an env CA bundle
+        # would silently override an explicit REDMINE_SSL_VERIFY/REDMINE_SSL_CERT
+        # choice. Ignoring the environment keeps our decision authoritative;
+        # proxies are carried over by hand because trust_env covers those too.
+        requests_config["trust_env"] = False
+        proxies = _proxies_from_env()
+        if proxies:
+            requests_config["proxies"] = proxies
+
     return requests_config
+
+
+def httpx_ssl_kwargs(url: Optional[str] = None) -> dict:
+    """Return `verify`/`cert` kwargs for an httpx client talking to Redmine.
+
+    httpx defaults to full verification and knows nothing about
+    REDMINE_SSL_VERIFY / REDMINE_SSL_CERT, so every httpx call site aimed at
+    the configured Redmine server has to pass these explicitly.
+
+    When ``url`` is given, the settings apply only if it points at the
+    configured Redmine host, so a relaxed setting never follows a download
+    to a third-party host.
+    """
+    if url is not None and not _is_redmine_host(url):
+        return {}
+
+    kwargs: dict = {}
+    verify = _resolve_ssl_verify()
+    if verify is not True:
+        kwargs["verify"] = verify
+    client_cert = _resolve_client_cert()
+    if client_cert is not None:
+        kwargs["cert"] = client_cert
+    return kwargs
+
+
+def _is_redmine_host(url: str) -> bool:
+    """Whether `url` points at the same host:port as REDMINE_URL."""
+    redmine_url = globals()["REDMINE_URL"]
+    if not redmine_url:
+        return False
+    try:
+        target = urlparse(url)
+        configured = urlparse(redmine_url)
+    except ValueError:
+        return False
+    return (target.hostname, target.port, target.scheme) == (
+        configured.hostname,
+        configured.port,
+        configured.scheme,
+    )
 
 
 # Warn at import time if Redmine config is missing or incomplete.
