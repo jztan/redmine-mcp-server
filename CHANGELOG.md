@@ -7,30 +7,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-### Fixed
-- SSL settings are no longer overridden by the environment
-  ([#197](https://github.com/jztan/redmine-mcp-server/issues/197)). `requests`
-  fills an unset per-request `verify` from `REQUESTS_CA_BUNDLE` /
-  `CURL_CA_BUNDLE` and that value beats the session setting, so an env CA
-  bundle silently re-enabled verification even with `REDMINE_SSL_VERIFY=false`,
-  producing `certificate verify failed` right after the
-  "SSL verification is DISABLED" warning. Redmine sessions now ignore the
-  environment whenever `REDMINE_SSL_VERIFY=false` or `REDMINE_SSL_CERT` is set,
-  and carry `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` over explicitly so proxy
-  support is unaffected.
-- Explicit SSL settings now log a warning naming environment variables that
-  work against them: a CA bundle in `REQUESTS_CA_BUNDLE` / `CURL_CA_BUNDLE`
-  (now ignored), and an `https://` proxy in `HTTPS_PROXY` / `ALL_PROXY`, whose
-  own certificate is verified regardless of `REDMINE_SSL_VERIFY` and whose
-  failure is reported against the Redmine host.
-- The httpx-based call sites now honor `REDMINE_SSL_VERIFY`,
-  `REDMINE_SSL_CERT`, and `REDMINE_SSL_CLIENT_CERT`: attachment downloads,
-  `get_mcp_server_info`, the `/health` probes, and OAuth token revocation.
-  They previously used httpx defaults, so they failed against a Redmine server
-  with a self-signed or private-CA certificate. Attachment downloads apply the
-  settings only when the URL points at the configured Redmine host, so a
-  relaxed setting never follows a redirect to a third-party host.
-
 ### Added
 - Community health files: `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1),
   `SECURITY.md` (private vulnerability reporting, deployment model, and threat
@@ -38,6 +14,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reference them and to defer the release process to `scripts/release.py`.
 
 ### Fixed
+- SSL settings are no longer overridden by the environment
+  ([#197](https://github.com/jztan/redmine-mcp-server/issues/197)). `requests`
+  fills an unset per-request `verify` from `REQUESTS_CA_BUNDLE` /
+  `CURL_CA_BUNDLE`, and that value beats the session setting, so an ambient CA
+  bundle silently re-enabled verification even with `REDMINE_SSL_VERIFY=false`,
+  producing `certificate verify failed` right after the
+  "SSL verification is DISABLED" warning. Redmine sessions now ignore the
+  environment whenever `REDMINE_SSL_VERIFY=false` or `REDMINE_SSL_CERT` is set,
+  and carry `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` over explicitly so proxy
+  support is unaffected. With SSL configured explicitly, a warning now names
+  the variables working against it: an ignored CA bundle, and an `https://`
+  proxy in `HTTPS_PROXY` / `ALL_PROXY`, whose own certificate is verified
+  either way and whose failure is reported against the Redmine host.
+- `REDMINE_SSL_VERIFY`, `REDMINE_SSL_CERT`, and `REDMINE_SSL_CLIENT_CERT` are
+  now honored by the httpx call sites: attachment downloads,
+  `get_mcp_server_info`, the `/health` probes, and OAuth token revocation.
+  These previously used httpx defaults, so they failed against a Redmine server
+  with a self-signed or private CA certificate. Downloads apply the settings
+  only when the URL points at the configured Redmine host, so a relaxed setting
+  never follows a redirect to a third-party host.
 - `manage_redmine_wiki_page` no longer fails against Redmine 7.0 with
   `'dict' object has no attribute 'id'`. Redmine 7.0 added a `project` ref to
   the wiki page API response
