@@ -452,6 +452,7 @@ class TestRedmineIntegration:
 
         project_id = projects[0].identifier
         wiki_title = "Integration_Test_Wiki_Page"
+        renamed_title = "Integration_Test_Wiki_Page_Renamed"
 
         try:
             # 1. Create a new wiki page
@@ -502,24 +503,48 @@ class TestRedmineIntegration:
             assert "Updated" in update_result["text"]
             assert update_result["version"] >= 2  # Version should increment
 
-            # 4. Delete the wiki page
+            # 4. Rename the wiki page
+            rename_result = await manage_redmine_wiki_page(
+                action="rename",
+                project_id=project_id,
+                wiki_page_title=wiki_title,
+                new_title=renamed_title,
+            )
+
+            if "error" in rename_result:
+                pytest.fail(f"Failed to rename wiki page: {rename_result['error']}")
+
+            assert rename_result["success"] is True
+            assert rename_result["title"] == renamed_title
+
+            # Redmine 7.0+ returns a project ref (Redmine #43569); older
+            # versions omit the key. Where present it must carry the real
+            # id/name rather than being blanked out during serialization.
+            # Covers every action that serializes a page.
+            for result in (create_result, read_result, update_result, rename_result):
+                project = result.get("project")
+                if project is not None:
+                    assert project["id"], f"project id missing: {project}"
+                    assert project["name"], f"project name missing: {project}"
+
+            # 5. Delete the wiki page
             delete_result = await manage_redmine_wiki_page(
                 action="delete",
                 project_id=project_id,
-                wiki_page_title=wiki_title,
+                wiki_page_title=renamed_title,
             )
 
             if "error" in delete_result:
                 pytest.fail(f"Failed to delete wiki page: {delete_result['error']}")
 
             assert delete_result["success"] is True
-            assert delete_result["title"] == wiki_title
+            assert delete_result["title"] == renamed_title
 
-            # 5. Verify the page was deleted
+            # 6. Verify the page was deleted
             verify_result = await manage_redmine_wiki_page(
                 action="get",
                 project_id=project_id,
-                wiki_page_title=wiki_title,
+                wiki_page_title=renamed_title,
             )
             assert "error" in verify_result
             assert "not found" in verify_result["error"].lower()
@@ -527,15 +552,17 @@ class TestRedmineIntegration:
         except Exception as e:
             pytest.fail(f"Integration test failed: {e}")
         finally:
-            # Clean up: attempt to delete the wiki page if it still exists
-            try:
-                await manage_redmine_wiki_page(
-                    action="delete",
-                    project_id=project_id,
-                    wiki_page_title=wiki_title,
-                )
-            except Exception:
-                pass  # Best effort cleanup
+            # Clean up: attempt to delete either title if it still exists
+            # (which of the two survives depends on where the test failed).
+            for title in (wiki_title, renamed_title):
+                try:
+                    await manage_redmine_wiki_page(
+                        action="delete",
+                        project_id=project_id,
+                        wiki_page_title=title,
+                    )
+                except Exception:
+                    pass  # Best effort cleanup
 
     @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
     @pytest.mark.integration

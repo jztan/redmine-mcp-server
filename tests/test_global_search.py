@@ -385,6 +385,28 @@ class TestManageRedmineWikiPageGet:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.redmine")
     @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    async def test_wiki_page_project_as_dict(
+        self, mock_cleanup, mock_redmine, mock_wiki_page
+    ):
+        """Redmine 7.0 returns project as a plain dict (Redmine #43569).
+
+        python-redmine leaves it unwrapped because WikiPage._resource_map
+        does not list it, so the serializer must read it as a dict.
+        """
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
+
+        mock_wiki_page.project = {"id": 1, "name": "Platform Test"}
+        mock_redmine.wiki_page.get.return_value = mock_wiki_page
+
+        result = await manage_redmine_wiki_page(
+            action="get", project_id="platform-test", wiki_page_title="TestPage"
+        )
+
+        assert result["project"] == {"id": 1, "name": "Platform Test"}
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_wiki_page_not_found(self, mock_cleanup, mock_redmine):
         """Test handling of non-existent wiki page."""
         from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page

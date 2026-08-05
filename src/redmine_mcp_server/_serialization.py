@@ -180,10 +180,21 @@ def _named_ref(obj: Any) -> Optional[Dict[str, Any]]:
 
     See issue #109 for the policy decision.
 
+    Refs arrive as plain dicts when python-redmine does not list the
+    key in the parent's ``_resource_map`` -- as with ``project`` on a
+    wiki page, added by Redmine 7.0 (Redmine #43569). ``getattr`` on a
+    dict would silently return ``{'id': None, 'name': ''}``, so dicts
+    are read with ``.get()``.
+
     Returns ``None`` when ``obj`` is ``None``.
     """
     if obj is None:
         return None
+    if isinstance(obj, dict):
+        return {
+            "id": obj.get("id"),
+            "name": obj.get("name", ""),
+        }
     return {
         "id": getattr(obj, "id", None),
         "name": getattr(obj, "name", ""),
