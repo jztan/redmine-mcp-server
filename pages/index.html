@@ -43,6 +43,71 @@
   "programmingLanguage": "Python"
 }
 </script>
+<!-- Structured data: FAQPage. Answers mirror the visible FAQ section verbatim. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Which Redmine versions are supported?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "The integration suite passes in full against Redmine 6.1 and 7.0. Older versions are untested. Individual tools name their own minimum where one is known: global search needs Redmine 3.3.0 or newer, issue watchers 2.3.0, project time-entry activities 3.4.0. On an older server those specific tools fail rather than the whole server. OAuth2 is the one hard requirement: it needs Redmine 6.1 or newer for Doorkeeper support. API key and username/password authentication have no such floor."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can the agent write to my Redmine, or only read it?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "It writes. Creating and updating issues, adding notes, logging time, editing wiki pages, and managing members, versions, categories, and relations are all tool calls. If you would rather it did not, set REDMINE_MCP_READ_ONLY=true and every write branch is blocked while reads keep working. Deleting an issue always requires explicit confirmation flags and shows a cascade-impact preview first, in either mode."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does my Redmine data leave my network?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Not through this server. It runs on your own infrastructure and talks to exactly two things: your Redmine and your MCP client. There is no hosted service, no telemetry, and no third party in the path. What your AI client then sends to its model provider is between you and that client, the same as for any other tool it runs."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Which AI clients does it work with?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Any client that speaks MCP. Claude Code, Claude Desktop, VS Code with Copilot, Codex CLI, and Kiro have step-by-step guides in the README, and Cursor and other clients use the generic HTTP configuration. The server exposes streamable HTTP at /mcp. Clients that only speak stdio connect through a bridge, which the setup guides cover."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How does it handle a whole team rather than one user?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Three ways. A single shared API key is the simple default. OAuth2 gives every user their own token, so the agent acts as that person with that person's permissions, and each tool call is checked against the scopes their token actually carries. OAuthProxy covers hosted deployments where clients register themselves. On Redmine older than 6.1, where OAuth is unavailable, legacy-per-user mode takes an X-Redmine-API-Key header per request and gets you the same per-user identity."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Do I need to install Redmine plugins?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. 45 of the 51 tools work against a stock Redmine with no plugins at all. Six are plugin-gated and need both the plugin installed and a matching environment variable: checklists, products, CRM contacts, and DMSF documents. RedmineUP Agile and AlphaNodes Additional Tags add fields to tools you already have rather than new tools, so sprint, story point, and tag support appears automatically when those plugins are present."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What does it cost?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Nothing. It is MIT licensed, published on PyPI and GHCR, and listed in the official MCP Registry. You host it yourself, so the only cost is wherever you run it and whatever your AI client charges for tokens."
+      }
+    }
+  ]
+}
+</script>
 <!-- Google tag (gtag.js) -->
 <script>
   if (new URLSearchParams(window.location.search).get('ga_optout') === 'true') {
@@ -468,6 +533,53 @@
   .tab-note a { color: var(--accent); text-decoration: none; }
   .tab-note a:hover { text-decoration: underline; }
 
+  /* ── Comparison ─────────────────────────────────────────── */
+  section.versus { background: var(--bg); padding: 56px 22px 8px; }
+  section.versus .inner { max-width: 900px; margin: 0 auto; }
+  .versus-title { font-family: var(--font-display); font-size: clamp(24px, 3.4vw, 32px); font-weight: 600;
+    letter-spacing: -0.02em; text-align: center; margin: 0 0 8px; }
+  .versus-sub { text-align: center; color: var(--text-secondary); font-size: 15.5px; margin: 0 auto 28px; max-width: 620px; }
+  .versus-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--border);
+    border-radius: var(--radius-lg); background: var(--bg-elev); box-shadow: var(--shadow-sm); }
+  table.versus { width: 100%; min-width: 620px; border-collapse: collapse; font-size: 14px; }
+  table.versus th, table.versus td { text-align: left; padding: 14px 18px; border-bottom: 1px solid var(--border);
+    vertical-align: top; line-height: 1.5; }
+  table.versus tr:last-child th, table.versus tr:last-child td { border-bottom: none; }
+  table.versus thead th { font-family: var(--font-display); font-size: 13px; font-weight: 600; color: var(--text);
+    background: var(--bg-subtle); }
+  table.versus thead th:first-child { color: var(--text-tertiary); font-weight: 400; }
+  table.versus tbody th { font-weight: 500; color: var(--text); width: 22%; }
+  table.versus td { color: var(--text-secondary); width: 39%; }
+  table.versus td.ours { color: var(--text); }
+  table.versus code { font-family: var(--font-mono); font-size: 12px; background: var(--bg-subtle);
+    padding: 1px 5px; border-radius: 4px; color: var(--text); }
+
+  /* ── FAQ ────────────────────────────────────────────────── */
+  section.faq { background: var(--bg-subtle); padding: 60px 22px 56px; margin-top: 48px; }
+  section.faq .inner { max-width: 760px; margin: 0 auto; }
+  .faq-title { font-family: var(--font-display); font-size: clamp(26px, 4vw, 38px); font-weight: 600;
+    letter-spacing: -0.02em; text-align: center; margin: 0 0 30px; }
+  details.qa { border-bottom: 1px solid var(--border); }
+  details.qa > summary {
+    list-style: none; cursor: pointer; padding: 17px 34px 17px 0; position: relative;
+    font-family: var(--font-display); font-size: 16.5px; font-weight: 500; color: var(--text);
+    user-select: none;
+  }
+  details.qa > summary::-webkit-details-marker { display: none; }
+  details.qa > summary::after {
+    content: "+"; position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+    font-family: var(--font-mono); font-size: 19px; color: var(--text-tertiary); line-height: 1;
+  }
+  details.qa[open] > summary::after { content: "\2212"; }
+  details.qa > summary:hover { color: var(--accent); }
+  .qa-body { padding: 0 34px 20px 0; font-size: 15px; line-height: 1.62; color: var(--text-secondary); }
+  .qa-body p { margin: 0 0 12px; }
+  .qa-body p:last-child { margin: 0; }
+  .qa-body code { font-family: var(--font-mono); font-size: 12.5px; background: var(--bg-elev);
+    padding: 1px 5px; border-radius: 4px; color: var(--text); }
+  .qa-body a { color: var(--accent); text-decoration: none; }
+  .qa-body a:hover { text-decoration: underline; }
+
   /* install */
   section.install { background: var(--bg); padding: 40px 22px 16px; text-align: center; }
   section.install .inner { max-width: 820px; margin: 0 auto; }
@@ -877,6 +989,49 @@
   </div>
 </section>
 
+<section class="versus">
+  <div class="inner">
+    <h2 class="versus-title">Why not just hand the agent the REST API?</h2>
+    <p class="versus-sub">
+      Redmine's REST API is good. Pointing a model straight at it is the part that goes wrong.
+    </p>
+    <div class="versus-wrap">
+      <table class="versus">
+        <thead>
+          <tr><th>&nbsp;</th><th>A generic HTTP tool</th><th>redmine-mcp-server</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th>Getting it right</th>
+            <td>The model composes URLs, query filters, and JSON bodies from memory, and finds out it was wrong from a 422.</td>
+            <td class="ours">51 typed tools with validated parameters. Enumeration tools hand back the valid tracker, status, priority, and role IDs before a write is attempted.</td>
+          </tr>
+          <tr>
+            <th>Context cost</th>
+            <td>Whole payloads land in the window, including every field and every journal entry you did not ask for.</td>
+            <td class="ours">Field selection trims a list of issues by roughly 95%, every list paginates, and issue history pages separately.</td>
+          </tr>
+          <tr>
+            <th>Guardrails</th>
+            <td>Whatever the credential can do, the model can do, with no way to scope it down or preview the damage.</td>
+            <td class="ours">Read-only mode, per-tool OAuth scope enforcement, and a required confirmation with cascade preview before an issue is deleted.</td>
+          </tr>
+          <tr>
+            <th>Untrusted text</th>
+            <td>A ticket description arrives as plain prose, indistinguishable from your own instructions.</td>
+            <td class="ours">User-controlled text is wrapped in <code>&lt;insecure-content&gt;</code> boundary tags so the model reads it as data.</td>
+          </tr>
+          <tr>
+            <th>What you see</th>
+            <td>JSON, pasted into the chat.</td>
+            <td class="ours">An interactive Kanban board and project dashboard rendered in the conversation, writing back through the same tools.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
 <section class="trust" id="security">
   <div class="inner">
     <h2 class="trust-title">Your Redmine stays yours.</h2>
@@ -975,6 +1130,67 @@ redmine-mcp-server</pre>
   </div>
 </section>
 
+<section class="faq" id="faq">
+  <div class="inner">
+    <h2 class="faq-title">Questions people ask first.</h2>
+
+    <details class="qa">
+      <summary>Which Redmine versions are supported?</summary>
+      <div class="qa-body">
+        <p>The integration suite passes in full against Redmine 6.1 and 7.0. Older versions are untested. Individual tools name their own minimum where one is known: global search needs Redmine 3.3.0 or newer, issue watchers 2.3.0, project time-entry activities 3.4.0. On an older server those specific tools fail rather than the whole server.</p>
+        <p>OAuth2 is the one hard requirement: it needs Redmine 6.1 or newer for Doorkeeper support. API key and username/password authentication have no such floor.</p>
+      </div>
+    </details>
+
+    <details class="qa">
+      <summary>Can the agent write to my Redmine, or only read it?</summary>
+      <div class="qa-body">
+        <p>It writes. Creating and updating issues, adding notes, logging time, editing wiki pages, and managing members, versions, categories, and relations are all tool calls.</p>
+        <p>If you would rather it did not, set <code>REDMINE_MCP_READ_ONLY=true</code> and every write branch is blocked while reads keep working. Deleting an issue always requires explicit confirmation flags and shows a cascade-impact preview first, in either mode.</p>
+      </div>
+    </details>
+
+    <details class="qa">
+      <summary>Does my Redmine data leave my network?</summary>
+      <div class="qa-body">
+        <p>Not through this server. It runs on your own infrastructure and talks to exactly two things: your Redmine and your MCP client. There is no hosted service, no telemetry, and no third party in the path.</p>
+        <p>What your AI client then sends to its model provider is between you and that client, the same as for any other tool it runs.</p>
+      </div>
+    </details>
+
+    <details class="qa">
+      <summary>Which AI clients does it work with?</summary>
+      <div class="qa-body">
+        <p>Any client that speaks MCP. Claude Code, Claude Desktop, VS Code with Copilot, Codex CLI, and Kiro have step-by-step guides in the README, and Cursor and other clients use the generic HTTP configuration.</p>
+        <p>The server exposes streamable HTTP at <code>/mcp</code>. Clients that only speak stdio connect through a bridge, which the setup guides cover.</p>
+      </div>
+    </details>
+
+    <details class="qa">
+      <summary>How does it handle a whole team rather than one user?</summary>
+      <div class="qa-body">
+        <p>Three ways. A single shared API key is the simple default. OAuth2 gives every user their own token, so the agent acts as that person with that person's permissions, and each tool call is checked against the scopes their token actually carries. OAuthProxy covers hosted deployments where clients register themselves.</p>
+        <p>On Redmine older than 6.1, where OAuth is unavailable, legacy-per-user mode takes an <code>X-Redmine-API-Key</code> header per request and gets you the same per-user identity.</p>
+      </div>
+    </details>
+
+    <details class="qa">
+      <summary>Do I need to install Redmine plugins?</summary>
+      <div class="qa-body">
+        <p>No. 45 of the 51 tools work against a stock Redmine with no plugins at all.</p>
+        <p>Six are plugin-gated and need both the plugin installed and a matching environment variable: checklists, products, CRM contacts, and DMSF documents. RedmineUP Agile and AlphaNodes Additional Tags add fields to tools you already have rather than new tools, so sprint, story point, and tag support appears automatically when those plugins are present.</p>
+      </div>
+    </details>
+
+    <details class="qa">
+      <summary>What does it cost?</summary>
+      <div class="qa-body">
+        <p>Nothing. It is MIT licensed, published on PyPI and GHCR, and listed in the official MCP Registry. You host it yourself, so the only cost is wherever you run it and whatever your AI client charges for tokens.</p>
+      </div>
+    </details>
+  </div>
+</section>
+
 <section class="install">
   <div class="inner">
   <h2 class="install-title">Take it further.</h2>
@@ -989,9 +1205,11 @@ redmine-mcp-server</pre>
     (OAuth2, OAuthProxy, or per-user API keys) and a read-only safety mode.
   </p>
   <div class="links">
-    <a class="link-btn" href="https://github.com/jztan/redmine-mcp-server">GitHub</a>
-    <a class="link-btn" href="https://pypi.org/project/redmine-mcp-server/">PyPI</a>
-    <a class="link-btn" href="https://github.com/jztan/redmine-mcp-server#readme">Docs</a>
+    <a class="link-btn" href="https://github.com/jztan/redmine-mcp-server" data-outbound="footer_github">GitHub</a>
+    <a class="link-btn" href="https://pypi.org/project/redmine-mcp-server/" data-outbound="footer_pypi">PyPI</a>
+    <a class="link-btn" href="https://github.com/jztan/redmine-mcp-server/pkgs/container/redmine-mcp-server" data-outbound="footer_ghcr">GHCR</a>
+    <a class="link-btn" href="https://registry.modelcontextprotocol.io/" data-outbound="footer_registry">MCP Registry</a>
+    <a class="link-btn" href="https://github.com/jztan/redmine-mcp-server#readme" data-outbound="footer_docs">Docs</a>
     <a class="link-btn" href="https://blog.jztan.com/how-i-linked-a-legacy-system-to-a-modern-ai-agent/?utm_source=redmine-mcp-demo&utm_medium=referral&utm_campaign=demo-launch&utm_content=install-cta">Blog</a>
   </div>
 
@@ -1537,8 +1755,15 @@ redmine-mcp-server</pre>
         track("section_view", { section: id });
       });
     }, { threshold: 0.3 });
-    ["board", "security", "connect"].forEach(id => { const el = $(id); if (el) io.observe(el); });
+    ["board", "security", "connect", "faq"].forEach(id => { const el = $(id); if (el) io.observe(el); });
   })();
+
+  // Which questions get opened is the clearest read on what is blocking people.
+  document.querySelectorAll("details.qa").forEach(d => {
+    d.addEventListener("toggle", () => {
+      if (d.open) track("faq_open", { question: d.querySelector("summary").textContent.trim() });
+    });
+  });
 
   // ── Utils ─────────────────────────────────────────────────
   function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c])); }
