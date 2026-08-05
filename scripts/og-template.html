@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>og</title>
+<!--
+  Source for pages/og-image.png (the Open Graph card shown when the site is
+  shared). To regenerate after a redesign:
+
+    python3 -m http.server 8899          # from the repo root
+    # open http://127.0.0.1:8899/scripts/og-template.html in a 1200x630
+    # viewport at device pixel ratio 1, then screenshot to pages/og-image.png
+
+  Bump the ?v= on the og:image and twitter:image tags in pages/index.html
+  afterwards, or the social platforms keep serving the cached previous card.
+-->
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    width: 1200px; height: 630px; overflow: hidden;
+    background: #0b0a0a;
+    font-family: "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    position: relative;
+  }
+  /* Same two glows as the previous card: warm top-right, cool bottom-left. */
+  .glow-warm {
+    position: absolute; top: -180px; right: -120px; width: 760px; height: 620px;
+    background: radial-gradient(ellipse at center, rgba(217, 119, 87, 0.20) 0%, rgba(217, 119, 87, 0) 68%);
+  }
+  .glow-cool {
+    position: absolute; bottom: -240px; left: -160px; width: 700px; height: 620px;
+    background: radial-gradient(ellipse at center, rgba(0, 113, 227, 0.22) 0%, rgba(0, 113, 227, 0) 68%);
+  }
+
+  .card { position: relative; height: 100%; display: flex; align-items: center; gap: 30px; padding: 0 40px 0 62px; }
+
+  .left { width: 520px; flex-shrink: 0; }
+  .brand { display: flex; align-items: center; gap: 11px; margin-bottom: 26px; }
+  .brand .dot { width: 11px; height: 11px; border-radius: 50%; background: #d97757; }
+  .brand .name { font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 22px; color: #e8e6e3; }
+
+  h1 {
+    font-size: 55px; line-height: 1.07; letter-spacing: -0.028em; font-weight: 700;
+    color: #ffffff; margin: 0 0 22px;
+  }
+  .sub {
+    font-size: 21px; line-height: 1.42; color: #a9a5a0; margin: 0 0 30px; font-weight: 400;
+  }
+  .sub b { color: #e8e6e3; font-weight: 600; }
+
+  .cmd {
+    display: inline-flex; align-items: center; gap: 10px;
+    padding: 15px 22px; border: 1px solid rgba(255,255,255,0.14); border-radius: 13px;
+    background: rgba(255,255,255,0.05);
+    font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 21px; color: #e8e6e3;
+  }
+  .cmd .p { color: #6f6a64; }
+
+  /* The whole board sits in frame. Cropping it mid-card read as an accident
+     rather than a deliberate bleed. */
+  .right { position: relative; flex: 1; height: 100%; display: flex; align-items: center; justify-content: flex-end; }
+  /* The badge has to live outside the frame: the frame clips to its radius. */
+  .shot { position: relative; }
+  .shot-frame {
+    width: 524px; border-radius: 14px; overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.16);
+    box-shadow: 0 30px 80px rgba(0,0,0,0.55);
+    background: #fff;
+  }
+  .shot-frame img { display: block; width: 100%; height: auto; }
+  .badge {
+    position: absolute; top: -15px; left: -16px; z-index: 2;
+    font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 12px;
+    letter-spacing: 0.08em; text-transform: uppercase; color: #ffffff;
+    background: #0071e3; border-radius: 980px; padding: 6px 14px;
+    box-shadow: 0 8px 24px rgba(0, 113, 227, 0.45);
+  }
+</style>
+</head>
+<body>
+  <div class="glow-warm"></div>
+  <div class="glow-cool"></div>
+
+  <div class="card">
+    <div class="left">
+      <div class="brand"><span class="dot"></span><span class="name">redmine-mcp-server</span></div>
+      <h1>Your AI shouldn't just read tickets. It works them.</h1>
+      <p class="sub">
+        An MCP server that lets <b>Claude Code</b> &amp; other agents triage, update, and close
+        <b>Redmine</b> issues, with a live Kanban board in the chat.
+      </p>
+      <div class="cmd"><span class="p">$</span> pip install redmine-mcp-server</div>
+    </div>
+
+    <div class="right">
+      <div class="shot">
+        <span class="badge">MCP Apps</span>
+        <div class="shot-frame">
+          <img src="../pages/triage-board-kanban.png" alt="" />
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
