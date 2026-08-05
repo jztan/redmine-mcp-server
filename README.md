@@ -153,6 +153,8 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `REDMINE_SSL_CLIENT_CERT` | No | – | Path to client certificate for mutual TLS |
 | `REDMINE_MCP_READ_ONLY` | No | `false` | Block all write operations (create/update/delete) when set to `true` |
 | `REDMINE_OAUTH_SCOPE_ENFORCEMENT` | No | `on` | OAuth modes only: deny tool calls whose access token lacks the tool's Redmine permission scopes, and filter `tools/list` accordingly. Set to `off` temporarily while re-consenting older tokens ([details](docs/oauth-setup.md#scope-enforcement)) |
+| `REDMINE_OAUTH_DISCOVERY_AS` | No | `redmine` | OAuth modes only: which authorization server discovery advertises. `redmine` names your Redmine; `self` advertises this server (issuer = `REDMINE_MCP_BASE_URL`) and serves RFC 8414 metadata at its own canonical well-known location, which clients that probe there need, Cursor among them ([details](docs/oauth-setup.md#cursor-and-self-as-discovery)) |
+| `REDMINE_MCP_SCOPES` | No | – | OAuth modes only: advertise a subset of scopes in discovery, matching the permissions your Redmine OAuth Application actually enables. Avoids `invalid_scope` at consent when a client requests the full advertised list |
 | `REDMINE_AGILE_ENABLED` | No | `false` | Enable RedmineUP Agile plugin support: `get_redmine_issue` returns `story_points`, `agile_sprint_id`, `agile_position`; `update_redmine_issue` accepts `story_points` |
 | `REDMINE_CHECKLISTS_ENABLED` | No | `false` | Enable RedmineUP Checklists plugin support: `get_checklist`, `create_checklist_item`, `update_checklist_item` (requires Checklists Pro plugin) |
 | `REDMINE_PRODUCTS_ENABLED` | No | `false` | Enable RedmineUP Products plugin support: `manage_product` (action=list/get/create/update) |
@@ -449,6 +451,42 @@ Claude Desktop's config file supports stdio transport only. Use FastMCP's proxy 
 - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
 
 **Note:** The Redmine MCP server must be running before starting Claude Desktop.
+
+</details>
+
+<details>
+<summary><strong>Cursor</strong></summary>
+
+Cursor talks to HTTP MCP servers directly, with no bridge.
+
+1. Create `~/.cursor/mcp.json` (available in every project) or `.cursor/mcp.json` in your project root (that project only):
+   ```json
+   {
+     "mcpServers": {
+       "redmine": {
+         "url": "http://127.0.0.1:8000/mcp"
+       }
+     }
+   }
+   ```
+2. Save the file. Cursor picks the server up automatically; its MCP settings list the server and the tools it loaded.
+
+**Note:** Cursor identifies a remote server by a bare `url` and has no `type` field, unlike the VS Code and Claude Code configs above.
+
+**In `legacy-per-user` mode**, add the API key header:
+
+```json
+{
+  "mcpServers": {
+    "redmine": {
+      "url": "https://your-host/mcp",
+      "headers": { "X-Redmine-API-Key": "<your redmine api key>" }
+    }
+  }
+}
+```
+
+**In `oauth` mode**, set `REDMINE_OAUTH_DISCOVERY_AS=self` on the MCP server. Cursor looks for authorization server metadata at its own canonical well-known location, which the default (`redmine`) discovery profile does not serve, so the flow stalls without it ([#188](https://github.com/jztan/redmine-mcp-server/issues/188)). See [Cursor and self-AS discovery](docs/oauth-setup.md#cursor-and-self-as-discovery).
 
 </details>
 

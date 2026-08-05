@@ -1752,7 +1752,7 @@ redmine-mcp-server</pre>
     }
   }
 }`,
-      note: 'Works for Cursor and most MCP clients. For stdio-only clients such as Kiro, swap in <code>"command": "npx"</code> with <code>["-y", "mcp-client-http", "http://127.0.0.1:8000/mcp"]</code>. <a href="https://github.com/jztan/redmine-mcp-server#mcp-client-configuration">All client guides →</a>'
+      note: 'Works for most MCP clients. Cursor uses the same block in <code>~/.cursor/mcp.json</code> but identifies a remote server by <code>url</code> alone, with no <code>type</code>. For stdio-only clients such as Kiro, swap in <code>"command": "npx"</code> with <code>["-y", "mcp-client-http", "http://127.0.0.1:8000/mcp"]</code>. <a href="https://github.com/jztan/redmine-mcp-server#mcp-client-configuration">All client guides →</a>'
     }
   };
 
