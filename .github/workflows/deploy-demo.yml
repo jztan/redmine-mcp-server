@@ -23,8 +23,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # On a tag the ref is the released version. On a manual dispatch from a
+      # branch it is a branch name, which would print as the version in the
+      # footer, so fall back to the version the tree actually declares.
       - name: Inject demo version
-        run: sed -i 's/__VERSION__/${{ github.ref_name }}/g' pages/index.html
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          set -euo pipefail
+          if [ "$REF_TYPE" = "tag" ]; then
+            version="$REF_NAME"
+          else
+            version="v$(grep -m1 '^version = ' pyproject.toml | cut -d '"' -f2)"
+          fi
+          echo "Injecting demo version: $version"
+          sed -i "s/__VERSION__/$version/g" pages/index.html
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
