@@ -554,6 +554,35 @@
   table.versus code { font-family: var(--font-mono); font-size: 12px; background: var(--bg-subtle);
     padding: 1px 5px; border-radius: 4px; color: var(--text); }
 
+  /* Below three-column width the table stops being a table: each row becomes
+     its own card, with the column headers reprinted as labels on each cell.
+     Sideways scrolling through a comparison is worse than reading it stacked. */
+  @media (max-width: 700px) {
+    .versus-wrap { border: none; border-radius: 0; background: transparent; box-shadow: none; overflow-x: visible; }
+    table.versus, table.versus tbody, table.versus tr, table.versus th, table.versus td { display: block; width: auto; }
+    table.versus { min-width: 0; }
+    table.versus thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    table.versus tr {
+      background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm); padding: 16px 18px 18px; margin-bottom: 12px;
+    }
+    table.versus tr:last-child { margin-bottom: 0; }
+    /* These two need the tbody qualifier to outrank the desktop column widths. */
+    table.versus tbody th {
+      width: auto;
+      font-family: var(--font-display); font-size: 17px; font-weight: 600; letter-spacing: -0.01em;
+      padding: 0 0 12px; border-bottom: 1px solid var(--border); margin-bottom: 12px;
+    }
+    table.versus tbody td { width: auto; padding: 0; border-bottom: none; font-size: 14px; }
+    table.versus td + td { margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--border); }
+    table.versus td::before {
+      content: attr(data-col); display: block; margin-bottom: 4px;
+      font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase;
+      color: var(--text-tertiary);
+    }
+    table.versus td.ours::before { color: var(--accent); }
+  }
+
   /* ── FAQ ────────────────────────────────────────────────── */
   section.faq { background: var(--bg-subtle); padding: 60px 22px 56px; margin-top: 48px; }
   section.faq .inner { max-width: 760px; margin: 0 auto; }
@@ -1003,28 +1032,28 @@
         <tbody>
           <tr>
             <th>Getting it right</th>
-            <td>The model composes URLs, query filters, and JSON bodies from memory, and finds out it was wrong from a 422.</td>
-            <td class="ours">51 typed tools with validated parameters. Enumeration tools hand back the valid tracker, status, priority, and role IDs before a write is attempted.</td>
+            <td data-col="A generic HTTP tool">The model composes URLs, query filters, and JSON bodies from memory, and finds out it was wrong from a 422.</td>
+            <td class="ours" data-col="redmine-mcp-server">51 typed tools with validated parameters. Enumeration tools hand back the valid tracker, status, priority, and role IDs before a write is attempted.</td>
           </tr>
           <tr>
             <th>Context cost</th>
-            <td>Whole payloads land in the window, including every field and every journal entry you did not ask for.</td>
-            <td class="ours">Field selection trims a list of issues by roughly 95%, every list paginates, and issue history pages separately.</td>
+            <td data-col="A generic HTTP tool">Whole payloads land in the window, including every field and every journal entry you did not ask for.</td>
+            <td class="ours" data-col="redmine-mcp-server">Field selection trims a list of issues by roughly 95%, every list paginates, and issue history pages separately.</td>
           </tr>
           <tr>
             <th>Guardrails</th>
-            <td>Whatever the credential can do, the model can do, with no way to scope it down or preview the damage.</td>
-            <td class="ours">Read-only mode, per-tool OAuth scope enforcement, and a required confirmation with cascade preview before an issue is deleted.</td>
+            <td data-col="A generic HTTP tool">Whatever the credential can do, the model can do, with no way to scope it down or preview the damage.</td>
+            <td class="ours" data-col="redmine-mcp-server">Read-only mode, per-tool OAuth scope enforcement, and a required confirmation with cascade preview before an issue is deleted.</td>
           </tr>
           <tr>
             <th>Untrusted text</th>
-            <td>A ticket description arrives as plain prose, indistinguishable from your own instructions.</td>
-            <td class="ours">User-controlled text is wrapped in <code>&lt;insecure-content&gt;</code> boundary tags so the model reads it as data.</td>
+            <td data-col="A generic HTTP tool">A ticket description arrives as plain prose, indistinguishable from your own instructions.</td>
+            <td class="ours" data-col="redmine-mcp-server">User-controlled text is wrapped in <code>&lt;insecure-content&gt;</code> boundary tags so the model reads it as data.</td>
           </tr>
           <tr>
             <th>What you see</th>
-            <td>JSON, pasted into the chat.</td>
-            <td class="ours">An interactive Kanban board and project dashboard rendered in the conversation, writing back through the same tools.</td>
+            <td data-col="A generic HTTP tool">JSON, pasted into the chat.</td>
+            <td class="ours" data-col="redmine-mcp-server">An interactive Kanban board and project dashboard rendered in the conversation, writing back through the same tools.</td>
           </tr>
         </tbody>
       </table>
