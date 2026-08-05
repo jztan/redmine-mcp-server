@@ -1779,7 +1779,7 @@ List, get, create, update, delete, or rename a Redmine wiki page. Replaces `list
 
 **Returns:**
 - `list`: array of page metadata dicts (`title`, `version`, `parent_title` if present, `created_on`, `updated_on`) — no body text
-- `get`/`create`/`update`: full wiki page dict (`title`, `text`, `version`, `created_on`, `updated_on`, `author`, `project`, `attachments` when applicable). `project` is only returned by Redmine 7.0+ ([#43569](https://www.redmine.org/issues/43569)); earlier versions omit the key
+- `get`/`create`/`update`: full wiki page dict (`title`, `text`, `version`, `created_on`, `updated_on`, `author`, `project`, `attachments` when applicable). `project` is only returned by Redmine 7.0+; earlier versions omit the key
 - `delete`: `{"success": true, "title": ..., "message": ...}`
 - `rename`: `{"success": true, ...}` plus the renamed page's metadata
 - Error: `{"error": "..."}`
