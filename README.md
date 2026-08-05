@@ -58,16 +58,16 @@ Once running, the server listens on `http://localhost:8000` with the MCP endpoin
 - Docker (alternative deployment, uses Python 3.13)
 - Access to a Redmine instance
 
-#### Redmine compatibility
+#### Redmine Compatibility
 
-The integration suite is run against **Redmine 6.1 and 7.0**, and both pass in
-full. Older versions are not tested and may work to varying degrees: individual
-tools state their own minimum where one is known (global search needs 3.3.0+,
-issue watchers 2.3.0+, project time-entry activities 3.4.0+), so on an older
-server expect those specific tools to fail rather than the server as a whole.
+The integration suite passes in full against Redmine 6.1 and 7.0. Older
+versions are untested. Individual tools list their own minimum where one is
+known (global search needs 3.3.0+, issue watchers 2.3.0+, project time-entry
+activities 3.4.0+), so on an older server those specific tools fail rather than
+the whole server.
 
-OAuth2 authentication is the exception, and it is a hard floor: it requires
-Redmine 6.1+ for Doorkeeper support. See [docs/oauth-setup.md](docs/oauth-setup.md).
+OAuth2 is the one hard requirement: it needs Redmine 6.1+ for Doorkeeper
+support. See [docs/oauth-setup.md](docs/oauth-setup.md).
 
 ### Install from PyPI (Recommended)
 
@@ -537,6 +537,27 @@ For clients that require a command-based approach with HTTP bridge:
 # Test connection by checking health endpoint
 curl http://localhost:8000/health
 ```
+
+## Supported Redmine Plugins
+
+The server works against a stock Redmine instance. Six optional plugins add
+more. To use one, install it on your Redmine server and set the matching env
+var. Skipping a plugin costs you only that plugin's features.
+
+| Plugin | Vendor | Env var | What it adds |
+|---|---|---|---|
+| [Agile](https://www.redmineup.com/pages/plugins/agile) | RedmineUP | `REDMINE_AGILE_ENABLED` | `get_redmine_issue` returns `story_points`, `agile_sprint_id`, `agile_position`; `update_redmine_issue` accepts `story_points` |
+| [Checklists](https://www.redmineup.com/pages/plugins/checklists) | RedmineUP (Pro) | `REDMINE_CHECKLISTS_ENABLED` | 3 tools: `get_checklist`, `create_checklist_item`, `update_checklist_item` |
+| [Products](https://www.redmineup.com/pages/plugins/products) | RedmineUP | `REDMINE_PRODUCTS_ENABLED` | 1 tool: `manage_product` |
+| [CRM](https://www.redmineup.com/pages/plugins/crm) | RedmineUP | `REDMINE_CRM_ENABLED` | 1 tool: `manage_contact` |
+| [DMSF](https://github.com/danmunn/redmine_dmsf) | danmunn (open source) | `REDMINE_DMSF_ENABLED` | 1 tool: `manage_document` |
+| [Additional Tags](https://github.com/alphanodes/additional_tags) | AlphaNodes (open source) | `REDMINE_TAGS_ENABLED` | `get_redmine_issue` returns a `tags` array; `create_redmine_issue` / `update_redmine_issue` accept `tag_list` |
+
+Agile and Additional Tags add fields to tools you already have, so they
+register no new tools. The other four bring their own, which appear in
+`tools/list` either way but return a feature-disabled error until you set the
+flag. Tags also needs the `view_issue_tags`, `create_issue_tags`, and
+`edit_issue_tags` permissions on the Redmine server.
 
 ## Available Tools
 
