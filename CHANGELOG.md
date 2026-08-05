@@ -52,6 +52,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - @knasiotis — reported the dropped `agile_sprint_id` write and implemented
   agile sprint/position support, including the in-place `agile_data` fix
   ([#194](https://github.com/jztan/redmine-mcp-server/pull/194))
+- @azelcs — diagnosed and fixed the Redmine 7.0 wiki page serialization crash,
+  including the silent dict-ref data loss in `_named_ref`
+  ([#200](https://github.com/jztan/redmine-mcp-server/pull/200))
 
 ## [2.8.0] - 2026-07-25
 ### Added
