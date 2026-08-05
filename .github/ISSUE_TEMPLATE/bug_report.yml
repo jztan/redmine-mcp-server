@@ -85,8 +85,8 @@ body:
     id: redmine-version
     attributes:
       label: Redmine Version
-      description: Your Redmine server version (if known)
-      placeholder: "5.1.0"
+      description: Your Redmine server version (if known). The integration suite is run against 6.1 and 7.0.
+      placeholder: "7.0.0"
     validations:
       required: false
 

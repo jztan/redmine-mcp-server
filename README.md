@@ -3,6 +3,7 @@
 [![PyPI Version](https://img.shields.io/pypi/v/redmine-mcp-server.svg)](https://pypi.org/project/redmine-mcp-server/)
 [![License](https://img.shields.io/github/license/jztan/redmine-mcp-server.svg)](LICENSE)
 [![Python Version](https://img.shields.io/pypi/pyversions/redmine-mcp-server.svg)](https://pypi.org/project/redmine-mcp-server/)
+[![Redmine Version](https://img.shields.io/badge/Redmine-6.1%20%7C%207.0-blue.svg)](#redmine-compatibility)
 [![GitHub Issues](https://img.shields.io/github/issues/jztan/redmine-mcp-server.svg)](https://github.com/jztan/redmine-mcp-server/issues)
 [![CI](https://github.com/jztan/redmine-mcp-server/actions/workflows/pr-tests.yml/badge.svg)](https://github.com/jztan/redmine-mcp-server/actions/workflows/pr-tests.yml)
 [![Coverage](https://codecov.io/gh/jztan/redmine-mcp-server/branch/master/graph/badge.svg)](https://codecov.io/gh/jztan/redmine-mcp-server)
@@ -56,6 +57,17 @@ Once running, the server listens on `http://localhost:8000` with the MCP endpoin
 - Python 3.10+ (for local installation)
 - Docker (alternative deployment, uses Python 3.13)
 - Access to a Redmine instance
+
+#### Redmine compatibility
+
+The integration suite is run against **Redmine 6.1 and 7.0**, and both pass in
+full. Older versions are not tested and may work to varying degrees: individual
+tools state their own minimum where one is known (global search needs 3.3.0+,
+issue watchers 2.3.0+, project time-entry activities 3.4.0+), so on an older
+server expect those specific tools to fail rather than the server as a whole.
+
+OAuth2 authentication is the exception, and it is a hard floor: it requires
+Redmine 6.1+ for Doorkeeper support. See [docs/oauth-setup.md](docs/oauth-setup.md).
 
 ### Install from PyPI (Recommended)
 
