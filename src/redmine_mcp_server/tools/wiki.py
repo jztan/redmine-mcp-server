@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Literal, Optional, Union
 from .._client import _get_redmine_client
 from .._decorators import ActionMode, action_dispatch
 from .._errors import _handle_redmine_error
+from .files import _build_upload_descriptors
 from .._serialization import (
     _attachment_to_dict,
     _iter_capped,
@@ -141,6 +142,7 @@ async def _create_wiki_page_action(
     wiki_page_title: Optional[str] = None,
     text: Optional[str] = None,
     comments: Optional[str] = None,
+    uploads: Optional[List[Dict[str, Any]]] = None,
     **_: Any,
 ) -> Dict[str, Any]:
     title_error = _require_wiki_page_title("create", wiki_page_title)
@@ -149,13 +151,23 @@ async def _create_wiki_page_action(
     if text is None:
         return {"error": "text is required for action 'create'"}
 
+    upload_descriptors = None
+    if uploads:
+        upload_descriptors, upload_error = await _build_upload_descriptors(uploads)
+        if upload_error is not None:
+            return upload_error
+
+    create_kwargs: Dict[str, Any] = {
+        "project_id": project_id,
+        "title": wiki_page_title,
+        "text": text,
+        "comments": comments if comments else None,
+    }
+    if upload_descriptors:
+        create_kwargs["uploads"] = upload_descriptors
+
     try:
-        wiki_page = _get_redmine_client().wiki_page.create(
-            project_id=project_id,
-            title=wiki_page_title,
-            text=text,
-            comments=comments if comments else None,
-        )
+        wiki_page = _get_redmine_client().wiki_page.create(**create_kwargs)
         return _wiki_page_to_dict(wiki_page)
     except Exception as e:
         return _handle_redmine_error(
@@ -302,6 +314,7 @@ async def manage_redmine_wiki_page(
     comments: Optional[str] = None,
     new_title: Optional[str] = None,
     redirect_existing_links: bool = True,
+    uploads: Optional[List[Dict[str, Any]]] = None,
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """List, get, create, update, delete, or rename a Redmine wiki page.
 
@@ -321,6 +334,15 @@ async def manage_redmine_wiki_page(
         redirect_existing_links: When ``True`` (default), the rename
             creates a redirect from ``wiki_page_title`` to ``new_title``.
             Passed to the API as ``"1"`` / ``"0"``.
+        uploads: Files to attach, for ``create`` and ``update`` only.
+            Maximum 10 items, 50 MiB each. Each item needs exactly ONE
+            source key: ``file_path`` (a path on the server, inside
+            ``REDMINE_MCP_UPLOAD_FILE_ROOTS``), ``source_url`` (an HTTP(S)
+            URL the server fetches), or ``content_base64``. Prefer
+            ``file_path`` or ``source_url``: ``content_base64`` sends the
+            whole file through the model. Optional per item: ``filename``
+            (required with ``content_base64``), ``content_type``,
+            ``description``. Ignored by the other actions.
 
     Returns:
         ``list``: list of page metadata dicts (no body text).
