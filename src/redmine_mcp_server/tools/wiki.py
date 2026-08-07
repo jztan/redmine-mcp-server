@@ -188,8 +188,12 @@ async def _update_wiki_page_action(
     title_error = _require_wiki_page_title("update", wiki_page_title)
     if title_error is not None:
         return {"error": title_error}
-    if text is None:
-        return {"error": "text is required for action 'update'"}
+    if text is None and not uploads:
+        return {
+            "error": (
+                "text is required for action 'update' unless uploads is provided."
+            )
+        }
 
     upload_descriptors = None
     if uploads:
@@ -199,7 +203,6 @@ async def _update_wiki_page_action(
 
     update_kwargs: Dict[str, Any] = {
         "project_id": project_id,
-        "text": text,
         "comments": comments if comments else None,
     }
     if upload_descriptors:
@@ -207,6 +210,17 @@ async def _update_wiki_page_action(
 
     try:
         client = _get_redmine_client()
+        if text is None:
+            # Redmine rejects a wiki PUT with a blank body (422 "Text field
+            # cannot be blank"), so an attachment-only update re-reads the page
+            # and echoes its text back. Sending the version read here turns a
+            # concurrent edit into a 409 instead of a silent revert. Unchanged
+            # text does not create a new revision.
+            existing = client.wiki_page.get(wiki_page_title, project_id=project_id)
+            update_kwargs["text"] = existing.text
+            update_kwargs["version"] = existing.version
+        else:
+            update_kwargs["text"] = text
         client.wiki_page.update(wiki_page_title, **update_kwargs)
         wiki_page = client.wiki_page.get(wiki_page_title, project_id=project_id)
         return _wiki_page_to_dict(wiki_page)
@@ -336,7 +350,10 @@ async def manage_redmine_wiki_page(
         version: Specific version to retrieve (``get`` only, optional).
         include_attachments: Include attachment metadata in ``get``
             response. Default ``True``.
-        text: Page content. Required for ``create`` and ``update``.
+        text: Page content. Required for ``create``. Required for
+            ``update`` unless ``uploads`` is given, in which case the
+            server reuses the page's current text so an attachment-only
+            update does not have to resend the body.
         comments: Change log comment. Optional for ``create`` and
             ``update``.
         new_title: New title for the page (required for ``rename``).

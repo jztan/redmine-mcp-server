@@ -96,3 +96,60 @@ async def test_update_upload_failure_short_circuits(mock_redmine):
 
     assert "uploads[0]" in result["error"]
     mock_redmine.wiki_page.update.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch("redmine_mcp_server._client.redmine")
+async def test_attachment_only_update_reuses_fetched_text_and_version(mock_redmine):
+    mock_redmine.upload.return_value = {"token": "tok-3"}
+    mock_redmine.wiki_page.get.return_value = _make_wiki_page(
+        text="existing body", version=7
+    )
+
+    result = await manage_redmine_wiki_page(
+        action="update",
+        project_id="proj",
+        wiki_page_title="Page",
+        uploads=[{"filename": "diagram.drawio", "content_base64": B64}],
+    )
+
+    assert "error" not in result
+    _, kwargs = mock_redmine.wiki_page.update.call_args
+    # Body came from the server, never from the caller.
+    assert kwargs["text"] == "existing body"
+    # Version is echoed back so a concurrent edit 409s instead of reverting.
+    assert kwargs["version"] == 7
+    assert kwargs["uploads"] == [{"token": "tok-3", "filename": "diagram.drawio"}]
+
+
+@pytest.mark.asyncio
+@patch("redmine_mcp_server._client.redmine")
+async def test_update_without_text_or_uploads_is_rejected(mock_redmine):
+    result = await manage_redmine_wiki_page(
+        action="update",
+        project_id="proj",
+        wiki_page_title="Page",
+    )
+
+    assert "text is required" in result["error"]
+    mock_redmine.wiki_page.update.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch("redmine_mcp_server._client.redmine")
+async def test_attachment_only_update_skips_readback_when_text_given(mock_redmine):
+    mock_redmine.upload.return_value = {"token": "tok-4"}
+    mock_redmine.wiki_page.get.return_value = _make_wiki_page(text="server body")
+
+    await manage_redmine_wiki_page(
+        action="update",
+        project_id="proj",
+        wiki_page_title="Page",
+        text="caller body",
+        uploads=[{"filename": "a.txt", "content_base64": B64}],
+    )
+
+    _, kwargs = mock_redmine.wiki_page.update.call_args
+    assert kwargs["text"] == "caller body"
+    # Exactly one get(), the post-update re-fetch. No read-back happened.
+    assert mock_redmine.wiki_page.get.call_count == 1
