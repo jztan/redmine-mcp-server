@@ -185,16 +185,16 @@ async def _resolve_upload_content(
     return content_bytes, explicit, None
 
 
-async def _build_issue_uploads(
+async def _build_upload_descriptors(
     uploads: List[Dict[str, Any]],
 ) -> tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
     """Resolve and upload each entry, returning python-redmine upload descriptors.
 
-    Resolve and upload are interleaved per entry so peak memory stays bounded to
-    a single file. Returns ``(descriptors, None)`` on success or
-    ``([], {"error": ...})`` on the first failing entry, before any issue is
-    touched. Descriptor keys: token, filename, and optional content_type /
-    description.
+    Shared by issue and wiki write paths. Resolve and upload are interleaved per
+    entry so peak memory stays bounded to a single file. Returns
+    ``(descriptors, None)`` on success or ``([], {"error": ...})`` on the first
+    failing entry, before any resource is touched. Descriptor keys: token,
+    filename, and optional content_type / description.
     """
     if len(uploads) > _MAX_UPLOADS_PER_CALL:
         return [], {
