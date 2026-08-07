@@ -5,6 +5,7 @@ This module contains integration tests that test the actual connection
 to Redmine and the overall functionality of the MCP server.
 """
 
+import base64
 import os
 import sys
 
@@ -2148,6 +2149,54 @@ class TestTagsPluginIntegration:
             assert {"mcp-verify-tag", "mcp-verify-two"} <= names
         finally:
             await delete_redmine_issue(issue_id, confirm_delete=True)
+
+
+@pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_wiki_upload_and_attachment_only_update():
+    """Attach on create, then attach again without resending the body."""
+    redmine = _get_redmine_or_none()
+    if redmine is None:
+        pytest.skip("Redmine client not initialized")
+
+    from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
+
+    title = "Integration_Upload_Probe"
+    project_id = os.getenv("REDMINE_TEST_PROJECT", "testing-project1")
+    payload = base64.b64encode(b"integration probe").decode("ascii")
+
+    created = await manage_redmine_wiki_page(
+        action="create",
+        project_id=project_id,
+        wiki_page_title=title,
+        text="# Probe\n\nbody",
+        uploads=[{"filename": "probe_one.txt", "content_base64": payload}],
+    )
+    assert "error" not in created, created
+
+    try:
+        fetched = await manage_redmine_wiki_page(
+            action="get", project_id=project_id, wiki_page_title=title
+        )
+        names = {a["filename"] for a in fetched["attachments"]}
+        assert "probe_one.txt" in names
+
+        # Attachment-only: no text passed, body must survive untouched.
+        updated = await manage_redmine_wiki_page(
+            action="update",
+            project_id=project_id,
+            wiki_page_title=title,
+            uploads=[{"filename": "probe_two.txt", "content_base64": payload}],
+        )
+        assert "error" not in updated, updated
+        assert "body" in updated["text"]
+        names = {a["filename"] for a in updated["attachments"]}
+        assert {"probe_one.txt", "probe_two.txt"} <= names
+    finally:
+        await manage_redmine_wiki_page(
+            action="delete", project_id=project_id, wiki_page_title=title
+        )
 
 
 if __name__ == "__main__":
