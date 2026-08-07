@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reference them and to defer the release process to `scripts/release.py`.
 
 ### Fixed
+- `show_project_dashboard` now shows the project name instead of the raw
+  project id in its header and in the "N issues total in X" ring label, matching
+  `show_triage_board`. Both apps resolve the label from the fetched issues, but
+  the dashboard did not request the `project` field, so the id fallback fired on
+  every render.
 - SSL settings are no longer overridden by the environment
   ([#197](https://github.com/jztan/redmine-mcp-server/issues/197)). `requests`
   fills an unset per-request `verify` from `REQUESTS_CA_BUNDLE` /
