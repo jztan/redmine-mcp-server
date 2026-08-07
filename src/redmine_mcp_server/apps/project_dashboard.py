@@ -175,7 +175,8 @@ async def _build_dashboard_payload(
     open_resp = await list_redmine_issues(
         project_id=project_id,
         status_id="open",
-        fields=_OPEN_FIELDS,
+        # "project" is fetched only for _project_name resolution, not per-issue.
+        fields=_OPEN_FIELDS + ["project"],
         limit=_DASH_LIMIT,
         include_pagination_info=True,
         filters=filters,

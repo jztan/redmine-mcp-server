@@ -227,6 +227,37 @@ async def test_build_payload_truncated_flag():
 
 
 @pytest.mark.asyncio
+async def test_open_fetch_requests_project_field_for_name_resolution():
+    """The open-issues fetch must ask Redmine for the ``project`` field.
+
+    ``_project_name`` resolves the header label from ``issue["project"]`` and
+    falls back to ``str(project_id)`` when no issue carries it. Since
+    ``list_redmine_issues`` returns only the fields it is asked for, leaving
+    ``project`` out of the request makes that fallback fire on every render,
+    so the dashboard header shows the raw id instead of the project name.
+
+    Asserting on the payload is not enough: a mock is free to return a
+    ``project`` key that the real call would never send, which is how this
+    regressed without a failing test.
+    """
+    side = [_open_resp([], total=0), _open_resp([], total=0), []]
+    list_mock = AsyncMock(side_effect=side)
+    with (
+        patch.object(
+            pd, "list_redmine_issue_statuses", AsyncMock(return_value=_STATUSES)
+        ),
+        patch.object(
+            pd, "list_redmine_issue_priorities", AsyncMock(return_value=_PRIORITIES)
+        ),
+        patch.object(pd, "list_redmine_issues", list_mock),
+        patch.object(pd, "_open_created_this_week", AsyncMock(return_value=0)),
+    ):
+        await pd._build_dashboard_payload(9)
+
+    assert "project" in list_mock.call_args_list[0].kwargs["fields"]
+
+
+@pytest.mark.asyncio
 async def test_build_payload_passes_through_statuses_error():
     ps, pp, pl, pd_delta = _patch_calls({"error": "boom"}, _PRIORITIES, [])
     with ps, pp, pl, pd_delta:
