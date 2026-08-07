@@ -182,6 +182,7 @@ async def _update_wiki_page_action(
     wiki_page_title: Optional[str] = None,
     text: Optional[str] = None,
     comments: Optional[str] = None,
+    uploads: Optional[List[Dict[str, Any]]] = None,
     **_: Any,
 ) -> Dict[str, Any]:
     title_error = _require_wiki_page_title("update", wiki_page_title)
@@ -190,16 +191,24 @@ async def _update_wiki_page_action(
     if text is None:
         return {"error": "text is required for action 'update'"}
 
+    upload_descriptors = None
+    if uploads:
+        upload_descriptors, upload_error = await _build_upload_descriptors(uploads)
+        if upload_error is not None:
+            return upload_error
+
+    update_kwargs: Dict[str, Any] = {
+        "project_id": project_id,
+        "text": text,
+        "comments": comments if comments else None,
+    }
+    if upload_descriptors:
+        update_kwargs["uploads"] = upload_descriptors
+
     try:
-        _get_redmine_client().wiki_page.update(
-            wiki_page_title,
-            project_id=project_id,
-            text=text,
-            comments=comments if comments else None,
-        )
-        wiki_page = _get_redmine_client().wiki_page.get(
-            wiki_page_title, project_id=project_id
-        )
+        client = _get_redmine_client()
+        client.wiki_page.update(wiki_page_title, **update_kwargs)
+        wiki_page = client.wiki_page.get(wiki_page_title, project_id=project_id)
         return _wiki_page_to_dict(wiki_page)
     except Exception as e:
         return _handle_redmine_error(

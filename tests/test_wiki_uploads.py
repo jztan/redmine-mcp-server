@@ -58,3 +58,41 @@ async def test_create_upload_failure_short_circuits(mock_redmine):
 
     assert "uploads[0]" in result["error"]
     mock_redmine.wiki_page.create.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch("redmine_mcp_server._client.redmine")
+async def test_update_with_text_passes_upload_descriptors(mock_redmine):
+    mock_redmine.upload.return_value = {"token": "tok-2"}
+    mock_redmine.wiki_page.get.return_value = _make_wiki_page(text="new body")
+
+    result = await manage_redmine_wiki_page(
+        action="update",
+        project_id="proj",
+        wiki_page_title="Page",
+        text="new body",
+        uploads=[{"filename": "a.txt", "content_base64": B64}],
+    )
+
+    assert "error" not in result
+    args, kwargs = mock_redmine.wiki_page.update.call_args
+    assert args[0] == "Page"
+    assert kwargs["text"] == "new body"
+    assert kwargs["uploads"] == [{"token": "tok-2", "filename": "a.txt"}]
+    # Explicit text means no read-back, so version is not sent.
+    assert "version" not in kwargs
+
+
+@pytest.mark.asyncio
+@patch("redmine_mcp_server._client.redmine")
+async def test_update_upload_failure_short_circuits(mock_redmine):
+    result = await manage_redmine_wiki_page(
+        action="update",
+        project_id="proj",
+        wiki_page_title="Page",
+        text="new body",
+        uploads=[{"content_base64": B64}],  # no filename -> resolver error
+    )
+
+    assert "uploads[0]" in result["error"]
+    mock_redmine.wiki_page.update.assert_not_called()
