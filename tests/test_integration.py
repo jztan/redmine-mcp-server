@@ -7,6 +7,7 @@ to Redmine and the overall functionality of the MCP server.
 
 import base64
 import os
+import re
 import sys
 
 import pytest
@@ -21,6 +22,23 @@ from redmine_mcp_server._client import (  # noqa: E402
 from redmine_mcp_server.tools.time_tracking import (  # noqa: E402
     list_time_entry_activities,
 )
+
+_INSECURE_CONTENT_PATTERN = re.compile(
+    r"^<insecure-content-([0-9a-f]{16})>\n(.*)\n</insecure-content-\1>$",
+    re.DOTALL,
+)
+
+
+def _unwrap_insecure_content(value):
+    """Strip the wrap_insecure_content() boundary tag, if present.
+
+    wrap_insecure_content() mints a fresh random nonce on every call, so
+    two separately-serialized responses carrying the same underlying text
+    will not be equal as raw strings. Compare the inner content instead.
+    Returns the value unchanged if it is not boundary-wrapped.
+    """
+    match = _INSECURE_CONTENT_PATTERN.match(value)
+    return match.group(2) if match else value
 
 
 def _get_redmine_or_none():
@@ -2190,7 +2208,9 @@ async def test_wiki_upload_and_attachment_only_update():
             uploads=[{"filename": "probe_two.txt", "content_base64": payload}],
         )
         assert "error" not in updated, updated
-        assert "body" in updated["text"]
+        assert _unwrap_insecure_content(updated["text"]) == _unwrap_insecure_content(
+            created["text"]
+        )
         names = {a["filename"] for a in updated["attachments"]}
         assert {"probe_one.txt", "probe_two.txt"} <= names
     finally:
