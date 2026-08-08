@@ -9,6 +9,7 @@ import base64
 import os
 import re
 import sys
+from urllib.parse import quote
 
 import pytest
 
@@ -16,8 +17,12 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from redmine_mcp_server._client import (  # noqa: E402
+    _build_requests_config,
     _get_redmine_client,
+    REDMINE_API_KEY,
+    REDMINE_PASSWORD,
     REDMINE_URL,
+    REDMINE_USERNAME,
 )
 from redmine_mcp_server.tools.time_tracking import (  # noqa: E402
     list_time_entry_activities,
@@ -2222,6 +2227,120 @@ async def test_wiki_upload_and_attachment_only_update():
         )
         names = {a["filename"] for a in updated["attachments"]}
         assert {"probe_one.txt", "probe_two.txt"} <= names
+    finally:
+        await manage_redmine_wiki_page(
+            action="delete", project_id=project_id, wiki_page_title=title
+        )
+
+
+_DRAWIO_SKIP = pytest.mark.skipif(
+    not REDMINE_URL
+    or os.getenv("REDMINE_DRAWIO_ENABLED", "false").strip().lower()
+    not in {"1", "true", "yes", "on"},
+    reason="REDMINE_URL not configured or REDMINE_DRAWIO_ENABLED not true",
+)
+
+# A minimal drawio document. The label is what proves the plugin read the
+# bytes we uploaded: it can only reach the rendered page by way of the
+# attachment, so finding it rules out an empty diagram container.
+_DRAWIO_LABEL = "MCP Drawio Probe"
+_DRAWIO_XML = (
+    '<mxfile host="app.diagrams.net">'
+    '<diagram id="probe" name="Page-1">'
+    '<mxGraphModel dx="800" dy="600" grid="0" page="1"><root>'
+    '<mxCell id="0"/><mxCell id="1" parent="0"/>'
+    f'<mxCell id="2" value="{_DRAWIO_LABEL}" style="rounded=1" vertex="1" '
+    'parent="1"><mxGeometry x="80" y="80" width="160" height="60" '
+    'as="geometry"/></mxCell>'
+    "</root></mxGraphModel></diagram></mxfile>"
+)
+
+
+def _fetch_wiki_html(project_id, title):
+    """GET a wiki page as HTML, so macro expansion can be inspected.
+
+    The REST API hands back the raw wiki source, which says nothing about
+    whether a macro rendered. Redmine's WikiController declares
+    ``accept_api_auth`` on ``show``, so API-key and Basic credentials both
+    authenticate this request even though the response is HTML.
+    """
+    import requests
+
+    config = dict(_build_requests_config())
+    session = requests.Session()
+    session.trust_env = config.pop("trust_env", True)
+    for attr, value in config.items():
+        setattr(session, attr, value)
+
+    url = f"{REDMINE_URL}/projects/{project_id}/wiki/{quote(title)}"
+    kwargs = {}
+    if REDMINE_API_KEY:
+        kwargs["params"] = {"key": REDMINE_API_KEY}
+    else:
+        kwargs["auth"] = (REDMINE_USERNAME, REDMINE_PASSWORD)
+
+    try:
+        return session.get(url, allow_redirects=False, **kwargs)
+    finally:
+        session.close()
+
+
+@_DRAWIO_SKIP
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_drawio_macro_renders_uploaded_diagram():
+    """A .drawio upload plus the macro renders as a diagram, not macro text.
+
+    Requires the `redmine_drawio` plugin on the target server, hence the
+    REDMINE_DRAWIO_ENABLED gate (a test-only switch; unlike
+    REDMINE_AGILE_ENABLED / REDMINE_TAGS_ENABLED the server does not read
+    it). Uploading a diagram is byte-identical to any other binary upload
+    from the server's side, so the assertion that carries the weight is on
+    the rendered HTML: it is the only place the plugin's own behaviour shows.
+    """
+    redmine = _get_redmine_or_none()
+    if redmine is None:
+        pytest.skip("Redmine client not initialized")
+
+    from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
+
+    title = "Integration_Drawio_Probe"
+    project_id = os.getenv("REDMINE_TEST_PROJECT", "testing-project1")
+    filename = "mcp_probe.drawio"
+    payload = base64.b64encode(_DRAWIO_XML.encode("utf-8")).decode("ascii")
+
+    # Best-effort cleanup of a page left behind by a previous crashed run;
+    # see test_wiki_upload_and_attachment_only_update for why the result of
+    # this delete is ignored.
+    await manage_redmine_wiki_page(
+        action="delete", project_id=project_id, wiki_page_title=title
+    )
+
+    created = await manage_redmine_wiki_page(
+        action="create",
+        project_id=project_id,
+        wiki_page_title=title,
+        text=f"h1. Diagram probe\n\n{{{{drawio_attach({filename})}}}}\n",
+        uploads=[{"filename": filename, "content_base64": payload}],
+    )
+    assert "error" not in created, created
+
+    try:
+        assert filename in {a["filename"] for a in created["attachments"]}
+
+        response = _fetch_wiki_html(project_id, title)
+        assert response.status_code == 200, (
+            f"expected the rendered page, got HTTP {response.status_code} "
+            f"({response.headers.get('location', 'no redirect target')})"
+        )
+        html = response.text
+
+        # The macro either expands into a mxgraph container or is left in the
+        # page as literal text / a macro error, so both directions are checked.
+        assert 'class="mxgraph"' in html, "drawio macro did not render a diagram"
+        assert "drawio_attach" not in html, "macro text survived into the page"
+        assert "Error executing" not in html, "Redmine reported a macro error"
+        assert _DRAWIO_LABEL in html, "rendered diagram does not carry our XML"
     finally:
         await manage_redmine_wiki_page(
             action="delete", project_id=project_id, wiki_page_title=title

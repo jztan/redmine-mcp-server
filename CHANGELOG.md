@@ -59,6 +59,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shape and those actions return the page again. `list` and `delete` were
   unaffected, as are Redmine versions before 7.0, which omit the field.
 
+### Dependencies
+- `requests` is now a declared direct dependency (`>=2.31.0,<3`). The server
+  configures `requests` sessions itself for the SSL fixes above, so it was
+  relying on it directly while only receiving it transitively.
+- Bump `cryptography` 49.0.0 to 50.0.0, widening the ceiling to `<51`
+  ([#198](https://github.com/jztan/redmine-mcp-server/pull/198)), and `uvicorn`
+  0.51.0 to 0.52.1, a lockfile-only move within the existing `<1` bound
+  ([#199](https://github.com/jztan/redmine-mcp-server/pull/199)).
+- Bump the pinned GitHub Actions: `actions/checkout` to v7.0.1 and
+  `actions/setup-python` to v7.0.0 across all workflows. The Pages workflow's
+  actions (`checkout`, `configure-pages`, `upload-pages-artifact`,
+  `deploy-pages`) were still on floating major tags and are now pinned to
+  commit SHAs like the rest.
+
+### Tests
+- Integration coverage for the `redmine_drawio` macro, gated on a new test-only
+  `REDMINE_DRAWIO_ENABLED=true` flag. Wiki uploads were covered only for plain
+  files, leaving the diagram path to manual verification. The test uploads a
+  `.drawio` file alongside `{{drawio_attach(...)}}` and then asserts against the
+  rendered wiki HTML rather than the REST response, which returns raw wiki
+  source and so cannot show whether the macro expanded: it checks that a diagram
+  container is present, that the macro text did not survive into the page, that
+  Redmine reported no macro error, and that the uploaded XML reached the output.
+  Unlike the agile and tags flags, this one is never read by the server, since a
+  `.drawio` upload is an ordinary binary attachment as far as the API is
+  concerned. `docs/contributing.md` now lists all three plugin-gated flags and
+  what each covers.
+
 ### Contributors
 - @azelcs — diagnosed and fixed the Redmine 7.0 wiki page serialization crash,
   including the silent dict-ref data loss in `_named_ref`

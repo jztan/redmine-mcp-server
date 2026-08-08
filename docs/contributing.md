@@ -259,6 +259,22 @@ RUN_DESTRUCTIVE_TESTS=1 python tests/run_tests.py --integration
 
 Re-mint the test bearer through the sandbox's OAuth user-flow before re-running.
 
+**Plugin-gated integration tests:**
+
+Some integration tests need a Redmine plugin installed on the target server, so they are opt-in behind an environment flag and skip with a clear reason otherwise:
+
+| Flag | Plugin | Covers |
+|------|--------|--------|
+| `REDMINE_AGILE_ENABLED=true` | RedmineUP Agile | `story_points`, `agile_sprint_id`, `agile_position` |
+| `REDMINE_TAGS_ENABLED=true` | `additional_tags` | the `tags` array and `tag_list` writes |
+| `REDMINE_DRAWIO_ENABLED=true` | `redmine_drawio` | `{{drawio_attach(...)}}` rendering a `.drawio` upload |
+
+The first two are read by the server itself; `REDMINE_DRAWIO_ENABLED` is test-only, since the drawio plugin needs no server-side support (a `.drawio` upload is an ordinary binary attachment). The drawio test asserts against the *rendered* wiki HTML rather than the REST response, because the API returns raw wiki source, which cannot show whether the macro expanded. Set the flag only against a server that has the plugin; without it the test fails rather than skips, which is deliberate: the flag is the opt-in, so a silently broken plugin still surfaces.
+
+```bash
+REDMINE_DRAWIO_ENABLED=true python -m pytest tests/test_integration.py -m integration -k drawio
+```
+
 **Writing Tests:**
 
 ```python
