@@ -2184,6 +2184,15 @@ async def test_wiki_upload_and_attachment_only_update():
     project_id = os.getenv("REDMINE_TEST_PROJECT", "testing-project1")
     payload = base64.b64encode(b"integration probe").decode("ascii")
 
+    # Best-effort cleanup of a page left behind by a previous crashed run.
+    # Wiki create is a PUT upsert: against an already-existing page it
+    # returns 204, which python-redmine surfaces as a ValidationError
+    # ("Resource already exists"). The result is ignored here, covering
+    # both the normal first run (page not found) and a stale leftover.
+    await manage_redmine_wiki_page(
+        action="delete", project_id=project_id, wiki_page_title=title
+    )
+
     created = await manage_redmine_wiki_page(
         action="create",
         project_id=project_id,

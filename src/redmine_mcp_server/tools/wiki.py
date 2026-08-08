@@ -195,6 +195,31 @@ async def _update_wiki_page_action(
             )
         }
 
+    existing_text = None
+    existing_version = None
+    if text is None:
+        # Redmine rejects a wiki PUT with a blank body (422 "Text field
+        # cannot be blank"), so an attachment-only update re-reads the page
+        # and echoes its text back. This read-back MUST happen before
+        # _build_upload_descriptors() below: that call already POSTs each
+        # file to /uploads.json, so if it ran first and the title/project
+        # turned out to be wrong, the read-back's 404 would strand those
+        # already-uploaded blobs on the server with nothing left to attach
+        # them to. Doing the cheap, most-likely-to-fail GET first avoids
+        # that. Do not reorder this back for "tidiness".
+        try:
+            existing = _get_redmine_client().wiki_page.get(
+                wiki_page_title, project_id=project_id
+            )
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"updating wiki page '{wiki_page_title}' in project {project_id}",
+                {"resource_type": "wiki page", "resource_id": wiki_page_title},
+            )
+        existing_text = existing.text
+        existing_version = existing.version
+
     upload_descriptors = None
     if uploads:
         upload_descriptors, upload_error = await _build_upload_descriptors(uploads)
@@ -211,14 +236,11 @@ async def _update_wiki_page_action(
     try:
         client = _get_redmine_client()
         if text is None:
-            # Redmine rejects a wiki PUT with a blank body (422 "Text field
-            # cannot be blank"), so an attachment-only update re-reads the page
-            # and echoes its text back. Sending the version read here turns a
-            # concurrent edit into a 409 instead of a silent revert. Unchanged
-            # text does not create a new revision.
-            existing = client.wiki_page.get(wiki_page_title, project_id=project_id)
-            update_kwargs["text"] = existing.text
-            update_kwargs["version"] = existing.version
+            # Sending the version read above turns a concurrent edit into a
+            # 409 instead of a silent revert. Unchanged text does not create
+            # a new revision.
+            update_kwargs["text"] = existing_text
+            update_kwargs["version"] = existing_version
         else:
             update_kwargs["text"] = text
         client.wiki_page.update(wiki_page_title, **update_kwargs)
@@ -361,8 +383,10 @@ async def manage_redmine_wiki_page(
             creates a redirect from ``wiki_page_title`` to ``new_title``.
             Passed to the API as ``"1"`` / ``"0"``.
         uploads: Files to attach, for ``create`` and ``update`` only.
+            Requires the ``edit_wiki_pages`` permission on the project.
             Maximum 10 items, 50 MiB each. Each item needs exactly ONE
             source key: ``file_path`` (a path on the server, inside
+            ``ATTACHMENTS_DIR`` or a directory listed in
             ``REDMINE_MCP_UPLOAD_FILE_ROOTS``), ``source_url`` (an HTTP(S)
             URL the server fetches), or ``content_base64``. Prefer
             ``file_path`` or ``source_url``: ``content_base64`` sends the

@@ -1776,7 +1776,7 @@ List, get, create, update, delete, or rename a Redmine wiki page. Replaces `list
 - `comments` (string, optional): Change log comment for `create` and `update`
 - `new_title` (string): New title for `rename` (must differ from `wiki_page_title`)
 - `redirect_existing_links` (boolean, optional): When `true` (default), `rename` creates a `WikiRedirect` from the old title to the new title
-- `uploads` (list, optional): Files to attach to the page on `create` and `update`. Maximum 10 items. Each item is an object with:
+- `uploads` (list, optional): Files to attach to the page on `create` and `update`. Requires the `edit_wiki_pages` permission on the project. Maximum 10 items. Each item is an object with:
   - Exactly ONE source key:
     - `file_path` (string): Absolute path to a file already on the server. Must be inside `ATTACHMENTS_DIR` or a directory listed in `REDMINE_MCP_UPLOAD_FILE_ROOTS`. Filename is derived from the path if omitted.
     - `source_url` (string): HTTP(S) URL the server fetches. Filename is derived from the URL or `Content-Disposition` if omitted.
