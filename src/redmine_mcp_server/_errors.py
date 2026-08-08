@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional
 
 from redminelib.exceptions import (
     AuthError,
+    ConflictError,
     ForbiddenError,
     HTTPProtocolError,
     ResourceNotFoundError,
@@ -155,6 +156,16 @@ def _handle_redmine_error(
     if isinstance(e, ValidationError):
         logger.warning(f"Validation error during {operation}: {e}")
         return {"error": f"Validation failed: {_scrub_error_message(str(e))}"}
+
+    if isinstance(e, ConflictError):
+        resource_type = context.get("resource_type", "resource")
+        logger.warning(f"Edit conflict during {operation}: {e}")
+        return {
+            "error": (
+                f"Edit conflict: this {resource_type} changed on the server "
+                "since it was read. Re-read it and retry."
+            )
+        }
 
     if isinstance(e, VersionMismatchError):
         return {"error": _scrub_error_message(str(e))}

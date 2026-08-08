@@ -5,7 +5,9 @@ This module contains integration tests that test the actual connection
 to Redmine and the overall functionality of the MCP server.
 """
 
+import base64
 import os
+import re
 import sys
 
 import pytest
@@ -20,6 +22,23 @@ from redmine_mcp_server._client import (  # noqa: E402
 from redmine_mcp_server.tools.time_tracking import (  # noqa: E402
     list_time_entry_activities,
 )
+
+_INSECURE_CONTENT_PATTERN = re.compile(
+    r"^<insecure-content-([0-9a-f]{16})>\n(.*)\n</insecure-content-\1>$",
+    re.DOTALL,
+)
+
+
+def _unwrap_insecure_content(value):
+    """Strip the wrap_insecure_content() boundary tag, if present.
+
+    wrap_insecure_content() mints a fresh random nonce on every call, so
+    two separately-serialized responses carrying the same underlying text
+    will not be equal as raw strings. Compare the inner content instead.
+    Returns the value unchanged if it is not boundary-wrapped.
+    """
+    match = _INSECURE_CONTENT_PATTERN.match(value)
+    return match.group(2) if match else value
 
 
 def _get_redmine_or_none():
@@ -2148,6 +2167,65 @@ class TestTagsPluginIntegration:
             assert {"mcp-verify-tag", "mcp-verify-two"} <= names
         finally:
             await delete_redmine_issue(issue_id, confirm_delete=True)
+
+
+@pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_wiki_upload_and_attachment_only_update():
+    """Attach on create, then attach again without resending the body."""
+    redmine = _get_redmine_or_none()
+    if redmine is None:
+        pytest.skip("Redmine client not initialized")
+
+    from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
+
+    title = "Integration_Upload_Probe"
+    project_id = os.getenv("REDMINE_TEST_PROJECT", "testing-project1")
+    payload = base64.b64encode(b"integration probe").decode("ascii")
+
+    # Best-effort cleanup of a page left behind by a previous crashed run.
+    # Wiki create is a PUT upsert: against an already-existing page it
+    # returns 204, which python-redmine surfaces as a ValidationError
+    # ("Resource already exists"). The result is ignored here, covering
+    # both the normal first run (page not found) and a stale leftover.
+    await manage_redmine_wiki_page(
+        action="delete", project_id=project_id, wiki_page_title=title
+    )
+
+    created = await manage_redmine_wiki_page(
+        action="create",
+        project_id=project_id,
+        wiki_page_title=title,
+        text="# Probe\n\nbody",
+        uploads=[{"filename": "probe_one.txt", "content_base64": payload}],
+    )
+    assert "error" not in created, created
+
+    try:
+        fetched = await manage_redmine_wiki_page(
+            action="get", project_id=project_id, wiki_page_title=title
+        )
+        names = {a["filename"] for a in fetched["attachments"]}
+        assert "probe_one.txt" in names
+
+        # Attachment-only: no text passed, body must survive untouched.
+        updated = await manage_redmine_wiki_page(
+            action="update",
+            project_id=project_id,
+            wiki_page_title=title,
+            uploads=[{"filename": "probe_two.txt", "content_base64": payload}],
+        )
+        assert "error" not in updated, updated
+        assert _unwrap_insecure_content(updated["text"]) == _unwrap_insecure_content(
+            created["text"]
+        )
+        names = {a["filename"] for a in updated["attachments"]}
+        assert {"probe_one.txt", "probe_two.txt"} <= names
+    finally:
+        await manage_redmine_wiki_page(
+            action="delete", project_id=project_id, wiki_page_title=title
+        )
 
 
 if __name__ == "__main__":

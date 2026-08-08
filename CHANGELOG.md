@@ -12,6 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SECURITY.md` (private vulnerability reporting, deployment model, and threat
   model), and a pull request template. `docs/contributing.md` updated to
   reference them and to defer the release process to `scripts/release.py`.
+- `manage_redmine_wiki_page` now accepts an `uploads` parameter on `create` and
+  `update`, so files can be attached to wiki pages
+  ([#202](https://github.com/jztan/redmine-mcp-server/issues/202)). Entries take
+  the same shape as the issue tools: `file_path`, `source_url`, or
+  `content_base64`. Redmine rejects a wiki update with a blank body, so an
+  attachment-only update re-reads the page server-side and resends its text
+  unchanged, which avoids routing the body through the model and creates no new
+  revision. The request carries the version read during that fetch, so a
+  concurrent edit returns an edit conflict instead of reverting silently.
 
 ### Fixed
 - `show_project_dashboard` now shows the project name instead of the raw
@@ -59,6 +68,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   disabled-verification warning immediately followed by
   `certificate verify failed`
   ([#197](https://github.com/jztan/redmine-mcp-server/issues/197))
+- @goizper — reported the missing `uploads` parameter on wiki pages
+  ([#202](https://github.com/jztan/redmine-mcp-server/issues/202))
 
 ## [2.9.0] - 2026-08-01
 ### Added

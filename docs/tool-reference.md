@@ -1772,10 +1772,18 @@ List, get, create, update, delete, or rename a Redmine wiki page. Replaces `list
 - `wiki_page_title` (string): Wiki page title. Required for all actions except `list`
 - `version` (integer, optional): Specific version number for `get` (default: latest)
 - `include_attachments` (boolean, optional): Include attachment metadata in `get` response. Default: `true`
-- `text` (string): Page content. Required for `create` and `update`
+- `text` (string): Page content. Required for `create`. Required for `update` unless `uploads` is provided, in which case the server reuses the page's current text
 - `comments` (string, optional): Change log comment for `create` and `update`
 - `new_title` (string): New title for `rename` (must differ from `wiki_page_title`)
 - `redirect_existing_links` (boolean, optional): When `true` (default), `rename` creates a `WikiRedirect` from the old title to the new title
+- `uploads` (list, optional): Files to attach to the page on `create` and `update`. Requires the `edit_wiki_pages` permission on the project. Maximum 10 items. Each item is an object with:
+  - Exactly ONE source key:
+    - `file_path` (string): Absolute path to a file already on the server. Must be inside `ATTACHMENTS_DIR` or a directory listed in `REDMINE_MCP_UPLOAD_FILE_ROOTS`. Filename is derived from the path if omitted.
+    - `source_url` (string): HTTP(S) URL the server fetches. Filename is derived from the URL or `Content-Disposition` if omitted.
+    - `content_base64` (string): Raw file bytes encoded as base64. `filename` is required when using this source. Prefer `file_path` or `source_url` where possible: base64 sends the entire file through the model, while a path or URL costs a few tokens regardless of file size.
+  - `filename` (string, optional): Name the attachment will have in Redmine. Required for `content_base64`; derived for other sources when omitted.
+  - `content_type` (string, optional): MIME type override (e.g. `"application/xml"`).
+  - `description` (string, optional): Human-readable description for the attachment.
 
 **Returns:**
 - `list`: array of page metadata dicts (`title`, `version`, `parent_title` if present, `created_on`, `updated_on`) — no body text
@@ -1783,6 +1791,8 @@ List, get, create, update, delete, or rename a Redmine wiki page. Replaces `list
 - `delete`: `{"success": true, "title": ..., "message": ...}`
 - `rename`: `{"success": true, ...}` plus the renamed page's metadata
 - Error: `{"error": "..."}`
+
+**Attachment-only updates:** Redmine rejects a wiki update with a blank body (`422 Text field cannot be blank`), so when `uploads` is given without `text` the server re-reads the page and sends its current text back unchanged. The body is never routed through the model, and because the text is identical Redmine does not create a new revision. The request carries the version read during that fetch, so a concurrent edit returns an edit-conflict error rather than silently reverting the other author's work.
 
 **Examples:**
 
@@ -1829,6 +1839,28 @@ manage_redmine_wiki_page(
     project_id="my-project",
     wiki_page_title="Old_Title",
     new_title="New_Title",
+)
+
+# Attach a diagram and reference it with the draw.io macro in one call.
+# The macro accepts png, svg, xml, and drawio attachments.
+manage_redmine_wiki_page(
+    action="update",
+    project_id="my-project",
+    wiki_page_title="Architecture",
+    text="# Architecture\n\n{{drawio_attach(diagram.drawio)}}\n",
+    uploads=[{"file_path": "/srv/attachments/diagram.drawio"}],
+)
+```
+
+Note that the `redmine_drawio` plugin creates a new attachment every time a diagram is saved rather than replacing the previous one, so diagram attachments accumulate on the page and stale ones have to be deleted manually.
+
+```python
+# Attach a file without touching the page body.
+manage_redmine_wiki_page(
+    action="update",
+    project_id="my-project",
+    wiki_page_title="Architecture",
+    uploads=[{"source_url": "https://example.com/spec.pdf"}],
 )
 ```
 

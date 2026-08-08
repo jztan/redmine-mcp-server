@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Literal, Optional, Union
 from .._client import _get_redmine_client
 from .._decorators import ActionMode, action_dispatch
 from .._errors import _handle_redmine_error
+from .files import _build_upload_descriptors
 from .._serialization import (
     _attachment_to_dict,
     _iter_capped,
@@ -141,6 +142,7 @@ async def _create_wiki_page_action(
     wiki_page_title: Optional[str] = None,
     text: Optional[str] = None,
     comments: Optional[str] = None,
+    uploads: Optional[List[Dict[str, Any]]] = None,
     **_: Any,
 ) -> Dict[str, Any]:
     title_error = _require_wiki_page_title("create", wiki_page_title)
@@ -149,13 +151,23 @@ async def _create_wiki_page_action(
     if text is None:
         return {"error": "text is required for action 'create'"}
 
+    upload_descriptors = None
+    if uploads:
+        upload_descriptors, upload_error = await _build_upload_descriptors(uploads)
+        if upload_error is not None:
+            return upload_error
+
+    create_kwargs: Dict[str, Any] = {
+        "project_id": project_id,
+        "title": wiki_page_title,
+        "text": text,
+        "comments": comments if comments else None,
+    }
+    if upload_descriptors:
+        create_kwargs["uploads"] = upload_descriptors
+
     try:
-        wiki_page = _get_redmine_client().wiki_page.create(
-            project_id=project_id,
-            title=wiki_page_title,
-            text=text,
-            comments=comments if comments else None,
-        )
+        wiki_page = _get_redmine_client().wiki_page.create(**create_kwargs)
         return _wiki_page_to_dict(wiki_page)
     except Exception as e:
         return _handle_redmine_error(
@@ -170,24 +182,69 @@ async def _update_wiki_page_action(
     wiki_page_title: Optional[str] = None,
     text: Optional[str] = None,
     comments: Optional[str] = None,
+    uploads: Optional[List[Dict[str, Any]]] = None,
     **_: Any,
 ) -> Dict[str, Any]:
     title_error = _require_wiki_page_title("update", wiki_page_title)
     if title_error is not None:
         return {"error": title_error}
+    if text is None and not uploads:
+        return {
+            "error": (
+                "text is required for action 'update' unless uploads is provided."
+            )
+        }
+
+    existing_text = None
+    existing_version = None
     if text is None:
-        return {"error": "text is required for action 'update'"}
+        # Redmine rejects a wiki PUT with a blank body (422 "Text field
+        # cannot be blank"), so an attachment-only update re-reads the page
+        # and echoes its text back. This read-back MUST happen before
+        # _build_upload_descriptors() below: that call already POSTs each
+        # file to /uploads.json, so if it ran first and the title/project
+        # turned out to be wrong, the read-back's 404 would strand those
+        # already-uploaded blobs on the server with nothing left to attach
+        # them to. Doing the cheap, most-likely-to-fail GET first avoids
+        # that. Do not reorder this back for "tidiness".
+        try:
+            existing = _get_redmine_client().wiki_page.get(
+                wiki_page_title, project_id=project_id
+            )
+            existing_text = existing.text
+            existing_version = existing.version
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"updating wiki page '{wiki_page_title}' in project {project_id}",
+                {"resource_type": "wiki page", "resource_id": wiki_page_title},
+            )
+
+    upload_descriptors = None
+    if uploads:
+        upload_descriptors, upload_error = await _build_upload_descriptors(uploads)
+        if upload_error is not None:
+            return upload_error
+
+    update_kwargs: Dict[str, Any] = {
+        "project_id": project_id,
+        "comments": comments if comments else None,
+    }
+    if upload_descriptors:
+        update_kwargs["uploads"] = upload_descriptors
 
     try:
-        _get_redmine_client().wiki_page.update(
-            wiki_page_title,
-            project_id=project_id,
-            text=text,
-            comments=comments if comments else None,
-        )
-        wiki_page = _get_redmine_client().wiki_page.get(
-            wiki_page_title, project_id=project_id
-        )
+        client = _get_redmine_client()
+        if text is None:
+            # Sending the version read above turns a concurrent edit into a
+            # 409 instead of a silent revert. Unchanged text does not create
+            # a new revision.
+            update_kwargs["text"] = existing_text
+            update_kwargs["version"] = existing_version
+        else:
+            update_kwargs["text"] = text
+        client.wiki_page.update(wiki_page_title, **update_kwargs)
+        wiki_page = client.wiki_page.get(wiki_page_title, project_id=project_id)
         return _wiki_page_to_dict(wiki_page)
     except Exception as e:
         return _handle_redmine_error(
@@ -302,6 +359,7 @@ async def manage_redmine_wiki_page(
     comments: Optional[str] = None,
     new_title: Optional[str] = None,
     redirect_existing_links: bool = True,
+    uploads: Optional[List[Dict[str, Any]]] = None,
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """List, get, create, update, delete, or rename a Redmine wiki page.
 
@@ -314,13 +372,27 @@ async def manage_redmine_wiki_page(
         version: Specific version to retrieve (``get`` only, optional).
         include_attachments: Include attachment metadata in ``get``
             response. Default ``True``.
-        text: Page content. Required for ``create`` and ``update``.
+        text: Page content. Required for ``create``. Required for
+            ``update`` unless ``uploads`` is given, in which case the
+            server reuses the page's current text so an attachment-only
+            update does not have to resend the body.
         comments: Change log comment. Optional for ``create`` and
             ``update``.
         new_title: New title for the page (required for ``rename``).
         redirect_existing_links: When ``True`` (default), the rename
             creates a redirect from ``wiki_page_title`` to ``new_title``.
             Passed to the API as ``"1"`` / ``"0"``.
+        uploads: Files to attach, for ``create`` and ``update`` only.
+            Requires the ``edit_wiki_pages`` permission on the project.
+            Maximum 10 items, 50 MiB each. Each item needs exactly ONE
+            source key: ``file_path`` (a path on the server, inside
+            ``ATTACHMENTS_DIR`` or a directory listed in
+            ``REDMINE_MCP_UPLOAD_FILE_ROOTS``), ``source_url`` (an HTTP(S)
+            URL the server fetches), or ``content_base64``. Prefer
+            ``file_path`` or ``source_url``: ``content_base64`` sends the
+            whole file through the model. Optional per item: ``filename``
+            (required with ``content_base64``), ``content_type``,
+            ``description``. Ignored by the other actions.
 
     Returns:
         ``list``: list of page metadata dicts (no body text).

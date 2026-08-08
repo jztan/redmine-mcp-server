@@ -200,7 +200,7 @@ async def test_resolve_source_url_uses_inferred_filename(monkeypatch):
     assert name == "inferred.png"
 
 
-from redmine_mcp_server.tools.files import _build_issue_uploads  # noqa: E402
+from redmine_mcp_server.tools.files import _build_upload_descriptors  # noqa: E402
 
 
 @pytest.mark.asyncio
@@ -208,7 +208,7 @@ from redmine_mcp_server.tools.files import _build_issue_uploads  # noqa: E402
 async def test_build_uploads_single_entry(mock_redmine):
     mock_redmine.upload.return_value = {"token": "tok-1"}
     b64 = _b64.b64encode(b"hi").decode("ascii")
-    descriptors, err = await _build_issue_uploads(
+    descriptors, err = await _build_upload_descriptors(
         [{"filename": "a.txt", "content_base64": b64}]
     )
     assert err is None
@@ -221,7 +221,7 @@ async def test_build_uploads_single_entry(mock_redmine):
 async def test_build_uploads_carries_content_type_and_description(mock_redmine):
     mock_redmine.upload.return_value = {"token": "t"}
     b64 = _b64.b64encode(b"hi").decode("ascii")
-    descriptors, err = await _build_issue_uploads(
+    descriptors, err = await _build_upload_descriptors(
         [
             {
                 "filename": "a.txt",
@@ -241,7 +241,7 @@ async def test_build_uploads_carries_content_type_and_description(mock_redmine):
 async def test_build_uploads_multi_entry(mock_redmine):
     mock_redmine.upload.side_effect = [{"token": "t1"}, {"token": "t2"}]
     b64 = _b64.b64encode(b"x").decode("ascii")
-    descriptors, err = await _build_issue_uploads(
+    descriptors, err = await _build_upload_descriptors(
         [
             {"filename": "a.txt", "content_base64": b64},
             {"filename": "b.txt", "content_base64": b64},
@@ -255,7 +255,7 @@ async def test_build_uploads_multi_entry(mock_redmine):
 @patch("redmine_mcp_server._client.redmine")
 async def test_build_uploads_aborts_before_upload_on_bad_entry(mock_redmine):
     b64 = _b64.b64encode(b"x").decode("ascii")
-    descriptors, err = await _build_issue_uploads(
+    descriptors, err = await _build_upload_descriptors(
         [
             {"filename": "a.txt", "content_base64": b64},
             {"content_base64": b64},  # missing filename -> abort
@@ -269,12 +269,12 @@ async def test_build_uploads_aborts_before_upload_on_bad_entry(mock_redmine):
 async def test_build_uploads_entry_count_cap():
     b64 = _b64.b64encode(b"x").decode("ascii")
     entries = [{"filename": f"f{i}.txt", "content_base64": b64} for i in range(11)]
-    descriptors, err = await _build_issue_uploads(entries)
+    descriptors, err = await _build_upload_descriptors(entries)
     assert err is not None
     assert "10" in err["error"]
 
 
 @pytest.mark.asyncio
 async def test_build_uploads_rejects_non_dict_entry():
-    descriptors, err = await _build_issue_uploads(["not-a-dict"])
+    descriptors, err = await _build_upload_descriptors(["not-a-dict"])
     assert err is not None

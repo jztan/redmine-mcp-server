@@ -34,7 +34,7 @@ from .._serialization import (
 )
 from .._validation import _is_positive_int
 from ..server import mcp
-from .files import _build_issue_uploads
+from .files import _build_upload_descriptors
 
 _VALID_ISSUE_RELATION_TYPES: Set[str] = {
     "relates",
@@ -1339,7 +1339,7 @@ async def create_redmine_issue(
 
     upload_descriptors: List[Dict[str, Any]] = []
     if uploads:
-        upload_descriptors, upload_error = await _build_issue_uploads(uploads)
+        upload_descriptors, upload_error = await _build_upload_descriptors(uploads)
         if upload_error is not None:
             return upload_error
 
@@ -1522,7 +1522,7 @@ async def update_redmine_issue(
 
     upload_descriptors: List[Dict[str, Any]] = []
     if uploads:
-        upload_descriptors, upload_error = await _build_issue_uploads(uploads)
+        upload_descriptors, upload_error = await _build_upload_descriptors(uploads)
         if upload_error is not None:
             return upload_error
 
