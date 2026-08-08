@@ -211,14 +211,14 @@ async def _update_wiki_page_action(
             existing = _get_redmine_client().wiki_page.get(
                 wiki_page_title, project_id=project_id
             )
+            existing_text = existing.text
+            existing_version = existing.version
         except Exception as e:
             return _handle_redmine_error(
                 e,
                 f"updating wiki page '{wiki_page_title}' in project {project_id}",
                 {"resource_type": "wiki page", "resource_id": wiki_page_title},
             )
-        existing_text = existing.text
-        existing_version = existing.version
 
     upload_descriptors = None
     if uploads:
