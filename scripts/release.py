@@ -10,6 +10,7 @@ Examples:
     python scripts/release.py minor           # 0.12.1 -> 0.13.0
     python scripts/release.py major           # 0.12.1 -> 1.0.0
     python scripts/release.py patch --dry-run # Preview changes
+    python scripts/release.py --sync-contributors  # Refresh README credits only
 
 Gitflow:
     1. Start from develop branch
@@ -297,6 +298,73 @@ def update_server_json(project_root: Path, new_version: str, dry_run: bool) -> N
         print("  ✓ Updated server.json")
 
 
+CONTRIBUTORS_START = "<!-- contributors:start -->"
+CONTRIBUTORS_END = "<!-- contributors:end -->"
+
+
+def collect_changelog_contributors(changelog: str) -> list[str]:
+    """Every handle credited in a `### Contributors` block, oldest credit first.
+
+    The CHANGELOG is newest-release-first, so the blocks are walked in reverse:
+    a contributor keeps the position of their earliest credit and appending a
+    new name never reshuffles the rendered line. Both credit punctuations used
+    in this changelog are matched (``- @handle — ...`` and ``- @handle, ...``);
+    a handle merely mentioned in prose is not a credit.
+    """
+    blocks = re.findall(
+        r"^### Contributors\s*$\n(.*?)(?=^#{2,3} |\Z)",
+        changelog,
+        flags=re.MULTILINE | re.DOTALL,
+    )
+    handles: list[str] = []
+    for block in reversed(blocks):
+        for handle in re.findall(r"^-\s+@([A-Za-z0-9](?:[A-Za-z0-9-]*))", block, re.M):
+            if handle not in handles:
+                handles.append(handle)
+    return handles
+
+
+def render_contributors_line(handles: list[str]) -> str:
+    return " · ".join(f"[@{h}](https://github.com/{h})" for h in handles)
+
+
+def update_readme_contributors(project_root: Path, dry_run: bool) -> None:
+    """Regenerate the README Contributors list from the CHANGELOG credits.
+
+    The contrib.rocks strip below the list only shows commit authors, so this
+    handle line is what credits reporters and testers. Hand-maintaining it
+    drifted badly: six credited people were missing when this was written,
+    three of them merged-PR authors.
+    """
+    readme = project_root / "README.md"
+    content = readme.read_text()
+    line = render_contributors_line(
+        collect_changelog_contributors((project_root / "CHANGELOG.md").read_text())
+    )
+
+    new_content, count = re.subn(
+        rf"{re.escape(CONTRIBUTORS_START)}\n.*?\n{re.escape(CONTRIBUTORS_END)}",
+        f"{CONTRIBUTORS_START}\n{line}\n{CONTRIBUTORS_END}",
+        content,
+        count=1,
+        flags=re.DOTALL,
+    )
+    if count == 0:
+        raise RuntimeError(
+            f"Could not find the {CONTRIBUTORS_START} / {CONTRIBUTORS_END} "
+            "markers in README.md. Restore them or update this function; "
+            "without them the release silently stops crediting contributors."
+        )
+
+    if dry_run:
+        print("  [DRY-RUN] Would sync README.md Contributors list")
+    elif new_content == content:
+        print("  ✓ README.md Contributors list already current")
+    else:
+        readme.write_text(new_content)
+        print("  ✓ Updated README.md Contributors list")
+
+
 def update_changelog(project_root: Path, new_version: str, dry_run: bool) -> None:
     """Update CHANGELOG.md: convert [Unreleased] to new version with date.
 
@@ -501,6 +569,7 @@ def bump_version(config: ReleaseConfig) -> tuple[str, str]:
     update_pyproject_toml(config.project_root, new_version, config.dry_run)
     update_server_json(config.project_root, new_version, config.dry_run)
     update_changelog(config.project_root, new_version, config.dry_run)
+    update_readme_contributors(config.project_root, config.dry_run)
     update_uv_lock(config.project_root, config.dry_run)
 
     return current_version, new_version
@@ -510,7 +579,7 @@ def commit_version_bump(config: ReleaseConfig, new_version: str) -> None:
     """Commit version bump changes on release branch."""
     print("\n=== Commit Version Bump ===\n")
 
-    files = ["pyproject.toml", "server.json", "CHANGELOG.md", "uv.lock"]
+    files = ["pyproject.toml", "server.json", "CHANGELOG.md", "README.md", "uv.lock"]
     for f in files:
         run_command(
             ["git", "add", f],
@@ -1189,6 +1258,7 @@ Examples:
   python scripts/release.py minor           # 0.12.1 -> 0.13.0
   python scripts/release.py major           # 0.12.1 -> 1.0.0
   python scripts/release.py patch --dry-run # Preview changes
+  python scripts/release.py --sync-contributors  # Refresh README credits only
 
 Gitflow:
   develop -> release/vX.Y.Z -> master (tagged) -> merge back to develop
@@ -1211,8 +1281,28 @@ Gitflow:
         action="store_true",
         help="Finish the current hotfix/* branch (patch bump implied)",
     )
+    parser.add_argument(
+        "--sync-contributors",
+        action="store_true",
+        help=(
+            "Regenerate the README Contributors list from the CHANGELOG and "
+            "exit, without cutting a release"
+        ),
+    )
 
     args = parser.parse_args()
+
+    # Determine project root (parent of scripts directory)
+    project_root = Path(__file__).parent.parent.resolve()
+
+    # Standalone: keep the README credits current between releases, so a
+    # contributor credited in [Unreleased] does not wait for the next bump.
+    if args.sync_contributors:
+        if args.bump_type or args.hotfix:
+            parser.error("--sync-contributors cannot be combined with a release run")
+        print("\n=== Sync README Contributors ===\n")
+        update_readme_contributors(project_root, args.dry_run)
+        return
 
     # Validate: bump_type required unless --hotfix
     if args.hotfix:
@@ -1221,9 +1311,6 @@ Gitflow:
         parser.error("bump_type is required unless --hotfix is set")
     else:
         bump_type = args.bump_type
-
-    # Determine project root (parent of scripts directory)
-    project_root = Path(__file__).parent.parent.resolve()
 
     config = ReleaseConfig(
         bump_type=bump_type,

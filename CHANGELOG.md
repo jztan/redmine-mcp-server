@@ -7,6 +7,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- The README Contributors list is now generated from the `### Contributors`
+  credits in this changelog rather than maintained by hand, which had drifted:
+  six credited people were missing from it, three of them merged-PR authors.
+  The list is regenerated as part of a release, and can be refreshed on its own
+  with `python scripts/release.py --sync-contributors` so a credit added
+  between releases does not wait for the next version bump. Handles keep the
+  position of their earliest credit, so a new name appends rather than
+  reshuffling the line.
 
 ## [2.10.0] - 2026-08-08
 ### Added
