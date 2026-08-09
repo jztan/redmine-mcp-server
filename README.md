@@ -762,7 +762,9 @@ Contributions are welcome! Please see our [contributing guide](./docs/contributi
 
 Thank you to everyone who has helped improve this project through code, reviews, testing, and feature requests:
 
-[@sebastianelsner](https://github.com/sebastianelsner) · [@mihajlovicjj](https://github.com/mihajlovicjj) · [@aadnehovda](https://github.com/aadnehovda) · [@martindglaser](https://github.com/martindglaser) · [@Vitexus](https://github.com/Vitexus) · [@timcomport](https://github.com/timcomport) · [@Bricklou](https://github.com/Bricklou) · [@LaurensRietveld](https://github.com/LaurensRietveld)
+<!-- contributors:start -->
+[@sebastianelsner](https://github.com/sebastianelsner) · [@mihajlovicjj](https://github.com/mihajlovicjj) · [@timcomport](https://github.com/timcomport) · [@aadnehovda](https://github.com/aadnehovda) · [@Vitexus](https://github.com/Vitexus) · [@Bricklou](https://github.com/Bricklou) · [@martindglaser](https://github.com/martindglaser) · [@LaurensRietveld](https://github.com/LaurensRietveld) · [@pdostal](https://github.com/pdostal) · [@stevehollis-orderflow](https://github.com/stevehollis-orderflow) · [@knasiotis](https://github.com/knasiotis) · [@azelcs](https://github.com/azelcs) · [@fionnb](https://github.com/fionnb) · [@goizper](https://github.com/goizper)
+<!-- contributors:end -->
 
 <a href="https://github.com/jztan/redmine-mcp-server/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=jztan/redmine-mcp-server" alt="Contributors" />
