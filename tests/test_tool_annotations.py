@@ -204,3 +204,44 @@ class TestClassificationCrossChecks:
         )
         for name, kind in _EMPTY_SCOPE_KINDS.items():
             assert TOOL_KINDS[name] is kind, name
+
+
+class TestAnnotationInteractions:
+    @pytest.mark.asyncio
+    async def test_annotations_stable_in_read_only_mode(self, monkeypatch):
+        """Classification describes the tool, not the deployment's policy.
+
+        Flipping write tools to readOnlyHint=true when writes are disabled
+        would be technically true but would corrupt an agent's planning: it
+        would fold a "safe" create into a plan that can only ever error.
+        """
+        baseline = {
+            tool.name: tool.annotations.model_dump(exclude_none=True)
+            for tool in await _registered_tools()
+        }
+        monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "true")
+        after = {
+            tool.name: tool.annotations.model_dump(exclude_none=True)
+            for tool in await _registered_tools()
+        }
+        assert after == baseline
+        assert baseline["create_redmine_issue"]["readOnlyHint"] is False
+
+    @pytest.mark.asyncio
+    async def test_scope_middleware_preserves_annotations(self):
+        """The scope filter must not strip or rebuild annotations."""
+        from redmine_mcp_server._scope_middleware import (
+            ScopeEnforcementMiddleware,
+        )
+
+        tools = await _registered_tools()
+        middleware = ScopeEnforcementMiddleware()
+
+        async def call_next(_context):
+            return tools
+
+        # No access token in context: the middleware returns tools untouched.
+        result = await middleware.on_list_tools(None, call_next)
+        by_name = {tool.name: tool for tool in result}
+        assert by_name["list_redmine_projects"].annotations.readOnlyHint is True
+        assert by_name["delete_redmine_issue"].annotations.readOnlyHint is False
