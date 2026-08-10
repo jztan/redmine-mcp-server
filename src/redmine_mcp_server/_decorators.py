@@ -27,6 +27,20 @@ class ActionMode(enum.Enum):
     WRITE = "write"
 
 
+# Per-tool action specs, recorded at decoration time so tests can cross-check
+# the ToolAnnotations classification (#204) against what each action really
+# does. Keyed by tool name: contacts, products and documents wrap their
+# dispatch in a separate _manage_X_dispatch helper, so that suffix is
+# normalized away.
+ACTION_SPECS: Dict[str, Dict[str, "ActionMode"]] = {}
+
+
+def _tool_name_for(func_name: str) -> str:
+    if func_name.startswith("_") and func_name.endswith("_dispatch"):
+        return func_name[1 : -len("_dispatch")]
+    return func_name
+
+
 def action_dispatch(spec: Dict[str, ActionMode]):
     """See module docstring for usage."""
 
@@ -50,6 +64,7 @@ def action_dispatch(spec: Dict[str, ActionMode]):
                 handlers = await handlers
             return await handlers[action](**kwargs)
 
+        ACTION_SPECS[_tool_name_for(handler_map_fn.__name__)] = dict(spec)
         return wrapper
 
     return decorator
