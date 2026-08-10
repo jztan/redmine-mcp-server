@@ -88,7 +88,7 @@ class _AnnotatingFastMCP(FastMCP):
     """
 
     def tool(self, name_or_fn=None, **kwargs):
-        if name_or_fn is not None or kwargs.get("name") or kwargs.get("annotations"):
+        if name_or_fn is not None or kwargs.get("name") or "annotations" in kwargs:
             return super().tool(name_or_fn, **kwargs)
         register = super().tool
 

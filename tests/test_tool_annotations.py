@@ -1,7 +1,10 @@
 """Tests for MCP ToolAnnotations classification (#204)."""
 
+from types import SimpleNamespace
+
 import pytest
 
+import redmine_mcp_server._scope_middleware as scope_mw
 from redmine_mcp_server._annotations import (
     TOOL_KINDS,
     ToolKind,
@@ -159,8 +162,13 @@ class TestClassificationCrossChecks:
 
     def test_mixed_action_tools_are_not_read_only(self):
         for name, spec in ACTION_SPECS.items():
-            # Skip test artifacts from other test modules that may pollute
-            # ACTION_SPECS during test runs (e.g., dispatcher in test_decorators.py).
+            # A name missing from TOOL_KINDS can only be a synthetic
+            # artifact from tests/test_decorators.py polluting the shared
+            # ACTION_SPECS registry: test_every_registered_tool_is_classified
+            # bounds every registered tool into TOOL_KINDS, and
+            # test_all_mixed_tools_are_covered pins the 11 real mixed tools
+            # into ACTION_SPECS, so no genuine mixed tool can reach this
+            # branch.
             if name not in TOOL_KINDS:
                 continue
             if ActionMode.WRITE in spec.values():
@@ -189,7 +197,7 @@ class TestClassificationCrossChecks:
             "manage_time_entry",
         }
         assert expected <= set(ACTION_SPECS), (
-            f"mixed tools missing from ACTION_SPECS: " f"{expected - set(ACTION_SPECS)}"
+            "mixed tools missing from ACTION_SPECS: " f"{expected - set(ACTION_SPECS)}"
         )
 
     def test_empty_scope_tools_match_reviewed_map(self):
@@ -242,6 +250,30 @@ class TestAnnotationInteractions:
         assert annotations.destructiveHint is False
 
     @pytest.mark.asyncio
+    async def test_explicit_annotations_none_is_honored_not_raised(self):
+        """An explicit ``annotations=None`` must degrade safely, not raise.
+
+        ``kwargs.get("annotations")`` treats an explicit ``None`` the same
+        as an absent key, so it used to fall into the deferred branch and
+        then pass ``annotations=`` a second time on top of the one already
+        in ``**kwargs``, raising ``TypeError: got multiple values for
+        keyword argument 'annotations'``. The guard must instead test for
+        key presence so a caller's explicit override is delegated to
+        ``super().tool(...)`` untouched.
+        """
+        from redmine_mcp_server.server import _AnnotatingFastMCP
+
+        probe = _AnnotatingFastMCP("probe-explicit-none")
+
+        @probe.tool(annotations=None)
+        async def some_probe_tool() -> dict:
+            """Probe registered with an explicit annotations=None."""
+            return {}
+
+        registered = {t.name: t for t in await probe.list_tools()}
+        assert registered["some_probe_tool"].annotations is None
+
+    @pytest.mark.asyncio
     async def test_scope_middleware_preserves_annotations(self):
         """The scope filter must not strip or rebuild annotations."""
         from redmine_mcp_server._scope_middleware import (
@@ -259,3 +291,47 @@ class TestAnnotationInteractions:
         by_name = {tool.name: tool for tool in result}
         assert by_name["list_redmine_projects"].annotations.readOnlyHint is True
         assert by_name["delete_redmine_issue"].annotations.readOnlyHint is False
+
+    @pytest.mark.asyncio
+    async def test_scope_middleware_filters_and_preserves_annotations(
+        self, monkeypatch
+    ):
+        """The filtering branch (a real token) must not touch annotations.
+
+        Unlike the no-token test above, this exercises the loop in
+        ``on_list_tools`` that actually walks and rebuilds the tool list,
+        which is the code path that could plausibly drop or rebuild
+        annotations. ``view_project`` grants ``list_redmine_projects`` but
+        not ``delete_redmine_issue`` (which needs ``delete_issues``), so the
+        token both admits a tool and filters one out.
+        """
+        from redmine_mcp_server._scope_middleware import (
+            ScopeEnforcementMiddleware,
+        )
+
+        tools = await _registered_tools()
+        middleware = ScopeEnforcementMiddleware()
+
+        async def call_next(_context):
+            return tools
+
+        monkeypatch.setattr(
+            scope_mw,
+            "get_access_token",
+            lambda: SimpleNamespace(token="t", scopes=["view_project"]),
+        )
+
+        result = await middleware.on_list_tools(None, call_next)
+        by_name = {tool.name: tool for tool in result}
+
+        # The filter actually ran: the unscoped tool was dropped.
+        assert "delete_redmine_issue" not in by_name
+        assert len(result) < len(tools)
+
+        # The survivor kept its correct annotations, unmodified.
+        assert "list_redmine_projects" in by_name
+        assert by_name["list_redmine_projects"].annotations.readOnlyHint is True
+        expected = annotations_for("list_redmine_projects")
+        assert by_name["list_redmine_projects"].annotations.model_dump(
+            exclude_none=True
+        ) == expected.model_dump(exclude_none=True)
