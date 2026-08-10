@@ -214,18 +214,32 @@ class TestAnnotationInteractions:
         Flipping write tools to readOnlyHint=true when writes are disabled
         would be technically true but would corrupt an agent's planning: it
         would fold a "safe" create into a plan that can only ever error.
+
+        Annotations are computed once at decoration time, inside
+        ``_AnnotatingFastMCP.tool``, when a tool module is first imported.
+        By the time this test runs, `redmine_mcp_server.tools` and `.apps`
+        are already imported and cached in ``sys.modules``, so re-reading
+        the already-registered tools after monkeypatching the environment
+        would prove nothing: registration already happened and will not
+        re-run. The only way to actually exercise the decoration-time
+        decision under read-only mode is to set the env var first, then
+        register a fresh probe tool on a brand new ``_AnnotatingFastMCP``
+        instance, so the decorator runs while the env var is in effect.
         """
-        baseline = {
-            tool.name: tool.annotations.model_dump(exclude_none=True)
-            for tool in await _registered_tools()
-        }
+        from redmine_mcp_server.server import _AnnotatingFastMCP
+
         monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "true")
-        after = {
-            tool.name: tool.annotations.model_dump(exclude_none=True)
-            for tool in await _registered_tools()
-        }
-        assert after == baseline
-        assert baseline["create_redmine_issue"]["readOnlyHint"] is False
+        probe = _AnnotatingFastMCP("probe")
+
+        @probe.tool()
+        async def create_redmine_issue(project_id: int) -> dict:
+            """Probe registered while read-only mode is active."""
+            return {}
+
+        registered = {t.name: t for t in await probe.list_tools()}
+        annotations = registered["create_redmine_issue"].annotations
+        assert annotations.readOnlyHint is False
+        assert annotations.destructiveHint is False
 
     @pytest.mark.asyncio
     async def test_scope_middleware_preserves_annotations(self):
