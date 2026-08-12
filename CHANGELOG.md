@@ -14,7 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never passes it to `requests`, so a Redmine that accepted a connection and
   never answered would hang the call indefinitely ([#214](https://github.com/jztan/redmine-mcp-server/issues/214), reported by @Bricklou).
   Connect timeouts are also no longer misreported as connection errors, which
-  had blamed the configured URL for an unresponsive server.
+  had blamed the configured URL for an unresponsive server. The same fix
+  covers a stalled attachment download: a Redmine that starts sending an
+  attachment and then goes silent is now reported as a timeout instead of a
+  connection error.
   Note that a hung call can still stall other requests for the duration of the
   timeout, including `/health`; moving the blocking calls off the event loop
   is tracked separately.

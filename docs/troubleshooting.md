@@ -61,7 +61,10 @@ This guide covers common issues and solutions for the Redmine MCP Server.
 
 **Note on large attachments:** the read timeout measures the gap between
 bytes, not total transfer time, so a slow but steady download is not cut off
-by it.
+by it. An upload works the other way: after the file body is sent, the
+client still waits under the same read timeout for Redmine's response, so a
+large upload to a busy instance may need a higher `REDMINE_TIMEOUT` even
+though the transfer itself completed.
 
 ### SSL Certificate Errors
 
