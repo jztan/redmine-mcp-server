@@ -123,7 +123,11 @@ def test_client_uses_per_user_key_over_secure_transport():
         patch("redmine_mcp_server._client.get_http_request", return_value=req),
     ):
         _client._get_redmine_client()
-        mock_redmine.assert_called_once_with("https://r.example.com", key=VALID_KEY)
+        mock_redmine.assert_called_once_with(
+            "https://r.example.com",
+            engine=_client.TimeoutSyncEngine,
+            key=VALID_KEY,
+        )
 
 
 def test_client_per_user_missing_header_raises():

@@ -25,6 +25,9 @@ from urllib.parse import urlparse
 from dotenv import load_dotenv
 from fastmcp.server.dependencies import get_access_token, get_http_request
 from redminelib import Redmine
+from redminelib.engines import SyncEngine
+
+from ._env import get_redmine_timeout
 
 logger = logging.getLogger("redmine_mcp_server")
 
@@ -173,6 +176,56 @@ def _build_requests_config() -> dict:
     return requests_config
 
 
+class TimeoutSyncEngine(SyncEngine):
+    """SyncEngine that puts REDMINE_TIMEOUT on every request.
+
+    redminelib drops a ``requests={"timeout": ...}`` config on the floor:
+    ``SyncEngine.create_session()`` setattr()s it onto a ``requests.Session``,
+    which has no ``timeout`` attribute that is read at request time, and
+    ``BaseEngine.construct_request_kwargs()`` never builds one. Without this
+    class a Redmine that accepts the connection and never answers hangs the
+    call forever (issue #214).
+
+    Injecting here rather than monkeypatching ``session.request`` matters:
+    ``Redmine.session()`` re-instantiates ``engine.__class__``, and
+    ``Redmine.download()`` uses that context manager, so a patched method
+    would be silently dropped for attachment downloads. A subclass survives.
+
+    The timeout is read per request, not captured at construction, so the
+    cached legacy client picks up an env change without being rebuilt.
+    """
+
+    @staticmethod
+    def construct_request_kwargs(method, headers, params, data):
+        kwargs = SyncEngine.construct_request_kwargs(method, headers, params, data)
+        timeout = get_redmine_timeout()
+        if timeout is not None:
+            kwargs.setdefault("timeout", timeout)
+        return kwargs
+
+
+def _new_client(**kwargs) -> Redmine:
+    """Build a Redmine client with this server's connection-level defaults.
+
+    Every client must carry ``engine=TimeoutSyncEngine`` and the SSL/proxy
+    config from ``_build_requests_config()``. Routing all construction through
+    here keeps that true for auth modes added later; the previous shape
+    repeated each branch with and without a ``requests=`` config, so a new
+    connection setting could reach half the call sites.
+
+    A caller-supplied ``requests`` dict (the OAuth Authorization header) is
+    merged on top of the shared config rather than replacing it.
+    """
+    g = globals()
+    requests_config = _build_requests_config()
+    caller_requests = kwargs.pop("requests", None)
+    if caller_requests:
+        requests_config = {**requests_config, **caller_requests}
+    if requests_config:
+        kwargs["requests"] = requests_config
+    return g["Redmine"](g["REDMINE_URL"], engine=TimeoutSyncEngine, **kwargs)
+
+
 def httpx_ssl_kwargs(url: Optional[str] = None) -> dict:
     """Return `verify`/`cert` kwargs for an httpx client talking to Redmine.
 
@@ -256,25 +309,10 @@ def _build_legacy_client() -> Redmine:
     # Read attributes via globals() so tests using patch.object(_client, ...)
     # observe the override at call time.
     g = globals()
-    requests_config = _build_requests_config()
     if g["REDMINE_API_KEY"]:
-        if requests_config:
-            return g["Redmine"](
-                g["REDMINE_URL"],
-                key=g["REDMINE_API_KEY"],
-                requests=requests_config,
-            )
-        return g["Redmine"](g["REDMINE_URL"], key=g["REDMINE_API_KEY"])
+        return _new_client(key=g["REDMINE_API_KEY"])
     elif g["REDMINE_USERNAME"] and g["REDMINE_PASSWORD"]:
-        if requests_config:
-            return g["Redmine"](
-                g["REDMINE_URL"],
-                username=g["REDMINE_USERNAME"],
-                password=g["REDMINE_PASSWORD"],
-                requests=requests_config,
-            )
-        return g["Redmine"](
-            g["REDMINE_URL"],
+        return _new_client(
             username=g["REDMINE_USERNAME"],
             password=g["REDMINE_PASSWORD"],
         )
@@ -303,14 +341,8 @@ def _get_redmine_client() -> Redmine:
     access_token = get_access_token()
     if access_token is not None and access_token.token:
         # Per-request client with Bearer token (cannot be cached)
-        requests_config = _build_requests_config()
         headers = {"Authorization": f"Bearer {access_token.token}"}
-        if requests_config:
-            return g["Redmine"](
-                g["REDMINE_URL"],
-                requests={"headers": headers, **requests_config},
-            )
-        return g["Redmine"](g["REDMINE_URL"], requests={"headers": headers})
+        return _new_client(requests={"headers": headers})
 
     # legacy-per-user mode: per-request key from the X-Redmine-API-Key header.
     if g["REDMINE_AUTH_MODE"] == "legacy-per-user":
@@ -321,11 +353,7 @@ def _get_redmine_client() -> Redmine:
         except RuntimeError:
             request = None
         key = resolve_per_user_key(request)  # raises PerUserAuthError
-        requests_config = _build_requests_config()
-        if requests_config:
-            client = g["Redmine"](g["REDMINE_URL"], key=key, requests=requests_config)
-        else:
-            client = g["Redmine"](g["REDMINE_URL"], key=key)
+        client = _new_client(key=key)
         maybe_log_identity(client, key)
         return client
 
