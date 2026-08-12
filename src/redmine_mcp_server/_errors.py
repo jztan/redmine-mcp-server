@@ -21,6 +21,7 @@ from requests.exceptions import (
     SSLError as RequestsSSLError,
     Timeout as RequestsTimeout,
 )
+from urllib3.exceptions import TimeoutError as Urllib3TimeoutError
 
 logger = logging.getLogger("redmine_mcp_server")
 
@@ -82,6 +83,18 @@ def _timeout_budget_hint() -> str:
     return f"REDMINE_TIMEOUT: connect {connect:g}s, read {read:g}s"
 
 
+def _read_timeout_error(redmine_url: str) -> Dict[str, Any]:
+    """Build the "did not respond in time" error dict for a read timeout."""
+    return {
+        "error": (
+            f"Redmine at {redmine_url} did not respond in time "
+            f"({_timeout_budget_hint()}). The server may be overloaded or "
+            "the request too large. Raise or disable the limit with "
+            "REDMINE_TIMEOUT."
+        )
+    }
+
+
 def _handle_redmine_error(
     e: Exception, operation: str, context: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
@@ -123,14 +136,24 @@ def _handle_redmine_error(
                     "2) No firewall or proxy is dropping the connection"
                 )
             }
-        return {
-            "error": (
-                f"Redmine at {redmine_url} did not respond in time "
-                f"({_timeout_budget_hint()}). The server may be overloaded or "
-                "the request too large. Raise or disable the limit with "
-                "REDMINE_TIMEOUT."
-            )
-        }
+        return _read_timeout_error(redmine_url)
+
+    # A stalled streaming download (e.g. get_redmine_attachment) does NOT
+    # raise ReadTimeout: requests' iter_content() catches urllib3's
+    # ReadTimeoutError and re-raises it wrapped in a plain ConnectionError
+    # (see requests/models.py). Left unhandled, that would fall into the
+    # ConnectionError branch below and blame the URL for a server that
+    # started answering and then went silent mid-body (#214). Detect the
+    # wrapped urllib3 timeout here so it gets the read-timeout message
+    # instead. A genuine ConnectionError (refused, DNS failure) has no such
+    # wrapped cause and still falls through unchanged.
+    if (
+        isinstance(e, RequestsConnectionError)
+        and e.args
+        and isinstance(e.args[0], Urllib3TimeoutError)
+    ):
+        logger.error(f"Streaming read timeout during {operation}: {e}")
+        return _read_timeout_error(redmine_url)
 
     # Connection-level errors (from requests library)
     if isinstance(e, RequestsConnectionError):

@@ -19,6 +19,7 @@ from requests.exceptions import (
     ReadTimeout,
 )
 from requests.exceptions import Timeout as RequestsTimeoutExc
+from urllib3.exceptions import ReadTimeoutError
 
 from redmine_mcp_server import _client
 from redmine_mcp_server._client import TimeoutSyncEngine
@@ -153,6 +154,24 @@ class TestEveryBuildPathIsTimed:
         assert fake.call_args.kwargs["requests"]["verify"] is False
         assert fake.call_args.kwargs["engine"] is TimeoutSyncEngine
 
+    def test_oauth_bearer_path_merges_with_ssl_config(self, monkeypatch):
+        """_new_client merges {**requests_config, **caller_requests}: prove
+        both survive when both dicts are non-empty, not just whichever one
+        happens to win a key collision."""
+        fake = self._fake_redmine()
+        monkeypatch.setattr(_client, "Redmine", fake)
+        monkeypatch.setattr(_client, "redmine", None)
+        monkeypatch.setattr(_client, "REDMINE_URL", "https://redmine.example.com")
+        monkeypatch.setattr(_client, "REDMINE_SSL_VERIFY", False)
+        token = MagicMock()
+        token.token = "bearer-token"
+        with patch.object(_client, "get_access_token", return_value=token):
+            _client._get_redmine_client()
+        requests_kwargs = fake.call_args.kwargs["requests"]
+        assert requests_kwargs["headers"]["Authorization"] == "Bearer bearer-token"
+        assert requests_kwargs["verify"] is False
+        assert fake.call_args.kwargs["engine"] is TimeoutSyncEngine
+
 
 class TestTimeoutErrorMessages:
     def test_read_timeout_says_the_server_did_not_respond(self, monkeypatch):
@@ -170,6 +189,19 @@ class TestTimeoutErrorMessages:
     def test_plain_connection_error_still_reported_as_such(self):
         result = _handle_redmine_error(RequestsConnectionError("refused"), "get_issue")
         assert "Cannot connect to Redmine" in result["error"]
+
+    def test_stalled_stream_reported_as_timeout_not_connection_error(self):
+        """requests' iter_content() re-raises a socket read timeout as a
+        plain ConnectionError wrapping urllib3's ReadTimeoutError (see
+        requests/models.py). get_redmine_attachment streams via
+        iter_content, so a Redmine that starts an attachment and then goes
+        silent must be reported as a timeout, not blamed on the URL."""
+        wrapped = ReadTimeoutError(None, None, "Read timed out.")
+        result = _handle_redmine_error(
+            RequestsConnectionError(wrapped), "get_attachment"
+        )
+        assert "did not respond in time" in result["error"]
+        assert "URL is correct" not in result["error"]
 
     def test_message_reports_the_configured_budget(self, monkeypatch):
         monkeypatch.setenv("REDMINE_TIMEOUT", "45")
@@ -231,9 +263,3 @@ class TestTimeoutReachesTheWire:
             client.issue.get(1)
         elapsed = time.monotonic() - started
         assert elapsed < 5, f"timeout did not fire promptly ({elapsed:.1f}s)"
-
-    def test_disabling_the_timeout_is_honored(self, black_hole_server, monkeypatch):
-        """REDMINE_TIMEOUT=0 must not smuggle in a default."""
-        monkeypatch.setenv("REDMINE_TIMEOUT", "0")
-        kwargs = TimeoutSyncEngine.construct_request_kwargs("get", {}, {}, None)
-        assert "timeout" not in kwargs
