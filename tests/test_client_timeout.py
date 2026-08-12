@@ -6,13 +6,19 @@ tests lock in that every client carries a timeout and that the resulting
 errors are distinguishable.
 """
 
+import socket
+import threading
+import time
 from unittest.mock import MagicMock, patch
 
+import pytest
+from redminelib import Redmine
 from requests.exceptions import (
     ConnectionError as RequestsConnectionError,
     ConnectTimeout,
     ReadTimeout,
 )
+from requests.exceptions import Timeout as RequestsTimeoutExc
 
 from redmine_mcp_server import _client
 from redmine_mcp_server._client import TimeoutSyncEngine
@@ -169,3 +175,65 @@ class TestTimeoutErrorMessages:
         monkeypatch.setenv("REDMINE_TIMEOUT", "45")
         result = _handle_redmine_error(ReadTimeout("read timed out"), "get_issue")
         assert "45" in result["error"]
+
+
+@pytest.fixture
+def black_hole_server():
+    """A TCP server that accepts connections and never replies.
+
+    Reproduces issue #214: the connection succeeds, the request is sent, and
+    no byte ever comes back. Binds to an ephemeral port (port 0) so the test
+    cannot collide with anything on the machine, including a local Redmine on
+    8080/8081. The listener socket, every accepted socket, and the server
+    thread are all released on teardown so no thread outlives the test.
+    """
+    held = []
+    stop = threading.Event()
+    listener = socket.socket()
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(5)
+    listener.settimeout(0.5)
+    port = listener.getsockname()[1]
+
+    def serve():
+        while not stop.is_set():
+            try:
+                conn, _ = listener.accept()
+            except socket.timeout:
+                continue
+            except OSError:
+                return
+            held.append(conn)  # accept, then never respond
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+    yield port
+    stop.set()
+    thread.join(timeout=2)
+    for conn in held:
+        conn.close()
+    listener.close()
+
+
+class TestTimeoutReachesTheWire:
+    def test_read_timeout_fires_instead_of_hanging(
+        self, black_hole_server, monkeypatch
+    ):
+        monkeypatch.setenv("REDMINE_TIMEOUT", "1")
+        client = Redmine(
+            f"http://127.0.0.1:{black_hole_server}",
+            key="test-key",
+            engine=TimeoutSyncEngine,
+        )
+        started = time.monotonic()
+        with pytest.raises(RequestsTimeoutExc):
+            client.issue.get(1)
+        elapsed = time.monotonic() - started
+        assert elapsed < 5, f"timeout did not fire promptly ({elapsed:.1f}s)"
+
+    def test_disabling_the_timeout_is_honored(self, black_hole_server, monkeypatch):
+        """REDMINE_TIMEOUT=0 must not smuggle in a default."""
+        monkeypatch.setenv("REDMINE_TIMEOUT", "0")
+        kwargs = TimeoutSyncEngine.construct_request_kwargs("get", {}, {}, None)
+        assert "timeout" not in kwargs
