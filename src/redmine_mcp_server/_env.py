@@ -92,6 +92,29 @@ def _get_int_env(var_name: str, default: int) -> int:
         return default
 
 
+def get_redmine_timeout() -> tuple[float, float] | None:
+    """Return the ``(connect, read)`` timeout for Redmine HTTP calls.
+
+    ``REDMINE_TIMEOUT`` is a single seconds value (default 30). It is applied
+    as a connect timeout of at most 10s plus a read timeout of the full value,
+    which is the shape ``requests`` expects.
+
+    Returns ``None`` when set to 0 or less, which restores the pre-#214
+    behavior of waiting forever. That escape hatch exists for genuinely slow
+    Redmine instances; it also reintroduces the hang, so it is not a default.
+
+    Two properties of the requests timeout are worth knowing when tuning it:
+    the read timeout is the gap between bytes, not a cap on total transfer
+    time, so it does not limit large attachment downloads; and the connect
+    timeout applies per IP address, so an unresponsive dual-stack host can
+    take twice the connect budget before failing.
+    """
+    seconds = _get_int_env("REDMINE_TIMEOUT", 30)
+    if seconds <= 0:
+        return None
+    return (min(10.0, float(seconds)), float(seconds))
+
+
 def _get_upload_file_roots() -> list[str]:
     """Return realpath-resolved directory roots allowed as ``file_path`` upload
     sources.
