@@ -7,6 +7,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Fixed
+- Redmine HTTP calls now carry a timeout, configurable with `REDMINE_TIMEOUT`
+  (default 30 seconds, `0` disables). Previously no timeout was applied
+  anywhere: python-redmine accepts a `requests={"timeout": ...}` setting but
+  never passes it to `requests`, so a Redmine that accepted a connection and
+  never answered would hang the call indefinitely ([#214](https://github.com/jztan/redmine-mcp-server/issues/214), reported by @Bricklou).
+  Connect timeouts are also no longer misreported as connection errors, which
+  had blamed the configured URL for an unresponsive server.
+  Note that a hung call can still stall other requests for the duration of the
+  timeout, including `/health`; moving the blocking calls off the event loop
+  is tracked separately.
+
 ### Changed
 - The README Contributors list is now generated from the `### Contributors`
   credits in this changelog rather than maintained by hand, which had drifted:
