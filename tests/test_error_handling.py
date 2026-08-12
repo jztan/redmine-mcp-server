@@ -93,8 +93,8 @@ class TestErrorHandler:
         error = Timeout("Read timed out")
         result = _handle_redmine_error(error, "listing projects")
 
-        assert "timed out" in result["error"].lower()
-        assert "Network connectivity" in result["error"]
+        assert "did not respond in time" in result["error"]
+        assert "REDMINE_TIMEOUT" in result["error"]
 
     def test_ssl_error_message(self):
         """SSL error provides certificate guidance."""
@@ -238,7 +238,7 @@ class TestToolErrorIntegration:
         mock_redmine.issue.search.side_effect = Timeout()
         result = await search_redmine_issues("test query")
 
-        assert "timed out" in result["error"].lower()
+        assert "did not respond in time" in result["error"]
 
 
 class TestLoggingCleanup:

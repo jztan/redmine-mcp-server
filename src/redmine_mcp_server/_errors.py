@@ -17,6 +17,7 @@ from redminelib.exceptions import (
 )
 from requests.exceptions import (
     ConnectionError as RequestsConnectionError,
+    ConnectTimeout as RequestsConnectTimeout,
     SSLError as RequestsSSLError,
     Timeout as RequestsTimeout,
 )
@@ -70,6 +71,17 @@ def _scrub_error_message(message: str) -> str:
     return scrubbed
 
 
+def _timeout_budget_hint() -> str:
+    """Describe the configured timeout for inclusion in an error message."""
+    from ._env import get_redmine_timeout  # lazy import avoids circular
+
+    timeout = get_redmine_timeout()
+    if timeout is None:
+        return "REDMINE_TIMEOUT is disabled"
+    connect, read = timeout
+    return f"REDMINE_TIMEOUT: connect {connect:g}s, read {read:g}s"
+
+
 def _handle_redmine_error(
     e: Exception, operation: str, context: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
@@ -97,6 +109,29 @@ def _handle_redmine_error(
             )
         }
 
+    # Check Timeout BEFORE ConnectionError: ConnectTimeout inherits from both,
+    # so the ConnectionError branch would otherwise swallow it and blame the
+    # URL when the real cause is a server that stopped answering (#214).
+    if isinstance(e, RequestsTimeout):
+        logger.error(f"Timeout during {operation}: {e}")
+        if isinstance(e, RequestsConnectTimeout):
+            return {
+                "error": (
+                    f"Timed out connecting to Redmine at {redmine_url} "
+                    f"({_timeout_budget_hint()}). Please check: "
+                    "1) The host and port are reachable, "
+                    "2) No firewall or proxy is dropping the connection"
+                )
+            }
+        return {
+            "error": (
+                f"Redmine at {redmine_url} did not respond in time "
+                f"({_timeout_budget_hint()}). The server may be overloaded or "
+                "the request too large. Raise or disable the limit with "
+                "REDMINE_TIMEOUT."
+            )
+        }
+
     # Connection-level errors (from requests library)
     if isinstance(e, RequestsConnectionError):
         logger.error(f"Connection error during {operation}: {e}")
@@ -105,15 +140,6 @@ def _handle_redmine_error(
                 f"Cannot connect to Redmine at {redmine_url}. "
                 "Please check: 1) URL is correct, 2) Network is accessible, "
                 "3) Redmine server is running"
-            )
-        }
-
-    if isinstance(e, RequestsTimeout):
-        logger.error(f"Timeout during {operation}: {e}")
-        return {
-            "error": (
-                f"Connection to Redmine at {redmine_url} timed out. "
-                "Please check: 1) Network connectivity, 2) Redmine server load"
             )
         }
 

@@ -8,9 +8,16 @@ errors are distinguishable.
 
 from unittest.mock import MagicMock, patch
 
+from requests.exceptions import (
+    ConnectionError as RequestsConnectionError,
+    ConnectTimeout,
+    ReadTimeout,
+)
+
 from redmine_mcp_server import _client
 from redmine_mcp_server._client import TimeoutSyncEngine
 from redmine_mcp_server._env import get_redmine_timeout
+from redmine_mcp_server._errors import _handle_redmine_error
 
 
 class TestGetRedmineTimeout:
@@ -139,3 +146,26 @@ class TestEveryBuildPathIsTimed:
         _client._build_legacy_client()
         assert fake.call_args.kwargs["requests"]["verify"] is False
         assert fake.call_args.kwargs["engine"] is TimeoutSyncEngine
+
+
+class TestTimeoutErrorMessages:
+    def test_read_timeout_says_the_server_did_not_respond(self, monkeypatch):
+        monkeypatch.delenv("REDMINE_TIMEOUT", raising=False)
+        result = _handle_redmine_error(ReadTimeout("read timed out"), "get_issue")
+        assert "did not respond in time" in result["error"]
+        assert "REDMINE_TIMEOUT" in result["error"]
+
+    def test_connect_timeout_is_not_reported_as_a_connection_error(self):
+        """ConnectTimeout subclasses ConnectionError, so branch order matters."""
+        result = _handle_redmine_error(ConnectTimeout("timed out"), "get_issue")
+        assert "Timed out connecting" in result["error"]
+        assert "URL is correct" not in result["error"]
+
+    def test_plain_connection_error_still_reported_as_such(self):
+        result = _handle_redmine_error(RequestsConnectionError("refused"), "get_issue")
+        assert "Cannot connect to Redmine" in result["error"]
+
+    def test_message_reports_the_configured_budget(self, monkeypatch):
+        monkeypatch.setenv("REDMINE_TIMEOUT", "45")
+        result = _handle_redmine_error(ReadTimeout("read timed out"), "get_issue")
+        assert "45" in result["error"]
