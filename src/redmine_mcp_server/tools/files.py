@@ -23,6 +23,7 @@ from .._env import (
     _is_read_only_mode,
 )
 from .._errors import _READ_ONLY_ERROR, _handle_redmine_error
+from .._offload import in_thread, offloaded
 from .._serialization import (
     _iter_capped,
     _named_ref,
@@ -209,7 +210,10 @@ async def _build_upload_descriptors(
         if not isinstance(entry, dict):
             return [], {"error": f"uploads[{index}] must be an object."}
 
-    client = _get_redmine_client()
+    # This helper interleaves async downloads with blocking uploads, so it
+    # cannot move to a worker wholesale like a tool body. Each blocking step
+    # gets its own hop instead (issue #216).
+    client = await in_thread(_get_redmine_client)
     descriptors: List[Dict[str, Any]] = []
     for index, entry in enumerate(uploads):
         content_bytes, final_name, resolve_error = await _resolve_upload_content(
@@ -221,9 +225,13 @@ async def _build_upload_descriptors(
         if resolve_error is not None:
             return [], {"error": f"uploads[{index}]: {resolve_error['error']}"}
         try:
-            token = client.upload(io.BytesIO(content_bytes), filename=final_name)[
-                "token"
-            ]
+
+            def _upload() -> str:
+                return client.upload(io.BytesIO(content_bytes), filename=final_name)[
+                    "token"
+                ]
+
+            token = await in_thread(_upload)
         except Exception as e:  # noqa: BLE001 - surfaced as an error dict
             return [], {"error": f"uploads[{index}]: failed to upload. Details: {e}"}
         descriptor: Dict[str, Any] = {"token": token, "filename": final_name}
@@ -302,154 +310,167 @@ async def get_redmine_attachment(
     """
     await _ensure_cleanup_started()
 
-    try:
-        client = _get_redmine_client()
+    def _run():
         try:
-            attachment = client.attachment.get(attachment_id)
-        except ResourceNotFoundError:
-            # Redmine's GET /attachments/{id}.json returns 404 in three
-            # situations and does not distinguish between them:
-            #   1. the attachment row truly does not exist;
-            #   2. the caller lacks view permission on the container
-            #      (Redmine collapses 403 -> 404 to avoid leaking
-            #      existence of attachments the user cannot see);
-            #   3. the underlying file is unreadable on the Redmine
-            #      server's filesystem (orphan metadata).
-            # The embed path used by get_redmine_issue(include_attachments)
-            # surfaces (3) and sometimes (2), which is why callers see
-            # the attachment via one tool but get "not found" here.
-            return {
-                "error": (
-                    f"Attachment {attachment_id} could not be fetched "
-                    f"from /attachments/{attachment_id}.json (HTTP 404)."
-                ),
-                "code": "ATTACHMENT_UNAVAILABLE",
-                "upstream_status": 404,
-                "hint": (
-                    "Redmine returns 404 here for missing attachments, "
-                    "for callers who lack view permission on the "
-                    "container, and for attachments whose underlying "
-                    "file is missing on the Redmine server's disk. If "
-                    "get_redmine_issue(include_attachments=True) lists "
-                    "this attachment, it exists but is either "
-                    "permission-restricted or orphaned on disk -- "
-                    "contact the Redmine administrator."
-                ),
-                "attachment_id": attachment_id,
-            }
-
-        # Sanitize filename: basename only (path traversal protection)
-        raw_filename = getattr(attachment, "filename", "") or ""
-        original_filename = os.path.basename(raw_filename)
-        if not original_filename:
-            original_filename = f"attachment_{attachment_id}"
-
-        content_type = getattr(attachment, "content_type", "application/octet-stream")
-        content_url = getattr(attachment, "content_url", "")
-
-        # Prepare UUID-based storage directory
-        attachments_dir = Path(os.getenv("ATTACHMENTS_DIR", "./attachments"))
-        attachments_dir.mkdir(parents=True, exist_ok=True)
-        file_id = str(uuid.uuid4())
-        uuid_dir = attachments_dir / file_id
-        uuid_dir.mkdir(exist_ok=True)
-
-        temp_path = uuid_dir / f"{original_filename}.tmp"
-        final_path = uuid_dir / original_filename
-
-        # Stream download with byte-cap abort
-        max_bytes = _get_int_env(
-            "ATTACHMENT_MAX_DOWNLOAD_BYTES",
-            _ATTACHMENT_MAX_DOWNLOAD_BYTES_DEFAULT,
-        )
-        response = client.download(content_url, savepath=None)
-
-        try:
-            byte_count = 0
-            with open(temp_path, "wb") as fh:
-                for chunk in response.iter_content(65536):
-                    byte_count += len(chunk)
-                    if byte_count > max_bytes:
-                        fh.close()
-                        _cleanup_uuid_dir(uuid_dir, temp_path)
-                        return {
-                            "error": (
-                                f"Attachment {attachment_id} exceeds the "
-                                f"{max_bytes}-byte download limit."
-                            )
-                        }
-                    fh.write(chunk)
-        except Exception:
-            _cleanup_uuid_dir(uuid_dir, temp_path)
-            raise
-
-        # Atomic rename: temp -> final
-        os.rename(str(temp_path), str(final_path))
-
-        # Write metadata for the cleanup manager
-        expires_minutes = float(os.getenv("ATTACHMENT_EXPIRES_MINUTES", "60"))
-        expires_at = datetime.now(timezone.utc) + timedelta(minutes=expires_minutes)
-        file_size = final_path.stat().st_size
-        absolute_path = str(final_path.resolve())
-
-        metadata = {
-            "file_id": file_id,
-            "attachment_id": attachment_id,
-            "original_filename": original_filename,
-            "file_path": absolute_path,
-            "content_type": content_type,
-            "size": file_size,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "expires_at": expires_at.isoformat(),
-        }
-        metadata_file = uuid_dir / "metadata.json"
-        temp_metadata = uuid_dir / "metadata.json.tmp"
-        try:
-            with open(temp_metadata, "w") as fh:
-                json.dump(metadata, fh, indent=2)
-            os.rename(str(temp_metadata), str(metadata_file))
-        except (OSError, IOError, ValueError) as exc:
+            client = _get_redmine_client()
             try:
-                if temp_metadata.exists():
-                    temp_metadata.unlink()
-                if final_path.exists():
-                    final_path.unlink()
-            except OSError:
-                pass
-            return {"error": f"Failed to save metadata: {exc}"}
+                attachment = client.attachment.get(attachment_id)
+            except ResourceNotFoundError:
+                # Redmine's GET /attachments/{id}.json returns 404 in three
+                # situations and does not distinguish between them:
+                #   1. the attachment row truly does not exist;
+                #   2. the caller lacks view permission on the container
+                #      (Redmine collapses 403 -> 404 to avoid leaking
+                #      existence of attachments the user cannot see);
+                #   3. the underlying file is unreadable on the Redmine
+                #      server's filesystem (orphan metadata).
+                # The embed path used by get_redmine_issue(include_attachments)
+                # surfaces (3) and sometimes (2), which is why callers see
+                # the attachment via one tool but get "not found" here.
+                return {
+                    "error": (
+                        f"Attachment {attachment_id} could not be fetched "
+                        f"from /attachments/{attachment_id}.json (HTTP 404)."
+                    ),
+                    "code": "ATTACHMENT_UNAVAILABLE",
+                    "upstream_status": 404,
+                    "hint": (
+                        "Redmine returns 404 here for missing attachments, "
+                        "for callers who lack view permission on the "
+                        "container, and for attachments whose underlying "
+                        "file is missing on the Redmine server's disk. If "
+                        "get_redmine_issue(include_attachments=True) lists "
+                        "this attachment, it exists but is either "
+                        "permission-restricted or orphaned on disk -- "
+                        "contact the Redmine administrator."
+                    ),
+                    "attachment_id": attachment_id,
+                }
 
-        # Mode detection:
-        # - Explicit PUBLIC_HOST always selects HTTP mode (respect user
-        #   intent, e.g. Docker port-forward where localhost is reachable
-        #   on the host).
-        # - Otherwise, SERVER_HOST promotes to HTTP mode only when it
-        #   names a non-loopback host (SERVER_HOST is the bind address
-        #   and is commonly "0.0.0.0", which is not reachable as a URL).
-        # - Otherwise, fall back to stdio/file mode.
-        public_host_env = os.environ.get("PUBLIC_HOST")
-        server_host_env = os.environ.get("SERVER_HOST")
-        if public_host_env is not None:
-            public_host = public_host_env
-            use_file_mode = False
-        elif server_host_env and server_host_env not in _LOOPBACK_HOSTS:
-            public_host = server_host_env
-            use_file_mode = False
-        else:
-            public_host = "localhost"
-            use_file_mode = True
+            # Sanitize filename: basename only (path traversal protection)
+            raw_filename = getattr(attachment, "filename", "") or ""
+            original_filename = os.path.basename(raw_filename)
+            if not original_filename:
+                original_filename = f"attachment_{attachment_id}"
 
-        public_port = os.getenv("PUBLIC_PORT", os.getenv("SERVER_PORT", "8000"))
+            content_type = getattr(
+                attachment, "content_type", "application/octet-stream"
+            )
+            content_url = getattr(attachment, "content_url", "")
 
-        expires_str = expires_at.isoformat()
-        # filename is structured metadata (used for paths, URLs,
-        # identifiers); not wrapped per #109. Path-traversal sanitization
-        # already ran above via os.path.basename().
-        safe_filename = original_filename
+            # Prepare UUID-based storage directory
+            attachments_dir = Path(os.getenv("ATTACHMENTS_DIR", "./attachments"))
+            attachments_dir.mkdir(parents=True, exist_ok=True)
+            file_id = str(uuid.uuid4())
+            uuid_dir = attachments_dir / file_id
+            uuid_dir.mkdir(exist_ok=True)
 
-        if use_file_mode:
-            return {
+            temp_path = uuid_dir / f"{original_filename}.tmp"
+            final_path = uuid_dir / original_filename
+
+            # Stream download with byte-cap abort
+            max_bytes = _get_int_env(
+                "ATTACHMENT_MAX_DOWNLOAD_BYTES",
+                _ATTACHMENT_MAX_DOWNLOAD_BYTES_DEFAULT,
+            )
+            response = client.download(content_url, savepath=None)
+
+            try:
+                byte_count = 0
+                with open(temp_path, "wb") as fh:
+                    for chunk in response.iter_content(65536):
+                        byte_count += len(chunk)
+                        if byte_count > max_bytes:
+                            fh.close()
+                            _cleanup_uuid_dir(uuid_dir, temp_path)
+                            return {
+                                "error": (
+                                    f"Attachment {attachment_id} exceeds the "
+                                    f"{max_bytes}-byte download limit."
+                                )
+                            }
+                        fh.write(chunk)
+            except Exception:
+                _cleanup_uuid_dir(uuid_dir, temp_path)
+                raise
+
+            # Atomic rename: temp -> final
+            os.rename(str(temp_path), str(final_path))
+
+            # Write metadata for the cleanup manager
+            expires_minutes = float(os.getenv("ATTACHMENT_EXPIRES_MINUTES", "60"))
+            expires_at = datetime.now(timezone.utc) + timedelta(minutes=expires_minutes)
+            file_size = final_path.stat().st_size
+            absolute_path = str(final_path.resolve())
+
+            metadata = {
+                "file_id": file_id,
+                "attachment_id": attachment_id,
+                "original_filename": original_filename,
                 "file_path": absolute_path,
-                "uri_type": "file",
+                "content_type": content_type,
+                "size": file_size,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "expires_at": expires_at.isoformat(),
+            }
+            metadata_file = uuid_dir / "metadata.json"
+            temp_metadata = uuid_dir / "metadata.json.tmp"
+            try:
+                with open(temp_metadata, "w") as fh:
+                    json.dump(metadata, fh, indent=2)
+                os.rename(str(temp_metadata), str(metadata_file))
+            except (OSError, IOError, ValueError) as exc:
+                try:
+                    if temp_metadata.exists():
+                        temp_metadata.unlink()
+                    if final_path.exists():
+                        final_path.unlink()
+                except OSError:
+                    pass
+                return {"error": f"Failed to save metadata: {exc}"}
+
+            # Mode detection:
+            # - Explicit PUBLIC_HOST always selects HTTP mode (respect user
+            #   intent, e.g. Docker port-forward where localhost is reachable
+            #   on the host).
+            # - Otherwise, SERVER_HOST promotes to HTTP mode only when it
+            #   names a non-loopback host (SERVER_HOST is the bind address
+            #   and is commonly "0.0.0.0", which is not reachable as a URL).
+            # - Otherwise, fall back to stdio/file mode.
+            public_host_env = os.environ.get("PUBLIC_HOST")
+            server_host_env = os.environ.get("SERVER_HOST")
+            if public_host_env is not None:
+                public_host = public_host_env
+                use_file_mode = False
+            elif server_host_env and server_host_env not in _LOOPBACK_HOSTS:
+                public_host = server_host_env
+                use_file_mode = False
+            else:
+                public_host = "localhost"
+                use_file_mode = True
+
+            public_port = os.getenv("PUBLIC_PORT", os.getenv("SERVER_PORT", "8000"))
+
+            expires_str = expires_at.isoformat()
+            # filename is structured metadata (used for paths, URLs,
+            # identifiers); not wrapped per #109. Path-traversal sanitization
+            # already ran above via os.path.basename().
+            safe_filename = original_filename
+
+            if use_file_mode:
+                return {
+                    "file_path": absolute_path,
+                    "uri_type": "file",
+                    "filename": safe_filename,
+                    "content_type": content_type,
+                    "size": file_size,
+                    "expires_at": expires_str,
+                    "attachment_id": attachment_id,
+                }
+
+            return {
+                "uri": f"http://{public_host}:{public_port}/files/{file_id}",
+                "uri_type": "http",
                 "filename": safe_filename,
                 "content_type": content_type,
                 "size": file_size,
@@ -457,22 +478,14 @@ async def get_redmine_attachment(
                 "attachment_id": attachment_id,
             }
 
-        return {
-            "uri": f"http://{public_host}:{public_port}/files/{file_id}",
-            "uri_type": "http",
-            "filename": safe_filename,
-            "content_type": content_type,
-            "size": file_size,
-            "expires_at": expires_str,
-            "attachment_id": attachment_id,
-        }
+        except Exception as exc:
+            return _handle_redmine_error(
+                exc,
+                f"downloading attachment {attachment_id}",
+                {"resource_type": "attachment", "resource_id": attachment_id},
+            )
 
-    except Exception as exc:
-        return _handle_redmine_error(
-            exc,
-            f"downloading attachment {attachment_id}",
-            {"resource_type": "attachment", "resource_id": attachment_id},
-        )
+    return await in_thread(_run)
 
 
 def _cleanup_uuid_dir(uuid_dir: Path, *extra_paths: Path) -> None:
@@ -491,7 +504,8 @@ def _cleanup_uuid_dir(uuid_dir: Path, *extra_paths: Path) -> None:
 
 
 @mcp.tool()
-async def list_files(
+@offloaded
+def list_files(
     project_id: Union[str, int],
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """List all files uploaded to a Redmine project.
@@ -624,55 +638,59 @@ async def upload_file(
     if resolve_error is not None:
         return resolve_error
 
-    client = _get_redmine_client()
-    try:
-        # Step 1: upload raw bytes to /uploads.json, get token
-        token = client.upload(io.BytesIO(content_bytes), filename=filename)["token"]
+    def _run():
+        client = _get_redmine_client()
+        try:
+            # Step 1: upload raw bytes to /uploads.json, get token
+            token = client.upload(io.BytesIO(content_bytes), filename=filename)["token"]
 
-        # Step 2: create the File resource using the token
-        create_params: Dict[str, Any] = {
-            "project_id": project_id,
-            "token": token,
-            "filename": filename,
-        }
-        if description is not None:
-            create_params["description"] = description
-        if version_id is not None:
-            create_params["version_id"] = version_id
+            # Step 2: create the File resource using the token
+            create_params: Dict[str, Any] = {
+                "project_id": project_id,
+                "token": token,
+                "filename": filename,
+            }
+            if description is not None:
+                create_params["description"] = description
+            if version_id is not None:
+                create_params["version_id"] = version_id
 
-        uploaded = client.file.create(**create_params)
+            uploaded = client.file.create(**create_params)
 
-        # Redmine returns HTTP 204 (empty body) on successful file creation,
-        # so python-redmine's FileManager synthesizes a minimal response that
-        # only contains the ID. Re-fetch the full attachment metadata so the
-        # caller gets filename, size, content type, author, etc.
-        uploaded_id = getattr(uploaded, "id", None)
-        if uploaded_id is not None:
-            try:
-                full = client.attachment.get(uploaded_id)
-                return _file_to_dict(full)
-            except Exception:
-                # If re-fetch fails for any reason, fall back to the minimal
-                # response + the known fields we already have.
-                pass
-        result = _file_to_dict(uploaded)
-        # Fallback enrichment when the re-fetch failed: ensure the caller at
-        # least sees the filename and description they just uploaded.
-        if not result.get("filename"):
-            result["filename"] = filename
-        if description is not None and not result.get("description"):
-            result["description"] = description
-        return result
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"uploading file '{filename}' to project {project_id}",
-            {"resource_type": "project", "resource_id": project_id},
-        )
+            # Redmine returns HTTP 204 (empty body) on successful file creation,
+            # so python-redmine's FileManager synthesizes a minimal response that
+            # only contains the ID. Re-fetch the full attachment metadata so the
+            # caller gets filename, size, content type, author, etc.
+            uploaded_id = getattr(uploaded, "id", None)
+            if uploaded_id is not None:
+                try:
+                    full = client.attachment.get(uploaded_id)
+                    return _file_to_dict(full)
+                except Exception:
+                    # If re-fetch fails for any reason, fall back to the minimal
+                    # response + the known fields we already have.
+                    pass
+            result = _file_to_dict(uploaded)
+            # Fallback enrichment when the re-fetch failed: ensure the caller at
+            # least sees the filename and description they just uploaded.
+            if not result.get("filename"):
+                result["filename"] = filename
+            if description is not None and not result.get("description"):
+                result["description"] = description
+            return result
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"uploading file '{filename}' to project {project_id}",
+                {"resource_type": "project", "resource_id": project_id},
+            )
+
+    return await in_thread(_run)
 
 
 @mcp.tool()
-async def delete_file(
+@offloaded
+def delete_file(
     file_id: int,
     confirm_delete_any_attachment: bool = False,
 ) -> Dict[str, Any]:

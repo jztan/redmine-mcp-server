@@ -583,13 +583,21 @@ class TestHoursValidationIntegration:
 
 
 class TestImportTimeEntriesYieldsEventLoop:
+    """The import must not starve the event loop during a long batch.
+
+    This used to be an `await asyncio.sleep(0)` between entries, asserted by
+    counting sleep calls. That only helped when every call returned promptly:
+    one hung entry still blocked the loop for the whole timeout, because the
+    yield never arrived. The whole loop now runs in a worker thread instead
+    (issue #216), so the property is asserted directly.
+    """
+
     @pytest.mark.asyncio
-    @patch(
-        "redmine_mcp_server.tools.time_tracking.asyncio.sleep",
-        new_callable=AsyncMock,
-    )
     @patch("redmine_mcp_server._client.redmine")
-    async def test_sleeps_between_entries(self, mock_redmine, mock_sleep):
+    async def test_does_not_block_the_event_loop(self, mock_redmine):
+        import asyncio
+        import time
+
         mock_te = Mock()
         mock_te.id = 1
         mock_te.hours = 1.0
@@ -601,19 +609,34 @@ class TestImportTimeEntriesYieldsEventLoop:
         mock_te.activity = None
         mock_te.created_on = None
         mock_te.updated_on = None
-        mock_redmine.time_entry.create.return_value = mock_te
 
-        await import_time_entries(
+        def slow_create(**kwargs):
+            time.sleep(0.2)
+            return mock_te
+
+        mock_redmine.time_entry.create.side_effect = slow_create
+
+        ticks = 0
+
+        async def heartbeat():
+            nonlocal ticks
+            while True:
+                await asyncio.sleep(0.01)
+                ticks += 1
+
+        task = asyncio.create_task(heartbeat())
+        await asyncio.sleep(0)
+        result = await import_time_entries(
             [
                 {"hours": 1.0, "issue_id": 1},
                 {"hours": 1.0, "issue_id": 2},
                 {"hours": 1.0, "issue_id": 3},
             ]
         )
+        task.cancel()
 
-        # We yield between entries (3 entries -> 2 sleep(0) calls)
-        sleep_0_calls = [c for c in mock_sleep.call_args_list if c.args == (0,)]
-        assert len(sleep_0_calls) == 2
+        assert len(result["created"]) == 3
+        assert ticks >= 10, f"loop only ticked {ticks} times during a 0.6s import"
 
 
 # ===========================================================================
