@@ -9,6 +9,7 @@ from .._client import _get_redmine_client
 from .._decorators import ActionMode, action_dispatch
 from .._env import _is_crm_enabled
 from .._errors import _handle_redmine_error
+from .._offload import offloaded
 from .._serialization import (
     _REDMINE_API_PAGE_CAP,
     _safe_isoformat,
@@ -101,7 +102,8 @@ def _contact_to_dict(contact: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-async def _list_contacts_action(
+@offloaded
+def _list_contacts_action(
     project_id: Optional[Union[str, int]] = None,
     search: Optional[str] = None,
     tags: Optional[str] = None,
@@ -144,7 +146,8 @@ async def _list_contacts_action(
         )
 
 
-async def _get_contact_action(
+@offloaded
+def _get_contact_action(
     contact_id: Optional[int] = None,
     include: Optional[str] = None,
     **_: Any,
@@ -172,7 +175,8 @@ async def _get_contact_action(
         )
 
 
-async def _create_contact_action(
+@offloaded
+def _create_contact_action(
     project_id: Optional[Union[str, int]] = None,
     first_name: Optional[str] = None,
     last_name: Optional[str] = None,
@@ -234,7 +238,8 @@ async def _create_contact_action(
         )
 
 
-async def _update_contact_action(
+@offloaded
+def _update_contact_action(
     contact_id: Optional[int] = None,
     fields: Optional[Dict[str, Any]] = None,
     **_: Any,
@@ -275,7 +280,8 @@ async def _update_contact_action(
         )
 
 
-async def _delete_contact_action(
+@offloaded
+def _delete_contact_action(
     contact_id: Optional[int] = None,
     **_: Any,
 ) -> Dict[str, Any]:
@@ -300,7 +306,8 @@ async def _delete_contact_action(
         )
 
 
-async def _assign_contact_to_project_action(
+@offloaded
+def _assign_contact_to_project_action(
     contact_id: Optional[int] = None,
     project_id: Optional[Union[str, int]] = None,
     **_: Any,
@@ -338,7 +345,8 @@ async def _assign_contact_to_project_action(
         )
 
 
-async def _remove_contact_from_project_action(
+@offloaded
+def _remove_contact_from_project_action(
     contact_id: Optional[int] = None,
     project_id: Optional[Union[str, int]] = None,
     **_: Any,

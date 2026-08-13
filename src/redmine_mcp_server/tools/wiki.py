@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Literal, Optional, Union
 from .._client import _get_redmine_client
 from .._decorators import ActionMode, action_dispatch
 from .._errors import _handle_redmine_error
+from .._offload import in_thread, offloaded
 from .files import _build_upload_descriptors
 from .._serialization import (
     _attachment_to_dict,
@@ -81,7 +82,8 @@ def _require_wiki_page_title(action: str, wiki_page_title: Any) -> Optional[str]
     return None
 
 
-async def _list_wiki_pages_action(
+@offloaded
+def _list_wiki_pages_action(
     project_id: Optional[Union[str, int]] = None,
     **_: Any,
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
@@ -109,7 +111,8 @@ async def _list_wiki_pages_action(
         )
 
 
-async def _get_wiki_page_action(
+@offloaded
+def _get_wiki_page_action(
     project_id: Optional[Union[str, int]] = None,
     wiki_page_title: Optional[str] = None,
     version: Optional[int] = None,
@@ -166,15 +169,18 @@ async def _create_wiki_page_action(
     if upload_descriptors:
         create_kwargs["uploads"] = upload_descriptors
 
-    try:
-        wiki_page = _get_redmine_client().wiki_page.create(**create_kwargs)
-        return _wiki_page_to_dict(wiki_page)
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"creating wiki page '{wiki_page_title}' in project {project_id}",
-            {"resource_type": "wiki page", "resource_id": wiki_page_title},
-        )
+    def _run():
+        try:
+            wiki_page = _get_redmine_client().wiki_page.create(**create_kwargs)
+            return _wiki_page_to_dict(wiki_page)
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"creating wiki page '{wiki_page_title}' in project {project_id}",
+                {"resource_type": "wiki page", "resource_id": wiki_page_title},
+            )
+
+    return await in_thread(_run)
 
 
 async def _update_wiki_page_action(
@@ -207,12 +213,16 @@ async def _update_wiki_page_action(
         # already-uploaded blobs on the server with nothing left to attach
         # them to. Doing the cheap, most-likely-to-fail GET first avoids
         # that. Do not reorder this back for "tidiness".
-        try:
+        def _read_back():
             existing = _get_redmine_client().wiki_page.get(
                 wiki_page_title, project_id=project_id
             )
-            existing_text = existing.text
-            existing_version = existing.version
+            # Read both attributes in the worker too: a missing included
+            # field makes python-redmine re-fetch on attribute access.
+            return existing.text, existing.version
+
+        try:
+            existing_text, existing_version = await in_thread(_read_back)
         except Exception as e:
             return _handle_redmine_error(
                 e,
@@ -233,28 +243,32 @@ async def _update_wiki_page_action(
     if upload_descriptors:
         update_kwargs["uploads"] = upload_descriptors
 
-    try:
-        client = _get_redmine_client()
-        if text is None:
-            # Sending the version read above turns a concurrent edit into a
-            # 409 instead of a silent revert. Unchanged text does not create
-            # a new revision.
-            update_kwargs["text"] = existing_text
-            update_kwargs["version"] = existing_version
-        else:
-            update_kwargs["text"] = text
-        client.wiki_page.update(wiki_page_title, **update_kwargs)
-        wiki_page = client.wiki_page.get(wiki_page_title, project_id=project_id)
-        return _wiki_page_to_dict(wiki_page)
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"updating wiki page '{wiki_page_title}' in project {project_id}",
-            {"resource_type": "wiki page", "resource_id": wiki_page_title},
-        )
+    def _run():
+        try:
+            client = _get_redmine_client()
+            if text is None:
+                # Sending the version read above turns a concurrent edit into a
+                # 409 instead of a silent revert. Unchanged text does not create
+                # a new revision.
+                update_kwargs["text"] = existing_text
+                update_kwargs["version"] = existing_version
+            else:
+                update_kwargs["text"] = text
+            client.wiki_page.update(wiki_page_title, **update_kwargs)
+            wiki_page = client.wiki_page.get(wiki_page_title, project_id=project_id)
+            return _wiki_page_to_dict(wiki_page)
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"updating wiki page '{wiki_page_title}' in project {project_id}",
+                {"resource_type": "wiki page", "resource_id": wiki_page_title},
+            )
+
+    return await in_thread(_run)
 
 
-async def _delete_wiki_page_action(
+@offloaded
+def _delete_wiki_page_action(
     project_id: Optional[Union[str, int]] = None,
     wiki_page_title: Optional[str] = None,
     **_: Any,
@@ -278,7 +292,8 @@ async def _delete_wiki_page_action(
         )
 
 
-async def _rename_wiki_page_action(
+@offloaded
+def _rename_wiki_page_action(
     project_id: Optional[Union[str, int]] = None,
     wiki_page_title: Optional[str] = None,
     new_title: Optional[str] = None,
