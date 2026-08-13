@@ -164,3 +164,56 @@ async def test_tool_does_not_block_the_event_loop():
 
     assert result["total_count"] == 0
     assert ticks >= 10, f"loop only ticked {ticks} times during a hung tool call"
+
+
+def test_no_blocking_client_call_runs_on_the_event_loop():
+    """Every _get_redmine_client() call must sit in a synchronous scope.
+
+    A synchronous scope is either an @offloaded function or a `def _run()`
+    closure passed to in_thread(), both of which execute in a worker thread.
+    A call whose innermost enclosing function is `async def` runs on the event
+    loop and reintroduces issue #216.
+
+    This is a static check on purpose: it covers tools no test exercises, and
+    it names the offender instead of failing as a timeout somewhere else.
+    """
+    import ast
+    import pathlib
+    import re
+
+    import redmine_mcp_server
+
+    blocking = re.compile(
+        r"_get_redmine_client\(|_map_named_custom_fields|"
+        r"_augment_fields_with_required"
+    )
+    package = pathlib.Path(redmine_mcp_server.__file__).parent
+
+    offenders = []
+    for path in sorted(package.rglob("*.py")):
+        source = path.read_text()
+        tree = ast.parse(source)
+        for lineno, line in enumerate(source.splitlines(), 1):
+            stripped = line.strip()
+            if not blocking.search(line):
+                continue
+            # Skip imports and the continuation lines of a multi-line import.
+            if stripped.startswith(("from ", "import ", "#")) or stripped.endswith(","):
+                continue
+            innermost = None
+            for node in ast.walk(tree):
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                if node.lineno <= lineno <= node.end_lineno:
+                    if innermost is None or node.lineno > innermost.lineno:
+                        innermost = node
+            if innermost is not None and isinstance(innermost, ast.AsyncFunctionDef):
+                offenders.append(
+                    f"{path.relative_to(package)}:{lineno} in {innermost.name}"
+                )
+
+    assert not offenders, (
+        "blocking Redmine calls still run on the event loop: "
+        + ", ".join(offenders)
+        + ". Wrap the synchronous section with @offloaded or in_thread()."
+    )
