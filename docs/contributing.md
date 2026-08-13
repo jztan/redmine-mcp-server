@@ -113,11 +113,67 @@ Cross-cutting utilities live as flat private modules:
 | `_cleanup.py` | Background cleanup task |
 | `_http_routes.py` | Starlette routes (`/health` with a Doorkeeper introspection probe in `oauth` / `oauth-proxy` modes and a Redmine credential probe in legacy mode, `/files/{id}`, `/cleanup/status`) |
 | `_decorators.py` | `@action_dispatch` decorator + `ActionMode` enum |
+| `_offload.py` | `@offloaded` decorator and `in_thread()`: run blocking python-redmine work in a worker thread instead of on the event loop |
 | `_auth.py` | `RedmineAuthProvider` (a `RemoteAuthProvider` subclass) and its `build_remote_auth()` factory: composes `IntrospectionTokenVerifier` (RFC 7662) and adds the RFC 8414 AS-metadata mirror plus the RFC 7009 `/revoke` route. Used by `oauth` mode. |
 | `_oauth_proxy.py` | `build_oauth_proxy()` factory: a FastMCP `OAuthProxy` backed by `IntrospectionTokenVerifier`, proxying `/authorize`, `/token`, and `/revoke` to Doorkeeper with external consent and a loopback-default redirect-URI allowlist. Used by `oauth-proxy` mode. |
 | `_mount.py` | Public base-URL helpers (`mcp_base_url`, `mcp_path_for_http_app`, `mcp_mount_prefix`) for serving the authenticated app behind `REDMINE_MCP_BASE_URL`. |
 | `_tool_error_middleware.py` | FastMCP middleware that surfaces tool-validation errors with a clean payload. |
 | `oauth_scopes.py` | `READ_SCOPES` / `WRITE_SCOPES` inventory + `advertised_scopes()` used by both the protected-resource and AS-metadata discovery documents. |
+
+### Keeping blocking calls off the event loop
+
+python-redmine is synchronous, so any tool that calls it on the event loop
+stalls every other request until the call returns, including `/health`
+([#216](https://github.com/jztan/redmine-mcp-server/issues/216)). Two rules
+follow, and `_get_redmine_client()` enforces them at runtime: it raises if it
+is called on the event loop thread.
+
+**Rule 1: if the function has no `await`, make it a plain `def` and decorate it
+with `@offloaded`.** This is most tools and every per-action handler.
+
+```python
+from .._offload import offloaded
+
+@mcp.tool()
+@offloaded
+def list_widgets(project_id: int) -> Dict[str, Any]:
+    ...
+```
+
+**Rule 2: if the function must stay a coroutine because it awaits something,
+wrap its synchronous remainder in a nested closure and hand that to
+`in_thread()`.**
+
+```python
+from .._offload import in_thread
+
+@mcp.tool()
+async def get_widget(widget_id: int) -> Dict[str, Any]:
+    await _ensure_cleanup_started()
+
+    def _run() -> Dict[str, Any]:
+        try:
+            widget = _get_redmine_client().widget.get(widget_id)
+            return _widget_to_dict(widget)
+        except Exception as e:
+            return _handle_redmine_error(e, f"fetching widget {widget_id}")
+
+    return await in_thread(_run)
+```
+
+Use a nested closure rather than a separate top-level function so parameters
+are captured instead of re-declared in a second signature. If the closure
+assigns to a name that also exists outside it, add a `nonlocal` for that name,
+otherwise Python makes it a closure-local and the read before assignment raises
+`UnboundLocalError`.
+
+Move the **whole** synchronous section in one hop, not just the client call.
+python-redmine issues its HTTP request on the first iteration of a result set,
+not at `.filter()`, and re-fetches on attribute access for a field that was not
+included, so iteration and serialization block too.
+
+`tests/test_offload.py` has a static check that fails with the offending file,
+line, and function if a blocking call is left on the loop.
 
 ### Adding a new `manage_X` tool
 
@@ -125,13 +181,18 @@ The 9 `manage_X` tools (plus `manage_redmine_version`) follow a consistent patte
 
 ```python
 from .._decorators import ActionMode, action_dispatch
+from .._offload import offloaded
 
-# Per-action handlers (private async functions in the same file)
-async def _list_widgets_action(project_id=None, **_):
+# Per-action handlers (private functions in the same file). They are plain
+# `def` carrying @offloaded, so the blocking Redmine work runs in a worker
+# thread; action_dispatch awaits them exactly the same way.
+@offloaded
+def _list_widgets_action(project_id=None, **_):
     # validation, fetch, return
     ...
 
-async def _create_widget_action(project_id=None, name=None, **_):
+@offloaded
+def _create_widget_action(project_id=None, name=None, **_):
     # validation, create, return
     ...
 
@@ -377,7 +438,8 @@ git push origin feature/your-feature-name
 
 ```python
 # Good: Clear function with type hints and docstring
-async def get_issue(issue_id: int, include_journals: bool = True) -> Dict[str, Any]:
+@offloaded
+def get_issue(issue_id: int, include_journals: bool = True) -> Dict[str, Any]:
     """
     Retrieve detailed information about a Redmine issue.
 
@@ -409,9 +471,13 @@ except Exception as e:
 ### MCP Tool Implementation
 
 ```python
-# Good: MCP tool with clear documentation
+# Good: MCP tool with clear documentation.
+# Plain `def` + @offloaded so the blocking Redmine call runs in a worker
+# thread. See "Keeping blocking calls off the event loop" above for the
+# case where the tool has to stay a coroutine.
 @mcp.tool()
-async def tool_name(param: str) -> Dict[str, Any]:
+@offloaded
+def tool_name(param: str) -> Dict[str, Any]:
     """
     Brief description of what this tool does.
 
@@ -591,6 +657,7 @@ redmine-mcp-server/
 │   ├── _cleanup.py          # Background attachment cleanup task
 │   ├── _http_routes.py      # Starlette routes (/health w/ introspection + legacy redmine probe, /files, /cleanup/status)
 │   ├── _decorators.py       # `@action_dispatch` decorator + `ActionMode` enum
+│   ├── _offload.py          # `@offloaded` / `in_thread()`: keep blocking calls off the event loop
 │   ├── _tool_error_middleware.py  # FastMCP middleware that normalizes tool validation errors
 │   ├── oauth_scopes.py      # READ_SCOPES / WRITE_SCOPES inventory + advertised_scopes()
 │   └── file_manager.py      # Attachment file storage manager
@@ -646,9 +713,11 @@ To add a new MCP tool to the server:
    ```python
    from ..server import mcp
    from .._errors import _handle_redmine_error
+   from .._offload import offloaded
 
    @mcp.tool()
-   async def your_new_tool(param: str) -> Dict[str, Any]:
+   @offloaded
+   def your_new_tool(param: str) -> Dict[str, Any]:
        """
        Brief description of what this tool does.
 
