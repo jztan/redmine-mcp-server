@@ -18,6 +18,7 @@ Tests patch this module's attributes directly, e.g.
 
 import logging
 import os
+import threading
 from pathlib import Path
 from typing import Optional, Union
 from urllib.parse import urlparse
@@ -296,7 +297,24 @@ redmine: Optional[Redmine] = None
 
 # Cached legacy-mode client — avoids recreating Redmine() on every tool call
 # when running without OAuth.
+#
+# Tests patch this module attribute directly, so it stays the authoritative
+# override: when it is not None it is returned as is. The automatic cache lives
+# in a threading.local() instead, because tools now run in worker threads and
+# a requests.Session is not documented as thread-safe (issue #216).
 _legacy_client: Optional[Redmine] = None
+
+_legacy_client_local = threading.local()
+
+
+def _reset_legacy_client_cache() -> None:
+    """Drop the per-thread cached legacy client.
+
+    Used by the test suite so a test patching ``_legacy_client`` to None gets a
+    freshly built client rather than one cached by an earlier test.
+    """
+    if hasattr(_legacy_client_local, "client"):
+        del _legacy_client_local.client
 
 
 def _build_legacy_client() -> Redmine:
@@ -325,8 +343,6 @@ def _build_legacy_client() -> Redmine:
 
 
 def _get_redmine_client() -> Redmine:
-    global _legacy_client
-
     # Read this module's attributes via globals() so tests patching
     # `_client.redmine`, `_client._legacy_client`, and `_client.Redmine`
     # are observed at call time.
@@ -357,8 +373,13 @@ def _get_redmine_client() -> Redmine:
         maybe_log_identity(client, key)
         return client
 
-    # Legacy mode: reuse a cached singleton.
-    if g["_legacy_client"] is None:
-        g["_legacy_client"] = _build_legacy_client()
-    _legacy_client = g["_legacy_client"]
-    return g["_legacy_client"]
+    # Legacy mode: an explicitly set module attribute wins (tests patch it),
+    # otherwise use the per-thread cache.
+    if g["_legacy_client"] is not None:
+        return g["_legacy_client"]
+
+    client = getattr(_legacy_client_local, "client", None)
+    if client is None:
+        client = _build_legacy_client()
+        _legacy_client_local.client = client
+    return client

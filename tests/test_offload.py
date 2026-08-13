@@ -83,3 +83,51 @@ def test_offloaded_rejects_a_coroutine_function():
         @offloaded
         async def already_async():
             return None
+
+
+async def test_legacy_client_cache_is_per_thread():
+    from unittest.mock import patch
+
+    from redmine_mcp_server import _client
+
+    _client._reset_legacy_client_cache()
+    with (
+        patch.object(_client, "redmine", None),
+        patch.object(_client, "_legacy_client", None),
+        patch.object(_client, "REDMINE_AUTH_MODE", "legacy"),
+        patch.object(_client, "REDMINE_API_KEY", "key"),
+        patch.object(_client, "REDMINE_URL", "https://redmine.example.com"),
+    ):
+        # The barrier forces the two hops to overlap. Without it the first can
+        # finish before the second is submitted, both land on the same pooled
+        # worker thread, and returning the cached client there is correct.
+        barrier = threading.Barrier(2, timeout=5)
+
+        def build_client():
+            barrier.wait()
+            return _client._get_redmine_client()
+
+        first, second = await asyncio.gather(
+            in_thread(build_client),
+            in_thread(build_client),
+        )
+
+    assert first is not None and second is not None
+    assert first is not second, "each worker thread must get its own client"
+
+
+async def test_explicitly_patched_legacy_client_still_wins():
+    from unittest.mock import Mock, patch
+
+    from redmine_mcp_server import _client
+
+    _client._reset_legacy_client_cache()
+    sentinel = Mock(name="patched-client")
+    with (
+        patch.object(_client, "redmine", None),
+        patch.object(_client, "_legacy_client", sentinel),
+        patch.object(_client, "REDMINE_AUTH_MODE", "legacy"),
+    ):
+        got = await in_thread(_client._get_redmine_client)
+
+    assert got is sentinel

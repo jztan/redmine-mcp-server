@@ -99,3 +99,18 @@ def mock_api_key_env(monkeypatch):
     # Remove username/password if they exist
     monkeypatch.delenv("REDMINE_USERNAME", raising=False)
     monkeypatch.delenv("REDMINE_PASSWORD", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _reset_legacy_client_cache_between_tests():
+    """Keep the per-thread legacy client cache from leaking across tests.
+
+    Tests patch ``_client._legacy_client`` to None to force a rebuild. Without
+    this, a client cached in a worker thread by an earlier test would be
+    returned instead (issue #216).
+    """
+    from redmine_mcp_server import _client
+
+    _client._reset_legacy_client_cache()
+    yield
+    _client._reset_legacy_client_cache()
