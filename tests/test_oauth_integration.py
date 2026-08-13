@@ -118,7 +118,10 @@ async def test_end_to_end_tool_call_via_mcp():
         patch.object(_client, "_legacy_client", None),
         patch("redmine_mcp_server._client.get_access_token", return_value=access),
     ):
-        redmine = _client._get_redmine_client()
+        # This test drives the client factory directly rather than through a
+        # tool, so it opts out of the event-loop guard (issue #216).
+        with _client.allow_loop_thread():
+            redmine = _client._get_redmine_client()
         # Cheap read call to prove the bearer is forwarded correctly.
         projects = list(redmine.project.all()[:1])
         assert isinstance(projects, list)

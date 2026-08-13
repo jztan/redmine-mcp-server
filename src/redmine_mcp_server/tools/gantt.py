@@ -6,6 +6,7 @@ from pydantic import Field
 
 from .._client import _get_redmine_client
 from .._errors import _handle_redmine_error
+from .._offload import offloaded
 from .._serialization import (
     _DEFAULT_LIST_RESULT_CAP,
     _iter_capped,
@@ -71,7 +72,8 @@ def _gantt_version_to_dict(version: Any) -> Dict[str, Any]:
 
 
 @mcp.tool()
-async def get_gantt_chart(
+@offloaded
+def get_gantt_chart(
     project_id: Union[str, int],
     start_date_after: Optional[str] = None,
     due_date_before: Optional[str] = None,

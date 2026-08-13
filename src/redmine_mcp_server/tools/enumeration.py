@@ -11,12 +11,14 @@ from pydantic import Field
 
 from .._client import _get_redmine_client
 from .._errors import _handle_redmine_error
+from .._offload import offloaded
 from .._serialization import _iter_capped, _safe_isoformat
 from ..server import mcp
 
 
 @mcp.tool()
-async def list_redmine_trackers() -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+@offloaded
+def list_redmine_trackers() -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """List all trackers (issue types) defined in the Redmine instance.
 
     Trackers classify issues (e.g., Bug, Feature, Support). Use this tool
@@ -50,7 +52,8 @@ async def list_redmine_trackers() -> Union[List[Dict[str, Any]], Dict[str, Any]]
 
 
 @mcp.tool()
-async def list_redmine_issue_statuses() -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+@offloaded
+def list_redmine_issue_statuses() -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """List all issue statuses defined in the Redmine instance.
 
     Use this tool to discover valid ``status_id`` values before calling
@@ -86,9 +89,8 @@ async def list_redmine_issue_statuses() -> Union[List[Dict[str, Any]], Dict[str,
 
 
 @mcp.tool()
-async def list_redmine_issue_priorities() -> (
-    Union[List[Dict[str, Any]], Dict[str, Any]]
-):
+@offloaded
+def list_redmine_issue_priorities() -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """List all issue priority levels defined in the Redmine instance.
 
     Use this tool to discover valid ``priority_id`` values before calling
@@ -125,7 +127,8 @@ async def list_redmine_issue_priorities() -> (
 
 
 @mcp.tool()
-async def list_redmine_users(
+@offloaded
+def list_redmine_users(
     name: Optional[str] = None,
     group_id: Optional[int] = None,
     limit: Annotated[int, Field(ge=1, le=100)] = 25,
@@ -178,7 +181,8 @@ async def list_redmine_users(
 
 
 @mcp.tool()
-async def get_current_user() -> Dict[str, Any]:
+@offloaded
+def get_current_user() -> Dict[str, Any]:
     """Retrieve the currently authenticated user's profile.
 
     Resolves to ``GET /my/account.json`` under the hood. Works for any
@@ -212,7 +216,8 @@ async def get_current_user() -> Dict[str, Any]:
 
 
 @mcp.tool()
-async def list_redmine_queries() -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+@offloaded
+def list_redmine_queries() -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """List all saved custom queries visible to the current user.
 
     Custom queries are saved issue filters (defined via the Redmine web

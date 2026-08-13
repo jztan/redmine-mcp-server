@@ -1,6 +1,5 @@
 """Time tracking tools: list, manage (create/update), activities, bulk import."""
 
-import asyncio
 from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 
 from pydantic import Field
@@ -9,6 +8,7 @@ from .._client import _get_redmine_client, logger
 from .._decorators import ActionMode, action_dispatch
 from .._env import _is_read_only_mode
 from .._errors import _READ_ONLY_ERROR, _handle_redmine_error, _scrub_error_message
+from .._offload import offloaded
 from .._serialization import (
     _named_ref,
     _safe_isoformat,
@@ -19,8 +19,9 @@ from ..server import mcp
 
 # Maximum entries in a single `import_time_entries` call. Redmine has no
 # native bulk endpoint, so each entry is a sequential synchronous HTTP
-# call; capping the batch prevents a single tool invocation from pinning
-# the event loop for minutes.
+# call. The loop runs in a worker thread now (issue #216), so it no longer
+# pins the event loop, but the cap still bounds how long one tool
+# invocation can occupy a worker.
 _IMPORT_TIME_ENTRIES_MAX_BATCH = 500
 
 
@@ -53,7 +54,8 @@ def _time_entry_to_dict(time_entry: Any) -> Dict[str, Any]:
 
 
 @mcp.tool()
-async def list_time_entries(
+@offloaded
+def list_time_entries(
     project_id: Optional[Union[str, int]] = None,
     issue_id: Optional[int] = None,
     user_id: Optional[Union[int, Literal["me"]]] = None,
@@ -118,7 +120,8 @@ async def list_time_entries(
         return _handle_redmine_error(e, "listing time entries")
 
 
-async def _create_time_entry_action(
+@offloaded
+def _create_time_entry_action(
     hours: Optional[float] = None,
     project_id: Optional[Union[str, int]] = None,
     issue_id: Optional[int] = None,
@@ -163,7 +166,8 @@ async def _create_time_entry_action(
         return _handle_redmine_error(e, "creating time entry", context)
 
 
-async def _update_time_entry_action(
+@offloaded
+def _update_time_entry_action(
     time_entry_id: Optional[int] = None,
     hours: Optional[float] = None,
     activity_id: Optional[int] = None,
@@ -249,7 +253,8 @@ async def manage_time_entry(
 
 
 @mcp.tool()
-async def list_time_entry_activities(
+@offloaded
+def list_time_entry_activities(
     project_id: Optional[Union[str, int]] = None,
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """List available time entry activities from Redmine.
@@ -340,7 +345,8 @@ async def list_time_entry_activities(
 
 
 @mcp.tool()
-async def import_time_entries(
+@offloaded
+def import_time_entries(
     entries: List[Dict[str, Any]],
     stop_on_error: bool = False,
 ) -> Dict[str, Any]:
@@ -437,11 +443,6 @@ async def import_time_entries(
     client = _get_redmine_client()
 
     for index, entry in enumerate(entries_list):
-        # Yield to the event loop between synchronous HTTP calls so other
-        # MCP requests (e.g., a status check) aren't starved during a
-        # large import.
-        if index > 0:
-            await asyncio.sleep(0)
         if not isinstance(entry, dict):
             errors.append(
                 {

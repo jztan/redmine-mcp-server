@@ -47,9 +47,18 @@ def _unwrap_insecure_content(value):
 
 
 def _get_redmine_or_none():
-    """Try to get a Redmine client, return None if not configured."""
+    """Try to get a Redmine client, return None if not configured.
+
+    ``allow_loop_thread()`` because this is a direct factory call from async
+    tests, not a tool call. Without it the event-loop guard (issue #216) raises
+    RuntimeError, which the ``except`` below would read as "not configured" and
+    silently skip the test instead of running it.
+    """
+    from redmine_mcp_server._client import allow_loop_thread
+
     try:
-        return _get_redmine_client()
+        with allow_loop_thread():
+            return _get_redmine_client()
     except RuntimeError:
         return None
 
@@ -2153,6 +2162,7 @@ class TestTagsPluginIntegration:
             subject="[MCP TAG VERIFY] delete me",
             description="additional_tags write round-trip",
             fields={"tag_list": ["mcp-verify-tag"]},
+            extra_fields=_integration_test_custom_fields(),
         )
         assert "error" not in created, f"create failed: {created}"
         issue_id = created["id"]

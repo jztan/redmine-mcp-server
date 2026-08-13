@@ -24,6 +24,7 @@ from .._custom_fields import (
 from .._decorators import ActionMode, action_dispatch
 from .._env import _is_agile_enabled, _is_read_only_mode, _is_tags_enabled
 from .._errors import _READ_ONLY_ERROR, _handle_redmine_error
+from .._offload import in_thread, offloaded
 from .._serialization import (
     _attachment_to_dict,
     _coerce_json_safe,
@@ -750,88 +751,93 @@ async def get_redmine_issue(
 
     # Ensure cleanup task is started (lazy initialization)
     await _ensure_cleanup_started()
-    try:
-        # python-redmine is synchronous, so we don't use await here for the library call
-        includes = []
-        if include_journals:
-            includes.append("journals")
-        if include_attachments:
-            includes.append("attachments")
-        if include_watchers:
-            includes.append("watchers")
-        if include_relations:
-            includes.append("relations")
-        if include_children:
-            includes.append("children")
 
-        if includes:
-            issue = _get_redmine_client().issue.get(
-                issue_id, include=",".join(includes)
-            )
-        else:
-            issue = _get_redmine_client().issue.get(issue_id)
+    def _run():
+        try:
+            # python-redmine is synchronous, so this whole block runs in a
+            # worker thread via in_thread() rather than on the event loop.
+            includes = []
+            if include_journals:
+                includes.append("journals")
+            if include_attachments:
+                includes.append("attachments")
+            if include_watchers:
+                includes.append("watchers")
+            if include_relations:
+                includes.append("relations")
+            if include_children:
+                includes.append("children")
 
-        result = _issue_to_dict(issue, include_custom_fields=include_custom_fields)
-        if include_journals:
-            all_journals = _journals_to_list(issue)
-            if journal_limit is not None:
-                total = len(all_journals)
-                offset = journal_offset
-                paginated = all_journals[offset : offset + journal_limit]
-                result["journals"] = paginated
-                result["journal_pagination"] = {
-                    "total": total,
-                    "offset": offset,
-                    "limit": journal_limit,
-                    "count": len(paginated),
-                    "has_more": (offset + journal_limit) < total,
-                }
+            if includes:
+                issue = _get_redmine_client().issue.get(
+                    issue_id, include=",".join(includes)
+                )
             else:
-                result["journals"] = all_journals
-        if include_attachments:
-            result["attachments"] = _attachments_to_list(issue)
+                issue = _get_redmine_client().issue.get(issue_id)
 
-        if include_watchers:
-            raw = getattr(issue, "watchers", None) or []
-            result["watchers"] = [{"id": w.id, "name": w.name} for w in raw]
-        if include_relations:
-            raw = getattr(issue, "relations", None) or []
-            result["relations"] = [
-                {
-                    "id": r.id,
-                    "issue_id": r.issue_id,
-                    "issue_to_id": r.issue_to_id,
-                    "relation_type": r.relation_type,
-                }
-                for r in raw
-            ]
-        if include_children:
-            raw = getattr(issue, "children", None) or []
-            result["children"] = [
-                {
-                    "id": c.id,
-                    "subject": getattr(c, "subject", ""),
-                    "tracker": (
-                        {"id": c.tracker.id, "name": c.tracker.name}
-                        if getattr(c, "tracker", None)
-                        else None
-                    ),
-                }
-                for c in raw
-            ]
+            result = _issue_to_dict(issue, include_custom_fields=include_custom_fields)
+            if include_journals:
+                all_journals = _journals_to_list(issue)
+                if journal_limit is not None:
+                    total = len(all_journals)
+                    offset = journal_offset
+                    paginated = all_journals[offset : offset + journal_limit]
+                    result["journals"] = paginated
+                    result["journal_pagination"] = {
+                        "total": total,
+                        "offset": offset,
+                        "limit": journal_limit,
+                        "count": len(paginated),
+                        "has_more": (offset + journal_limit) < total,
+                    }
+                else:
+                    result["journals"] = all_journals
+            if include_attachments:
+                result["attachments"] = _attachments_to_list(issue)
 
-        if _is_tags_enabled():
-            result["tags"] = _issue_tags_to_list(issue)
+            if include_watchers:
+                raw = getattr(issue, "watchers", None) or []
+                result["watchers"] = [{"id": w.id, "name": w.name} for w in raw]
+            if include_relations:
+                raw = getattr(issue, "relations", None) or []
+                result["relations"] = [
+                    {
+                        "id": r.id,
+                        "issue_id": r.issue_id,
+                        "issue_to_id": r.issue_to_id,
+                        "relation_type": r.relation_type,
+                    }
+                    for r in raw
+                ]
+            if include_children:
+                raw = getattr(issue, "children", None) or []
+                result["children"] = [
+                    {
+                        "id": c.id,
+                        "subject": getattr(c, "subject", ""),
+                        "tracker": (
+                            {"id": c.tracker.id, "name": c.tracker.name}
+                            if getattr(c, "tracker", None)
+                            else None
+                        ),
+                    }
+                    for c in raw
+                ]
 
-        result = _augment_with_agile_data(issue_id, result)
+            if _is_tags_enabled():
+                result["tags"] = _issue_tags_to_list(issue)
 
-        return result
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"fetching issue {issue_id}",
-            {"resource_type": "issue", "resource_id": issue_id},
-        )
+            result = _augment_with_agile_data(issue_id, result)
+
+            return result
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"fetching issue {issue_id}",
+                {"resource_type": "issue", "resource_id": issue_id},
+            )
+
+    return await in_thread(_run)
 
 
 @mcp.tool()
@@ -920,160 +926,175 @@ async def list_redmine_issues(
     # Ensure cleanup task is started (lazy initialization)
     await _ensure_cleanup_started()
 
-    try:
-        # Build Redmine API filter dict from explicit parameters
-        redmine_api_filters: Dict[str, Any] = {}
-        if project_id is not None:
-            redmine_api_filters["project_id"] = project_id
-        if status_id is not None:
-            redmine_api_filters["status_id"] = status_id
-        if tracker_id is not None:
-            redmine_api_filters["tracker_id"] = tracker_id
-        if assigned_to_id is not None:
-            redmine_api_filters["assigned_to_id"] = assigned_to_id
-        if priority_id is not None:
-            redmine_api_filters["priority_id"] = priority_id
-        if fixed_version_id is not None:
-            redmine_api_filters["fixed_version_id"] = fixed_version_id
-        if sort is not None:
-            redmine_api_filters["sort"] = sort
-        # Merge additional arbitrary Redmine filters if provided
-        if filters:
-            redmine_api_filters.update(filters)
-        filters = redmine_api_filters
+    def _run():
+        nonlocal filters, limit, offset
+        try:
+            # Build Redmine API filter dict from explicit parameters
+            redmine_api_filters: Dict[str, Any] = {}
+            if project_id is not None:
+                redmine_api_filters["project_id"] = project_id
+            if status_id is not None:
+                redmine_api_filters["status_id"] = status_id
+            if tracker_id is not None:
+                redmine_api_filters["tracker_id"] = tracker_id
+            if assigned_to_id is not None:
+                redmine_api_filters["assigned_to_id"] = assigned_to_id
+            if priority_id is not None:
+                redmine_api_filters["priority_id"] = priority_id
+            if fixed_version_id is not None:
+                redmine_api_filters["fixed_version_id"] = fixed_version_id
+            if sort is not None:
+                redmine_api_filters["sort"] = sort
+            # Merge additional arbitrary Redmine filters if provided
+            if filters:
+                redmine_api_filters.update(filters)
+            filters = redmine_api_filters
 
-        # Log request for monitoring
-        filter_keys = list(filters.keys()) if filters else []
-        logging.info(
-            f"Pagination request: limit={limit}, offset={offset}, filters={filter_keys}"
-        )
+            # Log request for monitoring
+            filter_keys = list(filters.keys()) if filters else []
+            logging.info(
+                "Pagination request: limit=%s, offset=%s, filters=%s",
+                limit,
+                offset,
+                filter_keys,
+            )
 
-        # Validate and sanitize parameters
-        if limit is not None:
-            if not isinstance(limit, int):
-                try:
-                    limit = int(limit)
-                except (ValueError, TypeError):
+            # Validate and sanitize parameters
+            if limit is not None:
+                if not isinstance(limit, int):
+                    try:
+                        limit = int(limit)
+                    except (ValueError, TypeError):
+                        logging.warning(
+                            f"Invalid limit type {type(limit)}, using default 25"
+                        )
+                        limit = 25
+
+                if limit <= 0:
+                    logging.debug(f"Limit {limit} <= 0, returning empty result")
+                    empty_result = []
+                    if include_pagination_info:
+                        empty_result = {
+                            "issues": [],
+                            "pagination": {
+                                "total": 0,
+                                "limit": limit,
+                                "offset": offset,
+                                "count": 0,
+                                "has_next": False,
+                                "has_previous": False,
+                                "next_offset": None,
+                                "previous_offset": None,
+                            },
+                        }
+                    return empty_result
+
+                # Cap at reasonable maximum
+                original_limit = limit
+                limit = min(limit, 1000)
+                if original_limit > limit:
                     logging.warning(
-                        f"Invalid limit type {type(limit)}, using default 25"
+                        "Limit %s exceeds maximum 1000, capped to %s",
+                        original_limit,
+                        limit,
                     )
-                    limit = 25
 
-            if limit <= 0:
-                logging.debug(f"Limit {limit} <= 0, returning empty result")
-                empty_result = []
-                if include_pagination_info:
-                    empty_result = {
-                        "issues": [],
-                        "pagination": {
-                            "total": 0,
-                            "limit": limit,
-                            "offset": offset,
-                            "count": 0,
-                            "has_next": False,
-                            "has_previous": False,
-                            "next_offset": None,
-                            "previous_offset": None,
-                        },
-                    }
-                return empty_result
+            # Validate offset
+            if not isinstance(offset, int) or offset < 0:
+                logging.warning(f"Invalid offset {offset}, reset to 0")
+                offset = 0
 
-            # Cap at reasonable maximum
-            original_limit = limit
-            limit = min(limit, 1000)
-            if original_limit > limit:
-                logging.warning(
-                    f"Limit {original_limit} exceeds maximum 1000, capped to {limit}"
-                )
-
-        # Validate offset
-        if not isinstance(offset, int) or offset < 0:
-            logging.warning(f"Invalid offset {offset}, reset to 0")
-            offset = 0
-
-        # Use python-redmine ResourceSet native pagination
-        # Server-side filtering more efficient than client-side
-        redmine_filters = {
-            "offset": offset,
-            "limit": min(limit or 25, 100),  # Redmine API max per request
-            **filters,
-        }
-
-        # Get paginated issues from Redmine
-        logging.debug(
-            f"Calling _get_redmine_client().issue.filter with: {redmine_filters}"
-        )
-        issues = _get_redmine_client().issue.filter(**redmine_filters)
-
-        # Convert ResourceSet to list (triggers server-side pagination)
-        issues_list = list(issues)
-        logging.debug(
-            f"Retrieved {len(issues_list)} issues with offset={offset}, limit={limit}"
-        )
-
-        # Convert to dictionaries with optional field selection
-        result_issues = [
-            _issue_to_dict_selective(issue, fields) for issue in issues_list
-        ]
-
-        # Handle metadata response format
-        if include_pagination_info:
-            # Get total count from a separate query.
-            try:
-                # Redmine returns the full ``total_count`` in the first page of
-                # any filtered response, so we only need to fetch a single
-                # issue to read it. Omitting the limit here would make
-                # python-redmine's ResourceSet materialize *every* matching
-                # issue (chunk-by-chunk, dozens of sequential requests for a
-                # large project) just to compute the count, which can exceed
-                # the MCP ``tools/call`` timeout.
-                count_filters = {**filters, "limit": 1, "offset": 0}
-                count_query = _get_redmine_client().issue.filter(**count_filters)
-                # Trigger a single request so total_count is populated.
-                list(count_query)
-                total_count = count_query.total_count
-                logging.debug(f"Got total count from separate query: {total_count}")
-            except Exception as e:
-                logging.warning(
-                    f"Could not get total count: {e}, using estimated value"
-                )
-                # For unknown total, use a conservative estimate
-                if len(result_issues) == limit:
-                    # If we got a full page, there might be more
-                    total_count = offset + len(result_issues) + 1
-                else:
-                    # If we got less than requested, this is likely the end
-                    total_count = offset + len(result_issues)
-
-            pagination_info = {
-                "total": total_count,
-                "limit": limit,
+            # Use python-redmine ResourceSet native pagination
+            # Server-side filtering more efficient than client-side
+            redmine_filters = {
                 "offset": offset,
-                "count": len(result_issues),
-                "has_next": len(result_issues) == limit,
-                "has_previous": offset > 0,
-                "next_offset": offset + limit if len(result_issues) == limit else None,
-                "previous_offset": max(0, offset - limit) if offset > 0 else None,
+                "limit": min(limit or 25, 100),  # Redmine API max per request
+                **filters,
             }
 
-            result = {"issues": result_issues, "pagination": pagination_info}
-
-            logging.info(
-                f"Returning paginated response: {len(result_issues)} issues, "
-                f"total={total_count}"
+            # Get paginated issues from Redmine
+            logging.debug(
+                f"Calling _get_redmine_client().issue.filter with: {redmine_filters}"
             )
-            return result
+            issues = _get_redmine_client().issue.filter(**redmine_filters)
 
-        # Log success and return simple list
-        logging.info(f"Successfully retrieved {len(result_issues)} issues")
-        return result_issues
+            # Convert ResourceSet to list (triggers server-side pagination)
+            issues_list = list(issues)
+            logging.debug(
+                "Retrieved %s issues with offset=%s, limit=%s",
+                len(issues_list),
+                offset,
+                limit,
+            )
 
-    except Exception as e:
-        return _handle_redmine_error(e, "listing issues")
+            # Convert to dictionaries with optional field selection
+            result_issues = [
+                _issue_to_dict_selective(issue, fields) for issue in issues_list
+            ]
+
+            # Handle metadata response format
+            if include_pagination_info:
+                # Get total count from a separate query.
+                try:
+                    # Redmine returns the full ``total_count`` in the first page of
+                    # any filtered response, so we only need to fetch a single
+                    # issue to read it. Omitting the limit here would make
+                    # python-redmine's ResourceSet materialize *every* matching
+                    # issue (chunk-by-chunk, dozens of sequential requests for a
+                    # large project) just to compute the count, which can exceed
+                    # the MCP ``tools/call`` timeout.
+                    count_filters = {**filters, "limit": 1, "offset": 0}
+                    count_query = _get_redmine_client().issue.filter(**count_filters)
+                    # Trigger a single request so total_count is populated.
+                    list(count_query)
+                    total_count = count_query.total_count
+                    logging.debug(f"Got total count from separate query: {total_count}")
+                except Exception as e:
+                    logging.warning(
+                        f"Could not get total count: {e}, using estimated value"
+                    )
+                    # For unknown total, use a conservative estimate
+                    if len(result_issues) == limit:
+                        # If we got a full page, there might be more
+                        total_count = offset + len(result_issues) + 1
+                    else:
+                        # If we got less than requested, this is likely the end
+                        total_count = offset + len(result_issues)
+
+                pagination_info = {
+                    "total": total_count,
+                    "limit": limit,
+                    "offset": offset,
+                    "count": len(result_issues),
+                    "has_next": len(result_issues) == limit,
+                    "has_previous": offset > 0,
+                    "next_offset": (
+                        offset + limit if len(result_issues) == limit else None
+                    ),
+                    "previous_offset": max(0, offset - limit) if offset > 0 else None,
+                }
+
+                result = {"issues": result_issues, "pagination": pagination_info}
+
+                logging.info(
+                    f"Returning paginated response: {len(result_issues)} issues, "
+                    f"total={total_count}"
+                )
+                return result
+
+            # Log success and return simple list
+            logging.info(f"Successfully retrieved {len(result_issues)} issues")
+            return result_issues
+
+        except Exception as e:
+            return _handle_redmine_error(e, "listing issues")
+
+    return await in_thread(_run)
 
 
 @mcp.tool()
-async def search_redmine_issues(
+@offloaded
+def search_redmine_issues(
     query: str,
     limit: Annotated[int, Field(ge=1, le=1000)] = 25,
     offset: Annotated[int, Field(ge=0)] = 0,
@@ -1355,74 +1376,27 @@ async def create_redmine_issue(
     else:
         issue_fields.pop("tag_list", None)
 
-    # Resolve name-keyed custom fields (e.g. fields={"Department": "..."})
-    # to id-keyed custom_fields entries Redmine expects. See #123 for
-    # the cross-tool parity rationale.
-    try:
-        issue_fields = _map_named_custom_fields_for_create(project_id, issue_fields)
-    except ValueError as e:
-        return {"error": str(e)}
-
-    try:
-        create_kwargs = dict(issue_fields)
-        if tags_create_needed:
-            create_kwargs["tag_list"] = tag_list
-        if upload_descriptors:
-            create_kwargs["uploads"] = upload_descriptors
-        issue = _get_redmine_client().issue.create(
-            project_id=project_id,
-            subject=subject,
-            description=description,
-            **create_kwargs,
-        )
-        if upload_descriptors:
-            fetched = _get_redmine_client().issue.get(
-                issue.id, include="attachments,journals"
-            )
-            return _augment_with_upload_result(_issue_to_dict(fetched), fetched)
-        return _issue_to_dict(issue)
-    except ValidationError as e:
-        if not _is_required_custom_field_autofill_enabled():
-            return _augment_validation_error_with_field_hint(
-                _handle_redmine_error(e, f"creating issue in project {project_id}"),
-                str(e),
-            )
-
-        missing_names = _extract_missing_required_field_names(str(e))
-        if not missing_names:
-            return _augment_validation_error_with_field_hint(
-                _handle_redmine_error(e, f"creating issue in project {project_id}"),
-                str(e),
-            )
+    def _run():
+        nonlocal issue_fields
+        # Resolve name-keyed custom fields (e.g. fields={"Department": "..."})
+        # to id-keyed custom_fields entries Redmine expects. See #123 for
+        # the cross-tool parity rationale.
+        try:
+            issue_fields = _map_named_custom_fields_for_create(project_id, issue_fields)
+        except ValueError as e:
+            return {"error": str(e)}
 
         try:
-            retry_fields = _augment_fields_with_required_custom_fields(
-                project_id=project_id,
-                issue_fields=issue_fields,
-                missing_field_names=missing_names,
-            )
-
-            # Retry only when we have actually augmented payload.
-            if retry_fields == issue_fields:
-                return _augment_validation_error_with_field_hint(
-                    _handle_redmine_error(e, f"creating issue in project {project_id}"),
-                    str(e),
-                )
-
-            logger.info(
-                "Retrying issue creation with auto-filled custom fields: %s",
-                missing_names,
-            )
-            retry_create_kwargs = dict(retry_fields)
+            create_kwargs = dict(issue_fields)
             if tags_create_needed:
-                retry_create_kwargs["tag_list"] = tag_list
+                create_kwargs["tag_list"] = tag_list
             if upload_descriptors:
-                retry_create_kwargs["uploads"] = upload_descriptors
+                create_kwargs["uploads"] = upload_descriptors
             issue = _get_redmine_client().issue.create(
                 project_id=project_id,
                 subject=subject,
                 description=description,
-                **retry_create_kwargs,
+                **create_kwargs,
             )
             if upload_descriptors:
                 fetched = _get_redmine_client().issue.get(
@@ -1430,46 +1404,99 @@ async def create_redmine_issue(
                 )
                 return _augment_with_upload_result(_issue_to_dict(fetched), fetched)
             return _issue_to_dict(issue)
-        except Exception as retry_error:
-            # The retry failure may also be a ValidationError; surface the
-            # field hint when applicable so the caller still gets recovery
-            # context even when autofill couldn't satisfy all required fields.
-            return _augment_validation_error_with_field_hint(
-                _handle_redmine_error(
-                    retry_error, f"creating issue in project {project_id}"
-                ),
-                str(retry_error),
+        except ValidationError as e:
+            if not _is_required_custom_field_autofill_enabled():
+                return _augment_validation_error_with_field_hint(
+                    _handle_redmine_error(e, f"creating issue in project {project_id}"),
+                    str(e),
+                )
+
+            missing_names = _extract_missing_required_field_names(str(e))
+            if not missing_names:
+                return _augment_validation_error_with_field_hint(
+                    _handle_redmine_error(e, f"creating issue in project {project_id}"),
+                    str(e),
+                )
+
+            try:
+                retry_fields = _augment_fields_with_required_custom_fields(
+                    project_id=project_id,
+                    issue_fields=issue_fields,
+                    missing_field_names=missing_names,
+                )
+
+                # Retry only when we have actually augmented payload.
+                if retry_fields == issue_fields:
+                    return _augment_validation_error_with_field_hint(
+                        _handle_redmine_error(
+                            e, f"creating issue in project {project_id}"
+                        ),
+                        str(e),
+                    )
+
+                logger.info(
+                    "Retrying issue creation with auto-filled custom fields: %s",
+                    missing_names,
+                )
+                retry_create_kwargs = dict(retry_fields)
+                if tags_create_needed:
+                    retry_create_kwargs["tag_list"] = tag_list
+                if upload_descriptors:
+                    retry_create_kwargs["uploads"] = upload_descriptors
+                issue = _get_redmine_client().issue.create(
+                    project_id=project_id,
+                    subject=subject,
+                    description=description,
+                    **retry_create_kwargs,
+                )
+                if upload_descriptors:
+                    fetched = _get_redmine_client().issue.get(
+                        issue.id, include="attachments,journals"
+                    )
+                    return _augment_with_upload_result(_issue_to_dict(fetched), fetched)
+                return _issue_to_dict(issue)
+            except Exception as retry_error:
+                # The retry failure may also be a ValidationError; surface the
+                # field hint when applicable so the caller still gets recovery
+                # context even when autofill couldn't satisfy all required fields.
+                return _augment_validation_error_with_field_hint(
+                    _handle_redmine_error(
+                        retry_error, f"creating issue in project {project_id}"
+                    ),
+                    str(retry_error),
+                )
+        except ResourceNotFoundError:
+            # A 404 on a create POST is anomalous: the issue may have been created
+            # anyway. The 404 generally comes from the deployment or from Redmine
+            # itself rather than a genuinely missing resource (e.g. a sub-URI or
+            # Passenger deployment, a reverse proxy, or a plugin or controller
+            # filter on the create path), so Redmine can process the POST while the
+            # client ultimately sees a 404. Returning the bare "not found" message
+            # invites blind retries and risks silent duplicate issues (see #146), so
+            # warn the caller to verify first.
+            logger.warning(
+                "create issue returned HTTP 404 for project %s; the issue may have "
+                "been created. The 404 likely originates from the deployment or "
+                "Redmine itself (a sub-URI/Passenger setup, a reverse proxy, or a "
+                "plugin or controller filter on the create path) rather than a "
+                "missing resource.",
+                project_id,
             )
-    except ResourceNotFoundError:
-        # A 404 on a create POST is anomalous: the issue may have been created
-        # anyway. The 404 generally comes from the deployment or from Redmine
-        # itself rather than a genuinely missing resource (e.g. a sub-URI or
-        # Passenger deployment, a reverse proxy, or a plugin or controller
-        # filter on the create path), so Redmine can process the POST while the
-        # client ultimately sees a 404. Returning the bare "not found" message
-        # invites blind retries and risks silent duplicate issues (see #146), so
-        # warn the caller to verify first.
-        logger.warning(
-            "create issue returned HTTP 404 for project %s; the issue may have "
-            "been created. The 404 likely originates from the deployment or "
-            "Redmine itself (a sub-URI/Passenger setup, a reverse proxy, or a "
-            "plugin or controller filter on the create path) rather than a "
-            "missing resource.",
-            project_id,
-        )
-        return {
-            "error": (
-                "Redmine returned HTTP 404 for the create request, but the issue "
-                "may have been created anyway. This usually originates from the "
-                "deployment or from Redmine itself rather than a missing "
-                "resource (for example a sub-URI/Passenger deployment, a reverse "
-                "proxy, or a plugin or controller filter on the create path). "
-                "Before retrying, check Redmine for a newly created issue to "
-                "avoid creating a duplicate."
-            )
-        }
-    except Exception as e:
-        return _handle_redmine_error(e, f"creating issue in project {project_id}")
+            return {
+                "error": (
+                    "Redmine returned HTTP 404 for the create request, but the issue "
+                    "may have been created anyway. This usually originates from the "
+                    "deployment or from Redmine itself rather than a missing "
+                    "resource (for example a sub-URI/Passenger deployment, a reverse "
+                    "proxy, or a plugin or controller filter on the create path). "
+                    "Before retrying, check Redmine for a newly created issue to "
+                    "avoid creating a duplicate."
+                )
+            }
+        except Exception as e:
+            return _handle_redmine_error(e, f"creating issue in project {project_id}")
+
+    return await in_thread(_run)
 
 
 @mcp.tool()
@@ -1590,115 +1617,31 @@ async def update_redmine_issue(
     else:
         update_fields.pop("tag_list", None)
 
-    # Convert status name to id if requested
-    if "status_name" in update_fields and "status_id" not in update_fields:
-        name = str(update_fields.pop("status_name")).lower()
-        try:
-            statuses = _get_redmine_client().issue_status.all()
-            for status in statuses:
-                if getattr(status, "name", "").lower() == name:
-                    update_fields["status_id"] = status.id
-                    break
-        except Exception as e:
-            logger.warning(f"Error resolving status name '{name}': {e}")
-
-    try:
-        if update_fields or upload_descriptors or tags_update_needed:
-            update_fields = _map_named_custom_fields_for_update(issue_id, update_fields)
-            update_kwargs = dict(update_fields)
-            if tags_update_needed:
-                update_kwargs["tag_list"] = tag_list
-            if upload_descriptors:
-                update_kwargs["uploads"] = upload_descriptors
-            _get_redmine_client().issue.update(issue_id, **update_kwargs)
-        if agile_update_needed:
+    def _run():
+        nonlocal update_fields
+        # Convert status name to id if requested
+        if "status_name" in update_fields and "status_id" not in update_fields:
+            name = str(update_fields.pop("status_name")).lower()
             try:
-                _apply_agile_data(issue_id, agile_attrs)
-            except Exception as agile_e:
-                return _handle_redmine_error(
-                    agile_e,
-                    f"updating agile fields for issue {issue_id}",
-                    {"resource_type": "issue", "resource_id": issue_id},
-                )
-        if upload_descriptors:
-            updated_issue = _get_redmine_client().issue.get(
-                issue_id, include="attachments,journals"
-            )
-            result = _augment_with_upload_result(
-                _issue_to_dict(updated_issue, include_custom_fields=True),
-                updated_issue,
-            )
-            if agile_update_needed:
-                result = _augment_with_agile_data(issue_id, result)
-            return result
-        updated_issue = _get_redmine_client().issue.get(issue_id)
-        result = _issue_to_dict(updated_issue, include_custom_fields=True)
-        if agile_update_needed:
-            result = _augment_with_agile_data(issue_id, result)
-        return result
-    except ValidationError as e:
-        if not _is_required_custom_field_autofill_enabled():
-            return _augment_validation_error_with_field_hint(
-                _handle_redmine_error(
-                    e,
-                    f"updating issue {issue_id}",
-                    {"resource_type": "issue", "resource_id": issue_id},
-                ),
-                str(e),
-            )
-
-        missing_names = _extract_missing_required_field_names(str(e))
-        if not missing_names:
-            return _augment_validation_error_with_field_hint(
-                _handle_redmine_error(
-                    e,
-                    f"updating issue {issue_id}",
-                    {"resource_type": "issue", "resource_id": issue_id},
-                ),
-                str(e),
-            )
+                statuses = _get_redmine_client().issue_status.all()
+                for status in statuses:
+                    if getattr(status, "name", "").lower() == name:
+                        update_fields["status_id"] = status.id
+                        break
+            except Exception as e:
+                logger.warning(f"Error resolving status name '{name}': {e}")
 
         try:
-            issue = _get_redmine_client().issue.get(issue_id)
-            project = getattr(issue, "project", None)
-            project_id = getattr(project, "id", None)
-            if project_id is None:
-                return _augment_validation_error_with_field_hint(
-                    _handle_redmine_error(
-                        e,
-                        f"updating issue {issue_id}",
-                        {"resource_type": "issue", "resource_id": issue_id},
-                    ),
-                    str(e),
+            if update_fields or upload_descriptors or tags_update_needed:
+                update_fields = _map_named_custom_fields_for_update(
+                    issue_id, update_fields
                 )
-
-            retry_fields = _augment_fields_with_required_custom_fields(
-                project_id=project_id,
-                issue_fields=update_fields,
-                missing_field_names=missing_names,
-            )
-
-            # Retry only when we have actually augmented payload.
-            if retry_fields == update_fields:
-                return _augment_validation_error_with_field_hint(
-                    _handle_redmine_error(
-                        e,
-                        f"updating issue {issue_id}",
-                        {"resource_type": "issue", "resource_id": issue_id},
-                    ),
-                    str(e),
-                )
-
-            logger.info(
-                "Retrying issue update with auto-filled custom fields: %s",
-                missing_names,
-            )
-            retry_kwargs = dict(retry_fields)
-            if tags_update_needed:
-                retry_kwargs["tag_list"] = tag_list
-            if upload_descriptors:
-                retry_kwargs["uploads"] = upload_descriptors
-            _get_redmine_client().issue.update(issue_id, **retry_kwargs)
+                update_kwargs = dict(update_fields)
+                if tags_update_needed:
+                    update_kwargs["tag_list"] = tag_list
+                if upload_descriptors:
+                    update_kwargs["uploads"] = upload_descriptors
+                _get_redmine_client().issue.update(issue_id, **update_kwargs)
             if agile_update_needed:
                 try:
                     _apply_agile_data(issue_id, agile_attrs)
@@ -1724,25 +1667,116 @@ async def update_redmine_issue(
             if agile_update_needed:
                 result = _augment_with_agile_data(issue_id, result)
             return result
-        except Exception as retry_error:
-            return _augment_validation_error_with_field_hint(
-                _handle_redmine_error(
-                    retry_error,
-                    f"updating issue {issue_id}",
-                    {"resource_type": "issue", "resource_id": issue_id},
-                ),
-                str(retry_error),
+        except ValidationError as e:
+            if not _is_required_custom_field_autofill_enabled():
+                return _augment_validation_error_with_field_hint(
+                    _handle_redmine_error(
+                        e,
+                        f"updating issue {issue_id}",
+                        {"resource_type": "issue", "resource_id": issue_id},
+                    ),
+                    str(e),
+                )
+
+            missing_names = _extract_missing_required_field_names(str(e))
+            if not missing_names:
+                return _augment_validation_error_with_field_hint(
+                    _handle_redmine_error(
+                        e,
+                        f"updating issue {issue_id}",
+                        {"resource_type": "issue", "resource_id": issue_id},
+                    ),
+                    str(e),
+                )
+
+            try:
+                issue = _get_redmine_client().issue.get(issue_id)
+                project = getattr(issue, "project", None)
+                project_id = getattr(project, "id", None)
+                if project_id is None:
+                    return _augment_validation_error_with_field_hint(
+                        _handle_redmine_error(
+                            e,
+                            f"updating issue {issue_id}",
+                            {"resource_type": "issue", "resource_id": issue_id},
+                        ),
+                        str(e),
+                    )
+
+                retry_fields = _augment_fields_with_required_custom_fields(
+                    project_id=project_id,
+                    issue_fields=update_fields,
+                    missing_field_names=missing_names,
+                )
+
+                # Retry only when we have actually augmented payload.
+                if retry_fields == update_fields:
+                    return _augment_validation_error_with_field_hint(
+                        _handle_redmine_error(
+                            e,
+                            f"updating issue {issue_id}",
+                            {"resource_type": "issue", "resource_id": issue_id},
+                        ),
+                        str(e),
+                    )
+
+                logger.info(
+                    "Retrying issue update with auto-filled custom fields: %s",
+                    missing_names,
+                )
+                retry_kwargs = dict(retry_fields)
+                if tags_update_needed:
+                    retry_kwargs["tag_list"] = tag_list
+                if upload_descriptors:
+                    retry_kwargs["uploads"] = upload_descriptors
+                _get_redmine_client().issue.update(issue_id, **retry_kwargs)
+                if agile_update_needed:
+                    try:
+                        _apply_agile_data(issue_id, agile_attrs)
+                    except Exception as agile_e:
+                        return _handle_redmine_error(
+                            agile_e,
+                            f"updating agile fields for issue {issue_id}",
+                            {"resource_type": "issue", "resource_id": issue_id},
+                        )
+                if upload_descriptors:
+                    updated_issue = _get_redmine_client().issue.get(
+                        issue_id, include="attachments,journals"
+                    )
+                    result = _augment_with_upload_result(
+                        _issue_to_dict(updated_issue, include_custom_fields=True),
+                        updated_issue,
+                    )
+                    if agile_update_needed:
+                        result = _augment_with_agile_data(issue_id, result)
+                    return result
+                updated_issue = _get_redmine_client().issue.get(issue_id)
+                result = _issue_to_dict(updated_issue, include_custom_fields=True)
+                if agile_update_needed:
+                    result = _augment_with_agile_data(issue_id, result)
+                return result
+            except Exception as retry_error:
+                return _augment_validation_error_with_field_hint(
+                    _handle_redmine_error(
+                        retry_error,
+                        f"updating issue {issue_id}",
+                        {"resource_type": "issue", "resource_id": issue_id},
+                    ),
+                    str(retry_error),
+                )
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"updating issue {issue_id}",
+                {"resource_type": "issue", "resource_id": issue_id},
             )
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"updating issue {issue_id}",
-            {"resource_type": "issue", "resource_id": issue_id},
-        )
+
+    return await in_thread(_run)
 
 
 @mcp.tool()
-async def copy_issue(
+@offloaded
+def copy_issue(
     issue_id: int,
     project_id: Optional[Union[str, int]] = None,
     subject: Optional[str] = None,
@@ -1828,7 +1862,8 @@ async def copy_issue(
         )
 
 
-async def _list_issue_relations_action(
+@offloaded
+def _list_issue_relations_action(
     issue_id: Optional[int] = None,
     **_: Any,
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
@@ -1845,7 +1880,8 @@ async def _list_issue_relations_action(
         )
 
 
-async def _create_issue_relation_action(
+@offloaded
+def _create_issue_relation_action(
     issue_id: Optional[int] = None,
     issue_to_id: Optional[int] = None,
     relation_type: Optional[str] = None,
@@ -1884,7 +1920,8 @@ async def _create_issue_relation_action(
         )
 
 
-async def _delete_issue_relation_action(
+@offloaded
+def _delete_issue_relation_action(
     relation_id: Optional[int] = None,
     **_: Any,
 ) -> Dict[str, Any]:
@@ -1945,7 +1982,8 @@ async def manage_issue_relation(
 
 
 @mcp.tool()
-async def list_subtasks(
+@offloaded
+def list_subtasks(
     issue_id: int,
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """List subtasks (child issues) of a given Redmine issue.
@@ -2039,103 +2077,108 @@ async def delete_redmine_issue(
     if not _is_positive_int(issue_id):
         return {"error": "issue_id must be a positive integer."}
 
-    # Fetch the issue + lightweight cascade hints. The include flags
-    # below are cheap (Redmine returns them inline on the issue
-    # response) and let us populate a preview without separate API
-    # round-trips. Subtask count is best-effort: when present,
-    # ``children`` is included by Redmine; otherwise we treat
-    # children-count as 0 for the preview (the actual delete still
-    # cascades the same way regardless).
-    try:
-        issue = _get_redmine_client().issue.get(
-            issue_id,
-            include="journals,attachments,relations,children",
-        )
-    except ResourceNotFoundError:
-        return {
-            "error": f"Issue {issue_id} not found.",
-            "code": "NOT_FOUND",
-            "upstream_status": 404,
+    def _run():
+        # Fetch the issue + lightweight cascade hints. The include flags
+        # below are cheap (Redmine returns them inline on the issue
+        # response) and let us populate a preview without separate API
+        # round-trips. Subtask count is best-effort: when present,
+        # ``children`` is included by Redmine; otherwise we treat
+        # children-count as 0 for the preview (the actual delete still
+        # cascades the same way regardless).
+        try:
+            issue = _get_redmine_client().issue.get(
+                issue_id,
+                include="journals,attachments,relations,children",
+            )
+        except ResourceNotFoundError:
+            return {
+                "error": f"Issue {issue_id} not found.",
+                "code": "NOT_FOUND",
+                "upstream_status": 404,
+                "issue_id": issue_id,
+            }
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"fetching issue {issue_id} for delete",
+                {"resource_type": "issue", "resource_id": issue_id},
+            )
+
+        children = list(getattr(issue, "children", None) or [])
+        journals = list(getattr(issue, "journals", None) or [])
+        attachments = list(getattr(issue, "attachments", None) or [])
+        relations = list(getattr(issue, "relations", None) or [])
+        time_entries = list(getattr(issue, "time_entries", None) or [])
+
+        impact: Dict[str, Any] = {
             "issue_id": issue_id,
+            "subject": getattr(issue, "subject", ""),
+            "children_count": len(children),
+            "journals_count": len(journals),
+            "attachments_count": len(attachments),
+            "relations_count": len(relations),
+            "time_entries_count": len(time_entries),
         }
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"fetching issue {issue_id} for delete",
-            {"resource_type": "issue", "resource_id": issue_id},
-        )
 
-    children = list(getattr(issue, "children", None) or [])
-    journals = list(getattr(issue, "journals", None) or [])
-    attachments = list(getattr(issue, "attachments", None) or [])
-    relations = list(getattr(issue, "relations", None) or [])
-    time_entries = list(getattr(issue, "time_entries", None) or [])
+        if not confirm_delete:
+            return {
+                "error": (
+                    f"Refusing to delete issue {issue_id} without "
+                    "explicit confirmation."
+                ),
+                "code": "CONFIRMATION_REQUIRED",
+                "hint": (
+                    "Issue deletion in Redmine is irreversible and cascades "
+                    "to children, journals, attachments, time entries, and "
+                    "inbound relations from issues that reference this one. "
+                    "Re-invoke with confirm_delete=True to proceed."
+                ),
+                "impact": impact,
+            }
 
-    impact: Dict[str, Any] = {
-        "issue_id": issue_id,
-        "subject": getattr(issue, "subject", ""),
-        "children_count": len(children),
-        "journals_count": len(journals),
-        "attachments_count": len(attachments),
-        "relations_count": len(relations),
-        "time_entries_count": len(time_entries),
-    }
+        if children and not confirm_delete_with_children:
+            return {
+                "error": (
+                    f"Refusing to delete issue {issue_id}: it has "
+                    f"{len(children)} subtask(s) which would be "
+                    "cascade-deleted by Redmine."
+                ),
+                "code": "CHILDREN_PRESENT",
+                "hint": (
+                    "Re-invoke with confirm_delete_with_children=True to "
+                    "proceed with the cascade, or reassign / delete the "
+                    "children first if you want to keep them."
+                ),
+                "impact": impact,
+            }
 
-    if not confirm_delete:
+        try:
+            _get_redmine_client().issue.delete(issue_id)
+        except ResourceNotFoundError:
+            return {
+                "error": f"Issue {issue_id} not found.",
+                "code": "NOT_FOUND",
+                "upstream_status": 404,
+                "issue_id": issue_id,
+            }
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"deleting issue {issue_id}",
+                {"resource_type": "issue", "resource_id": issue_id},
+            )
+
         return {
-            "error": (
-                f"Refusing to delete issue {issue_id} without " "explicit confirmation."
-            ),
-            "code": "CONFIRMATION_REQUIRED",
-            "hint": (
-                "Issue deletion in Redmine is irreversible and cascades "
-                "to children, journals, attachments, time entries, and "
-                "inbound relations from issues that reference this one. "
-                "Re-invoke with confirm_delete=True to proceed."
-            ),
-            "impact": impact,
+            "success": True,
+            "deleted_issue_id": issue_id,
+            "cascade_deleted": impact,
         }
 
-    if children and not confirm_delete_with_children:
-        return {
-            "error": (
-                f"Refusing to delete issue {issue_id}: it has "
-                f"{len(children)} subtask(s) which would be "
-                "cascade-deleted by Redmine."
-            ),
-            "code": "CHILDREN_PRESENT",
-            "hint": (
-                "Re-invoke with confirm_delete_with_children=True to "
-                "proceed with the cascade, or reassign / delete the "
-                "children first if you want to keep them."
-            ),
-            "impact": impact,
-        }
-
-    try:
-        _get_redmine_client().issue.delete(issue_id)
-    except ResourceNotFoundError:
-        return {
-            "error": f"Issue {issue_id} not found.",
-            "code": "NOT_FOUND",
-            "upstream_status": 404,
-            "issue_id": issue_id,
-        }
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"deleting issue {issue_id}",
-            {"resource_type": "issue", "resource_id": issue_id},
-        )
-
-    return {
-        "success": True,
-        "deleted_issue_id": issue_id,
-        "cascade_deleted": impact,
-    }
+    return await in_thread(_run)
 
 
-async def _add_issue_watcher_action(
+@offloaded
+def _add_issue_watcher_action(
     issue_id: Optional[int] = None,
     user_id: Optional[int] = None,
     **_: Any,
@@ -2157,7 +2200,8 @@ async def _add_issue_watcher_action(
         )
 
 
-async def _remove_issue_watcher_action(
+@offloaded
+def _remove_issue_watcher_action(
     issue_id: Optional[int] = None,
     user_id: Optional[int] = None,
     **_: Any,
@@ -2208,7 +2252,8 @@ async def manage_issue_watcher(
     }
 
 
-async def _edit_issue_note_action(
+@offloaded
+def _edit_issue_note_action(
     journal_id: Optional[int] = None,
     notes: Optional[str] = None,
     private_notes: Optional[bool] = None,
@@ -2237,7 +2282,8 @@ async def _edit_issue_note_action(
         )
 
 
-async def _set_private_issue_note_action(
+@offloaded
+def _set_private_issue_note_action(
     journal_id: Optional[int] = None,
     is_private: Optional[bool] = None,
     **_: Any,
@@ -2302,7 +2348,8 @@ async def manage_issue_note(
 
 
 @mcp.tool()
-async def get_private_notes(issue_id: int) -> List[Dict[str, Any]]:
+@offloaded
+def get_private_notes(issue_id: int) -> List[Dict[str, Any]]:
     """Retrieve only the private notes/journals of a Redmine issue.
 
     Fetches the issue's journals and filters for entries where
@@ -2345,7 +2392,8 @@ async def get_private_notes(issue_id: int) -> List[Dict[str, Any]]:
         ]
 
 
-async def _list_issue_categories_action(
+@offloaded
+def _list_issue_categories_action(
     project_id: Optional[Union[str, int]] = None,
     **_: Any,
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
@@ -2362,7 +2410,8 @@ async def _list_issue_categories_action(
         )
 
 
-async def _create_issue_category_action(
+@offloaded
+def _create_issue_category_action(
     project_id: Optional[Union[str, int]] = None,
     name: Optional[str] = None,
     assigned_to_id: Optional[int] = None,
@@ -2390,7 +2439,8 @@ async def _create_issue_category_action(
         )
 
 
-async def _update_issue_category_action(
+@offloaded
+def _update_issue_category_action(
     category_id: Optional[int] = None,
     name: Optional[str] = None,
     assigned_to_id: Optional[int] = None,
@@ -2424,7 +2474,8 @@ async def _update_issue_category_action(
         )
 
 
-async def _delete_issue_category_action(
+@offloaded
+def _delete_issue_category_action(
     category_id: Optional[int] = None,
     reassign_to_id: Optional[int] = None,
     **_: Any,

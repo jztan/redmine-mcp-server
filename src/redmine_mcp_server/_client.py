@@ -16,8 +16,12 @@ Tests patch this module's attributes directly, e.g.
 ``patch("redmine_mcp_server._client.Redmine")``.
 """
 
+import asyncio
+import contextlib
 import logging
 import os
+import threading
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Optional, Union
 from urllib.parse import urlparse
@@ -296,7 +300,24 @@ redmine: Optional[Redmine] = None
 
 # Cached legacy-mode client — avoids recreating Redmine() on every tool call
 # when running without OAuth.
+#
+# Tests patch this module attribute directly, so it stays the authoritative
+# override: when it is not None it is returned as is. The automatic cache lives
+# in a threading.local() instead, because tools now run in worker threads and
+# a requests.Session is not documented as thread-safe (issue #216).
 _legacy_client: Optional[Redmine] = None
+
+_legacy_client_local = threading.local()
+
+
+def _reset_legacy_client_cache() -> None:
+    """Drop the per-thread cached legacy client.
+
+    Used by the test suite so a test patching ``_legacy_client`` to None gets a
+    freshly built client rather than one cached by an earlier test.
+    """
+    if hasattr(_legacy_client_local, "client"):
+        del _legacy_client_local.client
 
 
 def _build_legacy_client() -> Redmine:
@@ -324,8 +345,48 @@ def _build_legacy_client() -> Redmine:
         )
 
 
+# When true, _get_redmine_client() skips the event-loop check. Only for
+# callers that are provably non-blocking or for tests exercising the client
+# factory directly.
+_loop_thread_allowed: ContextVar[bool] = ContextVar(
+    "_loop_thread_allowed", default=False
+)
+
+
+@contextlib.contextmanager
+def allow_loop_thread():
+    """Temporarily permit _get_redmine_client() on the event loop thread."""
+    token = _loop_thread_allowed.set(True)
+    try:
+        yield
+    finally:
+        _loop_thread_allowed.reset(token)
+
+
+def _reject_event_loop_thread() -> None:
+    """Fail loudly if a blocking client is being built on the event loop.
+
+    python-redmine is synchronous, so every call made through this client
+    blocks whichever thread it runs on. On the event loop that stalls every
+    other request, including the /health probe (issue #216). Tools must go
+    through ``@offloaded`` or ``in_thread()``; inside a worker thread there is
+    no running loop, so this check is a no-op there.
+    """
+    if _loop_thread_allowed.get():
+        return
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    raise RuntimeError(
+        "_get_redmine_client() was called on the event loop thread. Blocking "
+        "Redmine calls must run inside @offloaded or in_thread() so a hung "
+        "server cannot stall other requests. See issue #216."
+    )
+
+
 def _get_redmine_client() -> Redmine:
-    global _legacy_client
+    _reject_event_loop_thread()
 
     # Read this module's attributes via globals() so tests patching
     # `_client.redmine`, `_client._legacy_client`, and `_client.Redmine`
@@ -357,8 +418,13 @@ def _get_redmine_client() -> Redmine:
         maybe_log_identity(client, key)
         return client
 
-    # Legacy mode: reuse a cached singleton.
-    if g["_legacy_client"] is None:
-        g["_legacy_client"] = _build_legacy_client()
-    _legacy_client = g["_legacy_client"]
-    return g["_legacy_client"]
+    # Legacy mode: an explicitly set module attribute wins (tests patch it),
+    # otherwise use the per-thread cache.
+    if g["_legacy_client"] is not None:
+        return g["_legacy_client"]
+
+    client = getattr(_legacy_client_local, "client", None)
+    if client is None:
+        client = _build_legacy_client()
+        _legacy_client_local.client = client
+    return client

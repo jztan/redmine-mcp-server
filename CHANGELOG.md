@@ -18,9 +18,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   covers a stalled attachment download: a Redmine that starts sending an
   attachment and then goes silent is now reported as a timeout instead of a
   connection error.
-  Note that a hung call can still stall other requests for the duration of the
-  timeout, including `/health`; moving the blocking calls off the event loop
-  is tracked separately.
+- Blocking Redmine calls no longer stall the event loop. Every tool now runs its
+  synchronous section in a worker thread, so a hung or slow Redmine server can
+  no longer delay other requests. Previously a single hung call blocked
+  everything else for the full `REDMINE_TIMEOUT`: measured against a server that
+  accepts connections and never answers, `/health` probed with a 10 second
+  deadline failed outright during one hung call, so a liveness probe could
+  restart the pod. It now answers throughout. Wrapping the client call alone
+  was not enough, because python-redmine issues its request on first iteration
+  of a result set and can re-fetch on attribute access, so each tool moves its
+  whole synchronous section in one hop ([#216](https://github.com/jztan/redmine-mcp-server/issues/216)).
 
 ### Changed
 - The README Contributors list is now generated from the `### Contributors`

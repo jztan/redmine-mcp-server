@@ -9,6 +9,7 @@ from .._client import _get_redmine_client
 from .._decorators import ActionMode, action_dispatch
 from .._env import _is_products_enabled
 from .._errors import _handle_redmine_error
+from .._offload import offloaded
 from .._serialization import (
     _REDMINE_API_PAGE_CAP,
     _safe_isoformat,
@@ -81,7 +82,8 @@ def _product_to_dict(product: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-async def _list_products_action(
+@offloaded
+def _list_products_action(
     project_id: Optional[Union[str, int]] = None,
     limit: int = 100,
     **_: Any,
@@ -117,7 +119,8 @@ async def _list_products_action(
         )
 
 
-async def _get_product_action(
+@offloaded
+def _get_product_action(
     product_id: Optional[int] = None,
     **_: Any,
 ) -> Dict[str, Any]:
@@ -141,7 +144,8 @@ async def _get_product_action(
         )
 
 
-async def _create_product_action(
+@offloaded
+def _create_product_action(
     project_id: Optional[Union[str, int]] = None,
     name: Optional[str] = None,
     status_id: int = 1,
@@ -198,7 +202,8 @@ async def _create_product_action(
         )
 
 
-async def _update_product_action(
+@offloaded
+def _update_product_action(
     product_id: Optional[int] = None,
     fields: Optional[Dict[str, Any]] = None,
     **_: Any,
