@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 from .._client import _get_redmine_client
 from .._env import _is_checklists_enabled, _is_read_only_mode
 from .._errors import _READ_ONLY_ERROR, _handle_redmine_error
+from .._offload import offloaded
 from .._serialization import wrap_insecure_content
 from .._validation import _is_positive_int
 from ..server import mcp
@@ -79,7 +80,8 @@ def _create_checklist_item_api(issue_id: int, payload: Dict[str, Any]) -> Any:
 
 
 @mcp.tool()
-async def get_checklist(issue_id: int) -> Dict[str, Any]:
+@offloaded
+def get_checklist(issue_id: int) -> Dict[str, Any]:
     """Retrieve all checklist items for a Redmine issue.
 
     Requires the RedmineUP Checklists plugin and
@@ -121,7 +123,8 @@ async def get_checklist(issue_id: int) -> Dict[str, Any]:
 
 
 @mcp.tool()
-async def update_checklist_item(
+@offloaded
+def update_checklist_item(
     checklist_item_id: int,
     subject: Optional[str] = None,
     is_done: Optional[bool] = None,
@@ -192,7 +195,8 @@ async def update_checklist_item(
 
 
 @mcp.tool()
-async def create_checklist_item(
+@offloaded
+def create_checklist_item(
     issue_id: int,
     subject: str,
     is_section: bool = False,
