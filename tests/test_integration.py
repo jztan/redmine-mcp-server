@@ -2162,6 +2162,7 @@ class TestTagsPluginIntegration:
             subject="[MCP TAG VERIFY] delete me",
             description="additional_tags write round-trip",
             fields={"tag_list": ["mcp-verify-tag"]},
+            extra_fields=_integration_test_custom_fields(),
         )
         assert "error" not in created, f"create failed: {created}"
         issue_id = created["id"]
