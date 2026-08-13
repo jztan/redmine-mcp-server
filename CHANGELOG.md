@@ -39,6 +39,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   position of their earliest credit, so a new name appends rather than
   reshuffling the line.
 
+### Contributors
+- @Bricklou, reported that a call to `get_redmine_issue` hung the MCP server
+  against an unresponsive Redmine, which led to both the `REDMINE_TIMEOUT`
+  fix and the event-loop offload ([#214](https://github.com/jztan/redmine-mcp-server/issues/214))
+
 ## [2.10.0] - 2026-08-08
 ### Added
 - Community health files: `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1),
