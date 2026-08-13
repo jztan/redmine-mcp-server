@@ -245,3 +245,37 @@ async def test_allow_loop_thread_escape_hatch():
     with patch.object(_client, "redmine", sentinel):
         with _client.allow_loop_thread():
             assert _client._get_redmine_client() is sentinel
+
+
+async def test_oauth_token_resolves_inside_the_worker():
+    """The Bearer token must survive the hop to the worker thread."""
+    from unittest.mock import Mock, patch
+
+    from redmine_mcp_server import _client
+
+    token = Mock()
+    token.token = "test-bearer-token"
+    captured = {}
+
+    def fake_new_client(**kwargs):
+        captured.update(kwargs)
+        return Mock(name="oauth-client")
+
+    # Read the token out of a ContextVar the way FastMCP's real
+    # get_access_token() does. If the context did not reach the worker this
+    # returns the default None and no Authorization header is built, which is
+    # exactly the silent OAuth breakage this test exists to catch.
+    current_token = contextvars.ContextVar("current_token", default=None)
+    current_token.set(token)
+
+    with (
+        patch.object(_client, "redmine", None),
+        patch.object(_client, "_legacy_client", None),
+        patch.object(_client, "get_access_token", current_token.get),
+        patch.object(_client, "_new_client", fake_new_client),
+    ):
+        await in_thread(_client._get_redmine_client)
+
+    assert captured["requests"]["headers"]["Authorization"] == (
+        "Bearer test-bearer-token"
+    )
