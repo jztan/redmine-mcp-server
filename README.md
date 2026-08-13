@@ -151,6 +151,7 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `REDMINE_SSL_VERIFY` | No | `true` | Enable/disable SSL certificate verification |
 | `REDMINE_SSL_CERT` | No | – | Path to custom CA certificate file |
 | `REDMINE_SSL_CLIENT_CERT` | No | – | Path to client certificate for mutual TLS |
+| `REDMINE_TIMEOUT` | No | `30` | Whole seconds to wait for a Redmine HTTP response before failing the call. Applied as a connect timeout of at most 10s plus a read timeout of the full value. Set to `0` to wait indefinitely, which restores the previous behavior and can hang the request. |
 | `REDMINE_MCP_READ_ONLY` | No | `false` | Block all write operations (create/update/delete) when set to `true` |
 | `REDMINE_OAUTH_SCOPE_ENFORCEMENT` | No | `on` | OAuth modes only: deny tool calls whose access token lacks the tool's Redmine permission scopes, and filter `tools/list` accordingly. Set to `off` temporarily while re-consenting older tokens ([details](docs/oauth-setup.md#scope-enforcement)) |
 | `REDMINE_OAUTH_DISCOVERY_AS` | No | `redmine` | OAuth modes only: which authorization server discovery advertises. `redmine` names your Redmine; `self` advertises this server (issuer = `REDMINE_MCP_BASE_URL`) and serves RFC 8414 metadata at its own canonical well-known location, which clients that probe there need, Cursor among them ([details](docs/oauth-setup.md#cursor-and-self-as-discovery)) |

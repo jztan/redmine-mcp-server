@@ -42,7 +42,9 @@ class TestOAuthClientBuilding:
         ):
             _client._get_redmine_client()
             mock_redmine.assert_called_once_with(
-                "https://r.example.com", key="legacy-key"
+                "https://r.example.com",
+                engine=_client.TimeoutSyncEngine,
+                key="legacy-key",
             )
 
     def test_no_circular_oauth_middleware_import(self):

@@ -17,9 +17,11 @@ from redminelib.exceptions import (
 )
 from requests.exceptions import (
     ConnectionError as RequestsConnectionError,
+    ConnectTimeout as RequestsConnectTimeout,
     SSLError as RequestsSSLError,
     Timeout as RequestsTimeout,
 )
+from urllib3.exceptions import TimeoutError as Urllib3TimeoutError
 
 logger = logging.getLogger("redmine_mcp_server")
 
@@ -70,6 +72,29 @@ def _scrub_error_message(message: str) -> str:
     return scrubbed
 
 
+def _timeout_budget_hint() -> str:
+    """Describe the configured timeout for inclusion in an error message."""
+    from ._env import get_redmine_timeout  # lazy import avoids circular
+
+    timeout = get_redmine_timeout()
+    if timeout is None:
+        return "REDMINE_TIMEOUT is disabled"
+    connect, read = timeout
+    return f"REDMINE_TIMEOUT: connect {connect:g}s, read {read:g}s"
+
+
+def _read_timeout_error(redmine_url: str) -> Dict[str, Any]:
+    """Build the "did not respond in time" error dict for a read timeout."""
+    return {
+        "error": (
+            f"Redmine at {redmine_url} did not respond in time "
+            f"({_timeout_budget_hint()}). The server may be overloaded or "
+            "the request too large. Raise or disable the limit with "
+            "REDMINE_TIMEOUT."
+        )
+    }
+
+
 def _handle_redmine_error(
     e: Exception, operation: str, context: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
@@ -97,6 +122,39 @@ def _handle_redmine_error(
             )
         }
 
+    # Check Timeout BEFORE ConnectionError: ConnectTimeout inherits from both,
+    # so the ConnectionError branch would otherwise swallow it and blame the
+    # URL when the real cause is a server that stopped answering (#214).
+    if isinstance(e, RequestsTimeout):
+        logger.error(f"Timeout during {operation}: {e}")
+        if isinstance(e, RequestsConnectTimeout):
+            return {
+                "error": (
+                    f"Timed out connecting to Redmine at {redmine_url} "
+                    f"({_timeout_budget_hint()}). Please check: "
+                    "1) The host and port are reachable, "
+                    "2) No firewall or proxy is dropping the connection"
+                )
+            }
+        return _read_timeout_error(redmine_url)
+
+    # A stalled streaming download (e.g. get_redmine_attachment) does NOT
+    # raise ReadTimeout: requests' iter_content() catches urllib3's
+    # ReadTimeoutError and re-raises it wrapped in a plain ConnectionError
+    # (see requests/models.py). Left unhandled, that would fall into the
+    # ConnectionError branch below and blame the URL for a server that
+    # started answering and then went silent mid-body (#214). Detect the
+    # wrapped urllib3 timeout here so it gets the read-timeout message
+    # instead. A genuine ConnectionError (refused, DNS failure) has no such
+    # wrapped cause and still falls through unchanged.
+    if (
+        isinstance(e, RequestsConnectionError)
+        and e.args
+        and isinstance(e.args[0], Urllib3TimeoutError)
+    ):
+        logger.error(f"Streaming read timeout during {operation}: {e}")
+        return _read_timeout_error(redmine_url)
+
     # Connection-level errors (from requests library)
     if isinstance(e, RequestsConnectionError):
         logger.error(f"Connection error during {operation}: {e}")
@@ -105,15 +163,6 @@ def _handle_redmine_error(
                 f"Cannot connect to Redmine at {redmine_url}. "
                 "Please check: 1) URL is correct, 2) Network is accessible, "
                 "3) Redmine server is running"
-            )
-        }
-
-    if isinstance(e, RequestsTimeout):
-        logger.error(f"Timeout during {operation}: {e}")
-        return {
-            "error": (
-                f"Connection to Redmine at {redmine_url} timed out. "
-                "Please check: 1) Network connectivity, 2) Redmine server load"
             )
         }
 

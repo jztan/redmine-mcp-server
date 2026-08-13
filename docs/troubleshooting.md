@@ -34,18 +34,37 @@ This guide covers common issues and solutions for the Redmine MCP Server.
 ### Network Timeout Errors
 
 **Symptoms:**
-- Requests timing out
-- "Connection timeout" errors
+- "Redmine at ... did not respond in time"
+- "Timed out connecting to Redmine at ..."
 
 **Solutions:**
 
-1. **Increase Timeout Settings**
-   - Add longer timeout values in your configuration
-   - Check if Redmine server is slow or overloaded
+1. **Distinguish the two messages**
+   - "Timed out connecting" means the host or port never accepted the
+     connection. Check the URL, DNS, and any firewall or proxy in between.
+   - "did not respond in time" means Redmine accepted the connection but sent
+     no response within the read budget. The server is reachable but slow or
+     stuck.
 
-2. **Check Network Speed**
-   - Test your internet connection
-   - Consider using local network if possible
+2. **Raise the Limit for a Slow Redmine**
+   - `REDMINE_TIMEOUT` defaults to 30 seconds. Large queries against a busy
+     instance may legitimately need more: `REDMINE_TIMEOUT=120`.
+   - Setting `REDMINE_TIMEOUT=0` disables the timeout entirely. Avoid it: a
+     Redmine that accepts a connection and never answers will hang the
+     request forever.
+
+3. **Reduce the Work per Call**
+   - Lower `limit` on list tools, or use the `fields` parameter of
+     `list_redmine_issues` to return fewer fields.
+   - Use `journal_limit` on `get_redmine_issue` for issues with long
+     comment histories.
+
+**Note on large attachments:** the read timeout measures the gap between
+bytes, not total transfer time, so a slow but steady download is not cut off
+by it. An upload works the other way: after the file body is sent, the
+client still waits under the same read timeout for Redmine's response, so a
+large upload to a busy instance may need a higher `REDMINE_TIMEOUT` even
+though the transfer itself completed.
 
 ### SSL Certificate Errors
 
