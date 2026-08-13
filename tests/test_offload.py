@@ -131,3 +131,36 @@ async def test_explicitly_patched_legacy_client_still_wins():
         got = await in_thread(_client._get_redmine_client)
 
     assert got is sentinel
+
+
+async def test_tool_does_not_block_the_event_loop():
+    """A hung Redmine call must not stall the loop (issue #216)."""
+    from unittest.mock import Mock, patch
+
+    from redmine_mcp_server.tools.gantt import get_gantt_chart
+
+    client = Mock()
+
+    def slow_filter(**kwargs):
+        time.sleep(0.5)
+        return []
+
+    client.issue.filter.side_effect = slow_filter
+    client.version.filter.return_value = []
+
+    ticks = 0
+
+    async def heartbeat():
+        nonlocal ticks
+        while True:
+            await asyncio.sleep(0.01)
+            ticks += 1
+
+    with patch("redmine_mcp_server._client.redmine", client):
+        task = asyncio.create_task(heartbeat())
+        await asyncio.sleep(0)
+        result = await get_gantt_chart(project_id=1)
+        task.cancel()
+
+    assert result["total_count"] == 0
+    assert ticks >= 10, f"loop only ticked {ticks} times during a hung tool call"
