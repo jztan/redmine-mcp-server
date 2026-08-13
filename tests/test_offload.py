@@ -217,3 +217,31 @@ def test_no_blocking_client_call_runs_on_the_event_loop():
         + ", ".join(offenders)
         + ". Wrap the synchronous section with @offloaded or in_thread()."
     )
+
+
+async def test_get_redmine_client_refuses_the_event_loop():
+    from redmine_mcp_server import _client
+
+    with pytest.raises(RuntimeError, match="event loop thread"):
+        _client._get_redmine_client()
+
+
+async def test_get_redmine_client_is_allowed_in_a_worker():
+    from unittest.mock import Mock, patch
+
+    from redmine_mcp_server import _client
+
+    sentinel = Mock(name="client")
+    with patch.object(_client, "redmine", sentinel):
+        assert await in_thread(_client._get_redmine_client) is sentinel
+
+
+async def test_allow_loop_thread_escape_hatch():
+    from unittest.mock import Mock, patch
+
+    from redmine_mcp_server import _client
+
+    sentinel = Mock(name="client")
+    with patch.object(_client, "redmine", sentinel):
+        with _client.allow_loop_thread():
+            assert _client._get_redmine_client() is sentinel

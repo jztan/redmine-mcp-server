@@ -610,7 +610,12 @@ class TestGlobalSearchIntegration:
 
         # Get project identifier - search API doesn't provide it for wiki pages
         # so we get the first available project
-        projects = list(_get_redmine_client().project.all())
+        # Direct client use inside an async test, so it opts out of the
+        # event-loop guard (issue #216).
+        from redmine_mcp_server._client import allow_loop_thread
+
+        with allow_loop_thread():
+            projects = list(_get_redmine_client().project.all())
         if not projects:
             pytest.skip("No projects available")
         project_id = projects[0].identifier

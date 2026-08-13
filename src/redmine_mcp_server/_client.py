@@ -16,9 +16,12 @@ Tests patch this module's attributes directly, e.g.
 ``patch("redmine_mcp_server._client.Redmine")``.
 """
 
+import asyncio
+import contextlib
 import logging
 import os
 import threading
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Optional, Union
 from urllib.parse import urlparse
@@ -342,7 +345,49 @@ def _build_legacy_client() -> Redmine:
         )
 
 
+# When true, _get_redmine_client() skips the event-loop check. Only for
+# callers that are provably non-blocking or for tests exercising the client
+# factory directly.
+_loop_thread_allowed: ContextVar[bool] = ContextVar(
+    "_loop_thread_allowed", default=False
+)
+
+
+@contextlib.contextmanager
+def allow_loop_thread():
+    """Temporarily permit _get_redmine_client() on the event loop thread."""
+    token = _loop_thread_allowed.set(True)
+    try:
+        yield
+    finally:
+        _loop_thread_allowed.reset(token)
+
+
+def _reject_event_loop_thread() -> None:
+    """Fail loudly if a blocking client is being built on the event loop.
+
+    python-redmine is synchronous, so every call made through this client
+    blocks whichever thread it runs on. On the event loop that stalls every
+    other request, including the /health probe (issue #216). Tools must go
+    through ``@offloaded`` or ``in_thread()``; inside a worker thread there is
+    no running loop, so this check is a no-op there.
+    """
+    if _loop_thread_allowed.get():
+        return
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    raise RuntimeError(
+        "_get_redmine_client() was called on the event loop thread. Blocking "
+        "Redmine calls must run inside @offloaded or in_thread() so a hung "
+        "server cannot stall other requests. See issue #216."
+    )
+
+
 def _get_redmine_client() -> Redmine:
+    _reject_event_loop_thread()
+
     # Read this module's attributes via globals() so tests patching
     # `_client.redmine`, `_client._legacy_client`, and `_client.Redmine`
     # are observed at call time.
