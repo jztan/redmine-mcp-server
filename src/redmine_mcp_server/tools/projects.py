@@ -12,6 +12,7 @@ from .._client import _get_redmine_client
 from .._custom_fields import _extract_possible_values
 from .._decorators import ActionMode, action_dispatch
 from .._errors import _handle_redmine_error
+from .._offload import in_thread, offloaded
 from .._serialization import (
     _named_ref,
     _safe_isoformat,
@@ -203,7 +204,8 @@ def _membership_to_dict(membership: Any) -> Dict[str, Any]:
 
 
 @mcp.tool()
-async def list_redmine_projects() -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+@offloaded
+def list_redmine_projects() -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """
     Lists all accessible projects in Redmine.
     Returns:
@@ -290,25 +292,30 @@ async def list_project_issue_custom_fields(
 
     await _ensure_cleanup_started()
 
-    try:
-        project = _get_redmine_client().project.get(
-            project_id, include="issue_custom_fields"
-        )
-        custom_fields = getattr(project, "issue_custom_fields", None) or []
+    def _run() -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+        try:
+            project = _get_redmine_client().project.get(
+                project_id, include="issue_custom_fields"
+            )
+            custom_fields = getattr(project, "issue_custom_fields", None) or []
 
-        result: List[Dict[str, Any]] = []
-        for custom_field in custom_fields:
-            if not _custom_field_applies_to_tracker(custom_field, parsed_tracker_id):
-                continue
-            result.append(_custom_field_to_dict(custom_field))
+            result: List[Dict[str, Any]] = []
+            for custom_field in custom_fields:
+                if not _custom_field_applies_to_tracker(
+                    custom_field, parsed_tracker_id
+                ):
+                    continue
+                result.append(_custom_field_to_dict(custom_field))
 
-        return result
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"listing issue custom fields for project {project_id}",
-            {"resource_type": "project", "resource_id": project_id},
-        )
+            return result
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"listing issue custom fields for project {project_id}",
+                {"resource_type": "project", "resource_id": project_id},
+            )
+
+    return await in_thread(_run)
 
 
 @mcp.tool()
@@ -344,27 +351,32 @@ async def list_redmine_versions(
             }
 
     await _ensure_cleanup_started()
-    try:
-        versions = _get_redmine_client().version.filter(project_id=project_id)
-        result = []
-        for version in versions:
-            if status_filter is not None:
-                if getattr(version, "status", "") != status_filter:
-                    continue
-            result.append(_version_to_dict(version))
-        return result
-    except Exception as e:
-        return _handle_redmine_error(
-            e,
-            f"listing versions for project {project_id}",
-            {"resource_type": "project", "resource_id": project_id},
-        )
+
+    def _run() -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+        try:
+            versions = _get_redmine_client().version.filter(project_id=project_id)
+            result = []
+            for version in versions:
+                if status_filter is not None:
+                    if getattr(version, "status", "") != status_filter:
+                        continue
+                result.append(_version_to_dict(version))
+            return result
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"listing versions for project {project_id}",
+                {"resource_type": "project", "resource_id": project_id},
+            )
+
+    return await in_thread(_run)
 
 
 _VALID_VERSION_STATUSES = {"open", "locked", "closed"}
 
 
-async def _create_redmine_version_action(
+@offloaded
+def _create_redmine_version_action(
     project_id: Optional[Union[str, int]] = None,
     name: Optional[str] = None,
     description: Optional[str] = None,
@@ -407,7 +419,8 @@ async def _create_redmine_version_action(
         )
 
 
-async def _update_redmine_version_action(
+@offloaded
+def _update_redmine_version_action(
     version_id: Optional[int] = None,
     name: Optional[str] = None,
     description: Optional[str] = None,
@@ -447,7 +460,8 @@ async def _update_redmine_version_action(
         )
 
 
-async def _delete_redmine_version_action(
+@offloaded
+def _delete_redmine_version_action(
     version_id: Optional[int] = None,
     **_: Any,
 ) -> Dict[str, Any]:
@@ -522,7 +536,8 @@ async def manage_redmine_version(
 
 
 @mcp.tool()
-async def summarize_project_status(project_id: int, days: int = 30) -> Dict[str, Any]:
+@offloaded
+def summarize_project_status(project_id: int, days: int = 30) -> Dict[str, Any]:
     """Provide a summary of project status based on issue activity over the
     specified time period.
 
@@ -615,7 +630,8 @@ async def summarize_project_status(project_id: int, days: int = 30) -> Dict[str,
 
 
 @mcp.tool()
-async def list_project_members(
+@offloaded
+def list_project_members(
     project_id: Union[str, int],
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """List members of a Redmine project.
@@ -659,7 +675,8 @@ async def list_project_members(
 
 
 @mcp.tool()
-async def list_redmine_roles() -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+@offloaded
+def list_redmine_roles() -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """List all roles defined in the Redmine instance.
 
     Returns basic role metadata (``id`` and ``name``) for every role
@@ -694,7 +711,8 @@ async def list_redmine_roles() -> Union[List[Dict[str, Any]], Dict[str, Any]]:
 
 
 @mcp.tool()
-async def get_project_modules(
+@offloaded
+def get_project_modules(
     project_id: Union[str, int],
 ) -> Dict[str, Any]:
     """Retrieve the enabled modules for a Redmine project.
@@ -756,7 +774,8 @@ async def get_project_modules(
         )
 
 
-async def _add_project_member_action(
+@offloaded
+def _add_project_member_action(
     project_id: Optional[Union[str, int]] = None,
     user_id: Optional[int] = None,
     group_id: Optional[int] = None,
@@ -804,7 +823,8 @@ async def _add_project_member_action(
         )
 
 
-async def _update_project_member_action(
+@offloaded
+def _update_project_member_action(
     membership_id: Optional[int] = None,
     role_ids: Optional[List[int]] = None,
     **_: Any,
@@ -839,7 +859,8 @@ async def _update_project_member_action(
         )
 
 
-async def _remove_project_member_action(
+@offloaded
+def _remove_project_member_action(
     membership_id: Optional[int] = None,
     **_: Any,
 ) -> Dict[str, Any]:
@@ -904,7 +925,8 @@ async def manage_project_member(
 
 
 @mcp.tool()
-async def list_project_trackers(
+@offloaded
+def list_project_trackers(
     project_id: Union[str, int],
 ) -> List[Dict[str, Any]]:
     """List the trackers (issue types) enabled for a specific Redmine project.
