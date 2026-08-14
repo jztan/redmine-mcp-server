@@ -39,6 +39,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   position of their earliest credit, so a new name appends rather than
   reshuffling the line.
 
+### Dependencies
+- Bump `fastmcp` from 3.4.5 to 3.4.7, a lockfile-only move within the existing
+  `<4` bound ([#207](https://github.com/jztan/redmine-mcp-server/pull/207)).
+  3.4.7 fixes CIMD `private_key_jwt` client-assertion validation in
+  `OAuthProxy`, which had built the expected audience by appending to the issuer
+  and produced a doubled slash at a bare origin, so assertions were rejected on
+  an audience the authorization server never advertised. That path is reachable
+  in `oauth-proxy` mode. 3.4.6 adds `FASTMCP_SSRF_TRUST_PROXY` for deployments
+  whose only egress is a corporate CONNECT proxy, where SSRF DNS pinning breaks
+  TLS verification. It defaults to `false` and leaves existing behavior
+  unchanged. Dependabot originally proposed 3.4.6, which was published three
+  minutes before 3.4.7; the PR was retargeted so the assertion fix is not left
+  one release behind.
+- Bump `starlette` from 1.3.1 to 1.6.0, a lockfile-only move within the existing
+  `<2` bound ([#211](https://github.com/jztan/redmine-mcp-server/pull/211)).
+  1.5.1 hardens `FileResponse` range handling, rejecting inverted single-byte
+  ranges such as `bytes=5-4` and capping a request at 100 ranges, which covers
+  the attachment route at `/files/{file_id}`. 1.6.0 adds an opt-in
+  `max_body_size` on `Starlette` and the route classes, and exposes
+  `http.response.debug` through response extensions. The 1.4.x and 1.5.0 work is
+  confined to `GZipMiddleware`, which this server does not install. Retargeted
+  from the proposed 1.4.1, three releases behind by the time it was reviewed.
+- Bump `requests` from 2.33.1 to 2.34.2, a lockfile-only move within the
+  existing `<3` bound ([#209](https://github.com/jztan/redmine-mcp-server/pull/209)).
+  2.34.0 ships inline type annotations in place of the typeshed stubs, stops
+  greedy matching on `no_proxy` domains, and stops stripping duplicate leading
+  slashes in URI paths, the last of which needs `urllib3` 2.7.0 or newer and is
+  already satisfied here. 2.34.1 and 2.34.2 settle the new annotations; nothing
+  in this project depends on `types-requests`.
+
 ### Contributors
 - @Bricklou, reported that a call to `get_redmine_issue` hung the MCP server
   against an unresponsive Redmine, which led to both the `REDMINE_TIMEOUT`
