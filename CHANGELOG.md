@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Tests
+- Unit coverage for `_auth.py`, raised from 63% to 100%. The whole
+  `revoke_token` RFC 7009 proxy was untested, along with the fail-fast branch
+  that rejects a missing `REDMINE_URL` at boot. New
+  `tests/test_auth_revocation.py` covers token extraction from a Bearer header,
+  a JSON body, and a form body, the 400 cases that make no upstream call, a 502
+  when Redmine is unreachable, the RFC 7009 rule that an upstream error still
+  returns success, and `REDMINE_SSL_VERIFY` reaching the revocation client.
 
 ## [2.11.0] - 2026-08-15
 ### Fixed
