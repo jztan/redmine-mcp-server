@@ -2,9 +2,10 @@
 
 import os
 import sys
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, PropertyMock, patch
 
 import pytest
+from redminelib.exceptions import ForbiddenError
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -36,8 +37,23 @@ def _make_issue(
         issue.parent = parent
     else:
         issue.parent = None
-    issue.relations = relations or []
+    _serve_relations_from_payload(issue, relations or [])
     return issue
+
+
+def _serve_relations_from_payload(issue: Mock, relations) -> None:
+    """Make ``relations`` reachable only the way Redmine actually sends them.
+
+    ``get_gantt_chart`` asks for ``include=relations``, so the relations are in
+    the issue payload. python-redmine's ``issue.relations`` attribute does not
+    read that payload: it is a lazy relation that issues
+    ``GET /issues/{id}/relations.json`` per issue, and that endpoint is mapped
+    to ``manage_issue_relations``. So the fake serves them from ``raw()`` and
+    raises on the attribute -- a regression to ``getattr`` fails here rather
+    than only against a live Redmine.
+    """
+    issue.raw.return_value = {"relations": list(relations)}
+    type(issue).relations = PropertyMock(side_effect=ForbiddenError)
 
 
 def _make_relation(
@@ -46,14 +62,15 @@ def _make_relation(
     issue_id: int,
     issue_to_id: int,
     delay=None,
-) -> Mock:
-    rel = Mock()
-    rel.id = rel_id
-    rel.relation_type = relation_type
-    rel.issue_id = issue_id
-    rel.issue_to_id = issue_to_id
-    rel.delay = delay
-    return rel
+) -> dict:
+    """A relation as it appears in an ``include=relations`` payload: a dict."""
+    return {
+        "id": rel_id,
+        "relation_type": relation_type,
+        "issue_id": issue_id,
+        "issue_to_id": issue_to_id,
+        "delay": delay,
+    }
 
 
 def _make_version(

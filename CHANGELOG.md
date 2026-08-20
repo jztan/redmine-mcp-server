@@ -8,6 +8,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Fixed
+- `include=relations` is no longer discarded and re-fetched per issue.
+  python-redmine lists `relations` in both `Issue._includes` and
+  `Issue._relations`, and `BaseResource.__getattr__` tests `_relations` first,
+  so `getattr(issue, "relations")` ignored the payload the `include` had
+  already fetched and handed back a lazy resource set that requested
+  `GET /issues/{id}/relations.json` as soon as it was iterated. Redmine maps
+  that endpoint's `index` action to `manage_issue_relations`, a permission
+  reading an issue does not imply -- and one carrying no `:read => true` flag,
+  so it is also withheld in closed and archived projects. Callers holding
+  `view_issues` were therefore denied relations Redmine had already sent them.
+  Relations now come from the response payload: `get_redmine_issue(
+  include_relations=True)` works with `view_issues` alone, and
+  `get_gantt_chart` drops from one extra request per issue to none
+  ([#222](https://github.com/jztan/redmine-mcp-server/issues/222)). Each
+  relation now also carries Redmine's `delay` field, which the single-issue
+  path had omitted.
+- `delete_redmine_issue` no longer makes unguarded extra requests while
+  building its impact preview. All four included collections were read through
+  resource attributes rather than the payload, outside the `try` that wraps the
+  fetch, so the request each one could trigger escaped as an unhandled
+  exception instead of an error envelope -- before the confirmation gate. Two
+  of them really did fire: `relations` always, and `children` for every leaf
+  issue, because Redmine omits that key entirely (`render_api_issue_children`
+  returns early on `issue.leaf?`) and python-redmine re-fetches a missing
+  include. All four now come from the payload, which is what the code's own
+  comment always said the preview did. `time_entries` is the one count Redmine
+  has no issue include for, so it still needs its own request: a caller without
+  `view_time_entries` now sees `time_entries_count: null` rather than `0`,
+  which would have understated an irreversible cascade, and any other failure
+  returns a normal error envelope instead of being reported as a permission
+  problem.
 - `manage_contact` no longer fails for every action in OAuth mode. Redmine
   intersects an OAuth token's scopes with the consenting user's role
   permissions (`Role#allowed_permissions` is `unscoped & scope`), and every
@@ -25,6 +56,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Redmine OAuth application and have users re-consent.
 
 ### Tests
+- New `tests/test_relations_payload.py` covers reading relations from the
+  include payload, an absent include, an empty include, the Gantt path issuing
+  one request for a whole chart, the leaf-issue `children` case, and the delete
+  preview both surviving a caller without `manage_issue_relations` and
+  refusing to report an unreadable time-entry count as zero. The existing
+  relation fakes in `tests/test_gantt.py`,
+  `tests/test_delete_redmine_issue.py` and `tests/test_redmine_handler.py`
+  exposed `relations` as a plain attribute, which no python-redmine issue ever
+  does; they now serve includes from `raw()` and raise on the attribute, so
+  this class of bug fails in CI instead of only against a live Redmine.
 - Unit coverage for `_auth.py`, raised from 63% to 100%. The whole
   `revoke_token` RFC 7009 proxy was untested, along with the fail-fast branch
   that rejects a missing `REDMINE_URL` at boot. New

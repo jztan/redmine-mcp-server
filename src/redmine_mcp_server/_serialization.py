@@ -16,6 +16,9 @@ _DEFAULT_LIST_RESULT_CAP = 500
 # this regardless of what the caller asks for.
 _REDMINE_API_PAGE_CAP = 100
 
+# Redmine's own relation keys, from app/views/issues/index.api.rsb.
+_ISSUE_RELATION_FIELDS = ("id", "issue_id", "issue_to_id", "relation_type", "delay")
+
 
 def wrap_insecure_content(content: Any) -> Any:
     """Wrap user-controlled content in boundary tags to prevent prompt injection.
@@ -126,6 +129,47 @@ def _iter_capped(resources: Any, cap: int = _DEFAULT_LIST_RESULT_CAP) -> List[An
             break
         out.append(item)
     return out
+
+
+def _included_list(resource: Any, key: str) -> List[Any]:
+    """Read an ``include=`` collection from the payload Redmine already sent.
+
+    Use this instead of ``getattr(resource, key)`` for any name python-redmine
+    treats as a relation. ``BaseResource.__getattr__`` tests ``_relations``
+    before ``_includes``, and ``Issue`` lists ``relations`` in both, so the
+    attribute ignores an ``include=relations`` payload and hands back a lazy
+    resource set that fetches ``GET /issues/{id}/relations.json`` the moment it
+    is iterated. Redmine maps that endpoint to ``manage_issue_relations``,
+    which reading the issue does not imply, so the attribute turns an
+    already-satisfied request into an extra round trip that can also be denied.
+
+    ``raw()`` is python-redmine's accessor for the decoded payload. A key that
+    was never included reads as ``None`` there and is reported as empty, so
+    callers must have asked Redmine for the include -- this never fetches, and
+    cannot tell "no relations" from "never requested".
+    """
+    payload = resource.raw()
+    value = payload.get(key) if isinstance(payload, dict) else None
+    return list(value) if isinstance(value, list) else []
+
+
+def _issue_relation_to_dict(relation: Any) -> Dict[str, Any]:
+    """Convert an issue relation to a serializable dict.
+
+    Accepts either a payload dict from ``_included_list`` or a python-redmine
+    ``IssueRelation`` from ``issue_relation.filter``.
+    """
+    if isinstance(relation, dict):
+        return {key: relation.get(key) for key in _ISSUE_RELATION_FIELDS}
+    return {key: getattr(relation, key, None) for key in _ISSUE_RELATION_FIELDS}
+
+
+def _issue_relations_to_list(issue: Any) -> List[Dict[str, Any]]:
+    """Serialize an issue's relations from its ``include=relations`` payload.
+
+    Never fetches; see ``_included_list``.
+    """
+    return [_issue_relation_to_dict(rel) for rel in _included_list(issue, "relations")]
 
 
 def _attachment_to_dict(attachment: Any) -> Dict[str, Any]:
