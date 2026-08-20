@@ -179,6 +179,7 @@ When enabled, the following tools return an error instead of executing
 - `manage_issue_relation` — `create`, `delete` blocked; `list` allowed
 - `manage_product` — `create`, `update` blocked; `list`, `get` allowed (also requires `REDMINE_PRODUCTS_ENABLED=true`)
 - `manage_contact` — `create`, `update`, `delete`, `assign_to_project`, `remove_from_project` blocked; `list`, `get` allowed (also requires `REDMINE_CRM_ENABLED=true`)
+- `manage_deal` — `create`, `update`, `delete` blocked; `list`, `get` allowed (also requires `REDMINE_DEALS_ENABLED=true`)
 - `manage_document` — `create`, `update` blocked; `list`, `get` allowed (also requires `REDMINE_DMSF_ENABLED=true`)
 
 All read tools (`get_redmine_issue`, `list_redmine_issues`, `list_redmine_projects`, etc.) continue to work normally. The admin-gated `cleanup_attachment_files` tool (when registered via `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`) is also unaffected — it performs local filesystem cleanup, not Redmine mutations.
@@ -2295,9 +2296,11 @@ manage_product(action="update", product_id=42, fields={"price": 39.99})
 
 ---
 
-## Contacts / CRM (RedmineUP CRM plugin)
+## Contacts and Deals / CRM (RedmineUP CRM plugin)
 
-These tools require the **RedmineUP CRM** plugin and `REDMINE_CRM_ENABLED=true`.
+These tools require the **RedmineUP CRM** plugin. `manage_contact` needs `REDMINE_CRM_ENABLED=true`; `manage_deal` needs `REDMINE_DEALS_ENABLED=true`.
+
+The two flags are deliberately separate. Contacts and deals are separate Redmine *project modules* (`contacts` and `deals` in the plugin's `init.rb`), each with its own permission set, so a project reachable by `manage_contact` is not necessarily reachable by `manage_deal`. More importantly, the plugin's **Light** edition ships no deals at all — no `project_module :deals`, and therefore none of the `*_deals` permissions. Redmine derives its OAuth scope list from `Redmine::AccessControl.permissions` and applies `enforce_configured_scopes`, so on a Light install a deal scope cannot be held by the OAuth application and a client requesting it fails consent with `invalid_scope`. Advertising deals under `REDMINE_CRM_ENABLED` would therefore break contacts for Light deployments; a separate flag leaves them untouched.
 
 **Security note:** Contact PII (email, phone, address) is returned as-is to the caller but is never logged via this module's logger.
 
@@ -2372,6 +2375,72 @@ manage_contact(action="remove_from_project", contact_id=42, project_id="support"
 **Notes:**
 - `list` and `get` are allowed in read-only mode; `create`, `update`, `delete`, `assign_to_project`, and `remove_from_project` are blocked when `REDMINE_MCP_READ_ONLY=true`.
 - **PII handling:** contact `email`, `phone`, `address`, `birthday`, `website` are returned as-is to the caller; the module never logs them. Error messages reference only `contact_id`. User-controlled display fields (`first_name`, `last_name`, `middle_name`, `company`, `job_title`, `background`, `assigned_to.name`) are wrapped in `<insecure-content>` boundary tags so downstream LLMs treat them as untrusted data.
+
+### `manage_deal`
+
+List, get, create, update, or delete RedmineUP CRM deals.
+
+Requires the **RedmineUP CRM** plugin in its **Pro** edition, `REDMINE_DEALS_ENABLED=true`, and the `deals` project module enabled on the project. Visibility scoping is enforced server-side by Redmine. In OAuth mode the token must also carry the deal permissions (`view_deals`, plus `add_deals` / `edit_deals` / `delete_deals` for writes); enabling the flag advertises them as scopes, and the OAuth application has to grant them.
+
+**Parameters:**
+- `action` (string, required): Allowed: `list`, `get`, `create`, `update`, `delete`
+- `project_id` (integer or string): For `list`, optional project filter. For `create`, required (project to create the deal in)
+- `search` (string, optional): For `list`, free-text search (matches the deal name)
+- `status_id` (integer or string, optional): For `list`, filter by deal status. A numeric id, or one of `"o"` (open, the default Redmine applies anyway), `"c"` (won/lost), `"*"` (any status). For `create`, the status to open the deal in (numeric id only)
+- `assigned_to_id` (integer, optional): For `list`, filter by assignee user ID
+- `limit` (integer, optional): For `list`, max results per call (default `100`, capped at 100 by Redmine)
+- `deal_id` (integer): Required for `get`, `update`, and `delete`
+- `include` (string, optional): For `get`, comma-separated includes (`notes`)
+- `name` (string): Required for `create`
+- `contact_id` (integer, optional): For `create`, the contact the deal belongs to
+- `assigned_to_id` (integer, optional): For `list`, filter by assignee. For `create`, the user to assign the new deal to
+- `price` (number or string, optional), `currency` (string, optional), `due_date` (string, optional): For `create`
+- `fields` (dict): For `update`, fields to update. Allowed keys: `name`, `background`, `currency`, `price`, `price_type`, `duration`, `project_id`, `author_id`, `assigned_to_id`, `status_id`, `contact_id`, `category_id`, `probability`, `due_date`, `custom_field_values`, `custom_fields`, `watcher_user_ids`. For `create`, additional fields beyond the named parameters
+
+**Returns:**
+- `list`: array of deal dicts
+- `get`/`create`: deal dict with `id`, `name`, `price`, `currency`, `price_type`, `duration`, `probability`, `due_date`, `background`, `project`, `status`, `category`, `author`, `contact`, `assigned_to`, `related_contacts`, `created_on`, `updated_on`. A `notes` key is added only when `include="notes"` was requested and the plugin returned notes, so its absence means "not requested" rather than "none". `custom_fields` is accepted on writes but not returned, matching `manage_contact`, `manage_product` and `manage_document`
+- `update`: `{"success": true, "deal_id": N, "updated_fields": [...]}`
+- `delete`: `{"success": true, "deal_id": N, "message": ...}`
+- Error: `{"error": "..."}`
+
+**Examples:**
+
+```python
+# List open deals in a project for one assignee (open is Redmine's default)
+manage_deal(action="list", project_id="sales", assigned_to_id=5, limit=50)
+
+# Every deal regardless of status, including won and lost
+manage_deal(action="list", project_id="sales", status_id="*")
+
+# Fetch a single deal with its notes
+manage_deal(action="get", deal_id=9, include="notes")
+
+# Create a deal against a contact
+manage_deal(
+    action="create",
+    project_id="sales",
+    name="ACME renewal",
+    contact_id=42,
+    price="1500",
+    currency="USD",
+    due_date="2026-12-01",
+)
+
+# Move a deal to another status
+manage_deal(action="update", deal_id=9, fields={"status_id": 3})
+
+# Delete a deal
+manage_deal(action="delete", deal_id=9)
+```
+
+**Notes:**
+- `list` and `get` are allowed in read-only mode; `create`, `update`, and `delete` are blocked when `REDMINE_MCP_READ_ONLY=true`.
+- **`list` returns only OPEN deals unless you ask for more.** `DealQuery` seeds itself with a `status_id` filter on operator `o`, the same default `/issues.json` applies, so won and lost deals are absent from an unfiltered call. Pass `status_id="*"` for all statuses, `"c"` for won and lost, or a numeric id for one status — `status_id` is a `:list_status` filter, so Redmine accepts those operators alongside a plain id.
+- **All five actions require `view_deals`.** `deals#index` is excluded from `before_action :authorize` but then runs `find_optional_project`, whose Redmine implementation calls `authorize_global`, so it is authorized too — a caller without the permission gets a permission error, not an empty list. `Deal.visible` narrows what a permitted caller sees; it does not substitute for the check.
+- **`price` is sent as a string.** The plugin parses it with `String#gsub!` against the instance's configured thousands and decimal separators, so a JSON number raises `NoMethodError` server-side. Pass an unformatted value such as `"1500.5"`; pre-formatted input is reinterpreted per those settings.
+- **`status_id` and `category_id` are not discoverable through this server.** The plugin's `GET /deal_statuses.json` is `require_admin`, so a non-admin token cannot list statuses; deal categories are per-project. Read the IDs off an existing deal's `status` and `category` refs instead.
+- `background` is wrapped in `<insecure-content>` boundary tags so downstream LLMs treat it as untrusted data. `name` and the `id`/`name` refs are short label-shaped fields and are returned verbatim, matching `subject` on issues.
 
 ---
 

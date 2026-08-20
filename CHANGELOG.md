@@ -7,6 +7,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `manage_deal`, a tool for RedmineUP CRM deals with `list`, `get`, `create`,
+  `update` and `delete` actions, behind a new `REDMINE_DEALS_ENABLED` flag.
+  Response keys mirror the plugin's own `app/views/deals/{index,show}.api.rsb`
+  templates. Setting the flag advertises `view_deals`, plus `add_deals`,
+  `edit_deals` and `delete_deals` unless `REDMINE_MCP_READ_ONLY` is set --
+  without them Redmine denies all five actions, `list` included:
+  `deals#index` is excluded from `before_action :authorize` but then runs
+  `find_optional_project`, which calls `authorize_global`. Requires the CRM
+  plugin's Pro edition and the `deals` project module enabled on the project.
+
+  Note that `list` returns only *open* deals unless `status_id` says
+  otherwise, because `DealQuery` seeds a `status_id` filter on operator `o`.
+  Pass `status_id="*"` for all statuses. `price` is sent to Redmine as a
+  string, since the plugin parses it with `String#gsub!` and a JSON number
+  raises server-side. ([#224](https://github.com/jztan/redmine-mcp-server/issues/224))
+
+  Deals get their own flag rather than riding `REDMINE_CRM_ENABLED`, even
+  though they ship in the same plugin, because the plugin's Light edition
+  declares no `project_module :deals` and therefore none of the deal
+  permissions. Redmine builds its OAuth scope list from
+  `Redmine::AccessControl.permissions` under `enforce_configured_scopes`, so a
+  deal scope offered to a Light install cannot be held by the OAuth
+  application and a client requesting it fails consent with `invalid_scope`,
+  taking `manage_contact` down with it. Existing `REDMINE_CRM_ENABLED`
+  deployments are therefore unaffected by this release.
+
 ### Fixed
 - `manage_contact` no longer fails for every action in OAuth mode. Redmine
   intersects an OAuth token's scopes with the consenting user's role

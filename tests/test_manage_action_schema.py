@@ -42,6 +42,7 @@ EXPECTED_ACTIONS = {
         "rename",
     },
     "manage_document": {"list", "get", "create", "update"},
+    "manage_deal": {"list", "get", "create", "update", "delete"},
 }
 
 

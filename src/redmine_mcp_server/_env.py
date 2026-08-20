@@ -39,6 +39,23 @@ def _is_crm_enabled() -> bool:
     return _is_true_env("REDMINE_CRM_ENABLED", "false")
 
 
+def _is_deals_enabled() -> bool:
+    """Check if RedmineUP CRM *deals* support is enabled.
+
+    Separate from :func:`_is_crm_enabled` even though deals ship inside the
+    same plugin, because they are absent from the CRM plugin's Light
+    edition: it declares no ``project_module :deals`` and therefore none of
+    the ``*_deals`` permissions. Redmine builds its OAuth scope list from
+    ``Redmine::AccessControl.permissions`` and applies
+    ``enforce_configured_scopes``, so advertising a deal scope on a Light
+    install is not merely useless -- the OAuth application cannot hold the
+    scope, and a client requesting it fails consent with ``invalid_scope``,
+    which would break contacts too. One flag per plugin would therefore
+    regress a working Light deployment on upgrade.
+    """
+    return _is_true_env("REDMINE_DEALS_ENABLED", "false")
+
+
 def _is_dmsf_enabled() -> bool:
     """Check if DMSF (document management) plugin support is enabled."""
     return _is_true_env("REDMINE_DMSF_ENABLED", "false")
