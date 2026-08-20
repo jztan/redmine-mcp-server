@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pattern. Deployments enabling the flag must grant the new scopes on the
   Redmine OAuth application and have users re-consent.
 
+### Contributors
+- @mmahmed, reported that `manage_contact` was denied for every action in
+  OAuth mode and fixed it by advertising the CRM scopes
+  ([#220](https://github.com/jztan/redmine-mcp-server/issues/220),
+  [#221](https://github.com/jztan/redmine-mcp-server/pull/221))
+
 ### Tests
 - Unit coverage for `_auth.py`, raised from 63% to 100%. The whole
   `revoke_token` RFC 7009 proxy was untested, along with the fail-fast branch
