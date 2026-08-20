@@ -20,14 +20,24 @@ Exclusions:
       per-permission checks; default-advertising it would mean every
       consent screen requests full administrative access.
     - Vendor plugin scopes (Easy Redmine, RedmineUP, agile, checklists,
-      CRM, products) are excluded. They vary by deployment; advertising
-      scopes a Redmine doesn't recognize causes consent errors.
+      CRM, products) are excluded from ``READ_SCOPES`` and
+      ``WRITE_SCOPES``. They vary by deployment; advertising scopes a
+      Redmine doesn't recognize causes consent errors. Where a tool
+      cannot function without them, they live in a feature-gated list
+      (``AGILE_READ_SCOPES``, ``TAGS_READ_SCOPES``,
+      ``TAGS_WRITE_SCOPES``, ``CRM_READ_SCOPES``, ``CRM_WRITE_SCOPES``)
+      and are advertised only when that feature's env flag is set.
 """
 
 import os
 from typing import Dict, Optional, Union
 
-from ._env import _is_agile_enabled, _is_read_only_mode, _is_tags_enabled
+from ._env import (
+    _is_agile_enabled,
+    _is_crm_enabled,
+    _is_read_only_mode,
+    _is_tags_enabled,
+)
 
 # Redmine permissions used by the read-only MCP tools.
 READ_SCOPES: list[str] = [
@@ -108,6 +118,40 @@ TAGS_WRITE_SCOPES: list[str] = [
     "edit_issue_tags",
 ]
 
+# RedmineUP CRM plugin permissions, advertised only when the CRM feature is
+# explicitly enabled (see below). Kept out of READ_SCOPES so a deployment
+# without the plugin never advertises a scope Redmine can't resolve.
+#
+# manage_contact cannot reach Redmine without these. Redmine intersects the
+# token's scopes with the user's role permissions -- Role#allowed_permissions
+# is literally ``unscoped & scope`` -- and every contacts endpoint the tool
+# calls runs a scope-aware authorization check: ContactsController#index via
+# find_optional_project -> authorize_global, #show via Contact#visible?, and
+# create / update / destroy via authorize, Contact#editable? and
+# Contact#deletable?. With the scopes absent from the token, all seven
+# manage_contact actions are denied even for a user whose Redmine role grants
+# the permission.
+CRM_READ_SCOPES: list[str] = [
+    "view_contacts",  # manage_contact(action=list|get): the plugin maps
+    # contacts#index and contacts#show to this permission.
+    "view_private_contacts",  # Contact.visible_condition also consults this
+    # for visibility=2 contacts. Without it, list
+    # and get silently omit private contacts that
+    # the user's role can otherwise see.
+]
+
+# RedmineUP CRM write permissions, advertised only when the CRM feature is
+# enabled AND the server is not read-only, matching the WRITE action modes
+# manage_contact declares.
+CRM_WRITE_SCOPES: list[str] = [
+    "add_contacts",  # manage_contact(action=create)
+    "edit_contacts",  # manage_contact(action=update), and both association
+    # actions: the plugin maps contacts_projects#create
+    # and #destroy to edit_contacts, and
+    # ContactsProjectsController checks it directly.
+    "delete_contacts",  # manage_contact(action=delete)
+]
+
 
 def advertised_scopes() -> list[str]:
     """Return the OAuth scopes to advertise in discovery documents.
@@ -121,8 +165,12 @@ def advertised_scopes() -> list[str]:
     non-agile Redmine never sees an unrecognized plugin scope. The same
     applies to :data:`TAGS_READ_SCOPES` under ``REDMINE_TAGS_ENABLED``;
     :data:`TAGS_WRITE_SCOPES` are additionally appended unless the server
-    is read-only, since they gate ``tag_list`` writes. Always returns a
-    fresh list so callers cannot mutate the source of truth.
+    is read-only, since they gate ``tag_list`` writes. :data:`CRM_READ_SCOPES`
+    follow the same rule under ``REDMINE_CRM_ENABLED`` (per
+    :func:`_is_crm_enabled`), with :data:`CRM_WRITE_SCOPES` appended unless
+    the server is read-only, since ``manage_contact`` cannot pass Redmine's
+    authorization checks without them. Always returns a fresh list so callers
+    cannot mutate the source of truth.
     """
     if _is_read_only_mode():
         scopes = list(READ_SCOPES)
@@ -134,6 +182,10 @@ def advertised_scopes() -> list[str]:
         scopes += list(TAGS_READ_SCOPES)
         if not _is_read_only_mode():
             scopes += list(TAGS_WRITE_SCOPES)
+    if _is_crm_enabled():
+        scopes += list(CRM_READ_SCOPES)
+        if not _is_read_only_mode():
+            scopes += list(CRM_WRITE_SCOPES)
     return scopes
 
 
@@ -293,9 +345,12 @@ TOOL_SCOPES: Dict[str, ToolScopeEntry] = {
     "get_checklist": frozenset({"view_issues"}),
     "create_checklist_item": frozenset({"edit_issues"}),
     "update_checklist_item": frozenset({"edit_issues"}),
-    # --- products / CRM (RedmineUP plugins; vendor scopes are not
-    # advertised and cannot be required; Redmine enforces its own
-    # plugin permissions) ---
+    # --- products / CRM (RedmineUP plugins; Redmine enforces its own
+    # plugin permissions, so these stay unrequired here. CRM scopes ARE
+    # advertised when REDMINE_CRM_ENABLED is set, so the token can reach
+    # the contacts endpoints at all, but requiring them in this map would
+    # gate the tool on a scope that a CRM-disabled deployment never
+    # advertises. Product scopes are not advertised at all yet.) ---
     "manage_product": frozenset(),
     "manage_contact": frozenset(),
     # --- MCP Apps (read-only issue queries) ---

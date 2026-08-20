@@ -213,8 +213,14 @@ Notes:
   `parent_issue_id`, or tag scopes for `tag_list`) are still enforced
   by Redmine itself.
 - RedmineUP plugin tools (`manage_product`, `manage_contact`,
-  checklists) cannot require plugin scopes because those are not
-  advertised; Redmine enforces its own plugin permissions for them.
+  checklists) do not require plugin scopes in the map; Redmine enforces
+  its own plugin permissions for them. `manage_contact` is a special
+  case: when `REDMINE_CRM_ENABLED` is set, the CRM permissions are added
+  to the advertised scopes, because Redmine intersects a token's scopes
+  with the user's role permissions and would otherwise deny every
+  contacts call. They are advertised so the token can carry them, but
+  not required here, since a CRM-disabled deployment never advertises
+  them. Grant them on the OAuth application when enabling the flag.
 - A notes-only `update_redmine_issue` call (fields containing nothing but
   `notes` / `private_notes`, no uploads) requires `add_issue_notes` instead
   of `edit_issues`, mirroring Redmine's own note-adding permission.
