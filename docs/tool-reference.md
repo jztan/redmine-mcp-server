@@ -2305,7 +2305,7 @@ These tools require the **RedmineUP CRM** plugin and `REDMINE_CRM_ENABLED=true`.
 
 List, get, create, update, delete, or change project association for RedmineUP CRM contacts. Replaces `list_contacts`, `get_contact`, `create_contact`, `edit_contact`, `delete_contact`, `assign_contact_to_project`, and `remove_contact_from_project`.
 
-Requires the **RedmineUP CRM** plugin and `REDMINE_CRM_ENABLED=true`. Visibility scoping is enforced server-side by Redmine.
+Requires the **RedmineUP CRM** plugin and `REDMINE_CRM_ENABLED=true`. Visibility scoping is enforced server-side by Redmine. In OAuth mode the token must also carry the CRM permissions (`view_contacts`, `view_private_contacts`, and `add_contacts` / `edit_contacts` / `delete_contacts` for writes); enabling the flag advertises them as scopes, and the OAuth application has to grant them.
 
 **Parameters:**
 - `action` (string, required): Allowed: `list`, `get`, `create`, `update`, `delete`, `assign_to_project`, `remove_from_project`

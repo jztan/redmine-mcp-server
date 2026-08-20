@@ -159,7 +159,7 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `REDMINE_AGILE_ENABLED` | No | `false` | Enable RedmineUP Agile plugin support: `get_redmine_issue` returns `story_points`, `agile_sprint_id`, `agile_position`; `update_redmine_issue` accepts `story_points` |
 | `REDMINE_CHECKLISTS_ENABLED` | No | `false` | Enable RedmineUP Checklists plugin support: `get_checklist`, `create_checklist_item`, `update_checklist_item` (requires Checklists Pro plugin) |
 | `REDMINE_PRODUCTS_ENABLED` | No | `false` | Enable RedmineUP Products plugin support: `manage_product` (action=list/get/create/update) |
-| `REDMINE_CRM_ENABLED` | No | `false` | Enable RedmineUP CRM plugin support: `manage_contact` (action=list/get/create/update/delete/assign_to_project/remove_from_project) |
+| `REDMINE_CRM_ENABLED` | No | `false` | Enable RedmineUP CRM plugin support: `manage_contact` (action=list/get/create/update/delete/assign_to_project/remove_from_project). Requires the CRM plugin and the `view_contacts` / `view_private_contacts` permissions on the Redmine server, plus `add_contacts` / `edit_contacts` / `delete_contacts` for the write actions. In OAuth mode these are advertised as scopes only when this flag is set, so the OAuth application must grant them too. |
 | `REDMINE_DMSF_ENABLED` | No | `false` | Enable DMSF document-management plugin support: `manage_document` (action=list/get/create/update). Requires `redmine_dmsf` plugin on the Redmine server. |
 | `REDMINE_TAGS_ENABLED` | No | `false` | Enable AlphaNodes additional_tags plugin support: `get_redmine_issue` returns a `tags` array, and `create_redmine_issue`/`update_redmine_issue` accept a `tag_list`. Requires the `additional_tags` plugin and the `view_issue_tags` / `create_issue_tags` / `edit_issue_tags` permissions on the Redmine server. |
 | `REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS` | No | `false` | Enable one retry for issue creation by filling missing required custom fields |
@@ -588,7 +588,7 @@ var. Skipping a plugin costs you only that plugin's features.
 | [Agile](https://www.redmineup.com/pages/plugins/agile) | RedmineUP | `REDMINE_AGILE_ENABLED` | `get_redmine_issue` returns `story_points`, `agile_sprint_id`, `agile_position`; `update_redmine_issue` accepts `story_points` |
 | [Checklists](https://www.redmineup.com/pages/plugins/checklists) | RedmineUP (Pro) | `REDMINE_CHECKLISTS_ENABLED` | 3 tools: `get_checklist`, `create_checklist_item`, `update_checklist_item` |
 | [Products](https://www.redmineup.com/pages/plugins/products) | RedmineUP | `REDMINE_PRODUCTS_ENABLED` | 1 tool: `manage_product` |
-| [CRM](https://www.redmineup.com/pages/plugins/crm) | RedmineUP | `REDMINE_CRM_ENABLED` | 1 tool: `manage_contact` |
+| [CRM](https://www.redmineup.com/pages/plugins/crm) | RedmineUP | `REDMINE_CRM_ENABLED` | 1 tool: `manage_contact` (adds the `*_contacts` scopes to OAuth discovery when enabled) |
 | [DMSF](https://github.com/danmunn/redmine_dmsf) | danmunn (open source) | `REDMINE_DMSF_ENABLED` | 1 tool: `manage_document` |
 | [Additional Tags](https://github.com/alphanodes/additional_tags) | AlphaNodes (open source) | `REDMINE_TAGS_ENABLED` | `get_redmine_issue` returns a `tags` array; `create_redmine_issue` / `update_redmine_issue` accept `tag_list` |
 
@@ -691,7 +691,7 @@ These tools require a corresponding Redmine plugin installed on the server **and
 - **Products** (1 tool): set `REDMINE_PRODUCTS_ENABLED=true`; requires the [RedmineUP Products plugin](https://www.redmineup.com/pages/plugins/products)
   - [`manage_product`](docs/tool-reference.md#manage_product) - List, get, create, or update products
 
-- **Contacts (CRM)** (1 tool): set `REDMINE_CRM_ENABLED=true`; requires the [RedmineUP CRM plugin](https://www.redmineup.com/pages/plugins/crm)
+- **Contacts (CRM)** (1 tool): set `REDMINE_CRM_ENABLED=true`; requires the [RedmineUP CRM plugin](https://www.redmineup.com/pages/plugins/crm). In OAuth mode the flag also adds the CRM permissions to the advertised scopes, so grant them on the OAuth application and have users re-consent
   - [`manage_contact`](docs/tool-reference.md#manage_contact) - List, get, create, update, delete, or assign/remove project association for contacts
 
 - **Documents (DMSF)** (1 tool): set `REDMINE_DMSF_ENABLED=true`; requires the [`redmine_dmsf` plugin](https://github.com/danmunn/redmine_dmsf)

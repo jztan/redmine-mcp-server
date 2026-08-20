@@ -7,6 +7,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Fixed
+- `manage_contact` no longer fails for every action in OAuth mode. Redmine
+  intersects an OAuth token's scopes with the consenting user's role
+  permissions (`Role#allowed_permissions` is `unscoped & scope`), and every
+  contacts endpoint the tool calls runs a scope-aware authorization check --
+  `contacts#index` through `authorize_global`, `contacts#show` through
+  `Contact#visible?`, and the mutations through `authorize`,
+  `Contact#editable?` and `Contact#deletable?`. Since the CRM permissions were
+  never advertised, no token could carry them and all seven actions were denied
+  even for users whose Redmine role granted the permission. Setting
+  `REDMINE_CRM_ENABLED=true` now adds `view_contacts` and
+  `view_private_contacts` to the advertised scopes, plus `add_contacts`,
+  `edit_contacts` and `delete_contacts` unless `REDMINE_MCP_READ_ONLY` is set,
+  following the existing `REDMINE_AGILE_ENABLED` / `REDMINE_TAGS_ENABLED`
+  pattern. Deployments enabling the flag must grant the new scopes on the
+  Redmine OAuth application and have users re-consent.
+
 ### Tests
 - Unit coverage for `_auth.py`, raised from 63% to 100%. The whole
   `revoke_token` RFC 7009 proxy was untested, along with the fail-fast branch

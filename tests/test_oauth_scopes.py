@@ -125,6 +125,33 @@ class TestScopeConstants:
         assert "view_agile_queries" not in READ_SCOPES
         assert "view_agile_queries" not in WRITE_SCOPES
 
+    def test_crm_read_scopes_cover_the_contact_read_endpoints(self):
+        """manage_contact(list|get) hits contacts#index and contacts#show."""
+        from redmine_mcp_server.oauth_scopes import CRM_READ_SCOPES
+
+        assert "view_contacts" in CRM_READ_SCOPES
+        assert "view_private_contacts" in CRM_READ_SCOPES
+
+    def test_crm_write_scopes_cover_the_contact_write_endpoints(self):
+        """create / update / delete / assign / remove need these three."""
+        from redmine_mcp_server.oauth_scopes import CRM_WRITE_SCOPES
+
+        assert "add_contacts" in CRM_WRITE_SCOPES
+        assert "edit_contacts" in CRM_WRITE_SCOPES
+        assert "delete_contacts" in CRM_WRITE_SCOPES
+
+    def test_crm_scopes_not_in_core_scope_lists(self):
+        """CRM scopes are opt-in only; core lists stay plugin-free."""
+        from redmine_mcp_server.oauth_scopes import (
+            CRM_READ_SCOPES,
+            CRM_WRITE_SCOPES,
+            READ_SCOPES,
+            WRITE_SCOPES,
+        )
+
+        core = set(READ_SCOPES) | set(WRITE_SCOPES)
+        assert not core & (set(CRM_READ_SCOPES) | set(CRM_WRITE_SCOPES))
+
 
 # ---------------------------------------------------------------------------
 # advertised_scopes()
@@ -275,3 +302,53 @@ class TestAdvertisedScopes:
         scopes = advertised_scopes()
         assert "create_issue_tags" not in scopes
         assert "edit_issue_tags" not in scopes
+
+    @pytest.mark.parametrize("value", ["true", "1", "yes", "on", "TRUE"])
+    def test_includes_crm_scopes_when_crm_enabled(self, monkeypatch, value):
+        monkeypatch.delenv("REDMINE_MCP_READ_ONLY", raising=False)
+        monkeypatch.setenv("REDMINE_CRM_ENABLED", value)
+        from redmine_mcp_server.oauth_scopes import advertised_scopes
+
+        scopes = advertised_scopes()
+        assert "view_contacts" in scopes
+        assert "add_contacts" in scopes
+
+    @pytest.mark.parametrize("value", ["false", "0", "no", "off", ""])
+    def test_excludes_crm_scopes_when_crm_disabled(self, monkeypatch, value):
+        monkeypatch.delenv("REDMINE_MCP_READ_ONLY", raising=False)
+        monkeypatch.setenv("REDMINE_CRM_ENABLED", value)
+        from redmine_mcp_server.oauth_scopes import advertised_scopes
+
+        scopes = advertised_scopes()
+        assert "view_contacts" not in scopes
+        assert "add_contacts" not in scopes
+
+    def test_excludes_crm_scopes_when_env_unset(self, monkeypatch):
+        monkeypatch.delenv("REDMINE_MCP_READ_ONLY", raising=False)
+        monkeypatch.delenv("REDMINE_CRM_ENABLED", raising=False)
+        from redmine_mcp_server.oauth_scopes import advertised_scopes
+
+        scopes = advertised_scopes()
+        assert "view_contacts" not in scopes
+        assert "add_contacts" not in scopes
+
+    def test_crm_read_scopes_present_in_read_only_mode(self, monkeypatch):
+        """view_contacts is a read permission, so read-only keeps it."""
+        monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "true")
+        monkeypatch.setenv("REDMINE_CRM_ENABLED", "true")
+        from redmine_mcp_server.oauth_scopes import advertised_scopes
+
+        scopes = advertised_scopes()
+        assert "view_contacts" in scopes
+        assert "view_private_contacts" in scopes
+
+    def test_excludes_crm_write_scopes_in_read_only_mode(self, monkeypatch):
+        """add/edit/delete_contacts are writes: read-only drops them."""
+        monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "true")
+        monkeypatch.setenv("REDMINE_CRM_ENABLED", "true")
+        from redmine_mcp_server.oauth_scopes import advertised_scopes
+
+        scopes = advertised_scopes()
+        assert "add_contacts" not in scopes
+        assert "edit_contacts" not in scopes
+        assert "delete_contacts" not in scopes
