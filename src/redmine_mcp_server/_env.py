@@ -56,6 +56,32 @@ def _is_deals_enabled() -> bool:
     return _is_true_env("REDMINE_DEALS_ENABLED", "false")
 
 
+def _crm_edition() -> str:
+    """Which build of the RedmineUP CRM plugin this Redmine runs.
+
+    ``light`` (the default) or ``pro``. The plugin ships two builds whose
+    ``ContactQuery`` differs: the Pro build registers 22 contact query filters,
+    the Light build registers ``tags`` and nothing else. Redmine drops an
+    unregistered filter parameter without complaining --
+    ``Query#build_from_params`` only walks ``available_filters``, and
+    ``add_short_filter`` returns early on anything outside it -- so forwarding a
+    filter the build does not register answers ``200`` with the whole
+    collection, which a caller cannot tell from a filter that matched
+    everything.
+
+    The build cannot be detected: Redmine exposes plugin versions only through
+    ``admin/plugins``, which is HTML and admin-only. Hence a setting, and it
+    defaults to the build that registers less, so an unconfigured deployment
+    refuses a filter it may not be able to apply rather than answering wrongly.
+    """
+    value = os.getenv("REDMINE_CRM_EDITION", "light").strip().lower()
+    if value not in {"light", "pro"}:
+        raise RuntimeError(
+            f"REDMINE_CRM_EDITION must be 'light' or 'pro', got '{value}'."
+        )
+    return value
+
+
 def _is_dmsf_enabled() -> bool:
     """Check if DMSF (document management) plugin support is enabled."""
     return _is_true_env("REDMINE_DMSF_ENABLED", "false")

@@ -9,9 +9,11 @@ from unittest.mock import Mock, patch
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from redmine_mcp_server._env import _is_tags_enabled  # noqa: E402
+from redmine_mcp_server._serialization import (  # noqa: E402
+    _normalize_tag_list,
+)
 from redmine_mcp_server.tools.issues import (  # noqa: E402
     _issue_tags_to_list,
-    _normalize_tag_list,
     create_redmine_issue,
     get_redmine_issue,
     update_redmine_issue,
