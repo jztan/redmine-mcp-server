@@ -131,6 +131,25 @@ def _iter_capped(resources: Any, cap: int = _DEFAULT_LIST_RESULT_CAP) -> List[An
     return out
 
 
+def _normalize_csv_list(value: Any) -> List[str]:
+    """Coerce a comma-separated string, list, tuple or scalar to a str list.
+
+    ``None`` yields an empty list; names are stripped and blanks dropped.
+    Redmine's query parameters that accept several values (``include``,
+    ``tag_list``) all take either form, so callers normalize before editing
+    one -- ``str()`` on a list would put a Python repr on the wire.
+    """
+    if value is None:
+        return []
+    if isinstance(value, str):
+        parts: Any = value.split(",")
+    elif isinstance(value, (list, tuple)):
+        parts = value
+    else:
+        parts = [value]
+    return [name for name in (str(part).strip() for part in parts) if name]
+
+
 def _included_list(resource: Any, key: str) -> List[Any]:
     """Read an ``include=`` collection from the payload Redmine already sent.
 
@@ -181,20 +200,7 @@ def _normalize_tag_list(value: Any) -> List[str]:
     additional_tags plugin's own delimiter; Redmine's ``Array(tag_list)``
     would otherwise treat ``"a,b"`` as one tag named ``"a,b"``.
     """
-    if value is None:
-        return []
-    if isinstance(value, str):
-        parts: Any = value.split(",")
-    elif isinstance(value, (list, tuple)):
-        parts = value
-    else:
-        parts = [value]
-    result: List[str] = []
-    for part in parts:
-        name = str(part).strip()
-        if name:
-            result.append(name)
-    return result
+    return _normalize_csv_list(value)
 
 
 def _custom_fields_to_list(resource: Any) -> List[Dict[str, Any]]:

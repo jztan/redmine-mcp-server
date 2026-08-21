@@ -642,11 +642,31 @@ List Redmine issues with flexible filtering and pagination support. A general-pu
 - `limit` (integer, optional): Maximum issues to return. Default: `25`, Max: `1000`
 - `offset` (integer, optional): Number of issues to skip for pagination. Default: `0`
 - `include_pagination_info` (boolean, optional): Return structured response with metadata. Default: `false`
+- `include_custom_fields` (boolean, optional): Add `custom_fields` to each issue. Default: `false` — unlike `get_redmine_issue`, which defaults to `true`, because a list page multiplies the payload
+- `include_relations` (boolean, optional): Add `relations` to each issue. Default: `false`. Each entry is `{id, issue_id, issue_to_id, relation_type, delay}`
 - `fields` (array of strings, optional): List of field names to include in results. Default: all fields
-  - Available fields: `id`, `subject`, `description`, `project`, `status`, `priority`, `tracker`, `author`, `assigned_to`, `created_on`, `updated_on` — `tracker` is returned by default
-  - Special values: `["*"]` or `["all"]` for all fields
+  - Available fields: `id`, `subject`, `description`, `project`, `status`, `priority`, `tracker`, `author`, `assigned_to`, `category`, `fixed_version`, `parent`, `start_date`, `due_date`, `done_ratio`, `estimated_hours`, `spent_hours`, `is_private`, `closed_on`, `created_on`, `updated_on`, `custom_fields`, `relations` — `tracker` is returned by default
+  - Special values: `["*"]` or `["all"]`, on their own, select every field except `custom_fields` and `relations`. Those two need their flag — naming one alongside `["*"]` narrows the result to just it, rather than adding it to the full set
+  - Naming `custom_fields` or `relations` in a normal field list does the same as the matching flag. For `relations` that includes adding the include to the request, so the key cannot come back empty just because the flag was not also set. Setting a flag also adds its key to a narrowed `fields` list rather than dropping it.
 
 **Returns:** List of issue dictionaries, or structured response with pagination metadata
+
+**Notes on `custom_fields` and `relations`:**
+- Both come from data Redmine already returns on the list endpoint, so a whole page costs one request either way. Custom field values are rendered unconditionally; relations are read from the `include=relations` payload, so `view_issues` is sufficient and no per-issue call is made.
+- An `include` passed through `filters` is kept and merged. Passing `include=relations` that way alone does not add the key — use the flag or name the field.
+- They are opt-in only to keep the default response small. The default output is unchanged.
+- Custom field values are filtered per caller by Redmine (`Issue#visible_custom_field_values`). **Relations on the list endpoint are not:** Redmine applies the target-issue visibility filter on `GET /issues/{id}` but not on `GET /issues.json`, so `issue_to_id` may name an issue the caller cannot read. Resolve a target through `get_redmine_issue`, which does apply the filter, rather than inferring anything from the id alone.
+- `search_redmine_issues` shares this serializer and can select `custom_fields` the same way, but not `relations` — it never requests the include, so the key could only ever be empty there.
+
+```python
+# One request, not one per issue.
+list_redmine_issues(
+    project_id="my-project",
+    fields=["id", "subject", "custom_fields", "relations"],
+    include_relations=True,
+    limit=100,
+)
+```
 
 **Examples:**
 
@@ -709,7 +729,7 @@ Search issues using text queries with support for pagination, field selection, a
 - `offset` (integer, optional): Number of issues to skip for pagination. Default: `0`
 - `include_pagination_info` (boolean, optional): Return structured response with pagination metadata. Default: `false`
 - `fields` (array of strings, optional): List of field names to include in results. Default: `null` (all fields)
-  - Available fields: `id`, `subject`, `description`, `project`, `status`, `priority`, `tracker`, `author`, `assigned_to`, `created_on`, `updated_on` — `tracker` is returned by default
+  - Available fields: `id`, `subject`, `description`, `project`, `status`, `priority`, `tracker`, `author`, `assigned_to`, `created_on`, `updated_on`, `custom_fields` — `tracker` is returned by default. Naming `custom_fields` hydrates the results through the issues endpoint, which renders the values; there is no `relations` here, since this tool never requests that include
   - Special values: `["*"]` or `["all"]` for all fields
 - `scope` (string, optional): Search scope. Default: `"all"`
   - Values: `"all"`, `"my_project"`, `"subprojects"`
