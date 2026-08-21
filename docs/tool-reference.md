@@ -210,9 +210,10 @@ This allows LLM consumers to distinguish trusted tool output from untrusted user
 
 Lists all accessible projects in the Redmine instance.
 
-**Parameters:** None
+**Parameters:**
+- `include_custom_fields` (boolean, optional): Add `custom_fields` to each project. Default: `false`
 
-**Returns:** List of project dictionaries with id, name, identifier, and description
+**Returns:** List of project dictionaries with id, name, identifier, description and created_on, plus `custom_fields` when requested
 
 **Example:**
 ```json
@@ -221,10 +222,36 @@ Lists all accessible projects in the Redmine instance.
     "id": 1,
     "name": "My Project",
     "identifier": "my-project",
-    "description": "Project description"
+    "description": "Project description",
+    "created_on": "2025-01-15T10:30:00"
   }
 ]
 ```
+
+**Example with `include_custom_fields=True`:**
+```json
+[
+  {
+    "id": 1,
+    "name": "My Project",
+    "identifier": "my-project",
+    "description": "Project description",
+    "created_on": "2025-01-15T10:30:00",
+    "custom_fields": [
+      {"id": 12, "name": "Size", "value": "S"}
+    ]
+  }
+]
+```
+
+**Project custom field values:** Redmine renders them on `GET /projects.json`
+unconditionally, so `include_custom_fields=True` adds them with no per-project
+follow-up request. Requires only `view_project`. Each entry is
+`{id, name, value}`, already limited by Redmine to the fields the caller may
+see. This is the only tool that returns project custom field *values*. Project
+custom fields and issue custom fields are separate in Redmine:
+[`list_project_issue_custom_fields`](#list_project_issue_custom_fields) covers
+the latter, and no tool exposes project custom field definitions.
 
 ---
 
