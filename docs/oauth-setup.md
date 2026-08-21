@@ -213,14 +213,22 @@ Notes:
   `parent_issue_id`, or tag scopes for `tag_list`) are still enforced
   by Redmine itself.
 - RedmineUP plugin tools (`manage_product`, `manage_contact`,
-  checklists) do not require plugin scopes in the map; Redmine enforces
-  its own plugin permissions for them. `manage_contact` is a special
-  case: when `REDMINE_CRM_ENABLED` is set, the CRM permissions are added
-  to the advertised scopes, because Redmine intersects a token's scopes
-  with the user's role permissions and would otherwise deny every
-  contacts call. They are advertised so the token can carry them, but
-  not required here, since a CRM-disabled deployment never advertises
-  them. Grant them on the OAuth application when enabling the flag.
+  `manage_deal`, checklists) do not require plugin scopes in the map;
+  Redmine enforces its own plugin permissions for them. `manage_contact`
+  and `manage_deal` are special cases: setting `REDMINE_CRM_ENABLED` adds
+  the contacts permissions to the advertised scopes and
+  `REDMINE_DEALS_ENABLED` adds the deal permissions, because Redmine
+  intersects a token's scopes with the user's role permissions and would
+  otherwise deny every contacts call and every deals call. They are advertised so the token can carry them, but not
+  required here, since a deployment with the flag off never advertises
+  them. Grant them on the OAuth application when enabling either flag.
+- Deals sit behind their own flag rather than `REDMINE_CRM_ENABLED`
+  because the CRM plugin's Light edition defines no deal permissions at
+  all. Redmine builds its OAuth scope list from
+  `Redmine::AccessControl.permissions` and applies
+  `enforce_configured_scopes`, so on Light a deal scope cannot be held by
+  the OAuth application and requesting it fails consent with
+  `invalid_scope` -- which would break `manage_contact` too.
 - A notes-only `update_redmine_issue` call (fields containing nothing but
   `notes` / `private_notes`, no uploads) requires `add_issue_notes` instead
   of `edit_issues`, mirroring Redmine's own note-adding permission.

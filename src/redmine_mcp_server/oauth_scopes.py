@@ -25,7 +25,8 @@ Exclusions:
       Redmine doesn't recognize causes consent errors. Where a tool
       cannot function without them, they live in a feature-gated list
       (``AGILE_READ_SCOPES``, ``TAGS_READ_SCOPES``,
-      ``TAGS_WRITE_SCOPES``, ``CRM_READ_SCOPES``, ``CRM_WRITE_SCOPES``)
+      ``TAGS_WRITE_SCOPES``, ``CRM_READ_SCOPES``, ``CRM_WRITE_SCOPES``,
+      ``DEALS_READ_SCOPES``, ``DEALS_WRITE_SCOPES``)
       and are advertised only when that feature's env flag is set.
 """
 
@@ -35,6 +36,7 @@ from typing import Dict, Optional, Union
 from ._env import (
     _is_agile_enabled,
     _is_crm_enabled,
+    _is_deals_enabled,
     _is_read_only_mode,
     _is_tags_enabled,
 )
@@ -152,6 +154,43 @@ CRM_WRITE_SCOPES: list[str] = [
     "delete_contacts",  # manage_contact(action=delete)
 ]
 
+# RedmineUP CRM *deals* permissions, advertised only when the deals feature is
+# explicitly enabled. Deals ship inside the CRM plugin but get their own flag
+# rather than riding REDMINE_CRM_ENABLED, because the plugin's Light edition
+# declares no ``project_module :deals`` and therefore none of these
+# permissions. Redmine derives its OAuth scopes from
+# ``Redmine::AccessControl.permissions`` and applies
+# ``enforce_configured_scopes``, so on a Light install these names are not
+# valid scopes at all: the OAuth application cannot hold them and a client
+# requesting one fails consent with invalid_scope -- which would take
+# manage_contact down with it. Gating separately keeps a Light deployment that
+# already sets REDMINE_CRM_ENABLED working untouched.
+#
+# manage_deal cannot reach Redmine without these. DealsController runs
+# ``before_action :authorize, :except => [:index]``, so #show / #create /
+# #update / #destroy are denied outright.
+# #index is authorized too, but through a different path -- DealsController
+# excludes it from ``before_action :authorize`` and then runs
+# ``find_optional_project``, whose Redmine implementation calls
+# ``authorize_global``. So every action is denied without the permission;
+# ``Deal.visible`` narrows what a permitted caller sees, it does not stand in
+# for the check.
+DEALS_READ_SCOPES: list[str] = [
+    "view_deals",  # manage_deal(action=list|get): the plugin maps deals#index
+    # and deals#show to this permission. Declared
+    # ``:read => true``, so it also applies in closed and
+    # archived projects.
+]
+
+# RedmineUP CRM deal write permissions, advertised only when the deals feature
+# is enabled AND the server is not read-only, matching the WRITE action modes
+# manage_deal declares.
+DEALS_WRITE_SCOPES: list[str] = [
+    "add_deals",  # manage_deal(action=create): deals#create
+    "edit_deals",  # manage_deal(action=update): deals#update
+    "delete_deals",  # manage_deal(action=delete): deals#destroy
+]
+
 
 def advertised_scopes() -> list[str]:
     """Return the OAuth scopes to advertise in discovery documents.
@@ -169,8 +208,12 @@ def advertised_scopes() -> list[str]:
     follow the same rule under ``REDMINE_CRM_ENABLED`` (per
     :func:`_is_crm_enabled`), with :data:`CRM_WRITE_SCOPES` appended unless
     the server is read-only, since ``manage_contact`` cannot pass Redmine's
-    authorization checks without them. Always returns a fresh list so callers
-    cannot mutate the source of truth.
+    authorization checks without them. :data:`DEALS_READ_SCOPES` and
+    :data:`DEALS_WRITE_SCOPES` follow the same shape under a flag of their
+    own, ``REDMINE_DEALS_ENABLED`` (per :func:`_is_deals_enabled`), because
+    the CRM plugin's Light edition does not define the deal permissions at
+    all. Always returns a fresh list so callers cannot mutate the source of
+    truth.
     """
     if _is_read_only_mode():
         scopes = list(READ_SCOPES)
@@ -186,6 +229,10 @@ def advertised_scopes() -> list[str]:
         scopes += list(CRM_READ_SCOPES)
         if not _is_read_only_mode():
             scopes += list(CRM_WRITE_SCOPES)
+    if _is_deals_enabled():
+        scopes += list(DEALS_READ_SCOPES)
+        if not _is_read_only_mode():
+            scopes += list(DEALS_WRITE_SCOPES)
     return scopes
 
 
@@ -348,11 +395,13 @@ TOOL_SCOPES: Dict[str, ToolScopeEntry] = {
     # --- products / CRM (RedmineUP plugins; Redmine enforces its own
     # plugin permissions, so these stay unrequired here. CRM scopes ARE
     # advertised when REDMINE_CRM_ENABLED is set, so the token can reach
-    # the contacts endpoints at all, but requiring them in this map would
-    # gate the tool on a scope that a CRM-disabled deployment never
-    # advertises. Product scopes are not advertised at all yet.) ---
+    # the contacts and deals endpoints at all, but requiring them in this
+    # map would gate the tool on a scope that a CRM-disabled deployment
+    # never advertises; the same applies to manage_deal under
+    # REDMINE_DEALS_ENABLED. Product scopes are not advertised at all yet.) ---
     "manage_product": frozenset(),
     "manage_contact": frozenset(),
+    "manage_deal": frozenset(),
     # --- MCP Apps (read-only issue queries) ---
     "show_triage_board": frozenset({"view_issues"}),
     "get_triage_board_data": frozenset({"view_issues"}),

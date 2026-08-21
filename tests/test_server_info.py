@@ -60,6 +60,7 @@ async def test_reflects_plugin_flags(monkeypatch):
         "checklists",
         "products",
         "crm",
+        "deals",
         "dmsf",
         "tags",
     }
