@@ -8,255 +8,114 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
-- `manage_deal`, a tool for RedmineUP CRM deals with `list`, `get`, `create`,
-  `update` and `delete` actions, behind a new `REDMINE_DEALS_ENABLED` flag.
-  Response keys mirror the plugin's own `app/views/deals/{index,show}.api.rsb`
-  templates. Setting the flag advertises `view_deals`, plus `add_deals`,
-  `edit_deals` and `delete_deals` unless `REDMINE_MCP_READ_ONLY` is set --
-  without them Redmine denies all five actions, `list` included:
-  `deals#index` is excluded from `before_action :authorize` but then runs
-  `find_optional_project`, which calls `authorize_global`. Requires the CRM
-  plugin's Pro edition and the `deals` project module enabled on the project.
-
-  Note that `list` returns only *open* deals unless `status_id` says
-  otherwise, because `DealQuery` seeds a `status_id` filter on operator `o`.
-  Pass `status_id="*"` for all statuses. `price` is sent to Redmine as a
-  string, since the plugin parses it with `String#gsub!` and a JSON number
-  raises server-side. ([#224](https://github.com/jztan/redmine-mcp-server/issues/224))
-
-  Deals get their own flag rather than riding `REDMINE_CRM_ENABLED`, even
-  though they ship in the same plugin, because the plugin's Light edition
-  declares no `project_module :deals` and therefore none of the deal
-  permissions. Redmine builds its OAuth scope list from
-  `Redmine::AccessControl.permissions` under `enforce_configured_scopes`, so a
-  deal scope offered to a Light install cannot be held by the OAuth
-  application and a client requesting it fails consent with `invalid_scope`,
-  taking `manage_contact` down with it. Existing `REDMINE_CRM_ENABLED`
-  deployments are therefore unaffected by this release.
-- `manage_contact` gains a `filters` dict on `list`, for query parameters the
-  signature does not name -- most usefully `{"cf_42": "x"}` to filter on a
-  contact custom field. It refuses `fields`, `f` and `query_id`, which Redmine
-  reads as the query's own filter definition and which make it discard every
-  filter built from the rest of the request, so passing one through returns a
-  confidently wrong set. It also refuses any key this signature does name, so a
-  caller cannot reach a validated parameter by an unchecked second route -- a
-  real hazard here, because `manage_contact` carries create and update
-  attributes in its own `fields` parameter and the action dispatcher hands that
-  to every action. What a CRM build registers as a filter is the build's own
-  business, so `filters` promises only to forward the key, not that Redmine
-  honours it.
-
-  `is_company` stays create-only: the plugin's own filter answers with the same
-  wrong set for every value, including the explicit `f[]`/`op`/`v` spelling.
-
-- `list_redmine_projects` can return `custom_fields`, opt-in. Redmine renders
-  project custom field values on `GET /projects.json` unconditionally
-  (`render_api_custom_values` in `projects/index.api.rsb`), but the tool built
-  a fixed five-key dict and dropped them -- and no other tool returned them
-  either, so project custom field values were not reachable through this
-  server at all. Pass `include_custom_fields=True` and they come back with the
-  projects, at no additional request per project. The default output is
-  unchanged and no new scope is required -- Redmine has already limited the
-  values to those the caller may see, and `view_project` is enough
+- `manage_deal`, a tool for RedmineUP CRM deals (`list`, `get`, `create`,
+  `update`, `delete`), behind a new `REDMINE_DEALS_ENABLED` flag. Advertises
+  `view_deals` plus `add_deals`, `edit_deals`, `delete_deals` unless
+  `REDMINE_MCP_READ_ONLY` is set. Requires the CRM plugin's Pro edition and
+  the `deals` project module. `list` returns only *open* deals unless
+  `status_id="*"` is passed. `price` is sent as a string, since the plugin's
+  own parser raises on a JSON number. Deals get their own flag rather than
+  riding `REDMINE_CRM_ENABLED` because the Light edition has no deal
+  permissions to advertise, and an unsupported OAuth scope breaks consent for
+  `manage_contact` too on a Light install
+  ([#224](https://github.com/jztan/redmine-mcp-server/issues/224)).
+- `manage_contact` gains a `filters` dict on `list` for query parameters the
+  signature doesn't name (e.g. `{"cf_42": "x"}` for a custom field). Refuses
+  `fields`, `f`, `query_id` (Redmine reads these as the query's own filter
+  definition and silently drops every other filter alongside them), and any
+  key the signature already validates. `is_company` stays create-only: the
+  plugin's filter ignores it regardless of spelling.
+- `list_redmine_projects` can return `custom_fields` via
+  `include_custom_fields=True`. Redmine already sends these on
+  `GET /projects.json`; the serializer previously dropped them. No extra
+  request, no new scope required
   ([#230](https://github.com/jztan/redmine-mcp-server/issues/230)).
-- `manage_contact` can filter a `list` server-side on `first_name`, `last_name`,
-  `middle_name`, `company`, `job_title`, `email`, `phone` and `author_id`. Seven
-  of those already existed on the tool as create-only parameters and were
-  silently dropped on `list`, so asking for them returned every contact.
-
-  These are registered as query filters by the CRM plugin's **Pro** build only.
-  Its Light build's `ContactQuery` registers `tags` and nothing else, and
-  Redmine drops an unregistered filter parameter in silence -- `Query
-  #build_from_params` only walks `available_filters`, and `add_short_filter`
-  returns early on anything outside it -- so a Light install would answer `200`
-  with the whole collection, which a caller cannot tell apart from a filter that
-  matched everything. They are therefore gated on a new `REDMINE_CRM_EDITION`
-  setting and refused with an explicit error unless it says `pro`. `tags`,
-  `search` and `assigned_to_id` are not gated: the first two work on both
-  builds, and the third predates this change
+- `manage_contact` `list` can filter server-side on `first_name`, `last_name`,
+  `middle_name`, `company`, `job_title`, `email`, `phone`, `author_id` --
+  previously accepted as create-only params and silently ignored on `list`.
+  Gated behind a new `REDMINE_CRM_EDITION` setting (`light` default / `pro`),
+  since only the CRM plugin's Pro build registers them as query filters; a
+  Light install answers `200` with the unfiltered collection for an
+  unregistered filter, which looks identical to a filter that matched
+  everything. `tags`, `search`, `assigned_to_id` aren't gated: the first two
+  work on both builds, the third predates this change. The edition can't be
+  auto-detected (Redmine only exposes it via an HTML, admin-only page), so
+  the default is the build that registers fewer filters, refusing rather than
+  answering wrongly. `filters` (above) is deliberately not gated, since it
+  never promised a build honours a given key
   ([#226](https://github.com/jztan/redmine-mcp-server/issues/226)).
-- `REDMINE_CRM_EDITION`, `light` (default) or `pro`, declaring which build of
-  the CRM plugin the Redmine server runs. The build cannot be detected --
-  Redmine exposes plugin versions only through `admin/plugins`, which is HTML
-  and admin-only -- and the default is the build that registers fewer filters,
-  so an unconfigured deployment refuses a filter it may not be able to apply
-  rather than answering wrongly. Validated on read like
-  `REDMINE_OAUTH_DISCOVERY_AS`, so a typo is an error rather than a silent
-  fallback. `filters` is deliberately not gated: it never promised that a build
-  honours a given key, and gating it would remove the only route left on an
-  undeclared install.
-
-- A new `offset` parameter on `manage_contact` pages past the first 100
-  contacts, which nothing could do before
-  ([#226](https://github.com/jztan/redmine-mcp-server/issues/226)).
-- `manage_contact` documents which parameters apply to which action. One flat
-  signature serves all seven, and with no `Args` section nothing stated that
-  `is_company` writes rather than filters, or that `fields` is for `create` and
-  `update` only.
+- `manage_contact` gets an `offset` parameter to page past the first 100
+  contacts ([#226](https://github.com/jztan/redmine-mcp-server/issues/226)).
+- `manage_contact` docs now state which parameters apply to which action.
 - `list_redmine_issues` can return `custom_fields` and `relations`, both
-  opt-in. Reading either across a project previously cost one request per
-  issue, because the list serializer dropped data Redmine had already sent:
-  `render_api_custom_values` runs unconditionally on `issues/index.api.rsb`,
-  and the list renders `relations` under `include=relations`. Pass
-  `include_custom_fields=True` / `include_relations=True`, or name
-  `custom_fields` / `relations` in `fields` -- naming `relations` there also
-  adds the include to the request, so the key can never come back
-  misleadingly empty, and setting a flag adds its key to a narrowed `fields`
-  list rather than dropping it. Relations are read from the response payload,
-  so a page of issues stays one request and needs only `view_issues`. An
-  `include` passed through `filters` is preserved and merged, given as either
-  a string or a list. Defaults are unchanged, so existing responses keep their
-  current size, and no new scope is required.
-  ([#228](https://github.com/jztan/redmine-mcp-server/issues/228))
-- `search_redmine_issues` can select `custom_fields` too, as a consequence of
-  sharing the issue serializer: it hydrates its results through the issues
-  endpoint, which renders the values, so the key was already paid for and
-  discarded. `relations` is deliberately not offered there, since that tool
-  never requests the include and the key could only ever be empty.
-
-  One asymmetry: Redmine filters custom field values per caller
-  (`Issue#visible_custom_field_values`), but filters relations by target-issue
-  visibility only on `GET /issues/{id}`, not on `GET /issues.json`. So
-  `issue_to_id` in list output can name an issue the caller cannot read. This
-  exposes nothing a caller could not get from the same endpoint directly, and
-  filtering it client-side would cost one request per relation target -- the
-  overhead this option exists to remove. Resolve a target through
-  `get_redmine_issue`, which does apply the filter.
+  opt-in (`include_custom_fields`/`include_relations`, or naming them in
+  `fields`), read from the response payload Redmine already sends rather than
+  costing one extra request per issue. An `include` passed through `filters`
+  is preserved and merged. Defaults unchanged, no new scope required
+  ([#228](https://github.com/jztan/redmine-mcp-server/issues/228)).
+- `search_redmine_issues` can also select `custom_fields`, since it shares the
+  issue serializer. `relations` isn't offered there, as that endpoint never
+  requests the include. One asymmetry to note: Redmine filters relations by
+  target-issue visibility only on `GET /issues/{id}`, not on the list
+  endpoint, so `issue_to_id` in list output can name an issue the caller
+  can't read -- resolve it through `get_redmine_issue`, which does apply the
+  filter.
 
 ### Fixed
 - `include=relations` is no longer discarded and re-fetched per issue.
-  python-redmine lists `relations` in both `Issue._includes` and
-  `Issue._relations`, and `BaseResource.__getattr__` tests `_relations` first,
-  so `getattr(issue, "relations")` ignored the payload the `include` had
-  already fetched and handed back a lazy resource set that requested
-  `GET /issues/{id}/relations.json` as soon as it was iterated. Redmine maps
-  that endpoint's `index` action to `manage_issue_relations`, a permission
-  reading an issue does not imply -- and one carrying no `:read => true` flag,
-  so it is also withheld in closed and archived projects. Callers holding
-  `view_issues` were therefore denied relations Redmine had already sent them.
-  Relations now come from the response payload: `get_redmine_issue(
-  include_relations=True)` works with `view_issues` alone, and
-  `get_gantt_chart` drops from one extra request per issue to none
-  ([#222](https://github.com/jztan/redmine-mcp-server/issues/222)). Each
-  relation now also carries Redmine's `delay` field, which the single-issue
-  path had omitted.
+  python-redmine's attribute lookup ignored the already-fetched payload and
+  issued `GET /issues/{id}/relations.json`, which needs
+  `manage_issue_relations` (not implied by `view_issues`) and is withheld in
+  closed/archived projects. Relations now come from the payload:
+  `get_redmine_issue(include_relations=True)` works with `view_issues`
+  alone, and `get_gantt_chart` drops from one extra request per issue to
+  none ([#222](https://github.com/jztan/redmine-mcp-server/issues/222)).
+  Each relation now also carries Redmine's `delay` field.
 - `delete_redmine_issue` no longer makes unguarded extra requests while
-  building its impact preview. All four included collections were read through
-  resource attributes rather than the payload, outside the `try` that wraps the
-  fetch, so the request each one could trigger escaped as an unhandled
-  exception instead of an error envelope -- before the confirmation gate. Two
-  of them really did fire: `relations` always, and `children` for every leaf
-  issue, because Redmine omits that key entirely (`render_api_issue_children`
-  returns early on `issue.leaf?`) and python-redmine re-fetches a missing
-  include. All four now come from the payload, which is what the code's own
-  comment always said the preview did. `time_entries` is the one count Redmine
-  has no issue include for, so it still needs its own request: a caller without
-  `view_time_entries` now sees `time_entries_count: null` rather than `0`,
-  which would have understated an irreversible cascade, and any other failure
-  returns a normal error envelope instead of being reported as a permission
-  problem.
-- `manage_contact` returns the contact fields the CRM API sends. The serializer
-  built a fixed dict from key names that differ from the plugin's, so several
-  fields were empty for every contact however populated the record was, and
-  three were dropped outright:
-  - `custom_fields` was not serialized at all, though the API renders contact
-    custom field values on both the collection and the single-contact route.
-    The same values are writable through `fields`, so a custom field could be
-    written through the tool and never read back.
-  - `author` and `projects` were dropped. The API renders `author` on every
-    contact and `projects` on a single contact.
-  - `email` and `phone` read scalar keys the API does not send: it renders
-    `emails` and `phones` as arrays, so both were `null` for every contact. The
-    arrays are now returned as `emails` and `phones`, with `email` and `phone`
-    holding the first entry. A payload that does use the scalar spelling is
-    still read as before.
-  - `tags` read `tags` rather than the `tag_list` the API sends, so it was
-    always empty.
-  - `address` was rebuilt from a fixed key set, which reported `null` for names
-    the plugin does not use and dropped `full_address`, which it does. The
-    sub-document is now passed through as the plugin names it.
-
-  `custom_fields` needs no new permission or scope: Redmine has already limited
-  the values to those the caller may see
+  building its impact preview. All four included collections (`relations`
+  always fired; `children` fired for every leaf issue) now come from the
+  payload instead of triggering per-attribute requests outside the error
+  handling. `time_entries` still needs its own request (Redmine has no issue
+  include for it); a caller without `view_time_entries` now sees
+  `time_entries_count: null` rather than `0`, which would have understated
+  an irreversible cascade.
+- `manage_contact` returns the contact fields the CRM API actually sends.
+  `custom_fields`, `author`, and `projects` were dropped entirely; `email`/
+  `phone` now read the API's `emails`/`phones` arrays (exposed as
+  `emails`/`phones`, with `email`/`phone` holding the first entry, and a
+  scalar-spelled payload still read as before); `tags` now reads `tag_list`
+  instead of the nonexistent `tags` key; `address` passes through the
+  plugin's own field names, including `full_address`. `custom_fields` needs
+  no new scope
   ([#226](https://github.com/jztan/redmine-mcp-server/issues/226)).
-- `manage_contact` no longer fails for every action in OAuth mode. Redmine
-  intersects an OAuth token's scopes with the consenting user's role
-  permissions (`Role#allowed_permissions` is `unscoped & scope`), and every
-  contacts endpoint the tool calls runs a scope-aware authorization check --
-  `contacts#index` through `authorize_global`, `contacts#show` through
-  `Contact#visible?`, and the mutations through `authorize`,
-  `Contact#editable?` and `Contact#deletable?`. Since the CRM permissions were
-  never advertised, no token could carry them and all seven actions were denied
-  even for users whose Redmine role granted the permission. Setting
-  `REDMINE_CRM_ENABLED=true` now adds `view_contacts` and
-  `view_private_contacts` to the advertised scopes, plus `add_contacts`,
-  `edit_contacts` and `delete_contacts` unless `REDMINE_MCP_READ_ONLY` is set,
-  following the existing `REDMINE_AGILE_ENABLED` / `REDMINE_TAGS_ENABLED`
-  pattern. Deployments enabling the flag must grant the new scopes on the
-  Redmine OAuth application and have users re-consent.
-
-### Contributors
-- @mmahmed, reported that `manage_contact` was denied for every action in
-  OAuth mode and fixed it by advertising the CRM scopes
-  ([#220](https://github.com/jztan/redmine-mcp-server/issues/220),
-  [#221](https://github.com/jztan/redmine-mcp-server/pull/221))
-- @mmahmed, reported and fixed the contact fields the serializer dropped or
-  read under the wrong key, and the `list` filters the tool accepted and
-  discarded
-  ([#226](https://github.com/jztan/redmine-mcp-server/issues/226),
-  [#227](https://github.com/jztan/redmine-mcp-server/pull/227))
+- `manage_contact` no longer fails for every action in OAuth mode. The CRM
+  permissions were never advertised as OAuth scopes, so no token could carry
+  them even when the user's Redmine role granted access. Setting
+  `REDMINE_CRM_ENABLED=true` now adds `view_contacts`/`view_private_contacts`
+  plus `add_contacts`/`edit_contacts`/`delete_contacts` unless
+  `REDMINE_MCP_READ_ONLY` is set. **Deployments enabling this flag must grant
+  the new scopes on the Redmine OAuth application and have users re-consent.**
 
 ### Tests
-- New `tests/test_list_issue_custom_fields_and_relations.py` covers the new
-  list keys, the defaults staying absent, `fields` selection implying the
-  request-side include, a caller's own `include` surviving in string, list and
-  tuple form without being duplicated, a flag adding its key to a narrowed
-  `fields` list, the `["*"]` sentinel behaving the same as a tuple, the
-  pagination count query dropping the include, per-issue values not being
-  shared across a page, and both halves of the shared serializer in
-  `search_redmine_issues` -- `custom_fields` selectable, `relations` withheld.
-  The issue fakes raise on `issue.relations`, so a regression to the lazy
-  attribute fails rather than quietly slowing down.
-- New `tests/test_relations_payload.py` covers reading relations from the
-  include payload, an absent include, an empty include, the Gantt path issuing
-  one request for a whole chart, the leaf-issue `children` case, and the delete
-  preview both surviving a caller without `manage_issue_relations` and
-  refusing to report an unreadable time-entry count as zero. The existing
-  relation fakes in `tests/test_gantt.py`,
-  `tests/test_delete_redmine_issue.py` and `tests/test_redmine_handler.py`
-  exposed `relations` as a plain attribute, which no python-redmine issue ever
-  does; they now serve includes from `raw()` and raise on the attribute, so
-  this class of bug fails in CI instead of only against a live Redmine.
-- New `tests/test_project_custom_field_values.py` covers the new key, the five
-  existing keys staying exactly as they were, a project whose payload omits
-  `custom_fields` entirely (what Redmine sends when there are none), values
-  arriving as resource objects rather than plain dicts, and no per-project
-  follow-up request.
-- New `tests/test_contact_payload_keys.py` covers the contact serializer against
-  the shape the CRM API actually returns -- emails as an array, tags under
-  `tag_list`, the plugin's own address field names, and the `custom_fields`,
-  `author` and `projects` keys -- including that a payload using the scalar
-  `email` / `phone` spelling is unchanged, and that `projects` is absent rather
-  than empty when the API did not send it.
-
-  It also pins what must not reach Redmine on a `list`, which is most of what
-  the file is for. The seven contact attributes and `is_company` must stay off
-  the query, since only the Pro build registers them and an unregistered filter
-  comes back as the unfiltered collection rather than an error. `fields`, `f`
-  and `query_id` must not be forwarded either -- including the `f[]` and
-  `fields[]` spellings, which Rack parses into the same parameters -- nor may
-  `filters` carry a key the signature already names, so a caller cannot route
-  around a validated parameter or replace the query's filters wholesale. A
-  companion case pins the other direction: a contact attribute passed through
-  `filters` is still forwarded, so dropping the named parameters does not put
-  the capability out of reach on a build that registers it.
-- Unit coverage for `_auth.py`, raised from 63% to 100%. The whole
-  `revoke_token` RFC 7009 proxy was untested, along with the fail-fast branch
-  that rejects a missing `REDMINE_URL` at boot. New
-  `tests/test_auth_revocation.py` covers token extraction from a Bearer header,
-  a JSON body, and a form body, the 400 cases that make no upstream call, a 502
-  when Redmine is unreachable, the RFC 7009 rule that an upstream error still
-  returns success, and `REDMINE_SSL_VERIFY` reaching the revocation client.
+- New `tests/test_list_issue_custom_fields_and_relations.py`,
+  `tests/test_relations_payload.py`,
+  `tests/test_project_custom_field_values.py`, and
+  `tests/test_contact_payload_keys.py` cover the new list keys and payload
+  fixes above, including the fakes for issue relations and contacts now
+  serving values the same way the real APIs do (raising on the lazy
+  `relations` attribute; using `tag_list`/array `emails`/`phones`), so a
+  regression fails in CI instead of only against a live Redmine.
+- Unit coverage for `_auth.py` raised from 63% to 100% via new
+  `tests/test_auth_revocation.py`, covering the RFC 7009 `revoke_token` proxy
+  and the fail-fast branch on a missing `REDMINE_URL` at boot.
+  
+### Contributors
+- @mmahmed, reported and fixed `manage_contact` failing every action in
+  OAuth mode ([#220](https://github.com/jztan/redmine-mcp-server/issues/220),
+  [#221](https://github.com/jztan/redmine-mcp-server/pull/221)), and the
+  dropped/mis-keyed contact fields and silently-discarded `list` filters
+  ([#226](https://github.com/jztan/redmine-mcp-server/issues/226),
+  [#227](https://github.com/jztan/redmine-mcp-server/pull/227))
 
 ## [2.11.0] - 2026-08-15
 ### Fixed
