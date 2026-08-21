@@ -20,6 +20,8 @@ from redmine_mcp_server.tools.contacts import (  # noqa: E402
 )
 
 CRM_ON = {"REDMINE_CRM_ENABLED": "true"}
+# The Pro-only list filters are refused unless the deployment says so.
+CRM_PRO = {"REDMINE_CRM_ENABLED": "true", "REDMINE_CRM_EDITION": "pro"}
 
 
 def _api_contact(**overrides) -> dict:
@@ -199,20 +201,10 @@ class TestListFilters:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
     @patch("redmine_mcp_server._client.redmine")
-    async def test_contact_attributes_are_not_sent_as_list_filters(
-        self, mock_redmine
-    ):
-        """Only the CRM plugin's Pro build registers these as query filters.
-
-        The Light build registers `tags` and nothing else, and Redmine drops an
-        unregistered filter parameter in silence -- `build_from_params` only
-        walks `available_filters` and `add_short_filter` returns early -- so the
-        caller gets HTTP 200 and the whole collection, indistinguishable from a
-        filter that matched everything. Sending them would make the answer wrong
-        rather than merely unfiltered, so `list` leaves them off the query.
-        """
+    async def test_named_filters_reach_redmine(self, mock_redmine):
+        """The Pro build registers all seven, verified against 4.4.5 PRO."""
         mock_redmine.engine.request.return_value = {"contacts": []}
-        with patch.dict(os.environ, CRM_ON):
+        with patch.dict(os.environ, CRM_PRO):
             await manage_contact(
                 action="list",
                 first_name="Alice",
@@ -222,20 +214,18 @@ class TestListFilters:
                 job_title="Education",
                 email="alice@example.com",
                 phone="+1-555-0100",
+                author_id=54,
                 offset=10,
             )
         params = mock_redmine.engine.request.call_args.kwargs["params"]
-        for attribute in (
-            "first_name",
-            "last_name",
-            "middle_name",
-            "company",
-            "job_title",
-            "email",
-            "phone",
-            "author_id",
-        ):
-            assert attribute not in params
+        assert params["first_name"] == "Alice"
+        assert params["last_name"] == "Smith"
+        assert params["middle_name"] == "Q"
+        assert params["company"] == "Acme Industries"
+        assert params["job_title"] == "Education"
+        assert params["email"] == "alice@example.com"
+        assert params["phone"] == "+1-555-0100"
+        assert params["author_id"] == 54
         assert params["offset"] == 10
 
     @pytest.mark.asyncio
@@ -287,10 +277,11 @@ class TestListFilters:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
     @patch("redmine_mcp_server._client.redmine")
-    async def test_bad_assigned_to_id_rejected(self, mock_redmine):
-        with patch.dict(os.environ, CRM_ON):
-            result = await manage_contact(action="list", assigned_to_id=0)
-        assert "assigned_to_id" in result["error"]
+    @pytest.mark.parametrize("name", ["assigned_to_id", "author_id"])
+    async def test_bad_user_id_rejected(self, mock_redmine, name):
+        with patch.dict(os.environ, CRM_PRO):
+            result = await manage_contact(action="list", **{name: 0})
+        assert name in result["error"]
         mock_redmine.engine.request.assert_not_called()
 
 
@@ -312,6 +303,7 @@ class TestFiltersCannotReachAValidatedParameter:
             {"assigned_to_id": -1},
             {"search": "y"},
             {"tags": "vip"},
+            {"first_name": "Bob"},
         ],
     )
     @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
@@ -328,32 +320,10 @@ class TestFiltersCannotReachAValidatedParameter:
     async def test_a_custom_field_filter_is_still_accepted(self, mock_redmine):
         mock_redmine.engine.request.return_value = {"contacts": []}
         with patch.dict(os.environ, CRM_ON):
-            await manage_contact(
-                action="list", limit=5, filters={"cf_42": "Bob Owner"}
-            )
+            await manage_contact(action="list", limit=5, filters={"cf_42": "Bob Owner"})
         params = mock_redmine.engine.request.call_args.kwargs["params"]
         assert params["cf_42"] == "Bob Owner"
         assert params["limit"] == 5
-
-    @pytest.mark.asyncio
-    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server._client.redmine")
-    async def test_a_contact_attribute_may_be_passed_through_filters(
-        self, mock_redmine
-    ):
-        """Dropping them as named parameters must not make them unreachable.
-
-        A caller who knows their build registers `company` -- the Pro one does
-        -- can still filter on it, through the parameter that says plainly it
-        cannot promise the build honours any given key.
-        """
-        mock_redmine.engine.request.return_value = {"contacts": []}
-        with patch.dict(os.environ, CRM_ON):
-            await manage_contact(
-                action="list", filters={"company": "Acme Industries"}
-            )
-        params = mock_redmine.engine.request.call_args.kwargs["params"]
-        assert params["company"] == "Acme Industries"
 
 
 class TestFiltersThatWouldCorruptTheQuery:
@@ -458,3 +428,106 @@ class TestSerializerEdgeCases:
 
     def test_non_dict_author_is_null_not_a_fabricated_ref(self):
         assert _contact_to_dict(_api_contact(author="Carol"))["author"] is None
+
+
+class TestTheProOnlyFiltersAreGated:
+    """The CRM plugin ships two builds and only one registers these filters.
+
+    Redmine drops an unregistered filter parameter without erroring, so a Light
+    install would answer 200 with the whole collection — indistinguishable from
+    a filter that matched everything. Refusing the parameter is the only honest
+    option, since the build cannot be detected: plugin versions are exposed
+    only through `admin/plugins`, which is HTML and admin-only.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"first_name": "Alice"},
+            {"last_name": "Smith"},
+            {"middle_name": "Q"},
+            {"company": "Acme Industries"},
+            {"job_title": "Education"},
+            {"email": "alice@example.com"},
+            {"phone": "+1-555-0100"},
+            {"author_id": 54},
+        ],
+    )
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_refused_by_default(self, mock_redmine, kwargs):
+        """Default is `light`: the build that registers fewer filters, so an
+        unconfigured deployment refuses rather than answers wrongly."""
+        with patch.dict(os.environ, CRM_ON):
+            result = await manage_contact(action="list", **kwargs)
+        assert next(iter(kwargs)) in result["error"]
+        assert "REDMINE_CRM_EDITION=pro" in result["error"]
+        mock_redmine.engine.request.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_every_refused_name_is_reported_at_once(self, mock_redmine):
+        """A caller passing several should not have to discover them one call
+        at a time."""
+        with patch.dict(os.environ, CRM_ON):
+            result = await manage_contact(
+                action="list", company="Acme Industries", job_title="Education"
+            )
+        assert "company" in result["error"]
+        assert "job_title" in result["error"]
+        mock_redmine.engine.request.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_the_portable_parameters_are_never_gated(self, mock_redmine):
+        """`tags` is registered on both builds and `search` bypasses the filter
+        mechanism, so neither depends on the edition. `assigned_to_id` is absent
+        from Light's ContactQuery too, but it predates this gate and is left
+        alone rather than newly refused."""
+        mock_redmine.engine.request.return_value = {"contacts": []}
+        with patch.dict(os.environ, CRM_ON):
+            await manage_contact(
+                action="list", tags="vip", search="acme", assigned_to_id=12
+            )
+        params = mock_redmine.engine.request.call_args.kwargs["params"]
+        assert params["tags"] == "vip"
+        assert params["search"] == "acme"
+        assert params["assigned_to_id"] == 12
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_filters_dict_is_not_gated(self, mock_redmine):
+        """`filters` never promised the build honours a key, so gating it would
+        remove the only route left on an undeclared install."""
+        mock_redmine.engine.request.return_value = {"contacts": []}
+        with patch.dict(os.environ, CRM_ON):
+            await manage_contact(action="list", filters={"cf_42": "Bob Owner"})
+        params = mock_redmine.engine.request.call_args.kwargs["params"]
+        assert params["cf_42"] == "Bob Owner"
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_an_unknown_edition_is_an_error_not_a_guess(self, mock_redmine):
+        with patch.dict(
+            os.environ,
+            {**CRM_ON, "REDMINE_CRM_EDITION": "enterprise"},
+        ):
+            result = await manage_contact(action="list", company="Acme Industries")
+        assert "REDMINE_CRM_EDITION" in result["error"]
+        assert "enterprise" in result["error"]
+        mock_redmine.engine.request.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_the_edition_is_read_case_insensitively(self, mock_redmine):
+        mock_redmine.engine.request.return_value = {"contacts": []}
+        with patch.dict(os.environ, {**CRM_ON, "REDMINE_CRM_EDITION": "  PRO "}):
+            await manage_contact(action="list", company="Acme Industries")
+        params = mock_redmine.engine.request.call_args.kwargs["params"]
+        assert params["company"] == "Acme Industries"

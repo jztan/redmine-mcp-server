@@ -7,7 +7,7 @@ from pydantic import Field
 
 from .._client import _get_redmine_client
 from .._decorators import ActionMode, action_dispatch
-from .._env import _is_crm_enabled
+from .._env import _crm_edition, _is_crm_enabled
 from .._errors import _handle_redmine_error
 from .._offload import offloaded
 from .._serialization import (
@@ -49,6 +49,14 @@ _CONTACT_OWNED_QUERY_KEYS = frozenset(
         "search",
         "tags",
         "assigned_to_id",
+        "author_id",
+        "first_name",
+        "last_name",
+        "middle_name",
+        "company",
+        "job_title",
+        "email",
+        "phone",
     }
 )
 
@@ -203,8 +211,16 @@ def _list_contacts_action(
     search: Optional[str] = None,
     tags: Optional[str] = None,
     assigned_to_id: Optional[int] = None,
+    author_id: Optional[int] = None,
     limit: int = 100,
     offset: int = 0,
+    first_name: Optional[str] = None,
+    last_name: Optional[str] = None,
+    middle_name: Optional[str] = None,
+    company: Optional[str] = None,
+    job_title: Optional[str] = None,
+    email: Optional[str] = None,
+    phone: Optional[str] = None,
     filters: Optional[Dict[str, Any]] = None,
     **_: Any,
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
@@ -234,10 +250,55 @@ def _list_contacts_action(
         params["search"] = search
     if tags is not None:
         params["tags"] = tags
-    if assigned_to_id is not None:
-        if not _is_positive_int(assigned_to_id):
-            return {"error": "assigned_to_id must be a positive integer."}
-        params["assigned_to_id"] = assigned_to_id
+    # Filters only the CRM plugin's Pro build registers. `assigned_to_id` is
+    # absent from Light's `ContactQuery` too, but it is already on the tool and
+    # predates this gate, so it is left alone rather than newly refused.
+    pro_only = {
+        "first_name": first_name,
+        "last_name": last_name,
+        "middle_name": middle_name,
+        "company": company,
+        "job_title": job_title,
+        "email": email,
+        "phone": phone,
+        "author_id": author_id,
+    }
+    requested = sorted(name for name, value in pro_only.items() if value is not None)
+    if requested:
+        try:
+            edition = _crm_edition()
+        except RuntimeError as exc:
+            return {"error": str(exc)}
+        if edition != "pro":
+            return {
+                "error": (
+                    f"{', '.join(requested)}: the CRM plugin's Light build does "
+                    "not register these as query filters, and Redmine ignores "
+                    "an unregistered filter without erroring -- the list would "
+                    "come back unfiltered rather than empty, which is why this "
+                    "is refused instead of sent. Set REDMINE_CRM_EDITION=pro if "
+                    "this Redmine runs the Pro build, or filter the returned "
+                    "contacts locally."
+                )
+            }
+
+    for name, user_id in (
+        ("assigned_to_id", assigned_to_id),
+        ("author_id", author_id),
+    ):
+        if user_id is None:
+            continue
+        if not _is_positive_int(user_id):
+            return {"error": f"{name} must be a positive integer."}
+        params[name] = user_id
+
+    # Reaching here means the deployment declared the Pro build. Verified
+    # against 4.4.5 PRO by comparing the returned id set with ground truth
+    # computed from the payload, rather than only checking that a non-matching
+    # value came back empty.
+    for name, value in pro_only.items():
+        if value is not None and name != "author_id":
+            params[name] = value
 
     if filters is not None:
         if not isinstance(filters, dict):
@@ -547,6 +608,7 @@ async def manage_contact(
     search: Optional[str] = None,
     tags: Optional[str] = None,
     assigned_to_id: Optional[int] = None,
+    author_id: Optional[int] = None,
     limit: Annotated[int, Field(ge=1, le=100)] = 100,
     offset: Annotated[int, Field(ge=0)] = 0,
     contact_id: Optional[int] = None,
@@ -573,13 +635,13 @@ async def manage_contact(
     One flat signature serves every action, so most parameters apply to some
     actions and are ignored by the rest.
 
-    Only ``search``, ``tags`` and ``assigned_to_id`` narrow a ``list`` on every
-    CRM build. The contact attributes write a new contact and do not filter
-    one: the plugin's Light edition registers no query filter for them, and
-    Redmine drops an unregistered filter parameter silently -- answering ``200``
-    with the unfiltered collection, which a caller cannot tell from a filter
-    that matched everything. Reach one through ``filters`` only where the
-    install is known to register it.
+    ``search``, ``tags`` and ``assigned_to_id`` narrow a ``list`` on every CRM
+    build. The contact attributes narrow one only on the plugin's Pro build,
+    which registers them as query filters; the Light build registers ``tags``
+    and nothing else, and Redmine drops an unregistered filter parameter
+    silently, answering with the unfiltered collection. They are therefore
+    refused unless ``REDMINE_CRM_EDITION=pro`` says the Pro build is installed
+    -- an explicit error rather than a quietly wrong list.
 
     Which parameter belongs to which action:
 
@@ -596,16 +658,25 @@ async def manage_contact(
             unreliable for more than one page.
         tags: ``list`` only. Comma-separated tag filter.
         assigned_to_id: ``list`` only. Filter by the assigned user's ID.
+        author_id: ``list`` only. Filter by the ID of the user who created the
+            contact. Needs ``REDMINE_CRM_EDITION=pro``.
         limit: ``list`` only. Contacts per call, capped at 100 by Redmine.
         offset: ``list`` only. Contacts to skip, for paging past the first 100.
         include: ``get`` only. Comma-separated related data to request.
-        first_name: ``create`` only, and required there. Not a list filter.
-        last_name: ``create`` only. Not a list filter.
-        middle_name: ``create`` only. Not a list filter.
-        company: ``create`` only. Not a list filter.
-        job_title: ``create`` only. Not a list filter.
-        email: ``create`` only. Not a list filter.
-        phone: ``create`` only. Not a list filter.
+        first_name: Required on ``create``. Filters a ``list`` where
+            ``REDMINE_CRM_EDITION=pro``.
+        last_name: ``create`` attribute. Filters a ``list`` where
+            ``REDMINE_CRM_EDITION=pro``.
+        middle_name: ``create`` attribute. Filters a ``list`` where
+            ``REDMINE_CRM_EDITION=pro``.
+        company: ``create`` attribute. Filters a ``list`` where
+            ``REDMINE_CRM_EDITION=pro``.
+        job_title: ``create`` attribute. Filters a ``list`` where
+            ``REDMINE_CRM_EDITION=pro``.
+        email: ``create`` attribute. Filters a ``list`` where
+            ``REDMINE_CRM_EDITION=pro``.
+        phone: ``create`` attribute. Filters a ``list`` where
+            ``REDMINE_CRM_EDITION=pro``.
         is_company: ``create`` only -- ``true`` files the record as a company
             rather than a person. This is **not** a list filter: the plugin's
             own ``is_company`` filter returns the same wrong set for every
@@ -640,6 +711,7 @@ async def manage_contact(
         search=search,
         tags=tags,
         assigned_to_id=assigned_to_id,
+        author_id=author_id,
         limit=limit,
         offset=offset,
         contact_id=contact_id,

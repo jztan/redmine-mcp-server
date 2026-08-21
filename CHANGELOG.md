@@ -46,18 +46,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   business, so `filters` promises only to forward the key, not that Redmine
   honours it.
 
-  Which is why the contact attributes stay create-only rather than becoming
-  `list` filters. Only the plugin's Pro build registers `first_name`,
-  `last_name`, `middle_name`, `company`, `job_title`, `email` and `phone` as
-  query filters; the Light build's `ContactQuery` registers `tags` and nothing
-  else. Redmine drops an unregistered filter parameter silently -- `Query
+  `is_company` stays create-only: the plugin's own filter answers with the same
+  wrong set for every value, including the explicit `f[]`/`op`/`v` spelling.
+
+- `manage_contact` can filter a `list` server-side on `first_name`, `last_name`,
+  `middle_name`, `company`, `job_title`, `email`, `phone` and `author_id`. Seven
+  of those already existed on the tool as create-only parameters and were
+  silently dropped on `list`, so asking for them returned every contact.
+
+  These are registered as query filters by the CRM plugin's **Pro** build only.
+  Its Light build's `ContactQuery` registers `tags` and nothing else, and
+  Redmine drops an unregistered filter parameter in silence -- `Query
   #build_from_params` only walks `available_filters`, and `add_short_filter`
-  returns early on anything outside it -- so on Light the request answers `200`
+  returns early on anything outside it -- so a Light install would answer `200`
   with the whole collection, which a caller cannot tell apart from a filter that
-  matched everything. `is_company` stays create-only for a neighbouring reason:
-  the plugin's own filter answers with the same wrong set for every value,
-  including the explicit `f[]`/`op`/`v` spelling. `tags`, `search` and
-  `assigned_to_id` are the parameters that narrow a `list` on every build.
+  matched everything. They are therefore gated on a new `REDMINE_CRM_EDITION`
+  setting and refused with an explicit error unless it says `pro`. `tags`,
+  `search` and `assigned_to_id` are not gated: the first two work on both
+  builds, and the third predates this change
+  ([#226](https://github.com/jztan/redmine-mcp-server/issues/226)).
+- `REDMINE_CRM_EDITION`, `light` (default) or `pro`, declaring which build of
+  the CRM plugin the Redmine server runs. The build cannot be detected --
+  Redmine exposes plugin versions only through `admin/plugins`, which is HTML
+  and admin-only -- and the default is the build that registers fewer filters,
+  so an unconfigured deployment refuses a filter it may not be able to apply
+  rather than answering wrongly. Validated on read like
+  `REDMINE_OAUTH_DISCOVERY_AS`, so a typo is an error rather than a silent
+  fallback. `filters` is deliberately not gated: it never promised that a build
+  honours a given key, and gating it would remove the only route left on an
+  undeclared install.
 
 - A new `offset` parameter on `manage_contact` pages past the first 100
   contacts, which nothing could do before
