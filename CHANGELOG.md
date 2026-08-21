@@ -49,6 +49,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `is_company` stays create-only: the plugin's own filter answers with the same
   wrong set for every value, including the explicit `f[]`/`op`/`v` spelling.
 
+- `list_redmine_projects` can return `custom_fields`, opt-in. Redmine renders
+  project custom field values on `GET /projects.json` unconditionally
+  (`render_api_custom_values` in `projects/index.api.rsb`), but the tool built
+  a fixed five-key dict and dropped them -- and no other tool returned them
+  either, so project custom field values were not reachable through this
+  server at all. Pass `include_custom_fields=True` and they come back with the
+  projects, at no additional request per project. The default output is
+  unchanged and no new scope is required -- Redmine has already limited the
+  values to those the caller may see, and `view_project` is enough
+  ([#230](https://github.com/jztan/redmine-mcp-server/issues/230)).
 - `manage_contact` can filter a `list` server-side on `first_name`, `last_name`,
   `middle_name`, `company`, `job_title`, `email`, `phone` and `author_id`. Seven
   of those already existed on the tool as create-only parameters and were
@@ -178,6 +188,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exposed `relations` as a plain attribute, which no python-redmine issue ever
   does; they now serve includes from `raw()` and raise on the attribute, so
   this class of bug fails in CI instead of only against a live Redmine.
+- New `tests/test_project_custom_field_values.py` covers the new key, the five
+  existing keys staying exactly as they were, a project whose payload omits
+  `custom_fields` entirely (what Redmine sends when there are none), values
+  arriving as resource objects rather than plain dicts, and no per-project
+  follow-up request.
 - New `tests/test_contact_payload_keys.py` covers the contact serializer against
   the shape the CRM API actually returns -- emails as an array, tags under
   `tag_list`, the plugin's own address field names, and the `custom_fields`,

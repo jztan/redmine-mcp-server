@@ -14,6 +14,7 @@ from .._decorators import ActionMode, action_dispatch
 from .._errors import _handle_redmine_error
 from .._offload import in_thread, offloaded
 from .._serialization import (
+    _custom_fields_to_list,
     _named_ref,
     _safe_isoformat,
     wrap_insecure_content,
@@ -205,24 +206,43 @@ def _membership_to_dict(membership: Any) -> Dict[str, Any]:
 
 @mcp.tool()
 @offloaded
-def list_redmine_projects() -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+def list_redmine_projects(
+    include_custom_fields: bool = False,
+) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """
     Lists all accessible projects in Redmine.
+
+    With ``include_custom_fields`` this is the only tool that returns project
+    custom field *values*. Project custom fields and issue custom fields are
+    separate in Redmine: ``list_project_issue_custom_fields`` covers the
+    latter, a different set, and no tool exposes project custom field
+    definitions.
+
+    Args:
+        include_custom_fields: Add ``custom_fields`` to each project. Costs no
+            extra request; opt-in only to keep the default response small.
+
     Returns:
-        A list of dictionaries, each representing a project.
+        A list of dictionaries, each representing a project. With
+        ``include_custom_fields``, each also carries ``custom_fields``, a list
+        of ``{id, name, value}`` entries -- empty if the project has none. On
+        failure, a dict with an ``error`` key.
     """
     try:
         projects = _get_redmine_client().project.all()
-        return [
-            {
+        result: List[Dict[str, Any]] = []
+        for project in projects:
+            entry = {
                 "id": project.id,
                 "name": project.name,
                 "identifier": project.identifier,
                 "description": getattr(project, "description", ""),
                 "created_on": _safe_isoformat(getattr(project, "created_on", None)),
             }
-            for project in projects
-        ]
+            if include_custom_fields:
+                entry["custom_fields"] = _custom_fields_to_list(project)
+            result.append(entry)
+        return result
     except Exception as e:
         return _handle_redmine_error(e, "listing projects")
 
