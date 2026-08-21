@@ -33,6 +33,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   application and a client requesting it fails consent with `invalid_scope`,
   taking `manage_contact` down with it. Existing `REDMINE_CRM_ENABLED`
   deployments are therefore unaffected by this release.
+- `manage_contact` gains a `filters` dict on `list`, for query parameters the
+  signature does not name -- most usefully `{"cf_42": "x"}` to filter on a
+  contact custom field. It refuses `fields`, `f` and `query_id`, which Redmine
+  reads as the query's own filter definition and which make it discard every
+  filter built from the rest of the request, so passing one through returns a
+  confidently wrong set. It also refuses any key this signature does name, so a
+  caller cannot reach a validated parameter by an unchecked second route -- a
+  real hazard here, because `manage_contact` carries create and update
+  attributes in its own `fields` parameter and the action dispatcher hands that
+  to every action. What a CRM build registers as a filter is the build's own
+  business, so `filters` promises only to forward the key, not that Redmine
+  honours it.
+
+  Which is why the contact attributes stay create-only rather than becoming
+  `list` filters. Only the plugin's Pro build registers `first_name`,
+  `last_name`, `middle_name`, `company`, `job_title`, `email` and `phone` as
+  query filters; the Light build's `ContactQuery` registers `tags` and nothing
+  else. Redmine drops an unregistered filter parameter silently -- `Query
+  #build_from_params` only walks `available_filters`, and `add_short_filter`
+  returns early on anything outside it -- so on Light the request answers `200`
+  with the whole collection, which a caller cannot tell apart from a filter that
+  matched everything. `is_company` stays create-only for a neighbouring reason:
+  the plugin's own filter answers with the same wrong set for every value,
+  including the explicit `f[]`/`op`/`v` spelling. `tags`, `search` and
+  `assigned_to_id` are the parameters that narrow a `list` on every build.
+
+- A new `offset` parameter on `manage_contact` pages past the first 100
+  contacts, which nothing could do before
+  ([#226](https://github.com/jztan/redmine-mcp-server/issues/226)).
+- `manage_contact` documents which parameters apply to which action. One flat
+  signature serves all seven, and with no `Args` section nothing stated that
+  `is_company` writes rather than filters, or that `fields` is for `create` and
+  `update` only.
 
 ### Fixed
 - `include=relations` is no longer discarded and re-fetched per issue.
@@ -66,6 +99,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which would have understated an irreversible cascade, and any other failure
   returns a normal error envelope instead of being reported as a permission
   problem.
+- `manage_contact` returns the contact fields the CRM API sends. The serializer
+  built a fixed dict from key names that differ from the plugin's, so several
+  fields were empty for every contact however populated the record was, and
+  three were dropped outright:
+  - `custom_fields` was not serialized at all, though the API renders contact
+    custom field values on both the collection and the single-contact route.
+    The same values are writable through `fields`, so a custom field could be
+    written through the tool and never read back.
+  - `author` and `projects` were dropped. The API renders `author` on every
+    contact and `projects` on a single contact.
+  - `email` and `phone` read scalar keys the API does not send: it renders
+    `emails` and `phones` as arrays, so both were `null` for every contact. The
+    arrays are now returned as `emails` and `phones`, with `email` and `phone`
+    holding the first entry. A payload that does use the scalar spelling is
+    still read as before.
+  - `tags` read `tags` rather than the `tag_list` the API sends, so it was
+    always empty.
+  - `address` was rebuilt from a fixed key set, which reported `null` for names
+    the plugin does not use and dropped `full_address`, which it does. The
+    sub-document is now passed through as the plugin names it.
+
+  `custom_fields` needs no new permission or scope: Redmine has already limited
+  the values to those the caller may see
+  ([#226](https://github.com/jztan/redmine-mcp-server/issues/226)).
 - `manage_contact` no longer fails for every action in OAuth mode. Redmine
   intersects an OAuth token's scopes with the consenting user's role
   permissions (`Role#allowed_permissions` is `unscoped & scope`), and every
@@ -87,6 +144,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   OAuth mode and fixed it by advertising the CRM scopes
   ([#220](https://github.com/jztan/redmine-mcp-server/issues/220),
   [#221](https://github.com/jztan/redmine-mcp-server/pull/221))
+- @mmahmed, reported and fixed the contact fields the serializer dropped or
+  read under the wrong key, and the `list` filters the tool accepted and
+  discarded
+  ([#226](https://github.com/jztan/redmine-mcp-server/issues/226),
+  [#227](https://github.com/jztan/redmine-mcp-server/pull/227))
 
 ### Tests
 - New `tests/test_relations_payload.py` covers reading relations from the
@@ -99,6 +161,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exposed `relations` as a plain attribute, which no python-redmine issue ever
   does; they now serve includes from `raw()` and raise on the attribute, so
   this class of bug fails in CI instead of only against a live Redmine.
+- New `tests/test_contact_payload_keys.py` covers the contact serializer against
+  the shape the CRM API actually returns -- emails as an array, tags under
+  `tag_list`, the plugin's own address field names, and the `custom_fields`,
+  `author` and `projects` keys -- including that a payload using the scalar
+  `email` / `phone` spelling is unchanged, and that `projects` is absent rather
+  than empty when the API did not send it.
+
+  It also pins what must not reach Redmine on a `list`, which is most of what
+  the file is for. The seven contact attributes and `is_company` must stay off
+  the query, since only the Pro build registers them and an unregistered filter
+  comes back as the unfiltered collection rather than an error. `fields`, `f`
+  and `query_id` must not be forwarded either -- including the `f[]` and
+  `fields[]` spellings, which Rack parses into the same parameters -- nor may
+  `filters` carry a key the signature already names, so a caller cannot route
+  around a validated parameter or replace the query's filters wholesale. A
+  companion case pins the other direction: a contact attribute passed through
+  `filters` is still forwarded, so dropping the named parameters does not put
+  the capability out of reach on a build that registers it.
 - Unit coverage for `_auth.py`, raised from 63% to 100%. The whole
   `revoke_token` RFC 7009 proxy was untested, along with the fail-fast branch
   that rejects a missing `REDMINE_URL` at boot. New

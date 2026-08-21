@@ -172,6 +172,86 @@ def _issue_relations_to_list(issue: Any) -> List[Dict[str, Any]]:
     return [_issue_relation_to_dict(rel) for rel in _included_list(issue, "relations")]
 
 
+def _normalize_tag_list(value: Any) -> List[str]:
+    """Coerce a caller-supplied ``tag_list`` into a list of tag-name strings.
+
+    Accepts a list/tuple of names, a single comma-separated string, or
+    ``None`` (which clears all tags). Names are stripped and blanks dropped.
+    A comma-separated string is split into multiple tags, mirroring the
+    additional_tags plugin's own delimiter; Redmine's ``Array(tag_list)``
+    would otherwise treat ``"a,b"`` as one tag named ``"a,b"``.
+    """
+    if value is None:
+        return []
+    if isinstance(value, str):
+        parts: Any = value.split(",")
+    elif isinstance(value, (list, tuple)):
+        parts = value
+    else:
+        parts = [value]
+    result: List[str] = []
+    for part in parts:
+        name = str(part).strip()
+        if name:
+            result.append(name)
+    return result
+
+
+def _custom_fields_to_list(resource: Any) -> List[Dict[str, Any]]:
+    """Convert a resource's ``custom_fields`` to a serializable list.
+
+    Accepts either a python-redmine resource or a decoded payload mapping.
+    Redmine renders custom field values with the same
+    ``render_api_custom_values`` helper on every resource that has them, and has
+    already limited them to the values the caller may see, so one converter
+    serves the issue and contact serializers. The tools that reach a
+    plugin endpoint through ``engine.request`` hold the decoded JSON rather than
+    a resource, which is why a dict is read with ``get`` -- ``getattr`` on a
+    dict would silently report no custom fields at all, the same reason
+    ``_named_ref`` branches on the type.
+    """
+    if isinstance(resource, dict):
+        raw_custom_fields = resource.get("custom_fields")
+    else:
+        raw_custom_fields = getattr(resource, "custom_fields", None)
+    # A decoded payload can carry a scalar here where a resource never
+    # could. Iterating a string would emit one empty entry per character.
+    if raw_custom_fields is None or isinstance(raw_custom_fields, (str, bytes)):
+        return []
+
+    custom_fields: List[Dict[str, Any]] = []
+    try:
+        iterator = iter(raw_custom_fields)
+    except TypeError:
+        return []
+
+    for custom_field in iterator:
+        if isinstance(custom_field, dict):
+            field_id = custom_field.get("id")
+            field_name = custom_field.get("name")
+            field_value = custom_field.get("value")
+        elif custom_field is None or isinstance(
+            custom_field, (str, bytes, int, float, bool)
+        ):
+            # Not a custom field at all; a placeholder of all-None keys would
+            # claim the payload held one.
+            continue
+        else:
+            field_id = getattr(custom_field, "id", None)
+            field_name = getattr(custom_field, "name", None)
+            field_value = getattr(custom_field, "value", None)
+
+        custom_fields.append(
+            {
+                "id": field_id,
+                "name": field_name,
+                "value": _coerce_json_safe(field_value),
+            }
+        )
+
+    return custom_fields
+
+
 def _attachment_to_dict(attachment: Any) -> Dict[str, Any]:
     """Serialize a Redmine attachment object to a stable dict.
 

@@ -4,6 +4,41 @@ import math
 import re
 from typing import Any, Optional
 
+# Query parameters that replace, rather than add to, a Redmine query's
+# filters. `fields` -- and its `f` alias -- is the list of fields a query
+# filters on, and that branch empties the query's filters before rebuilding
+# them from the request. `query_id` selects a saved query, which Redmine's
+# `retrieve_query` prefers over anything built from the request. Forwarding any
+# of them silently discards every other filter and answers HTTP 200 with the
+# wrong set. This belongs to Redmine's query builder rather than to any one
+# resource, so any tool forwarding a caller-supplied filter dict should reject
+# them.
+_RESERVED_QUERY_KEYS = frozenset({"fields", "f", "query_id"})
+
+
+def _reject_reserved_query_keys(filters: Any) -> Optional[str]:
+    """Return an error message if ``filters`` carries a reserved query key.
+
+    Rack parses ``f[]`` into ``params[:f]`` and ``fields[]`` into
+    ``params[:fields]``, so the bracketed spellings reach the same branch and
+    are matched here too. Returns ``None`` when the dict is safe to forward.
+    """
+    if not isinstance(filters, dict):
+        return None
+    reserved = sorted(
+        key
+        for key in filters
+        if isinstance(key, str)
+        and (key[:-2] if key.endswith("[]") else key) in _RESERVED_QUERY_KEYS
+    )
+    if not reserved:
+        return None
+    return (
+        f"filters may not contain {', '.join(reserved)}: Redmine reads it as "
+        "the query's own filter definition and discards the filters built "
+        "from the rest of the request, so every other filter would be lost."
+    )
+
 
 def _is_positive_int(value: Any) -> bool:
     """Return True if ``value`` is a positive integer.

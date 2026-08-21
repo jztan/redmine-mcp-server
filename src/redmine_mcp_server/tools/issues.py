@@ -32,10 +32,11 @@ from .._errors import _READ_ONLY_ERROR, _handle_redmine_error
 from .._offload import in_thread, offloaded
 from .._serialization import (
     _attachment_to_dict,
-    _coerce_json_safe,
+    _custom_fields_to_list,
     _included_list,
     _issue_relation_to_dict,
     _iter_capped,
+    _normalize_tag_list,
     _named_ref,
     _issue_relations_to_list,
     _safe_isoformat,
@@ -177,39 +178,6 @@ def _augment_with_agile_data(issue_id: int, result: Dict[str, Any]) -> Dict[str,
     return result
 
 
-def _custom_fields_to_list(issue: Any) -> List[Dict[str, Any]]:
-    """Convert issue custom_fields to a serializable list."""
-    raw_custom_fields = getattr(issue, "custom_fields", None)
-    if raw_custom_fields is None:
-        return []
-
-    custom_fields: List[Dict[str, Any]] = []
-    try:
-        iterator = iter(raw_custom_fields)
-    except TypeError:
-        return []
-
-    for custom_field in iterator:
-        if isinstance(custom_field, dict):
-            field_id = custom_field.get("id")
-            field_name = custom_field.get("name")
-            field_value = custom_field.get("value")
-        else:
-            field_id = getattr(custom_field, "id", None)
-            field_name = getattr(custom_field, "name", None)
-            field_value = getattr(custom_field, "value", None)
-
-        custom_fields.append(
-            {
-                "id": field_id,
-                "name": field_name,
-                "value": _coerce_json_safe(field_value),
-            }
-        )
-
-    return custom_fields
-
-
 def _issue_tags_to_list(issue: Any) -> List[Dict[str, Any]]:
     """Convert the AlphaNodes additional_tags ``tags`` array to a list.
 
@@ -244,31 +212,6 @@ def _issue_tags_to_list(issue: Any) -> List[Dict[str, Any]]:
                 {"id": getattr(tag, "id", None), "name": getattr(tag, "name", None)}
             )
     return tags
-
-
-def _normalize_tag_list(value: Any) -> List[str]:
-    """Coerce a caller-supplied ``tag_list`` into a list of tag-name strings.
-
-    Accepts a list/tuple of names, a single comma-separated string, or
-    ``None`` (which clears all tags). Names are stripped and blanks dropped.
-    A comma-separated string is split into multiple tags, mirroring the
-    additional_tags plugin's own delimiter; Redmine's ``Array(tag_list)``
-    would otherwise treat ``"a,b"`` as one tag named ``"a,b"``.
-    """
-    if value is None:
-        return []
-    if isinstance(value, str):
-        parts: Any = value.split(",")
-    elif isinstance(value, (list, tuple)):
-        parts = value
-    else:
-        parts = [value]
-    result: List[str] = []
-    for part in parts:
-        name = str(part).strip()
-        if name:
-            result.append(name)
-    return result
 
 
 # Fields that Redmine's /search.json endpoint actually populates.

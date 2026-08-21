@@ -2325,15 +2325,17 @@ Requires the **RedmineUP CRM** plugin and `REDMINE_CRM_ENABLED=true`. Visibility
 **Parameters:**
 - `action` (string, required): Allowed: `list`, `get`, `create`, `update`, `delete`, `assign_to_project`, `remove_from_project`
 - `project_id` (integer or string): For `list`, optional project filter. For `create`, required (project to associate the new contact with). For `assign_to_project` / `remove_from_project`, the project to attach to or detach from
-- `search` (string, optional): For `list`, free-text search (matches name/company/email)
+- `search` (string, optional): For `list`, free-text search (matches name/company/email). Redmine applies it to the page it returns without narrowing the reported total, so paging through a search is unreliable beyond the first page
 - `tags` (string, optional): For `list`, comma-separated tag filter
 - `assigned_to_id` (integer, optional): For `list`, filter by assignee user ID
 - `limit` (integer, optional): For `list`, max results per call (default `100`, capped at 100 by Redmine)
+- `offset` (integer, optional): For `list`, contacts to skip — needed to page past the first 100
 - `contact_id` (integer): Required for all actions except `list` and `create`
 - `include` (string, optional): For `get`, comma-separated includes (`notes`, `deals`, `contacts`)
 - `first_name` (string): Required for `create`
-- `last_name`, `company`, `email`, `phone` (string, optional): For `create`
-- `is_company` (boolean, optional): For `create`. `true` to mark as a company entity (default `false`)
+- `last_name`, `middle_name`, `company`, `job_title`, `email`, `phone` (string, optional): For `create`, attributes of the new contact. **Not list filters** — only the CRM plugin's Pro build registers them as query filters, and Redmine ignores an unregistered filter parameter silently, answering with the whole collection rather than an error. Pass one through `filters` only where the install is known to register it
+- `filters` (dict, optional): For `list`, additional Redmine query parameters, for filters this signature does not name — most usefully `{"cf_42": "value"}` to filter on a contact custom field. What a CRM build registers as a filter is the build's own business, so this forwards the key without promising Redmine honours it: confirm a narrow filter actually narrowed. A contact custom field needs its **Used as a filter** setting on, and on the Light build no contact custom field is ever a registered filter. Keys this signature already names are refused — pass them as the named parameter so they are validated — as are `fields`, `f` and `query_id`, which Redmine reads as the query's own definition and which discard every filter built from the rest of the request
+- `is_company` (boolean, optional): For `create`. `true` to mark as a company entity (default `false`). **Not a list filter** — the plugin's own `is_company` filter returns the same wrong set for every value, so filter the `is_company` key on the returned contacts instead
 - `visibility` (integer, optional): For `create`. `0`=Project (default), `1`=Public, `2`=Private
 - `fields` (dict): For `update`, fields to update. Allowed keys: `first_name`, `last_name`, `middle_name`, `company`, `job_title`, `phone`, `email`, `website`, `skype_name`, `birthday`, `background`, `address_attributes`, `tag_list`, `is_company`, `assigned_to_id`, `custom_fields`, `visibility`, `project_id`. For `create`, additional fields beyond the named parameters
 
@@ -2344,6 +2346,8 @@ Requires the **RedmineUP CRM** plugin and `REDMINE_CRM_ENABLED=true`. Visibility
 - `delete`: `{"success": true, "contact_id": N, "message": ...}`
 - `assign_to_project` / `remove_from_project`: `{"success": true, "contact_id": N, "project_id": ...}`
 - Error: `{"error": "..."}`
+
+A contact dict carries `custom_fields` (id/name/value), `author`, `assigned_to`, `tags`, the `emails` and `phones` arrays the CRM API renders — with `email` and `phone` holding the first entry of each — and the `address` sub-document as the plugin names it. `projects` is present only when the API sent it, which it does for a single contact and not for a collection, so an absent key means "not returned" rather than "none".
 
 **Examples:**
 
@@ -2386,7 +2390,8 @@ manage_contact(action="remove_from_project", contact_id=42, project_id="support"
 
 **Notes:**
 - `list` and `get` are allowed in read-only mode; `create`, `update`, `delete`, `assign_to_project`, and `remove_from_project` are blocked when `REDMINE_MCP_READ_ONLY=true`.
-- **PII handling:** contact `email`, `phone`, `address`, `birthday`, `website` are returned as-is to the caller; the module never logs them. Error messages reference only `contact_id`. User-controlled display fields (`first_name`, `last_name`, `middle_name`, `company`, `job_title`, `background`, `assigned_to.name`) are wrapped in `<insecure-content>` boundary tags so downstream LLMs treat them as untrusted data.
+- **PII handling:** contact `email`, `phone`, `address`, `birthday`, `website` are returned as-is to the caller; the module never logs them. Error messages reference only `contact_id`.
+- **Prompt-injection wrapping:** `background` is free text and is wrapped in `<insecure-content>` boundary tags. Display fields (`first_name`, `last_name`, `middle_name`, `company`, `job_title`, `assigned_to.name`), and the `address` sub-document are returned verbatim, matching the policy set in #109 for short label-shaped values elsewhere in the server. Custom field values are returned verbatim too, consistent with issue custom fields — but note a `text`-format field holds free text rather than a short label, so treat those as untrusted.
 
 ### `manage_deal`
 

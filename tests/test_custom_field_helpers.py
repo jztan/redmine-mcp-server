@@ -29,7 +29,7 @@ from redmine_mcp_server._custom_fields import (  # noqa: E402
     _upsert_custom_field_entry,
 )
 from redmine_mcp_server._serialization import _coerce_json_safe  # noqa: E402
-from redmine_mcp_server.tools.issues import _custom_fields_to_list  # noqa: E402
+from redmine_mcp_server._serialization import _custom_fields_to_list  # noqa: E402
 from redmine_mcp_server.tools.projects import (  # noqa: E402
     _custom_field_trackers_to_list,
     _custom_field_applies_to_tracker,
