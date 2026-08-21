@@ -1,6 +1,6 @@
 """Gantt chart tool — composite read tool for project timeline data."""
 
-from typing import Annotated, Any, Dict, List, Optional, Union
+from typing import Annotated, Any, Dict, Optional, Union
 
 from pydantic import Field
 
@@ -11,6 +11,7 @@ from .._serialization import (
     _DEFAULT_LIST_RESULT_CAP,
     _iter_capped,
     _named_ref,
+    _issue_relations_to_list,
     _safe_isoformat,
 )
 from .._validation import _is_valid_project_id
@@ -42,23 +43,14 @@ def _gantt_issue_to_dict(issue: Any) -> Dict[str, Any]:
         "parent_id": parent_id,
     }
 
-    rel_list: List[Dict[str, Any]] = []
-    relations = getattr(issue, "relations", None)
-    if relations is not None:
-        for rel in _iter_capped(relations):
-            rel_type = getattr(rel, "relation_type", None)
-            if rel_type not in {"precedes", "blocks"}:
-                continue
-            rel_list.append(
-                {
-                    "id": getattr(rel, "id", None),
-                    "relation_type": rel_type,
-                    "issue_id": getattr(rel, "issue_id", None),
-                    "issue_to_id": getattr(rel, "issue_to_id", None),
-                    "delay": getattr(rel, "delay", None),
-                }
-            )
-    out["relations"] = rel_list
+    # From the include= payload get_gantt_chart requests, not the lazy
+    # issue.relations attribute, which cost one request per issue --
+    # see _included_list.
+    out["relations"] = [
+        rel
+        for rel in _issue_relations_to_list(issue)
+        if rel.get("relation_type") in {"precedes", "blocks"}
+    ]
     return out
 
 

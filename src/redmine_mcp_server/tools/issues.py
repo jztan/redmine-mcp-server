@@ -7,7 +7,12 @@ import logging
 from typing import Annotated, Any, Dict, List, Literal, Optional, Set, Union
 
 from pydantic import Field
-from redminelib.exceptions import ResourceNotFoundError, ValidationError
+from redminelib.exceptions import (
+    AuthError,
+    ForbiddenError,
+    ResourceNotFoundError,
+    ValidationError,
+)
 
 from .._cleanup import _ensure_cleanup_started
 from .._client import _get_redmine_client, logger
@@ -28,8 +33,11 @@ from .._offload import in_thread, offloaded
 from .._serialization import (
     _attachment_to_dict,
     _coerce_json_safe,
+    _included_list,
+    _issue_relation_to_dict,
     _iter_capped,
     _named_ref,
+    _issue_relations_to_list,
     _safe_isoformat,
     wrap_insecure_content,
 )
@@ -644,17 +652,6 @@ def _augment_with_upload_result(result: Dict[str, Any], issue: Any) -> Dict[str,
     return result
 
 
-def _issue_relation_to_dict(relation: Any) -> Dict[str, Any]:
-    """Convert a python-redmine IssueRelation object to a serializable dict."""
-    return {
-        "id": getattr(relation, "id", None),
-        "issue_id": getattr(relation, "issue_id", None),
-        "issue_to_id": getattr(relation, "issue_to_id", None),
-        "relation_type": getattr(relation, "relation_type", None),
-        "delay": getattr(relation, "delay", None),
-    }
-
-
 def _issue_category_to_dict(category: Any) -> Dict[str, Any]:
     """Convert a python-redmine IssueCategory object to a serializable dict."""
     project = getattr(category, "project", None)
@@ -728,6 +725,15 @@ async def get_redmine_issue(
             metadata to the response.
         journal_offset: Number of journals to skip (used with
             ``journal_limit``). Defaults to ``0``.
+        include_watchers: Whether to include the issue's watchers, returned
+            under ``watchers`` as ``[{"id", "name"}, ...]``. Defaults to
+            ``False``.
+        include_relations: Whether to include the issue's relations, returned
+            under ``relations`` as ``[{"id", "issue_id", "issue_to_id",
+            "relation_type", "delay"}, ...]``. Defaults to ``False``.
+        include_children: Whether to include the issue's direct children,
+            returned under ``children`` as ``[{"id", "subject", "tracker"},
+            ...]``. Defaults to ``False``.
 
     Returns:
         A dictionary containing issue details, including the standard fields
@@ -799,16 +805,9 @@ async def get_redmine_issue(
                 raw = getattr(issue, "watchers", None) or []
                 result["watchers"] = [{"id": w.id, "name": w.name} for w in raw]
             if include_relations:
-                raw = getattr(issue, "relations", None) or []
-                result["relations"] = [
-                    {
-                        "id": r.id,
-                        "issue_id": r.issue_id,
-                        "issue_to_id": r.issue_to_id,
-                        "relation_type": r.relation_type,
-                    }
-                    for r in raw
-                ]
+                # From the include= payload, not the lazy issue.relations
+                # attribute -- see _included_list.
+                result["relations"] = _issue_relations_to_list(issue)
             if include_children:
                 raw = getattr(issue, "children", None) or []
                 result["children"] = [
@@ -2078,13 +2077,15 @@ async def delete_redmine_issue(
         return {"error": "issue_id must be a positive integer."}
 
     def _run():
-        # Fetch the issue + lightweight cascade hints. The include flags
-        # below are cheap (Redmine returns them inline on the issue
-        # response) and let us populate a preview without separate API
-        # round-trips. Subtask count is best-effort: when present,
-        # ``children`` is included by Redmine; otherwise we treat
-        # children-count as 0 for the preview (the actual delete still
-        # cascades the same way regardless).
+        # Fetch the issue + lightweight cascade hints. Redmine returns all
+        # four included collections inline, so the preview costs one request --
+        # but only if the payload is what gets read. The resource attributes
+        # re-fetch instead: ``relations`` always does, and ``children`` does
+        # whenever Redmine omitted the key, which it does for every leaf issue
+        # (``render_api_issue_children`` returns early on ``issue.leaf?``).
+        # Subtask count stays best-effort: an absent ``children`` key counts as
+        # 0 for the preview, which is what the omission means. The actual
+        # delete cascades the same way regardless. See _included_list.
         try:
             issue = _get_redmine_client().issue.get(
                 issue_id,
@@ -2104,11 +2105,33 @@ async def delete_redmine_issue(
                 {"resource_type": "issue", "resource_id": issue_id},
             )
 
-        children = list(getattr(issue, "children", None) or [])
-        journals = list(getattr(issue, "journals", None) or [])
-        attachments = list(getattr(issue, "attachments", None) or [])
-        relations = list(getattr(issue, "relations", None) or [])
-        time_entries = list(getattr(issue, "time_entries", None) or [])
+        children = _included_list(issue, "children")
+        journals = _included_list(issue, "journals")
+        attachments = _included_list(issue, "attachments")
+        relations = _included_list(issue, "relations")
+
+        # Redmine has no time_entries include for an issue, so unlike the four
+        # counts above this one genuinely needs its own request.
+        try:
+            time_entries_count: Optional[int] = len(
+                list(getattr(issue, "time_entries", None) or [])
+            )
+        except (ForbiddenError, AuthError):
+            # Needs view_time_entries, which reading the issue does not imply.
+            # Reported as unknown rather than 0: this previews an irreversible
+            # cascade, and 0 would understate it.
+            logging.warning(
+                "Cannot read time entries for issue %s; reporting the count as "
+                "unknown in the delete preview.",
+                issue_id,
+            )
+            time_entries_count = None
+        except Exception as e:
+            return _handle_redmine_error(
+                e,
+                f"counting time entries for issue {issue_id}",
+                {"resource_type": "issue", "resource_id": issue_id},
+            )
 
         impact: Dict[str, Any] = {
             "issue_id": issue_id,
@@ -2117,7 +2140,7 @@ async def delete_redmine_issue(
             "journals_count": len(journals),
             "attachments_count": len(attachments),
             "relations_count": len(relations),
-            "time_entries_count": len(time_entries),
+            "time_entries_count": time_entries_count,
         }
 
         if not confirm_delete:

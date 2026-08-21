@@ -531,7 +531,7 @@ Retrieve detailed information about a specific Redmine issue.
 - `journal_limit` (integer, optional): Maximum number of journals to return. When set, enables journal pagination and adds `journal_pagination` metadata. Default: `null` (all journals)
 - `journal_offset` (integer, optional): Number of journals to skip (used with `journal_limit`). Default: `0`
 - `include_watchers` (boolean, optional): Include watcher list. Default: `false`
-- `include_relations` (boolean, optional): Include issue relations. Default: `false`
+- `include_relations` (boolean, optional): Include issue relations. Default: `false`. Requires only `view_issues`. Each entry is `{id, issue_id, issue_to_id, relation_type, delay}`.
 - `include_children` (boolean, optional): Include child issues. Default: `false`
 
 
@@ -1055,6 +1055,15 @@ For other lifecycle operations, use [`create_redmine_issue`](#create_redmine_iss
 }
 ```
 
+`time_entries_count` is `null` when the count could not be read. Redmine has
+no `time_entries` include for an issue, so it is the one count that needs its
+own request, and that request needs `view_time_entries` — which permission to
+read the issue does not imply. A caller lacking it sees `null` rather than
+`0`, because `0` would understate an irreversible cascade. Any other failure
+reading it returns a normal error envelope instead. The other four counts come
+from the issue payload and cost no extra request, including `children`, which
+is absent from the payload for a leaf issue and counts as zero.
+
 **Success envelope:**
 ```json
 {
@@ -1071,6 +1080,9 @@ For other lifecycle operations, use [`create_redmine_issue`](#create_redmine_iss
     }
 }
 ```
+
+`cascade_deleted` carries the same shape as `impact` above, so
+`time_entries_count` can be `null` there too.
 
 **Error codes:** `CONFIRMATION_REQUIRED`, `CHILDREN_PRESENT`, `NOT_FOUND` (with `upstream_status: 404`).
 

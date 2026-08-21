@@ -10,20 +10,38 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
-from redminelib.exceptions import ResourceNotFoundError
+from redminelib.exceptions import ForbiddenError, ResourceNotFoundError
 
 from redmine_mcp_server.tools.issues import delete_redmine_issue
 
 
-def _make_issue(issue_id: int = 1, children=(), **extras) -> SimpleNamespace:
-    return SimpleNamespace(
+class _FakeIssue(SimpleNamespace):
+    """Serves ``include=`` collections from ``raw()``, as python-redmine does.
+
+    Touching ``.relations`` raises: in the real client it is a lazy relation
+    that fetches instead of reading the payload. See
+    tests/test_relations_payload.py for the full story.
+    """
+
+    @property
+    def relations(self):
+        raise ForbiddenError
+
+    def raw(self):
+        return dict(self._payload)
+
+
+def _make_issue(issue_id: int = 1, children=(), **extras) -> _FakeIssue:
+    return _FakeIssue(
         id=issue_id,
         subject=extras.get("subject", "Test issue"),
-        children=list(children),
-        journals=extras.get("journals", []),
-        attachments=extras.get("attachments", []),
-        relations=extras.get("relations", []),
         time_entries=extras.get("time_entries", []),
+        _payload={
+            "children": list(children),
+            "journals": extras.get("journals", []),
+            "attachments": extras.get("attachments", []),
+            "relations": extras.get("relations", []),
+        },
     )
 
 
@@ -103,7 +121,7 @@ class TestImpactPreview:
             children=[SimpleNamespace(id=1), SimpleNamespace(id=2)],
             journals=[SimpleNamespace(id=3), SimpleNamespace(id=4)],
             attachments=[SimpleNamespace(id=5)],
-            relations=[SimpleNamespace(id=6)],
+            relations=[{"id": 6}],
             time_entries=[
                 SimpleNamespace(id=7),
                 SimpleNamespace(id=8),
