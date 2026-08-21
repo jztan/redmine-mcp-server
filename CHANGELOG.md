@@ -83,6 +83,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   signature serves all seven, and with no `Args` section nothing stated that
   `is_company` writes rather than filters, or that `fields` is for `create` and
   `update` only.
+- `list_redmine_issues` can return `custom_fields` and `relations`, both
+  opt-in. Reading either across a project previously cost one request per
+  issue, because the list serializer dropped data Redmine had already sent:
+  `render_api_custom_values` runs unconditionally on `issues/index.api.rsb`,
+  and the list renders `relations` under `include=relations`. Pass
+  `include_custom_fields=True` / `include_relations=True`, or name
+  `custom_fields` / `relations` in `fields` -- naming `relations` there also
+  adds the include to the request, so the key can never come back
+  misleadingly empty, and setting a flag adds its key to a narrowed `fields`
+  list rather than dropping it. Relations are read from the response payload,
+  so a page of issues stays one request and needs only `view_issues`. An
+  `include` passed through `filters` is preserved and merged, given as either
+  a string or a list. Defaults are unchanged, so existing responses keep their
+  current size, and no new scope is required.
+  ([#228](https://github.com/jztan/redmine-mcp-server/issues/228))
+- `search_redmine_issues` can select `custom_fields` too, as a consequence of
+  sharing the issue serializer: it hydrates its results through the issues
+  endpoint, which renders the values, so the key was already paid for and
+  discarded. `relations` is deliberately not offered there, since that tool
+  never requests the include and the key could only ever be empty.
+
+  One asymmetry: Redmine filters custom field values per caller
+  (`Issue#visible_custom_field_values`), but filters relations by target-issue
+  visibility only on `GET /issues/{id}`, not on `GET /issues.json`. So
+  `issue_to_id` in list output can name an issue the caller cannot read. This
+  exposes nothing a caller could not get from the same endpoint directly, and
+  filtering it client-side would cost one request per relation target -- the
+  overhead this option exists to remove. Resolve a target through
+  `get_redmine_issue`, which does apply the filter.
 
 ### Fixed
 - `include=relations` is no longer discarded and re-fetched per issue.
@@ -168,6 +197,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [#227](https://github.com/jztan/redmine-mcp-server/pull/227))
 
 ### Tests
+- New `tests/test_list_issue_custom_fields_and_relations.py` covers the new
+  list keys, the defaults staying absent, `fields` selection implying the
+  request-side include, a caller's own `include` surviving in string, list and
+  tuple form without being duplicated, a flag adding its key to a narrowed
+  `fields` list, the `["*"]` sentinel behaving the same as a tuple, the
+  pagination count query dropping the include, per-issue values not being
+  shared across a page, and both halves of the shared serializer in
+  `search_redmine_issues` -- `custom_fields` selectable, `relations` withheld.
+  The issue fakes raise on `issue.relations`, so a regression to the lazy
+  attribute fails rather than quietly slowing down.
 - New `tests/test_relations_payload.py` covers reading relations from the
   include payload, an absent include, an empty include, the Gantt path issuing
   one request for a whole chart, the leaf-issue `children` case, and the delete

@@ -35,10 +35,11 @@ from .._serialization import (
     _custom_fields_to_list,
     _included_list,
     _issue_relation_to_dict,
+    _issue_relations_to_list,
     _iter_capped,
     _normalize_tag_list,
     _named_ref,
-    _issue_relations_to_list,
+    _normalize_csv_list,
     _safe_isoformat,
     wrap_insecure_content,
 )
@@ -287,7 +288,11 @@ def _hydrate_search_results(search_results: List[Any]) -> List[Any]:
     ]
 
 
-def _issue_to_dict(issue: Any, include_custom_fields: bool = False) -> Dict[str, Any]:
+def _issue_to_dict(
+    issue: Any,
+    include_custom_fields: bool = False,
+    include_relations: bool = False,
+) -> Dict[str, Any]:
     """Convert a python-redmine Issue object to a serializable dict."""
     # Use getattr for all potentially missing attributes (search API may not return all)
     assigned = getattr(issue, "assigned_to", None)
@@ -352,12 +357,17 @@ def _issue_to_dict(issue: Any, include_custom_fields: bool = False) -> Dict[str,
 
     if include_custom_fields:
         issue_dict["custom_fields"] = _custom_fields_to_list(issue)
+    if include_relations:
+        issue_dict["relations"] = _issue_relations_to_list(issue)
 
     return issue_dict
 
 
 def _issue_to_dict_selective(
-    issue: Any, fields: Optional[List[str]] = None
+    issue: Any,
+    fields: Optional[List[str]] = None,
+    include_custom_fields: bool = False,
+    include_relations: bool = False,
 ) -> Dict[str, Any]:
     """Convert a python-redmine Issue object to a dict with selected fields.
 
@@ -366,6 +376,12 @@ def _issue_to_dict_selective(
         fields: List of field names to include. If None, ["*"], or ["all"],
                 returns all fields (same as _issue_to_dict). Invalid or
                 missing fields are silently skipped.
+        include_custom_fields: Add ``custom_fields``, whether or not
+                ``fields`` names it.
+        include_relations: Add ``relations``, whether or not ``fields`` names
+                it. The caller must have asked Redmine for
+                ``include=relations``; this reads the payload and never
+                fetches.
 
     Available fields:
         - id: Issue ID
@@ -389,6 +405,10 @@ def _issue_to_dict_selective(
         - closed_on: Closure timestamp (ISO format, or None)
         - created_on: Creation timestamp (ISO format)
         - updated_on: Last update timestamp (ISO format)
+        - custom_fields: Custom field values (list of {id, name, value})
+        - relations: Issue relations (list of
+          {id, issue_id, issue_to_id, relation_type, delay}); needs
+          ``include=relations`` on the request that fetched the issue
 
     Returns:
         Dictionary containing only the requested fields.
@@ -403,9 +423,18 @@ def _issue_to_dict_selective(
         >>> _issue_to_dict_selective(issue, None)
         # Returns all fields (same as _issue_to_dict)
     """
+    # The request-side guard in list_redmine_issues accepts any sequence, so
+    # normalize before the sentinel comparisons or ("*",) would select nothing.
+    if isinstance(fields, tuple):
+        fields = list(fields)
+
     # Handle "all fields" cases
     if fields is None or fields == ["*"] or fields == ["all"]:
-        return _issue_to_dict(issue)
+        return _issue_to_dict(
+            issue,
+            include_custom_fields=include_custom_fields,
+            include_relations=include_relations,
+        )
 
     # Build field mapping with all available fields
     # Use getattr for all potentially missing attributes (search API may not return all)
@@ -466,8 +495,28 @@ def _issue_to_dict_selective(
         "updated_on": _safe_isoformat(getattr(issue, "updated_on", None)),
     }
 
+    # A flag means the same thing here as in _issue_to_dict: add the key.
+    # Without this, combining a flag with a narrowed `fields` would request the
+    # include, pay for the bigger payload, and drop the result.
+    keys = list(fields)
+    if include_custom_fields and "custom_fields" not in keys:
+        keys.append("custom_fields")
+    if include_relations and "relations" not in keys:
+        keys.append("relations")
+
+    # Both read the payload Redmine already sent, so neither costs a request --
+    # but building one is not free, so only do it when it was selected.
+    if "custom_fields" in keys:
+        all_fields["custom_fields"] = _custom_fields_to_list(issue)
+    if include_relations:
+        # Gated on the flag rather than on `keys`, because only the flag says
+        # `include=relations` was requested. `search_redmine_issues` shares
+        # this serializer and never requests it, so honouring the name alone
+        # there would return a permanently empty key.
+        all_fields["relations"] = _issue_relations_to_list(issue)
+
     # Return only requested fields (silently skip invalid field names)
-    return {key: all_fields[key] for key in fields if key in all_fields}
+    return {key: all_fields[key] for key in keys if key in all_fields}
 
 
 # Attribute changes whose values are free-form user text (rather than numeric
@@ -794,6 +843,8 @@ async def list_redmine_issues(
     limit: Annotated[int, Field(ge=1, le=1000)] = 25,
     offset: Annotated[int, Field(ge=0)] = 0,
     include_pagination_info: bool = False,
+    include_custom_fields: bool = False,
+    include_relations: bool = False,
     fields: Optional[List[str]] = None,
     filters: Optional[Dict[str, Any]] = None,
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
@@ -828,9 +879,24 @@ async def list_redmine_issues(
         offset: Number of issues to skip for pagination (default: 0).
         include_pagination_info: Return structured response with pagination
             metadata (default: False).
+        include_custom_fields: Add ``custom_fields`` to each issue
+            (default: False). Costs no extra request; opt-in only to keep the
+            default response small.
+        include_relations: Add ``relations`` to each issue (default: False).
+            Costs no extra request -- a whole page of issues is one call.
+            ``issue_to_id`` may name an issue the caller cannot read, so do
+            not classify or count relation edges by their target from this
+            output alone.
         fields: List of field names to include in results (default: all).
             Available: id, subject, description, project, status, priority,
-            tracker, author, assigned_to, created_on, updated_on.
+            tracker, author, assigned_to, category, fixed_version, parent,
+            start_date, due_date, done_ratio, estimated_hours, spent_hours,
+            is_private, closed_on, created_on, updated_on, custom_fields,
+            relations. Naming ``custom_fields`` or ``relations`` here has the
+            same effect as the matching flag, including asking Redmine for the
+            relations include. ``["*"]`` or ``["all"]``, on their own, select
+            every field except those two, which need their flag -- naming one
+            alongside ``["*"]`` narrows the result to just it.
         filters: Additional Redmine API filter parameters as a dict. Use this
             for any filter not listed above (e.g., {"cf_1": "value"}).
 
@@ -857,6 +923,13 @@ async def list_redmine_issues(
         ...     project_id=1, fields=["id", "subject", "status"]
         ... )
         [{"id": 1, "subject": "Bug fix", "status": {...}}, ...]
+
+        >>> await list_redmine_issues(
+        ...     project_id=1,
+        ...     fields=["id", "custom_fields", "relations"],
+        ...     include_relations=True,
+        ... )
+        [{"id": 1, "custom_fields": [...], "relations": [...]}, ...]
 
     Performance:
         - Memory efficient: Uses server-side pagination
@@ -890,6 +963,23 @@ async def list_redmine_issues(
             # Merge additional arbitrary Redmine filters if provided
             if filters:
                 redmine_api_filters.update(filters)
+
+            # Naming either in `fields` implies the flag, so a caller does not
+            # have to set both and get an empty key for their trouble.
+            selected = fields if isinstance(fields, (list, tuple)) else []
+            want_custom_fields = include_custom_fields or "custom_fields" in selected
+            want_relations = include_relations or "relations" in selected
+
+            if want_relations:
+                # Relations need an explicit include; custom field values come
+                # back unconditionally. Normalized first because python-redmine
+                # accepts `include` as a list too, and stringifying one would
+                # put a Python repr on the wire and lose the caller's includes.
+                parts = _normalize_csv_list(redmine_api_filters.get("include"))
+                if "relations" not in parts:
+                    parts.append("relations")
+                redmine_api_filters["include"] = ",".join(parts)
+
             filters = redmine_api_filters
 
             # Log request for monitoring
@@ -971,7 +1061,13 @@ async def list_redmine_issues(
 
             # Convert to dictionaries with optional field selection
             result_issues = [
-                _issue_to_dict_selective(issue, fields) for issue in issues_list
+                _issue_to_dict_selective(
+                    issue,
+                    fields,
+                    include_custom_fields=want_custom_fields,
+                    include_relations=want_relations,
+                )
+                for issue in issues_list
             ]
 
             # Handle metadata response format
@@ -986,6 +1082,9 @@ async def list_redmine_issues(
                     # large project) just to compute the count, which can exceed
                     # the MCP ``tools/call`` timeout.
                     count_filters = {**filters, "limit": 1, "offset": 0}
+                    # The count query reads total_count off the envelope; it
+                    # has no use for included collections.
+                    count_filters.pop("include", None)
                     count_query = _get_redmine_client().issue.filter(**count_filters)
                     # Trigger a single request so total_count is populated.
                     list(count_query)
@@ -1065,7 +1164,11 @@ def search_redmine_issues(
             metadata (default: False).
         fields: List of field names to include in results (default: all).
             Available: id, subject, description, project, status, priority,
-            tracker, author, assigned_to, created_on, updated_on.
+            tracker, author, assigned_to, created_on, updated_on,
+            custom_fields. Naming ``custom_fields`` hydrates the results
+            through the issues endpoint, which renders the values. There is
+            no ``relations``: this tool never asks for that include, so the
+            key could only ever come back empty.
         scope: Search scope. Values: "all", "my_project", "subprojects".
         open_issues: Search only open issues (default: False).
         options: Additional Redmine Search API parameters as a dict.
