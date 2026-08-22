@@ -549,18 +549,24 @@ class TestCustomFieldTrackersToList:
     """Tests for _custom_field_trackers_to_list."""
 
     def test_no_trackers_attribute(self):
+        """Absent bindings are None, not an empty list.
+
+        An empty list is a real answer -- "bound to no tracker" -- so absence
+        has to be reported as something else or the caller cannot tell the two
+        apart.
+        """
         cf = Mock(spec=[])
-        assert _custom_field_trackers_to_list(cf) == []
+        assert _custom_field_trackers_to_list(cf) is None
 
     def test_none_trackers(self):
         cf = Mock()
         cf.trackers = None
-        assert _custom_field_trackers_to_list(cf) == []
+        assert _custom_field_trackers_to_list(cf) is None
 
     def test_not_iterable(self):
         cf = Mock()
         cf.trackers = 42
-        assert _custom_field_trackers_to_list(cf) == []
+        assert _custom_field_trackers_to_list(cf) is None
 
     def test_object_trackers(self):
         t = Mock()
@@ -605,10 +611,16 @@ class TestCustomFieldAppliesToTracker:
         cf = Mock()
         assert _custom_field_applies_to_tracker(cf, None) is True
 
-    def test_no_tracker_restrictions_applies(self):
+    def test_field_bound_to_no_tracker_does_not_apply(self):
+        """Redmine intersects, so an unbound field applies to no tracker.
+
+        ``Issue#available_custom_fields`` is ``project.all_issue_custom_fields
+        & tracker.custom_fields``, so a field with no trackers selected reaches
+        no issue. Treating empty as "applies to everything" was backwards.
+        """
         cf = Mock()
         cf.trackers = []
-        assert _custom_field_applies_to_tracker(cf, 5) is True
+        assert _custom_field_applies_to_tracker(cf, 5) is False
 
     def test_matching_tracker(self):
         t = Mock()

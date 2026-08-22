@@ -53,16 +53,43 @@ def _version_to_dict(version: Any) -> Dict[str, Any]:
     }
 
 
-def _custom_field_trackers_to_list(custom_field: Any) -> List[Dict[str, Any]]:
-    """Serialize custom field tracker bindings into a predictable list."""
-    raw_trackers = getattr(custom_field, "trackers", None)
-    if raw_trackers is None:
-        return []
+# Sentinel for "the payload did not carry this attribute at all", which is
+# not the same answer as "Redmine sent a null". python-redmine raises
+# ResourceAttrError -- an AttributeError subclass -- for any attribute absent
+# from the response, so a two-argument getattr with a plausible default
+# silently invents data. Reading through this sentinel keeps absence visible.
+_ABSENT = object()
+
+
+def _payload_attr(custom_field: Any, name: str) -> Any:
+    """Return an attribute only if the Redmine payload actually carried it.
+
+    Returns :data:`_ABSENT` when the attribute is missing. A configured
+    ``raise_attr_exception=False`` client returns ``None`` for a missing
+    attribute instead of raising, which is indistinguishable from a real
+    null -- both end up as ``None`` in the output, which is the honest
+    answer either way.
+    """
+    return getattr(custom_field, name, _ABSENT)
+
+
+def _custom_field_trackers_to_list(
+    custom_field: Any,
+) -> Optional[List[Dict[str, Any]]]:
+    """Serialize custom field tracker bindings into a predictable list.
+
+    Returns ``None`` when the payload carries no tracker bindings, so a
+    caller can tell "this field is bound to no tracker" from "this response
+    never described the bindings".
+    """
+    raw_trackers = _payload_attr(custom_field, "trackers")
+    if raw_trackers is _ABSENT or raw_trackers is None:
+        return None
 
     try:
         iterator = iter(raw_trackers)
     except TypeError:
-        return []
+        return None
 
     trackers: List[Dict[str, Any]] = []
     for tracker in iterator:
@@ -93,15 +120,18 @@ def _custom_field_trackers_to_list(custom_field: Any) -> List[Dict[str, Any]]:
 def _custom_field_applies_to_tracker(
     custom_field: Any, tracker_id: Optional[int]
 ) -> bool:
-    """Return whether a custom field is available for the given tracker."""
+    """Return whether a custom field is available for the given tracker.
+
+    A field whose bindings are an empty list applies to no tracker: Redmine
+    computes an issue's fields as ``project.all_issue_custom_fields &
+    tracker.custom_fields`` (``app/models/issue.rb``), so an unbound field
+    intersects to nothing. Callers must establish that bindings are readable
+    at all before filtering -- see :func:`_tracker_bindings_readable`.
+    """
     if tracker_id is None:
         return True
 
-    trackers = _custom_field_trackers_to_list(custom_field)
-    if not trackers:
-        # No tracker restrictions exposed by Redmine -> treat as globally available.
-        return True
-
+    trackers = _custom_field_trackers_to_list(custom_field) or []
     for tracker in trackers:
         if tracker.get("id") == tracker_id:
             return True
@@ -109,16 +139,51 @@ def _custom_field_applies_to_tracker(
     return False
 
 
+def _tracker_bindings_readable(custom_fields: List[Any]) -> bool:
+    """Whether *every* field in the payload described its tracker bindings.
+
+    Every, not any: one field with unreadable bindings is enough to make the
+    filtered list wrong, since that field would be dropped on no evidence.
+    ``GET /projects/{id}.json?include=issue_custom_fields`` never carries
+    bindings, so this is normally ``False`` and filtering is impossible
+    rather than merely empty. An empty field list counts as readable --
+    there is nothing to filter and an error would be noise.
+    """
+    return all(
+        _custom_field_trackers_to_list(custom_field) is not None
+        for custom_field in custom_fields
+    )
+
+
 def _custom_field_to_dict(custom_field: Any) -> Dict[str, Any]:
-    """Convert project issue custom field metadata to a serializable dict."""
+    """Convert project issue custom field metadata to a serializable dict.
+
+    Only ``id`` and ``name`` are ever present in the project include, so
+    every other key is ``None`` unless the payload really carried it. ``None``
+    means "not readable on this token", never "false" or "empty".
+    """
+    field_format = _payload_attr(custom_field, "field_format")
+    is_required = _payload_attr(custom_field, "is_required")
+    multiple = _payload_attr(custom_field, "multiple")
+    default_value = _payload_attr(custom_field, "default_value")
+    possible_values = _payload_attr(custom_field, "possible_values")
+
     return {
         "id": getattr(custom_field, "id", None),
-        "name": getattr(custom_field, "name", ""),
-        "field_format": getattr(custom_field, "field_format", ""),
-        "is_required": bool(getattr(custom_field, "is_required", False)),
-        "multiple": bool(getattr(custom_field, "multiple", False)),
-        "default_value": getattr(custom_field, "default_value", None),
-        "possible_values": _extract_possible_values(custom_field),
+        "name": getattr(custom_field, "name", None),
+        "field_format": None if field_format is _ABSENT else field_format,
+        "is_required": (
+            None if is_required is _ABSENT or is_required is None else bool(is_required)
+        ),
+        "multiple": (
+            None if multiple is _ABSENT or multiple is None else bool(multiple)
+        ),
+        "default_value": None if default_value is _ABSENT else default_value,
+        "possible_values": (
+            None
+            if possible_values is _ABSENT or possible_values is None
+            else _extract_possible_values(custom_field)
+        ),
         "trackers": _custom_field_trackers_to_list(custom_field),
     }
 
@@ -459,23 +524,44 @@ async def list_project_issue_custom_fields(
 
     Args:
         project_id: Project identifier (ID number or string identifier).
-        tracker_id: Optional tracker ID to filter custom fields by applicability.
+        tracker_id: Optional tracker ID to filter custom fields by
+            applicability. Only usable when the response describes each
+            field's tracker bindings, which stock Redmine does not do -- see
+            the note below.
 
     Returns:
-        A list of custom field metadata dictionaries. On failure, a
-        dict with an ``"error"`` key is returned (callers should check
+        A list of dicts with ``id``, ``name``, ``field_format``,
+        ``is_required``, ``multiple``, ``default_value``,
+        ``possible_values`` and ``trackers``. On failure, a dict with an
+        ``"error"`` key is returned (callers should check
         ``isinstance(result, dict)`` to distinguish failure from an
         empty list).
 
-    **``is_required`` caveat (#119):** Redmine's
-    ``GET /custom_fields.json`` -- the underlying API -- only exposes the
-    flag set on the custom field *definition*. Required-ness can also be
+    **``null`` means "not readable on this token", never a default.** This
+    tool reads ``GET /projects/{id}.json?include=issue_custom_fields``,
+    which Redmine renders as exactly ``id`` and ``name`` per field
+    (``app/helpers/projects_helper.rb``; unchanged in 6.1, 7.0 and trunk).
+    Every other key therefore comes back ``null`` against a stock server.
+    The definitions live on ``GET /custom_fields.json``, which Redmine
+    restricts to administrators (``before_action :require_admin``), so a
+    non-admin token cannot obtain them at all -- and under OAuth even an
+    administrator's token cannot, because ``User#admin?`` additionally
+    requires the token to carry the ``admin`` scope, which this server
+    never requests. Redmine has four open requests to expose this metadata
+    to non-admins (redmine.org #18875, #41318, #42581, #43407), none with a
+    target version.
+
+    Do not read ``null`` as ``false`` or as an empty list. In particular
+    ``is_required: null`` means "unknown", so a create or update can still
+    reject on a field this tool could not describe.
+
+    **``is_required`` caveat (#119):** even where the flag *is* readable it
+    only reflects the custom field *definition*. Required-ness can also be
     imposed by **workflow rules**, **role-based field permissions**, or
     **tracker-bound required-field settings**, none of which are
-    reflected in this field. A custom field with
-    ``is_required: false`` here can still cause
-    ``create_redmine_issue`` / ``update_redmine_issue`` to reject with
-    ``"<field name> cannot be blank"``.
+    reflected in it. A custom field with ``is_required: false`` can still
+    cause ``create_redmine_issue`` / ``update_redmine_issue`` to reject
+    with ``"<field name> cannot be blank"``.
 
     No general-purpose API exists for the "effective" required state.
     Recovery when the create/update call rejects:
@@ -494,7 +580,9 @@ async def list_project_issue_custom_fields(
     3. **Autofill:** set
        ``REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true`` to have the
        server retry once with values from each field's ``default_value``
-       or the ``REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS`` map.
+       or the ``REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS`` map. Against a
+       stock Redmine only the env map can supply a value, since
+       ``default_value`` is not in the payload.
 
     ``create_redmine_issue`` and ``update_redmine_issue`` augment their
     validation error envelope with ``missing_required_fields`` and a
@@ -521,7 +609,22 @@ async def list_project_issue_custom_fields(
             project = _get_redmine_client().project.get(
                 project_id, include="issue_custom_fields"
             )
-            custom_fields = getattr(project, "issue_custom_fields", None) or []
+            custom_fields = list(getattr(project, "issue_custom_fields", None) or [])
+
+            if parsed_tracker_id is not None and not _tracker_bindings_readable(
+                custom_fields
+            ):
+                return {
+                    "error": (
+                        f"Cannot filter by tracker_id {parsed_tracker_id}: this "
+                        "response does not describe tracker bindings. Redmine "
+                        "renders include=issue_custom_fields as id and name "
+                        "only, and exposes bindings solely on "
+                        "GET /custom_fields.json, which it restricts to "
+                        "administrators. Omit tracker_id to list every issue "
+                        "custom field enabled for the project."
+                    )
+                }
 
             result: List[Dict[str, Any]] = []
             for custom_field in custom_fields:

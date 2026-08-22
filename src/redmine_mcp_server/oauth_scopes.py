@@ -306,8 +306,11 @@ TOOL_SCOPES: Dict[str, ToolScopeEntry] = {
     "list_project_members": frozenset({"view_members"}),
     # GET /roles.json needs authentication only.
     "list_redmine_roles": frozenset(),
-    # GET /custom_fields.json is admin-gated by Redmine itself.
-    "list_project_issue_custom_fields": frozenset(),
+    # Reads GET /projects/{id}.json?include=issue_custom_fields, which Redmine
+    # renders only for a caller holding view_issues -- without it the array is
+    # omitted and the tool answers [], indistinguishable from "this project has
+    # no custom fields". Not /custom_fields.json, which this tool never calls.
+    "list_project_issue_custom_fields": frozenset({"view_issues"}),
     "manage_project_member": frozenset({"manage_members"}),
     # Redmine gates GET /projects/.../versions.json on view_issues.
     "list_redmine_versions": frozenset({"view_issues"}),
