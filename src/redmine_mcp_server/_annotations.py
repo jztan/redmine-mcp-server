@@ -118,9 +118,10 @@ TOOL_KINDS: Dict[str, ToolKind] = {
     "get_current_user": ToolKind.READ,
     "get_mcp_server_info": ToolKind.READ,
     # --- RedmineUP plugins ---
-    # Empty scope sets, but both are mixed read/write dispatchers.
+    # Empty scope sets, but all four are mixed read/write dispatchers.
     "manage_product": ToolKind.WRITE_DESTRUCTIVE,
     "manage_contact": ToolKind.WRITE_DESTRUCTIVE,
+    "manage_deal": ToolKind.WRITE_DESTRUCTIVE,
     # --- MCP Apps ---
     "show_triage_board": ToolKind.READ,
     "get_triage_board_data": ToolKind.READ,

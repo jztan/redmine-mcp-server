@@ -53,20 +53,20 @@ class TestAnnotationsTable:
         assert annotations_for("list_redmine_projects").readOnlyHint is True
 
     def test_table_size_and_kind_counts(self):
-        assert len(TOOL_KINDS) == 52
+        assert len(TOOL_KINDS) == 53
         counts = {kind: 0 for kind in ToolKind}
         for kind in TOOL_KINDS.values():
             counts[kind] += 1
         assert counts[ToolKind.READ] == 31
         assert counts[ToolKind.WRITE_ADDITIVE] == 5
-        assert counts[ToolKind.WRITE_DESTRUCTIVE] == 12
+        assert counts[ToolKind.WRITE_DESTRUCTIVE] == 13
         assert counts[ToolKind.WRITE_DESTRUCTIVE_IDEMPOTENT] == 4
 
 
 async def _registered_tools():
     """Enumerate tools exactly as the server does.
 
-    Importing only ``tools`` sees 47 of the 51; ``apps`` registers 4 more.
+    Importing only ``tools`` sees 48 of the 52; ``apps`` registers 4 more.
     """
     from redmine_mcp_server.server import mcp
     import redmine_mcp_server.tools  # noqa: F401  triggers registration
@@ -114,8 +114,8 @@ class TestRegisteredToolAnnotations:
         assert by_name["delete_redmine_issue"].annotations.readOnlyHint is False
 
 
-# The 11 tools whose TOOL_SCOPES entry is empty. Scope membership cannot
-# classify these, so each one is a reviewed, hand-made decision. Three of
+# The 12 tools whose TOOL_SCOPES entry is empty. Scope membership cannot
+# classify these, so each one is a reviewed, hand-made decision. Four of
 # them mutate state despite looking exactly like the eight pure reads.
 _EMPTY_SCOPE_KINDS = {
     "cleanup_attachment_files": ToolKind.WRITE_DESTRUCTIVE_IDEMPOTENT,
@@ -128,6 +128,7 @@ _EMPTY_SCOPE_KINDS = {
     "list_redmine_trackers": ToolKind.READ,
     "list_redmine_users": ToolKind.READ,
     "manage_contact": ToolKind.WRITE_DESTRUCTIVE,
+    "manage_deal": ToolKind.WRITE_DESTRUCTIVE,
     "manage_product": ToolKind.WRITE_DESTRUCTIVE,
 }
 
