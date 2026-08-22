@@ -223,14 +223,14 @@
     max-width: 1160px; margin: 0 auto; padding: 0 24px;
     height: 56px; display: flex; align-items: center; justify-content: space-between;
   }
-  nav.top .brand { font-family: var(--font-mono); font-size: 14px; font-weight: 500; color: var(--text); text-decoration: none; }
+  nav.top .brand { font-family: var(--font-mono); font-size: 14px; font-weight: 500; color: var(--text); text-decoration: none; white-space: nowrap; }
   nav.top .brand span { color: var(--text-tertiary); font-weight: 400; margin-left: 4px; }
   nav.top ul { list-style: none; display: flex; gap: 28px; margin: 0; padding: 0; align-items: center; }
   nav.top ul a { font-size: 14px; color: var(--text-secondary); text-decoration: none; transition: color 0.15s ease; }
   nav.top ul a:hover { color: var(--text); }
   nav.top ul a.nav-cta {
     background: var(--pill-bg); color: var(--pill-fg); border-radius: 980px;
-    padding: 9px 18px; font-size: 13px; font-weight: 500;
+    padding: 9px 18px; font-size: 13px; font-weight: 500; white-space: nowrap;
   }
   nav.top ul a.nav-cta:hover { opacity: 0.85; color: var(--pill-fg); }
   .ledger-chip { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary);
@@ -727,11 +727,17 @@
   @media (prefers-reduced-motion: reduce) {
     .turn, .json-wrap, table.rm-list tr { transition: none; }
   }
-  @media (max-width: 640px) {
+  /* The full bar (brand + 5 links + CTA pill) needs ~710px; below that the
+     bar keeps only the brand and the CTA. The in-page anchors are reachable
+     by scrolling, and GitHub/PyPI/Blog stay reachable through the hero pill,
+     the "Take it further" links, and the footer. Without this the row cannot
+     fit and the CTA pill wraps mid-label over the bar edge. */
+  @media (max-width: 760px) {
     nav.top ul { gap: 16px; }
-    /* The in-page anchors are the first thing to go when the bar gets tight;
-       both sections are reachable by scrolling anyway. */
-    nav.top ul li.nav-anchor { display: none; }
+    nav.top ul li.nav-anchor, nav.top ul li.nav-out { display: none; }
+    nav.top .brand span { display: none; }
+  }
+  @media (max-width: 640px) {
     section.hero { padding: 56px 18px 20px; }
     .hero-title { font-size: 36px; }
     .install-pill { font-size: 13px; padding: 12px 18px; gap: 8px; max-width: 100%; }
@@ -768,9 +774,9 @@
     <ul>
       <li class="nav-anchor"><a href="#security">Security</a></li>
       <li class="nav-anchor"><a href="#connect">Install</a></li>
-      <li><a href="https://github.com/jztan/redmine-mcp-server" data-outbound="nav_github">GitHub</a></li>
-      <li><a href="https://pypi.org/project/redmine-mcp-server/" data-outbound="nav_pypi">PyPI</a></li>
-      <li><a href="https://blog.jztan.com/redmine-mcp-server-for-ai-agents/?utm_source=redmine-mcp-demo&utm_medium=referral&utm_campaign=demo-launch&utm_content=nav">Blog</a></li>
+      <li class="nav-out"><a href="https://github.com/jztan/redmine-mcp-server" data-outbound="nav_github">GitHub</a></li>
+      <li class="nav-out"><a href="https://pypi.org/project/redmine-mcp-server/" data-outbound="nav_pypi">PyPI</a></li>
+      <li class="nav-out"><a href="https://blog.jztan.com/redmine-mcp-server-for-ai-agents/?utm_source=redmine-mcp-demo&utm_medium=referral&utm_campaign=demo-launch&utm_content=nav">Blog</a></li>
       <li><a class="nav-cta" href="#connect">Get started</a></li>
     </ul>
   </div>
@@ -1281,7 +1287,7 @@ redmine-mcp-server</pre>
 
 <footer>
   <p>redmine-mcp-server is open source · MIT licensed · built by <a href="https://blog.jztan.com/?utm_source=redmine-mcp-demo&utm_medium=referral&utm_campaign=demo-launch&utm_content=footer-byline">jztan</a></p>
-  <p style="margin-top:4px;font-size:11px;color:var(--text-tertiary)"><a href="https://pypi.org/project/redmine-mcp-server/" style="color:inherit;text-decoration:none;">redmine-mcp-server __VERSION__</a> · demo v0.2.0</p>
+  <p style="margin-top:4px;font-size:11px;color:var(--text-tertiary)"><a href="https://pypi.org/project/redmine-mcp-server/" style="color:inherit;text-decoration:none;">redmine-mcp-server __VERSION__</a> · demo v0.2.1</p>
 </footer>
 
 <div class="toast" id="toast">Copied</div>
