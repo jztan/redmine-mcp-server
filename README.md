@@ -683,7 +683,7 @@ These tools require only a Redmine instance and credentials, with no extra plugi
 - **Meta** (1 tool)
   - [`get_mcp_server_info`](docs/tool-reference.md#get_mcp_server_info) - Report server version, auth mode, read-only state, the authenticated user (`current_user`), and which plugin-gated tool families are enabled. Use to detect deployment lag before relying on a recently-shipped fix, or to confirm who `assigned_to_id="me"` resolves to.
 
-### Plugin-gated tools (6, opt in via env var)
+### Plugin-gated tools (7, opt in via env var)
 
 These tools require a corresponding Redmine plugin installed on the server **and** the matching environment variable set to `true` on the MCP server. They appear in `tools/list` either way, but return a feature-disabled error until their flag is set.
 
