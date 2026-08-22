@@ -20,6 +20,7 @@ import os
 
 from fastmcp import FastMCP
 
+from ._annotations import annotations_for
 from ._env import _is_scope_enforcement_enabled
 from ._tool_error_middleware import CleanValidationErrorMiddleware
 
@@ -71,5 +72,31 @@ def _register_middlewares(mcp_instance, auth_provider) -> None:
 
 AUTH_PROVIDER = _select_auth_provider(REDMINE_AUTH_MODE)
 
-mcp = FastMCP("redmine_mcp_tools", auth=AUTH_PROVIDER)
+
+class _AnnotatingFastMCP(FastMCP):
+    """FastMCP that injects ToolAnnotations from the central table.
+
+    Every tool in this server registers with the deferred decorator form
+    (``@mcp.tool()`` or ``@mcp.tool(app=...)``), with no positional name and
+    no ``name=``, so the tool name is always ``fn.__name__``. A caller that
+    passes ``annotations=`` or a custom name bypasses the table rather than
+    fighting it.
+
+    An unclassified tool yields ``annotations=None``, which is exactly the
+    pre-#204 behavior. That fails safe: clients already treat an unannotated
+    tool as potentially destructive. The anti-drift test is what catches it.
+    """
+
+    def tool(self, name_or_fn=None, **kwargs):
+        if name_or_fn is not None or kwargs.get("name") or "annotations" in kwargs:
+            return super().tool(name_or_fn, **kwargs)
+        register = super().tool
+
+        def decorator(fn):
+            return register(annotations=annotations_for(fn.__name__), **kwargs)(fn)
+
+        return decorator
+
+
+mcp = _AnnotatingFastMCP("redmine_mcp_tools", auth=AUTH_PROVIDER)
 _register_middlewares(mcp, AUTH_PROVIDER)

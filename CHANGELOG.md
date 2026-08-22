@@ -7,6 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- MCP tool annotations on every tool, so clients can tell read-only queries
+  from writes. Read tools now advertise `readOnlyHint`, which lets annotation
+  aware clients skip write-operation approval prompts for ordinary Redmine
+  queries. Additive tools advertise `destructiveHint=false`. Annotations are
+  advisory client metadata: OAuth scope enforcement and
+  `REDMINE_MCP_READ_ONLY` remain the server-side controls. ([#204](https://github.com/jztan/redmine-mcp-server/issues/204))
 
 ## [2.12.0] - 2026-08-22
 ### Added
