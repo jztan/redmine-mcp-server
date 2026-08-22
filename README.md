@@ -786,21 +786,21 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Blog posts
 
-**The story behind the releases.** Building this server keeps surprising me: full API access that turned out to be a mistake, 69 tools that had to become 43, an OAuth scope bug that only surfaced when a contributor ran the flow against a real Redmine 6 instance. Plenty of the sharpest lessons arrived from other people's deployments rather than mine. I write about that thinking in [The Dispatch](https://blog.jztan.com/newsletter/?utm_source=github&utm_medium=readme&utm_campaign=redmine-mcp-server). Come along if that's your kind of thing.
+**The story behind the releases.** Building this server keeps surprising me: full API access that turned out to be a mistake, 69 tools that had to become 43, an OAuth scope bug that only surfaced when a contributor ran the flow against a real Redmine 6 instance. Plenty of the sharpest lessons arrived from other people's deployments rather than mine. I write about that thinking in [The Dispatch](https://blog.jztan.com/newsletter/?utm_source=github&utm_medium=referral&utm_campaign=redmine-mcp-server). Come along if that's your kind of thing.
 
 Background, design notes, and postmortems from building this server:
 
 **Getting started**
 
-- [Redmine MCP Server: Give AI Agents Live Project Data](https://blog.jztan.com/redmine-mcp-server-for-ai-agents/?utm_source=github&utm_medium=readme&utm_campaign=redmine-mcp-server): What the server does, why the tool surface is curated rather than a full API mirror, and how to choose a Redmine MCP server
-- [How I linked a legacy system to a modern AI agent with MCP](https://blog.jztan.com/how-i-linked-a-legacy-system-to-a-modern-ai-agent/?utm_source=github&utm_medium=readme&utm_campaign=redmine-mcp-server): The problem that started this project, and the first two read-only tools
+- [Redmine MCP Server: Give AI Agents Live Project Data](https://blog.jztan.com/redmine-mcp-server-for-ai-agents/?utm_source=github&utm_medium=referral&utm_campaign=redmine-mcp-server): What the server does, why the tool surface is curated rather than a full API mirror, and how to choose a Redmine MCP server
+- [How I linked a legacy system to a modern AI agent with MCP](https://blog.jztan.com/how-i-linked-a-legacy-system-to-a-modern-ai-agent/?utm_source=github&utm_medium=referral&utm_campaign=redmine-mcp-server): The problem that started this project, and the first two read-only tools
 
 **Tool design & architecture**
 
-- [Designing Reliable MCP Servers: 3 Hard Lessons in Agentic Architecture](https://blog.jztan.com/i-gave-my-ai-agent-full-api-access-it-was-a-mistak/?utm_source=github&utm_medium=readme&utm_campaign=redmine-mcp-server): Why full API access to an agent was a mistake, and what replaced it
-- [MCP Tool Sprawl: How I Cut 69 Tools to 43 With a Decorator](https://blog.jztan.com/mcp-tool-sprawl-consolidation/?utm_source=github&utm_medium=readme&utm_campaign=redmine-mcp-server): The v2 consolidation that cut context overhead and sharpened agent tool selection
+- [Designing Reliable MCP Servers: 3 Hard Lessons in Agentic Architecture](https://blog.jztan.com/i-gave-my-ai-agent-full-api-access-it-was-a-mistak/?utm_source=github&utm_medium=referral&utm_campaign=redmine-mcp-server): Why full API access to an agent was a mistake, and what replaced it
+- [MCP Tool Sprawl: How I Cut 69 Tools to 43 With a Decorator](https://blog.jztan.com/mcp-tool-sprawl-consolidation/?utm_source=github&utm_medium=referral&utm_campaign=redmine-mcp-server): The v2 consolidation that cut context overhead and sharpened agent tool selection
 
 **Production**
 
-- [How to Evaluate an MCP Server With an LLM: 17 Bugs Found and Fixed](https://blog.jztan.com/evaluate-mcp-server-with-llm/?utm_source=github&utm_medium=readme&utm_campaign=redmine-mcp-server): Driving the server with an agent surfaced 17 problems the test suite missed, including a `role_ids=[True]` bug that quietly assigned an elevated role
-- [What It Actually Takes to Ship a Production MCP Server for Redmine](https://blog.jztan.com/what-it-actually-takes-to-ship-a-production-mcp-server-for-redmine/?utm_source=github&utm_medium=readme&utm_campaign=redmine-mcp-server): The full journey from prototype to production
+- [How to Evaluate an MCP Server With an LLM: 17 Bugs Found and Fixed](https://blog.jztan.com/evaluate-mcp-server-with-llm/?utm_source=github&utm_medium=referral&utm_campaign=redmine-mcp-server): Driving the server with an agent surfaced 17 problems the test suite missed, including a `role_ids=[True]` bug that quietly assigned an elevated role
+- [What It Actually Takes to Ship a Production MCP Server for Redmine](https://blog.jztan.com/what-it-actually-takes-to-ship-a-production-mcp-server-for-redmine/?utm_source=github&utm_medium=referral&utm_campaign=redmine-mcp-server): The full journey from prototype to production
