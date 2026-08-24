@@ -12,7 +12,12 @@ from pydantic import Field
 from .._client import _get_redmine_client
 from .._errors import _handle_redmine_error
 from .._offload import offloaded
-from .._serialization import _iter_capped, _safe_isoformat
+from .._serialization import (
+    _included_list,
+    _iter_capped,
+    _named_ref,
+    _safe_isoformat,
+)
 from ..server import mcp
 
 
@@ -180,28 +185,131 @@ def list_redmine_users(
         return _handle_redmine_error(e, "listing users")
 
 
+def _membership_roles_to_list(raw_roles: Any) -> List[Dict[str, Any]]:
+    """Serialize the ``roles`` array of one user-show membership entry.
+
+    Redmine renders each role as ``{id, name}`` and merges ``inherited =>
+    true`` onto it when the role arrives through a group membership
+    (``app/views/users/show.api.rsb``). It omits the key otherwise, so the
+    key is mirrored only when present -- a hard-coded ``inherited: false``
+    would be a claim Redmine never made, and it is the one field that tells
+    "I hold Manager here" apart from "a group I am in does".
+    """
+    if not isinstance(raw_roles, list):
+        return []
+
+    roles: List[Dict[str, Any]] = []
+    for role in raw_roles:
+        entry = _named_ref(role)
+        if entry is None:
+            continue
+        if isinstance(role, dict) and "inherited" in role:
+            entry["inherited"] = role["inherited"]
+        roles.append(entry)
+    return roles
+
+
+def _current_user_memberships(user: Any) -> List[Dict[str, Any]]:
+    """Serialize the caller's ``include=memberships`` payload.
+
+    Read through ``_included_list``, never ``user.memberships``: the
+    attribute re-fetches when the payload key is absent, and returns a
+    ``ResourceSet`` rather than the payload shape. See ``_included_list``.
+
+    Deliberately not ``tools.projects._membership_to_dict``, because the two
+    payloads are different shapes:
+
+    - That helper reads resource attributes with ``getattr``; these entries
+      are decoded payload dicts, on which ``getattr`` would silently yield
+      ``{"id": None, "name": ""}``.
+    - It emits ``user`` and ``group``. Redmine's user-show renderer emits
+      neither -- the user is the caller, implicitly -- so both would come
+      back ``None``, indistinguishable from a membership naming no principal.
+    - It flattens roles to ``{id, name}`` and so would drop ``inherited``.
+
+    Widening the shared helper to cover all three would change
+    ``list_project_members`` output, which has its own callers and belongs in
+    its own change.
+    """
+    memberships: List[Dict[str, Any]] = []
+    for membership in _included_list(user, "memberships"):
+        if not isinstance(membership, dict):
+            continue
+        memberships.append(
+            {
+                "id": membership.get("id"),
+                "project": _named_ref(membership.get("project")),
+                "roles": _membership_roles_to_list(membership.get("roles")),
+            }
+        )
+    return memberships
+
+
 @mcp.tool()
 @offloaded
-def get_current_user() -> Dict[str, Any]:
+def get_current_user(include_memberships: bool = False) -> Dict[str, Any]:
     """Retrieve the currently authenticated user's profile.
 
-    Resolves to ``GET /my/account.json`` under the hood. Works for any
-    authenticated user (not admin-only). Useful when an LLM needs to
+    Resolves to ``GET /users/current.json`` under the hood. Works for any
+    authenticated user, not admin-only. Useful when an LLM needs to
     identify "me" — for example, when a user says "log 2h on this issue
     for me", the LLM can call this tool to get the current user's ID.
+
+    With ``include_memberships`` it also answers "which projects am I a
+    member of, and with which roles" in that same request. The only other
+    way to get that is ``list_project_members`` once per project.
+
+    Each membership is ``{id, project: {id, name}, roles: [{id, name}]}``.
+    A role held through a group carries ``inherited: true``; Redmine omits
+    the key for a role held directly, and so does this tool -- so test for
+    the key, do not expect ``inherited: false``. Redmine limits the list to
+    projects visible to the caller, which covers active and closed projects
+    but not archived ones: an empty list means none visible, not
+    necessarily none held.
+
+    Args:
+        include_memberships: Add ``memberships`` to the response. Costs no
+            extra request -- the include rides the same call -- so this is
+            opt-in only to keep the default response small.
 
     Returns:
         A dictionary with ``id``, ``login``, ``firstname``, ``lastname``,
         ``mail``, ``admin`` (bool), ``created_on``, and ``last_login_on``.
-        On failure, a dict with an ``"error"`` key.
+        With ``include_memberships``, also ``memberships``, as described
+        above. On failure, a dict with an ``"error"`` key.
 
     Example:
-        >>> await get_current_user()
-        {"id": 5, "login": "alice", "firstname": "Alice", ..., "admin": False}
+        >>> await get_current_user(include_memberships=True)
+        {
+            "id": 5, "login": "alice", "admin": False,
+            "memberships": [
+                {
+                    "id": 12,
+                    "project": {"id": 1, "name": "Website"},
+                    "roles": [
+                        {"id": 3, "name": "Developer"},
+                        {"id": 4, "name": "Manager", "inherited": True}
+                    ]
+                }
+            ]
+        }
     """
     try:
-        user = _get_redmine_client().user.get("current")
-        return {
+        # Not admin-gated: ``UsersController`` exempts ``show`` from
+        # ``require_admin`` and resolves the ``current`` id behind a bare
+        # ``require_login``. Stated here rather than in the docstring, whose
+        # leading prose ships in every ``tools/list``; see also the
+        # ``get_current_user`` note in ``oauth_scopes.py``.
+        # Only ``memberships`` is exposed, not a free-text ``include``.
+        # ``User._includes`` also accepts ``groups``, which Redmine gates on
+        # ``User.current.admin?`` -- a non-admin would get a 200 with the key
+        # simply missing, indistinguishable from "belongs to no groups".
+        if include_memberships:
+            user = _get_redmine_client().user.get("current", include="memberships")
+        else:
+            user = _get_redmine_client().user.get("current")
+
+        result: Dict[str, Any] = {
             "id": getattr(user, "id", None),
             "login": getattr(user, "login", ""),
             "firstname": getattr(user, "firstname", ""),
@@ -211,6 +319,9 @@ def get_current_user() -> Dict[str, Any]:
             "created_on": _safe_isoformat(getattr(user, "created_on", None)),
             "last_login_on": _safe_isoformat(getattr(user, "last_login_on", None)),
         }
+        if include_memberships:
+            result["memberships"] = _current_user_memberships(user)
+        return result
     except Exception as e:
         return _handle_redmine_error(e, "fetching current user")
 

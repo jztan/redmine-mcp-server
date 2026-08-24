@@ -3,8 +3,9 @@ roles, modules, status summaries.
 """
 
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 
+from pydantic import Field
 from redminelib.exceptions import ResourceNotFoundError
 
 from .._cleanup import _ensure_cleanup_started
@@ -16,10 +17,16 @@ from .._offload import in_thread, offloaded
 from .._serialization import (
     _custom_fields_to_list,
     _named_ref,
+    _pagination_info,
     _safe_isoformat,
     wrap_insecure_content,
 )
-from .._validation import _is_positive_int
+from .._validation import (
+    _is_positive_int,
+    _reject_non_scalar_filter_values,
+    _reject_reserved_query_keys,
+    _reject_unregistered_filter_keys,
+)
 from ..server import mcp
 
 
@@ -204,32 +211,172 @@ def _membership_to_dict(membership: Any) -> Dict[str, Any]:
     return result
 
 
+# Query parameters `list_redmine_projects` owns. Each is validated by the
+# guards below, so accepting it through `filters` too would give a caller a
+# second, unchecked route to the same key. `filters` exists for the keys the
+# signature does not name -- `cf_<id>` most of all.
+#
+# `include_custom_fields` is named here even though it is not a query
+# parameter at all: it selects the response shape. The allowlist below would
+# refuse it anyway, for not being one of Redmine's filters, but it would say
+# "the accepted keys are status, id, name, ..." -- true, and no help to a
+# caller whose actual mistake was reaching for `filters` instead of the named
+# argument. Owning it puts that guard first and answers the question asked.
+_PROJECT_OWNED_QUERY_KEYS = frozenset(
+    {"limit", "offset", "include_custom_fields", "include_pagination_info"}
+)
+
+
+# The filter names Redmine's `ProjectQuery` hands to `add_available_filter`
+# (`app/models/project_query.rb:66-89` on 6.1). `cf_<id>` and its chained
+# spellings are accepted on top of these by
+# `_reject_unregistered_filter_keys`, project custom field filters being
+# registered per field and so not enumerable from here.
+_PROJECT_QUERY_FILTER_NAMES = frozenset(
+    {
+        "status",
+        "id",
+        "name",
+        "description",
+        "parent_id",
+        "is_public",
+        "created_on",
+        "updated_on",
+    }
+)
+
+
 @mcp.tool()
 @offloaded
 def list_redmine_projects(
     include_custom_fields: bool = False,
+    limit: Annotated[Optional[int], Field(ge=1, le=1000)] = None,
+    offset: Annotated[int, Field(ge=0)] = 0,
+    include_pagination_info: bool = False,
+    filters: Optional[Dict[str, Any]] = None,
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """
-    Lists all accessible projects in Redmine.
+    Lists accessible projects in Redmine.
+
+    Returns ONLY active projects unless ``filters`` says otherwise. Redmine's
+    ``ProjectQuery`` starts out with a ``status = 1`` filter already set, so a
+    call that passes no ``status`` answers with active projects alone while
+    looking like the whole list. Pass ``filters={"status": "1|5"}`` to get
+    closed projects alongside active ones. ``status`` takes only the ``=``
+    and ``!`` operators, so ``"*"`` is not a way to ask for every status --
+    it would be read as a literal value and match nothing.
+
+    ``filters`` narrows the collection server-side. A filter Redmine cannot
+    read is not an error there -- it answers 200 with the collection
+    unnarrowed -- so check the result against what was asked for.
 
     With ``include_custom_fields`` this is the only tool that returns project
-    custom field *values*. Project custom fields and issue custom fields are
-    separate in Redmine: ``list_project_issue_custom_fields`` covers the
-    latter, a different set, and no tool exposes project custom field
-    definitions.
+    custom field *values*, which are a different set from the issue custom
+    fields ``list_project_issue_custom_fields`` covers.
 
     Args:
         include_custom_fields: Add ``custom_fields`` to each project. Costs no
             extra request; opt-in only to keep the default response small.
+        limit: Maximum number of projects to return, up to 1000. Omitted by
+            default, which returns every visible project -- what this tool has
+            always done, and the cheapest way to do it. A supplied limit is
+            paged in full however few projects exist, so ``limit=1000`` on a
+            seven-project instance costs ten requests to return seven rows:
+            ask for a number you want, not a large one meaning "all".
+        offset: Projects to skip before collecting results. With no
+            ``limit`` a late offset costs what reading from zero costs --
+            paging runs ``total_count`` rows *from* ``offset`` rather than up
+            to it -- so pair a large ``offset`` with a ``limit``.
+        include_pagination_info: Return
+            ``{"projects": [...], "pagination": {...}}`` rather than a bare
+            list (default: False), with the keys ``list_redmine_issues``
+            returns. ``total`` is Redmine's own count for the filtered
+            collection and costs no extra request -- except where a
+            deployment suppresses API metadata (``nometa``), which truncates
+            the list at one page and reports a ``total`` that agrees with it.
+        filters: Redmine query filters, for what this signature does not
+            name -- most usefully ``{"cf_42": "value"}`` for a project custom
+            field. Accepted keys are ``status``, ``id``, ``name``,
+            ``description``, ``parent_id``, ``is_public``, ``created_on`` and
+            ``updated_on``, plus ``cf_<id>`` and its chained spellings; any
+            other key is refused, with an error naming what it objected to.
+            Each value is one scalar -- a string, number, date or datetime,
+            never a list, a dict, ``None`` or a ``bool`` (write a yes/no
+            filter as ``"1"``). An operator rides inside the value as a
+            prefix, as in ``{"created_on": ">=2024-01-01"}`` or
+            ``{"name": "~api"}``, and alternatives join with ``|``, as in
+            ``{"status": "1|5"}``; an operator the filter's type does not
+            accept is read as a literal value rather than erroring. A
+            ``cf_<id>`` must be a *project* custom field, visible to the
+            caller, with "Used as a filter" on.
 
     Returns:
-        A list of dictionaries, each representing a project. With
-        ``include_custom_fields``, each also carries ``custom_fields``, a list
-        of ``{id, name, value}`` entries -- empty if the project has none. On
+        A list of dictionaries, each representing a project -- or, with
+        ``include_pagination_info``, a dict of ``projects`` and
+        ``pagination``. Each project carries ``id``, ``name``,
+        ``identifier``, ``description``, ``homepage``, ``parent``,
+        ``status``, ``is_public``, ``inherit_members``, ``created_on`` and
+        ``updated_on``, which is what Redmine's project index renders.
+        ``status`` is Redmine's integer code -- ``1`` active, ``5`` closed.
+        ``parent`` is ``{id, name}``, or ``null``: Redmine renders it only
+        when the parent exists *and* is visible to the caller, so ``null``
+        means top-level **or** a parent this caller cannot see, and the two
+        cannot be told apart. A key the payload did not carry is ``null``
+        rather than a substituted default. With ``include_custom_fields``,
+        each project also carries ``custom_fields``, a list of
+        ``{id, name, value}`` entries -- empty if the project has none. On
         failure, a dict with an ``error`` key.
     """
+    if limit is not None and not _is_positive_int(limit):
+        return {"error": "limit must be a positive integer."}
+    if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
+        return {"error": "offset must be a non-negative integer."}
+
+    params: Dict[str, Any] = {}
+    # No `limit` key unless the caller asked for one: python-redmine reads a
+    # missing limit as the collection's `total_count` and pages to the end,
+    # which is what this tool has always returned, so defaulting to a number
+    # here would silently truncate existing callers. That is also why
+    # `_REDMINE_API_PAGE_CAP` is not applied the way the single-request list
+    # tools apply it -- `project.all()` goes through python-redmine's
+    # `bulk_request`, which pages past 100 itself, so clamping would truncate a
+    # larger `limit` instead of honouring it.
+    if limit is not None:
+        params["limit"] = limit
+    if offset:
+        params["offset"] = offset
+
+    if filters is not None:
+        if not isinstance(filters, dict):
+            return {"error": "filters must be a dict of Redmine query parameters."}
+        reserved_error = _reject_reserved_query_keys(filters)
+        if reserved_error:
+            return {"error": reserved_error}
+        owned = sorted(_PROJECT_OWNED_QUERY_KEYS.intersection(filters))
+        if owned:
+            return {
+                "error": (
+                    f"filters may not contain {', '.join(owned)}: pass it as "
+                    "the named parameter instead, so it is validated."
+                )
+            }
+        # An allowlist, not a longer denylist. Every key here is forwarded
+        # into a request python-redmine decodes and Redmine parses, and a key
+        # that is not one of Redmine's filters can still carry meaning to
+        # another layer of that request rather than being ignored the way an
+        # unregistered filter is.
+        unregistered_error = _reject_unregistered_filter_keys(
+            filters, _PROJECT_QUERY_FILTER_NAMES
+        )
+        if unregistered_error:
+            return {"error": unregistered_error}
+        value_error = _reject_non_scalar_filter_values(filters)
+        if value_error:
+            return {"error": value_error}
+        params.update(filters)
+
     try:
-        projects = _get_redmine_client().project.all()
+        projects = _get_redmine_client().project.all(**params)
         result: List[Dict[str, Any]] = []
         for project in projects:
             entry = {
@@ -237,12 +384,69 @@ def list_redmine_projects(
                 "name": project.name,
                 "identifier": project.identifier,
                 "description": getattr(project, "description", ""),
+                # The rest of what `app/views/projects/index.api.rsb` renders
+                # and this serializer used to drop. `None` marks a key the
+                # payload did not carry, so an absent value is never returned
+                # as a real one -- `is_public` and `inherit_members` above all,
+                # where a fabricated `False` reads as a deliberate setting.
+                "homepage": getattr(project, "homepage", None),
+                "parent": _named_ref(getattr(project, "parent", None)),
+                "status": getattr(project, "status", None),
+                "is_public": getattr(project, "is_public", None),
+                "inherit_members": getattr(project, "inherit_members", None),
                 "created_on": _safe_isoformat(getattr(project, "created_on", None)),
+                "updated_on": _safe_isoformat(getattr(project, "updated_on", None)),
             }
             if include_custom_fields:
                 entry["custom_fields"] = _custom_fields_to_list(project)
             result.append(entry)
-        return result
+        if not include_pagination_info:
+            return result
+        # Read after the loop, never before: `ResourceSet.total_count` raises
+        # `ResultSetTotalCountError` until the set has been evaluated, and
+        # iterating it above is what evaluates it. So this costs no request.
+        #
+        # The total is honest here, unlike the contacts endpoint's. Redmine
+        # builds `@project_count` from `@query.result_count` and the rows from
+        # `project_scope(:offset, :limit)` -- the same query -- so it measures
+        # exactly the collection being paged, filters included. Passing it is
+        # right; suppressing it the way a searched contact list has to would
+        # throw away a number that does describe this page.
+        #
+        # One deployment shape defeats that, and it cannot be detected from
+        # here. `api_meta` returns nil when `nometa` is in the request or
+        # `X-Redmine-Nometa` is set, so the response carries no `total_count`,
+        # `limit` or `offset` at all; `bulk_request` then takes its fallback
+        # branch, sets `total_count = len(first page)` and stops paging. The
+        # list is truncated at one chunk -- which it already was before this
+        # tool reported anything -- but `total` now agrees with the truncated
+        # count, so the envelope reads as a complete collection. A caller
+        # cannot tell that from a genuinely 100-project instance and neither
+        # can this code: same row count, same total, same single request. It is
+        # documented rather than guarded because a guess would be worse than
+        # the caveat. `nometa` cannot arrive through `filters` -- it is not a
+        # registered filter name, so the allowlist refuses it.
+        #
+        # With no `limit` the window is the whole remainder of the collection,
+        # so the page delivered *is* its own limit: reporting `len(result)`
+        # describes what came back and makes `has_next` come out false, which
+        # is correct -- there is nothing left to ask for. Reporting the
+        # requested `None` instead would leave the arithmetic undefined.
+        pagination = _pagination_info(
+            limit=limit if limit is not None else len(result),
+            offset=offset,
+            count=len(result),
+            total=projects.total_count,
+        )
+        if limit is None and offset:
+            # No limit means "everything from `offset`", so there is no page
+            # size to step back by. `_pagination_info` derives
+            # `previous_offset` from the limit, which here is only the row
+            # count -- and for an offset past the end that count is 0, which
+            # would point the caller at the offset they are already on. The
+            # one meaningful predecessor of an unbounded read is the start.
+            pagination["previous_offset"] = 0
+        return {"projects": result, "pagination": pagination}
     except Exception as e:
         return _handle_redmine_error(e, "listing projects")
 

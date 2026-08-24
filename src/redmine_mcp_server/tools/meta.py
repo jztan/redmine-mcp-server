@@ -49,8 +49,12 @@ async def _fetch_current_user_info() -> Optional[Dict[str, Any]]:
 
     Uses ``GET /users/current.json`` via async httpx — works on Redmine 3.x
     and later. ``/my/account.json`` is not reliably available on older
-    Redmine instances. redminelib's ``user.get('current')`` is not used
-    because it requires admin rights on some setups.
+    Redmine instances.
+
+    This duplicates ``get_current_user`` and has not been consolidated with
+    it; that is the only reason it is a separate path, not any permission
+    difference. The endpoint is not admin-gated -- see the
+    ``get_current_user`` note in ``oauth_scopes.py`` for why.
     """
     try:
         import httpx

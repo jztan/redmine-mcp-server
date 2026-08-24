@@ -208,12 +208,20 @@ This allows LLM consumers to distinguish trusted tool output from untrusted user
 
 ### `list_redmine_projects`
 
-Lists all accessible projects in the Redmine instance.
+Lists accessible projects in the Redmine instance, optionally narrowed server-side.
+
+**Returns only *active* projects unless `filters` says otherwise.** Redmine's `ProjectQuery` starts with a `status = 1` filter already set (`self.filters ||= {'status' => {:operator => "=", :values => ['1']}}`), so a call passing no `status` answers with active projects alone while looking like the whole list. Pass `filters={"status": "1|5"}` for closed projects alongside active ones. This tool keeps Redmine's own default deliberately rather than overriding it. Only `1` (active) and `5` (closed) are reachable: archived and scheduled-for-deletion come from `ProjectAdminQuery`, which this endpoint does not use, and `status` is a `:list` filter taking only `=` and `!`, so `"*"` is read as a literal value and matches nothing.
 
 **Parameters:**
 - `include_custom_fields` (boolean, optional): Add `custom_fields` to each project. Default: `false`
+- `limit` (integer, optional): Maximum number of projects to return, `1`–`1000`. Omitted by default, which returns every visible project -- and at `offset=0` omitting it is also the cheapest way to do that. With no limit python-redmine reads the collection's `total_count` and stops there; a supplied limit is paged in full regardless of how many projects exist, so `limit=1000` against an instance holding seven costs ten requests and returns the same seven. Ask for a number you want, not a large one meaning "all"
+- `offset` (integer, optional): Projects to skip before collecting results. Default: `0`. With no `limit`, a non-zero offset costs exactly what reading from zero costs: `bulk_request` resolves the missing limit to the collection's `total_count` and then pages that many rows *from* `offset` rather than up to the end, so the requests past the end are still issued and come back empty. Measured against 250 projects: `offset=240` is three requests to return ten rows, and `offset=300` is three requests to return none. Pair a large `offset` with a `limit`, which is one request
+- `include_pagination_info` (boolean, optional): Return `{"projects": [...], "pagination": {...}}` instead of a bare array. Default: `false`. The same envelope and keys as [`list_redmine_issues`](#list_redmine_issues) -- `total`, `limit`, `offset`, `count`, `has_next`, `has_previous`, `next_offset`, `previous_offset`. `total` is read off the same response the rows came from, so it costs no extra request, and it is reported for every read Redmine measures: `@project_count` comes from `@query.result_count`, the same query as the rows, so a filter narrows the count along with the collection. One deployment shape defeats it: with API metadata suppressed (`nometa` or `X-Redmine-Nometa`) the response carries no `total_count`, python-redmine stops after one page and reports that page's length, so a truncated list arrives with a `total` that agrees with it and `has_next` false. A client cannot tell that from a genuinely small instance
+- `filters` (object, optional): Redmine query filters to narrow the list, for the filters this signature does not name -- e.g. `{"cf_42": "Gold"}`. Accepted keys and value types are listed below
 
-**Returns:** List of project dictionaries with id, name, identifier, description and created_on, plus `custom_fields` when requested
+**Returns:** List of project dictionaries carrying `id`, `name`, `identifier`, `description`, `homepage`, `parent`, `status`, `is_public`, `inherit_members`, `created_on` and `updated_on` -- what Redmine's project index renders -- plus `custom_fields` when requested. With `include_pagination_info=true`, `{"projects": [...], "pagination": {...}}` instead.
+
+`status` is Redmine's integer code (`1` active, `5` closed). `parent` is `{id, name}` or `null`; Redmine renders it only when the parent exists **and** is visible to the caller, so `null` means top-level **or** a parent this caller cannot see, and the two cannot be told apart. A key the payload did not carry is `null` rather than a substituted default -- for `is_public` and `inherit_members` especially, a `false` would read as a setting Redmine never sent.
 
 **Example:**
 ```json
@@ -223,26 +231,42 @@ Lists all accessible projects in the Redmine instance.
     "name": "My Project",
     "identifier": "my-project",
     "description": "Project description",
-    "created_on": "2025-01-15T10:30:00"
+    "homepage": "https://example.com",
+    "parent": {"id": 7, "name": "Umbrella"},
+    "status": 1,
+    "is_public": true,
+    "inherit_members": false,
+    "created_on": "2025-01-15T10:30:00",
+    "updated_on": "2025-03-20T09:15:00"
   }
 ]
 ```
 
-**Example with `include_custom_fields=True`:**
+**Example with `include_custom_fields=True`:** each entry also carries
 ```json
-[
-  {
-    "id": 1,
-    "name": "My Project",
-    "identifier": "my-project",
-    "description": "Project description",
-    "created_on": "2025-01-15T10:30:00",
     "custom_fields": [
       {"id": 12, "name": "Size", "value": "S"}
     ]
-  }
-]
 ```
+
+**Example with `include_pagination_info=True`:**
+```json
+{
+  "projects": [ ... ],
+  "pagination": {
+    "total": 250,
+    "limit": 100,
+    "offset": 0,
+    "count": 100,
+    "has_next": true,
+    "has_previous": false,
+    "next_offset": 100,
+    "previous_offset": null
+  }
+}
+```
+
+With no `limit` there is no page size, so the envelope describes one complete read: `has_next` is `false`, `next_offset` is `null`, and `previous_offset` points back at the start of the collection rather than at the offset the caller is already on.
 
 **Project custom field values:** Redmine renders them on `GET /projects.json`
 unconditionally, so `include_custom_fields=True` adds them with no per-project
@@ -252,6 +276,71 @@ see. This is the only tool that returns project custom field *values*. Project
 custom fields and issue custom fields are separate in Redmine:
 [`list_project_issue_custom_fields`](#list_project_issue_custom_fields) covers
 the latter, and no tool exposes project custom field definitions.
+
+**Narrowing the list (`filters`):** `GET /projects.json` runs the request
+through Redmine's `ProjectQuery`, so a filter can be applied server-side
+instead of fetching every project and filtering locally:
+
+```python
+list_redmine_projects(filters={"cf_42": "Gold"}, include_custom_fields=True)
+```
+
+**Accepted keys.** `filters` takes the filters `ProjectQuery` registers and
+nothing else:
+
+| Key | Notes |
+| --- | --- |
+| `status` | Only the `=` and `!` operators; `*` is not one of them |
+| `id` | |
+| `name` | |
+| `description` | |
+| `parent_id` | |
+| `is_public` | `"1"` or `"0"` |
+| `created_on` | |
+| `updated_on` | Registered on 6.1; absent on some older versions |
+| `cf_<id>` | A project custom field, visible to the caller and flagged **Used as a filter** |
+| `cf_<id>.cf_<id>`, `cf_<id>.due_date`, `cf_<id>.status` | The chained filters Redmine registers for a custom field whose format targets another record |
+
+Any other key is refused with an error naming that set, rather than being
+forwarded. This is an allowlist because the two directions are not symmetric:
+Redmine builds its query from the filter parameters it registers and ignores
+every other one, so refusing an unregistered key costs a caller nothing it
+could have used -- while a parameter that is not a filter at all can still be
+read by another part of the same request instead of being ignored. `fields`,
+`f` and `query_id` are called out separately in the error, since Redmine reads
+the first two as the query's own filter definition and empties the filters
+built from the rest of the request, and `query_id` selects a saved query
+instead. `limit` and `offset` are refused inside `filters` too -- pass them as
+the named parameters, which validate them.
+
+**Accepted values.** Each value must be a single scalar: a string, integer,
+float, `date` or `datetime`. Lists, dicts and `None` are refused, and so is a
+Python `bool` -- it urlencodes as `True`, while a yes/no filter's values are
+`"1"` and `"0"`, so it would be accepted and then match nothing. Write
+`{"is_public": "1"}`. A filter's operator travels inside the value as a prefix
+Redmine strips off, and alternatives are joined with `|`, so a scalar is all a
+filter ever needs:
+
+```python
+list_redmine_projects(filters={"created_on": ">=2024-01-01", "name": "~api"})
+```
+
+Two more things to know before relying on `filters`:
+
+- Redmine ignores an unregistered filter parameter without erroring, answering
+  `200` with the unfiltered collection -- which looks identical to a filter that
+  matched everything. Confirm a narrow filter actually narrowed. A project
+  custom field that is not marked "Used as a filter" is exactly this case, and
+  project custom fields are a different set from issue custom fields, so the id
+  has to come from a project one.
+- The query defaults to `status = 1` (active), so this tool returns **only
+  active projects** unless `filters` says otherwise. Pass `{"status": "1|5"}`
+  to get closed projects alongside active ones.
+
+**Pagination:** omitting `limit` returns every visible project, unchanged from
+before these parameters existed. `limit` is not capped at Redmine's 100-per-request
+ceiling, because python-redmine pages past it internally; `limit=250` issues as
+many requests as it needs.
 
 ---
 
@@ -1661,11 +1750,16 @@ list_redmine_users(name="alice")
 
 ### `get_current_user`
 
-Retrieve the currently authenticated user's profile. Resolves to `GET /my/account.json`, so works for any authenticated user (not admin-only). Useful when a user asks the LLM to do something "for me" — the LLM can call this to resolve the current user's ID.
+Retrieve the currently authenticated user's profile. Resolves to `GET /users/current.json`, and works for any authenticated user (not admin-only) -- Redmine exempts the `show` action from its admin filter and resolves the `current` id behind a plain login check. Useful when a user asks the LLM to do something "for me" -- the LLM can call this to resolve the current user's ID.
 
-**Parameters:** None.
+With `include_memberships` it also answers "which projects am I a member of, and with which roles" in the same request. The alternative is `list_project_members` once per project.
 
-**Returns:** Dict with `id, login, firstname, lastname, mail, admin, created_on, last_login_on`.
+**Parameters:**
+- `include_memberships` (boolean, optional): Add `memberships` to the response. Default `false`. Costs no extra request -- the include rides the same call.
+
+**Returns:** Dict with `id, login, firstname, lastname, mail, admin, created_on, last_login_on`. With `include_memberships`, also `memberships`: a list of `{id, project: {id, name}, roles: [{id, name}]}` entries. A role inherited from a group membership carries `inherited: true`; Redmine omits the key for a direct role, and so does this tool. Redmine limits the list to projects visible to the caller, which covers active and closed projects but not archived ones -- so an empty list means "holds none that are visible", not necessarily "holds none".
+
+Groups are deliberately not offered as an include: Redmine gates that block on the caller being an admin, so a non-admin would get a success response with the key simply missing -- indistinguishable from "belongs to no groups".
 
 **Example:**
 ```json
@@ -1678,6 +1772,25 @@ Retrieve the currently authenticated user's profile. Resolves to `GET /my/accoun
   "admin": false,
   "created_on": "2025-01-15T10:00:00",
   "last_login_on": "2026-04-16T09:30:00"
+}
+```
+
+**Example** (`include_memberships=True`):
+```json
+{
+  "id": 5,
+  "login": "alice",
+  "admin": false,
+  "memberships": [
+    {
+      "id": 12,
+      "project": {"id": 1, "name": "Website"},
+      "roles": [
+        {"id": 3, "name": "Developer"},
+        {"id": 4, "name": "Manager", "inherited": true}
+      ]
+    }
+  ]
 }
 ```
 
@@ -2377,6 +2490,7 @@ Requires the **RedmineUP CRM** plugin and `REDMINE_CRM_ENABLED=true`. Visibility
 - `assigned_to_id` (integer, optional): For `list`, filter by assignee user ID
 - `limit` (integer, optional): For `list`, max results per call (default `100`, capped at 100 by Redmine)
 - `offset` (integer, optional): For `list`, contacts to skip — needed to page past the first 100
+- `include_pagination_info` (boolean, optional): For `list`, return `{"contacts": [...], "pagination": {...}}` instead of a bare array. Default: `false`. The same envelope and the same keys as [`list_redmine_issues`](#list_redmine_issues) -- `total`, `limit`, `offset`, `count`, `has_next`, `has_previous`, `next_offset`, `previous_offset`
 - `contact_id` (integer): Required for all actions except `list` and `create`
 - `include` (string, optional): For `get`, comma-separated includes (`notes`, `deals`, `contacts`)
 - `first_name` (string): Required for `create`. Filters a `list` where `REDMINE_CRM_EDITION=pro`
@@ -2388,7 +2502,7 @@ Requires the **RedmineUP CRM** plugin and `REDMINE_CRM_ENABLED=true`. Visibility
 - `fields` (dict): For `update`, fields to update. Allowed keys: `first_name`, `last_name`, `middle_name`, `company`, `job_title`, `phone`, `email`, `website`, `skype_name`, `birthday`, `background`, `address_attributes`, `tag_list`, `is_company`, `assigned_to_id`, `custom_fields`, `visibility`, `project_id`. For `create`, additional fields beyond the named parameters
 
 **Returns:**
-- `list`: array of contact dicts
+- `list`: array of contact dicts -- or, with `include_pagination_info=true`, `{"contacts": [...], "pagination": {...}}`
 - `get`/`create`: contact dict
 - `update`: `{"success": true, "contact_id": N, "updated_fields": [...]}`
 - `delete`: `{"success": true, "contact_id": N, "message": ...}`
@@ -2408,6 +2522,28 @@ manage_contact(
     assigned_to_id=5,
     limit=50,
 )
+
+# Page a large CRM, and see from the response how much is left
+manage_contact(
+    action="list",
+    limit=100,
+    offset=0,
+    include_pagination_info=True,
+)
+# Returns:
+# {
+#   "contacts": [...],
+#   "pagination": {
+#     "total": 250,
+#     "limit": 100,
+#     "offset": 0,
+#     "count": 100,
+#     "has_next": true,
+#     "has_previous": false,
+#     "next_offset": 100,
+#     "previous_offset": null
+#   }
+# }
 
 # Fetch a single contact with related notes and deals
 manage_contact(action="get", contact_id=42, include="notes,deals")
@@ -2438,6 +2574,10 @@ manage_contact(action="remove_from_project", contact_id=42, project_id="support"
 
 **Notes:**
 - `list` and `get` are allowed in read-only mode; `create`, `update`, `delete`, `assign_to_project`, and `remove_from_project` are blocked when `REDMINE_MCP_READ_ONLY=true`.
+- **Pagination metadata.** `total` is the `total_count` the contacts response carries alongside the collection itself, so it costs no extra request and a truncated read is visible without paging until an empty page comes back. The CRM plugin renders it: `app/views/contacts/index.api.rsb` wraps the array in `api_meta(:total_count => @contacts_count, :offset => @offset, :limit => @limit)` (confirmed on 4.4.5 Pro).
+- **`has_next` is measured, not guessed.** A further page exists when `offset + limit` is below the total, rather than when "the page came back full", so a collection whose size is an exact multiple of the page size is not reported as having one more page than it has. `list_redmine_issues` still infers `has_next` from a full page and can be wrong on that boundary.
+- **`total` is `null` when no reported total measures the collection being paged.** Read it as "not reported", never as a number. Two cases produce it. A build that renders no `total_count` at all is one. The other is `search`: `ContactsController#index` counts with `@query.object_count`, which applies the query filters but *not* `params[:search]` -- `ContactQuery` registers no `search` filter -- while the rows come from `results_scope(:search => ...)`. The reported total therefore describes the collection before the search, so it is not offered as this page's total. Every other narrowing parameter this tool sends (`project_id`, `tags`, `assigned_to_id`, `author_id` and the Pro attribute filters) *is* a registered filter, so those narrow the count too and `total` stays exact. Whenever `total` is `null`, `has_next` falls back to the full-page inference rather than going `null` too, because a `null` is falsy and a caller testing it would stop mid-collection.
+- **What the other keys mean.** `count` is the contacts actually returned in this response. `limit` and `offset` are the window Redmine reports having applied, falling back to the requested values when it reports none, so `next_offset` lands on a real page boundary even if a build serves a smaller page than was asked for. `has_previous` and `previous_offset` follow `offset` alone and never depend on the total.
 - **PII handling:** contact `email`, `phone`, `address`, `birthday`, `website` are returned as-is to the caller; the module never logs them. Error messages reference only `contact_id`.
 - **Prompt-injection wrapping:** `background` is free text and is wrapped in `<insecure-content>` boundary tags. Display fields (`first_name`, `last_name`, `middle_name`, `company`, `job_title`, `assigned_to.name`), and the `address` sub-document are returned verbatim, matching the policy set in #109 for short label-shaped values elsewhere in the server. Custom field values are returned verbatim too, consistent with issue custom fields — but note a `text`-format field holds free text rather than a short label, so treat those as untrusted.
 
