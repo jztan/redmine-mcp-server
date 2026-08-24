@@ -307,13 +307,15 @@ TOOL_SCOPES: Dict[str, ToolScopeEntry] = {
     # GET /roles.json needs authentication only.
     "list_redmine_roles": frozenset(),
     # Reads GET /projects/{id}.json?include=issue_custom_fields, so it needs
-    # both: view_project for projects#show, and view_issues for the include,
-    # which Redmine renders only for a caller holding it -- without it the
-    # array is omitted and the tool answers [], indistinguishable from "this
-    # project has no custom fields". view_project being :public => true is not
-    # an exemption: Role#allowed_permissions intersects the public permissions
-    # with the token's scopes too. Not /custom_fields.json, never called here.
-    "list_project_issue_custom_fields": frozenset({"view_project", "view_issues"}),
+    # view_project for projects#show and nothing beyond it. Every released
+    # Redmine gates the include on include_in_api_response? alone, with no
+    # permission check -- checked at 6.1.1, 6.1.2, 6.1.3 and 7.0.0 -- so
+    # requiring view_issues would refuse calls Redmine itself serves, and
+    # would hide the tool from tools/list for those tokens. view_project being
+    # :public => true is not an exemption: Role#allowed_permissions intersects
+    # the public permissions with the token's scopes too, so a token carrying
+    # no scopes is still refused. Not /custom_fields.json, never called here.
+    "list_project_issue_custom_fields": frozenset({"view_project"}),
     "manage_project_member": frozenset({"manage_members"}),
     # Redmine gates GET /projects/.../versions.json on view_issues.
     "list_redmine_versions": frozenset({"view_issues"}),

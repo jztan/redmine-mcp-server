@@ -61,18 +61,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now excluded rather than treated as global: Redmine computes an issue's
   fields as `project.all_issue_custom_fields & tracker.custom_fields`
   (`app/models/issue.rb`), so an unbound field reaches no issue.
-- `list_project_issue_custom_fields` requires the `view_project` and
-  `view_issues` scopes instead of none. Redmine renders the
-  `issue_custom_fields` include only for a caller holding `view_issues`, and
-  omits the array otherwise, so a token without it got `[]` -- which reads as
-  "this project has no custom fields". `view_project` is needed for
-  `projects#show` itself: it is a `:public => true` permission, which is not an
-  exemption, because `Role#allowed_permissions` intersects the public
-  permissions with the token's scopes too (`scope.present? ? unscoped & scope
-  : unscoped`), so a token scoped only `view_issues` is refused by Redmine
-  after this server had already admitted the call. The scope map justified the
-  empty entry with a comment about `/custom_fields.json` being admin-gated, an
-  endpoint this tool has never called.
+- `list_project_issue_custom_fields` requires the `view_project` scope instead
+  of none, for the `projects#show` request it makes. `view_project` being a
+  `:public => true` permission is not an exemption, because
+  `Role#allowed_permissions` intersects the public permissions with the
+  token's scopes too (`scope.present? ? unscoped & scope : unscoped`), so a
+  token carrying no scopes is refused by Redmine after this server had already
+  admitted the call. Nothing beyond `view_project` is required: every released
+  Redmine renders the `issue_custom_fields` include gated on
+  `include_in_api_response?` alone, with no permission check. The scope map
+  previously justified an empty entry with a comment about
+  `/custom_fields.json` being admin-gated, an endpoint this tool has never
+  called.
 - `list_redmine_projects` now returns the six fields Redmine's project index
   renders and this serializer discarded: `homepage`, `parent`, `status`,
   `is_public`, `inherit_members` and `updated_on`. `status` is Redmine's

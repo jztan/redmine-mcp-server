@@ -348,7 +348,7 @@ many requests as it needs.
 
 List the ids and names of the issue custom fields enabled for a project.
 
-**OAuth scopes:** `view_project` and `view_issues`. Both are required: `view_project` for `projects#show`, and `view_issues` for the include, which Redmine renders only for a caller holding it. `view_project` being a `:public => true` permission is not an exemption -- `Role#allowed_permissions` intersects the public permissions with the token's scopes too.
+**OAuth scopes:** `view_project`, for `projects#show`, and nothing beyond it. Every released Redmine renders the `issue_custom_fields` include gated on `include_in_api_response?` alone, with no permission check, so requiring anything further would refuse calls Redmine itself serves. `view_project` being a `:public => true` permission is not an exemption -- `Role#allowed_permissions` intersects the public permissions with the token's scopes too, so a token carrying no scopes is still refused.
 
 **Parameters:**
 - `project_id` (integer or string, required): Project ID (numeric) or identifier (string)
@@ -372,7 +372,7 @@ List the ids and names of the issue custom fields enabled for a project.
 ]
 ```
 
-**⚠️ `null` means "not readable on this token", never a default.** This tool reads `GET /projects/{id}.json?include=issue_custom_fields`, which Redmine renders as exactly `id` and `name` per field (`app/helpers/projects_helper.rb`, unchanged in 6.1, 7.0 and trunk). The definitions live on `GET /custom_fields.json`, which Redmine restricts to administrators (`before_action :require_admin`), so a non-admin token cannot read them at all. Under OAuth even an administrator's token cannot: `User#admin?` additionally requires the `admin` scope, which this server never requests. Redmine has four open requests to expose this metadata to non-admins ([#18875](https://www.redmine.org/issues/18875), [#41318](https://www.redmine.org/issues/41318), [#42581](https://www.redmine.org/issues/42581), [#43407](https://www.redmine.org/issues/43407)), none with a target version.
+**⚠️ `null` means "not readable on this token", never a default.** This tool reads `GET /projects/{id}.json?include=issue_custom_fields`, which Redmine renders as exactly `id` and `name` per field (`app/helpers/projects_helper.rb`, the same two keys in 6.1, 7.0 and trunk). The definitions live on `GET /custom_fields.json`, which Redmine restricts to administrators (`before_action :require_admin`), so a non-admin token cannot read them at all. Under OAuth even an administrator's token cannot: `User#admin?` additionally requires the `admin` scope, which this server never requests. Redmine has four open requests to expose this metadata to non-admins ([#18875](https://www.redmine.org/issues/18875), [#41318](https://www.redmine.org/issues/41318), [#42581](https://www.redmine.org/issues/42581), [#43407](https://www.redmine.org/issues/43407)), none with a target version.
 
 Read `null` as "unknown". It is not `false`, and it is not an empty list. `is_required: null` in particular does not mean the field is optional.
 
@@ -393,7 +393,7 @@ When a create or update rejects with that error, the response envelope is augmen
 
 1. **Name-keyed shortcut** — pass the rejected field by name directly: `fields={"Department": "Engineering"}` on either `create_redmine_issue` or `update_redmine_issue`. The tool resolves the name to a `custom_fields` id automatically. Ambiguous names (two fields normalized identically) raise.
 2. **Explicit id form** — `extra_fields={"custom_fields": [{"id": N, "value": "..."}]}` with `N` from this tool. Use when the name is ambiguous or the value type is awkward (multi-value, complex serializations).
-3. **Autofill** — set `REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true` to have the server retry once with values from each field's `default_value` or the `REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS` env map. Against a stock Redmine only the env map can supply a value: `default_value` is not in the include the server reads.
+3. **Autofill** -- set `REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true` to have the server retry once with values from each field's `default_value` or the `REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS` env map. Against a stock Redmine only the env map can supply a value: `default_value` is not in the include the server reads.
 
 ---
 

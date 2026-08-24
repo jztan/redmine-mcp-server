@@ -107,7 +107,7 @@ def _custom_field_applies_to_tracker(
     computes an issue's fields as ``project.all_issue_custom_fields &
     tracker.custom_fields`` (``app/models/issue.rb``), so an unbound field
     intersects to nothing. Callers must establish that bindings are readable
-    at all before filtering -- see :func:`_tracker_bindings_readable`.
+    at all before filtering -- see :func:`_tracker_bindings_unreadable_reason`.
     """
     if tracker_id is None:
         return True
@@ -538,7 +538,8 @@ async def list_project_issue_custom_fields(
     Why the six keys are unreadable: this tool reads
     ``GET /projects/{id}.json?include=issue_custom_fields``, which Redmine
     renders as exactly ``id`` and ``name`` per field
-    (``app/helpers/projects_helper.rb``; unchanged in 6.1, 7.0 and trunk).
+    (``app/helpers/projects_helper.rb``; the same two keys in 6.1, 7.0 and
+    trunk).
     The definitions live on ``GET /custom_fields.json``, which Redmine
     restricts to administrators (``before_action :require_admin``), so a
     non-admin token cannot obtain them at all -- and under OAuth even an
