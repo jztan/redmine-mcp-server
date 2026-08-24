@@ -200,13 +200,10 @@ def _membership_roles_to_list(raw_roles: Any) -> List[Dict[str, Any]]:
 
     roles: List[Dict[str, Any]] = []
     for role in raw_roles:
-        if not isinstance(role, dict):
+        entry = _named_ref(role)
+        if entry is None:
             continue
-        entry: Dict[str, Any] = {
-            "id": role.get("id"),
-            "name": role.get("name", ""),
-        }
-        if "inherited" in role:
+        if isinstance(role, dict) and "inherited" in role:
             entry["inherited"] = role["inherited"]
         roles.append(entry)
     return roles
@@ -215,13 +212,9 @@ def _membership_roles_to_list(raw_roles: Any) -> List[Dict[str, Any]]:
 def _current_user_memberships(user: Any) -> List[Dict[str, Any]]:
     """Serialize the caller's ``include=memberships`` payload.
 
-    Read through ``_included_list``, never ``user.memberships``: for a name
-    in ``User._includes`` python-redmine's ``Resource.__getattr__`` pops the
-    key from the decoded payload and, finding it absent, calls
-    ``refresh(itself=False, include=attr)`` -- a second HTTP request for data
-    the first response already carried
-    (``redminelib/resources/base.py``). Passing the include on the original
-    ``get`` and reading the payload keeps it at one request.
+    Read through ``_included_list``, never ``user.memberships``: the
+    attribute re-fetches when the payload key is absent, and returns a
+    ``ResourceSet`` rather than the payload shape. See ``_included_list``.
 
     Deliberately not ``tools.projects._membership_to_dict``, because the two
     payloads are different shapes:
@@ -268,6 +261,14 @@ def get_current_user(include_memberships: bool = False) -> Dict[str, Any]:
     member of, and with which roles" in that same request. The only other
     way to get that is ``list_project_members`` once per project.
 
+    Each membership is ``{id, project: {id, name}, roles: [{id, name}]}``.
+    A role held through a group carries ``inherited: true``; Redmine omits
+    the key for a role held directly, and so does this tool -- so test for
+    the key, do not expect ``inherited: false``. Redmine limits the list to
+    projects visible to the caller, which covers active and closed projects
+    but not archived ones: an empty list means none visible, not
+    necessarily none held.
+
     Args:
         include_memberships: Add ``memberships`` to the response. Costs no
             extra request -- the include rides the same call -- so this is
@@ -276,14 +277,8 @@ def get_current_user(include_memberships: bool = False) -> Dict[str, Any]:
     Returns:
         A dictionary with ``id``, ``login``, ``firstname``, ``lastname``,
         ``mail``, ``admin`` (bool), ``created_on``, and ``last_login_on``.
-        With ``include_memberships``, also ``memberships``: a list of
-        ``{id, project: {id, name}, roles: [{id, name}]}`` entries. A role
-        inherited from a group membership carries ``inherited: true``; the
-        key is absent otherwise, mirroring Redmine. Redmine limits the list
-        to projects visible to the caller -- active and closed ones, not
-        archived -- so an empty list means the caller holds none that are
-        visible, not necessarily none at all. On failure, a dict with an
-        ``"error"`` key.
+        With ``include_memberships``, also ``memberships``, as described
+        above. On failure, a dict with an ``"error"`` key.
 
     Example:
         >>> await get_current_user(include_memberships=True)
@@ -302,13 +297,10 @@ def get_current_user(include_memberships: bool = False) -> Dict[str, Any]:
         }
     """
     try:
-        # Only ``memberships`` is exposed, not a free-text ``include``
-        # passthrough. python-redmine's ``User._includes`` also accepts
-        # ``groups``, but Redmine gates that block on ``User.current.admin?``
-        # (``app/views/users/show.api.rsb``), so a non-admin asking for
-        # groups gets a 200 with the key simply missing -- byte-identical to
-        # "belongs to no groups". The memberships block carries no such
-        # check; Redmine only filters it by project visibility.
+        # Only ``memberships`` is exposed, not a free-text ``include``.
+        # ``User._includes`` also accepts ``groups``, which Redmine gates on
+        # ``User.current.admin?`` -- a non-admin would get a 200 with the key
+        # simply missing, indistinguishable from "belongs to no groups".
         if include_memberships:
             user = _get_redmine_client().user.get("current", include="memberships")
         else:

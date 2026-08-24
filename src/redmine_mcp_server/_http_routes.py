@@ -119,11 +119,10 @@ async def _probe_redmine_legacy() -> tuple[str, str | None]:
     # Use httpx directly against /users/current.json.
     # This endpoint works on Redmine 3.x and later (/my/account.json is
     # not reliably available on older instances).
-    # Kept on httpx so this health check stays independent of the client and
-    # its configuration -- not because the endpoint needs admin. It does not:
-    # `show` is exempt from `require_admin`, `find_user` resolves `current`
-    # behind a bare `require_login`, and `Principal.visible`'s non-admin
-    # branch matches `id = user.id`, so a caller always sees their own record.
+    # Deliberately not via the client: this probe's job is to validate the
+    # credentials and config the client is built from. Not because the
+    # endpoint needs admin -- see the `get_current_user` note in
+    # `oauth_scopes.py`.
     url = REDMINE_URL.rstrip("/") + "/users/current.json"
     try:
         if REDMINE_API_KEY:

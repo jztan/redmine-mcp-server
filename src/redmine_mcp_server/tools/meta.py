@@ -47,17 +47,14 @@ async def _fetch_current_user_info() -> Optional[Dict[str, Any]]:
     Resolves who ``assigned_to_id="me"`` maps to — crucial when a shared
     or robot API key is in use, where "me" is not the human operator.
 
-    Uses ``GET /users/current.json`` via async httpx -- works on Redmine 3.x
+    Uses ``GET /users/current.json`` via async httpx — works on Redmine 3.x
     and later. ``/my/account.json`` is not reliably available on older
     Redmine instances.
 
-    This predates the async client and stays on httpx to avoid a blocking
-    call here; it is not because the endpoint needs admin. It does not:
-    ``UsersController`` exempts ``show`` from ``require_admin``, ``find_user``
-    resolves ``current`` behind a bare ``require_login``, and
-    ``Principal.visible``'s non-admin branch matches ``id = user.id``, so a
-    caller always sees their own record. ``user.get('current')`` reaches the
-    same URL -- ``get_current_user`` uses it.
+    This duplicates ``get_current_user`` and has not been consolidated with
+    it; that is the only reason it is a separate path, not any permission
+    difference. The endpoint is not admin-gated -- see the
+    ``get_current_user`` note in ``oauth_scopes.py`` for why.
     """
     try:
         import httpx
