@@ -769,7 +769,7 @@ List Redmine issues with flexible filtering and pagination support. A general-pu
 - `sort` (string, optional): Sort order (e.g., `"updated_on:desc"`)
 - `limit` (integer, optional): Maximum issues to return. Default: `25`, Max: `1000`
 - `offset` (integer, optional): Number of issues to skip for pagination. Default: `0`
-- `include_pagination_info` (boolean, optional): Return structured response with metadata. Default: `false`
+- `include_pagination_info` (boolean, optional): Return structured response with metadata. Default: `false`. `total` is Redmine's `total_count`, read off the same response the issues came from, so it costs no extra request, and `has_next` is measured from it (`offset + limit < total`) rather than inferred from a full page. When the response carries no usable total (API metadata suppressed via `nometa` or `X-Redmine-Nometa`), `total` is `null`, never an estimate, and `has_next` falls back to the full-page inference
 - `include_custom_fields` (boolean, optional): Add `custom_fields` to each issue. Default: `false` — unlike `get_redmine_issue`, which defaults to `true`, because a list page multiplies the payload
 - `include_relations` (boolean, optional): Add `relations` to each issue. Default: `false`. Each entry is `{id, issue_id, issue_to_id, relation_type, delay}`
 - `fields` (array of strings, optional): List of field names to include in results. Default: all fields
@@ -855,7 +855,7 @@ Search issues using text queries with support for pagination, field selection, a
 - `query` (string, required): Text to search for in issues
 - `limit` (integer, optional): Maximum number of issues to return. Default: `25`, Max: `1000`
 - `offset` (integer, optional): Number of issues to skip for pagination. Default: `0`
-- `include_pagination_info` (boolean, optional): Return structured response with pagination metadata. Default: `false`
+- `include_pagination_info` (boolean, optional): Return structured response with pagination metadata. Default: `false`. The Search API reports no `total_count`, so `total` is always `null` ("not reported") and `has_next` uses the full-page inference: `true` whenever the page came back full, which is only ever optimistic and costs one wasted request at worst
 - `fields` (array of strings, optional): List of field names to include in results. Default: `null` (all fields)
   - Available fields: `id`, `subject`, `description`, `project`, `status`, `priority`, `tracker`, `author`, `assigned_to`, `created_on`, `updated_on`, `custom_fields` — `tracker` is returned by default. Naming `custom_fields` hydrates the results through the issues endpoint, which renders the values; there is no `relations` here, since this tool never requests that include
   - Special values: `["*"]` or `["all"]` for all fields
@@ -902,6 +902,7 @@ search_redmine_issues(
 # {
 #   "issues": [...],
 #   "pagination": {
+#     "total": null,
 #     "limit": 25,
 #     "offset": 0,
 #     "count": 25,
