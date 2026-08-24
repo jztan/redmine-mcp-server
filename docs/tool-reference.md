@@ -348,6 +348,8 @@ many requests as it needs.
 
 List the ids and names of the issue custom fields enabled for a project.
 
+**OAuth scopes:** `view_project` and `view_issues`. Both are required: `view_project` for `projects#show`, and `view_issues` for the include, which Redmine renders only for a caller holding it. `view_project` being a `:public => true` permission is not an exemption -- `Role#allowed_permissions` intersects the public permissions with the token's scopes too.
+
 **Parameters:**
 - `project_id` (integer or string, required): Project ID (numeric) or identifier (string)
 - `tracker_id` (integer, optional): Restrict output to fields applicable to the given tracker ID. Requires readable tracker bindings, which stock Redmine does not provide -- see below
@@ -381,7 +383,9 @@ The keys are kept rather than dropped so the response shape is stable across dep
 list_project_issue_custom_fields(project_id="pipeline", tracker_id=5)
 ```
 
-Against a stock Redmine this returns an `error`, because tracker bindings are part of the admin-only definition and the filter cannot be applied. It previously returned every field in the project, which a caller had no way to distinguish from a filtered list. Omit `tracker_id` to list every field enabled for the project.
+Against a stock Redmine this returns an `error` with `code: "TRACKER_BINDINGS_UNREADABLE"` and a `hint`, because tracker bindings are part of the admin-only definition and the filter cannot be applied. It previously returned every field in the project, which a caller had no way to distinguish from a filtered list. Omit `tracker_id` to list every field enabled for the project.
+
+The `error` describes what this particular response carried rather than asserting what Redmine always does, since bindings *are* readable on a payload that includes them; the standing Redmine explanation is in the `hint`.
 
 **⚠️ `is_required` caveat (#119):** even where the flag *is* readable it only reflects the custom field *definition*. Workflow rules, role-based field permissions, and tracker-bound required-field settings can still cause `create_redmine_issue` / `update_redmine_issue` to reject with `"<field> cannot be blank"` for a field that this tool returns with `is_required: false`. No general-purpose Redmine API exposes the "effective" required state.
 

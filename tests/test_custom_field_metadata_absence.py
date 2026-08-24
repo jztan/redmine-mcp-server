@@ -37,7 +37,15 @@ UNKNOWABLE_KEYS = (
 )
 
 
-class IncludeField:
+class _Field:
+    """Base for the include fakes: carries only what the include carries."""
+
+    def __init__(self, field_id, name):
+        self.id = field_id
+        self.name = name
+
+
+class IncludeField(_Field):
     """A custom field as python-redmine builds it from the project include.
 
     Carries ``id`` and ``name``; every other attribute raises
@@ -45,25 +53,17 @@ class IncludeField:
     python-redmine does for an attribute absent from the response.
     """
 
-    def __init__(self, field_id, name):
-        self.id = field_id
-        self.name = name
-
     def __getattr__(self, attr):
         raise ResourceAttrError()
 
 
-class RelaxedIncludeField:
+class RelaxedIncludeField(_Field):
     """The same payload under a ``raise_attr_exception=False`` client.
 
     python-redmine then returns ``None`` for a missing attribute instead of
     raising. ``None`` is the honest answer either way -- what must not happen
     is it being coerced to ``False`` or ``[]``.
     """
-
-    def __init__(self, field_id, name):
-        self.id = field_id
-        self.name = name
 
     def __getattr__(self, attr):
         return None
@@ -102,23 +102,20 @@ class FakeProject:
 class TestSerializerNeverInvents:
     """The serializer reports absence as absence."""
 
-    def test_include_payload_yields_null_for_every_unknowable_key(self):
-        result = _custom_field_to_dict(IncludeField(6, "Size"))
+    @pytest.mark.parametrize("field_cls", [IncludeField, RelaxedIncludeField])
+    def test_every_unknowable_key_is_null(self, field_cls):
+        """Absence answers null under both client configurations.
+
+        The regression this guards: ``false`` and ``[]`` are byte-identical
+        to real answers, so a caller cannot tell an invented default from a
+        value Redmine actually sent. ``is None`` covers all of them at once.
+        """
+        result = _custom_field_to_dict(field_cls(6, "Size"))
 
         assert result["id"] == 6
         assert result["name"] == "Size"
         for key in UNKNOWABLE_KEYS:
             assert result[key] is None, f"{key} was invented"
-
-    def test_no_unknowable_key_is_a_plausible_default(self):
-        """The regression this guards: false and [] read as real answers."""
-        result = _custom_field_to_dict(IncludeField(6, "Size"))
-
-        assert result["is_required"] is not False
-        assert result["multiple"] is not False
-        assert result["field_format"] != ""
-        assert result["possible_values"] != []
-        assert result["trackers"] != []
 
     def test_required_field_does_not_report_false(self):
         """Acceptance test: a field marked Required must not come back false.
@@ -132,12 +129,6 @@ class TestSerializerNeverInvents:
 
         assert result["is_required"] is None
         assert result["is_required"] is not False
-
-    def test_relaxed_client_none_is_not_coerced(self):
-        result = _custom_field_to_dict(RelaxedIncludeField(6, "Size"))
-
-        for key in UNKNOWABLE_KEYS:
-            assert result[key] is None, f"{key} was coerced from None"
 
     def test_real_metadata_passes_through(self):
         result = _custom_field_to_dict(AdminField(6, "Size", [Tracker(5, "Bug")]))
@@ -164,10 +155,8 @@ class TestTrackerFilterHonesty:
         class FakeClient:
             def __init__(self):
                 self.project = self
-                self.calls = []
 
             def get(self, project_id, **kwargs):
-                self.calls.append((project_id, kwargs))
                 return self.project_obj
 
         fake = FakeClient()
@@ -189,8 +178,13 @@ class TestTrackerFilterHonesty:
         result = await list_project_issue_custom_fields(project_id=41, tracker_id=5)
 
         assert isinstance(result, dict)
+        assert result["code"] == "TRACKER_BINDINGS_UNREADABLE"
         assert "tracker_id" in result["error"]
-        assert "administrators" in result["error"]
+        # The error describes this response; the standing Redmine explanation
+        # belongs in the hint, so it cannot become a false claim on a
+        # deployment where bindings really are readable.
+        assert "Omit tracker_id" in result["hint"]
+        assert "admin-only" in result["hint"]
 
     @pytest.mark.asyncio
     async def test_without_tracker_id_the_list_is_returned(self, client):

@@ -52,21 +52,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [#43407](https://www.redmine.org/issues/43407), the last asking for exactly
   these keys.
   ([#ISSUE](https://github.com/jztan/redmine-mcp-server/issues/ISSUE))
-- `list_project_issue_custom_fields` now returns an error when `tracker_id` is
-  passed and the response does not describe tracker bindings, which on a stock
-  Redmine is always. It used to read absent bindings as "applies to every
+- `list_project_issue_custom_fields` now returns an error --
+  `code: "TRACKER_BINDINGS_UNREADABLE"`, with the recovery in `hint` -- when
+  `tracker_id` is passed and the response does not describe tracker bindings,
+  which on a stock Redmine is always. It used to read absent bindings as "applies to every
   tracker" and return every field in the project, indistinguishable from a
   filtered list. Where bindings *are* readable, a field bound to no tracker is
   now excluded rather than treated as global: Redmine computes an issue's
   fields as `project.all_issue_custom_fields & tracker.custom_fields`
   (`app/models/issue.rb`), so an unbound field reaches no issue.
-- `list_project_issue_custom_fields` requires the `view_issues` scope instead
-  of none. Redmine renders the `issue_custom_fields` include only for a caller
-  holding `view_issues`, and omits the array otherwise, so a token without it
-  got `[]` -- which reads as "this project has no custom fields". The scope
-  map justified the empty entry with a comment about `/custom_fields.json`
-  being admin-gated, an endpoint this tool has never called.
-### Added
+- `list_project_issue_custom_fields` requires the `view_project` and
+  `view_issues` scopes instead of none. Redmine renders the
+  `issue_custom_fields` include only for a caller holding `view_issues`, and
+  omits the array otherwise, so a token without it got `[]` -- which reads as
+  "this project has no custom fields". `view_project` is needed for
+  `projects#show` itself: it is a `:public => true` permission, which is not an
+  exemption, because `Role#allowed_permissions` intersects the public
+  permissions with the token's scopes too (`scope.present? ? unscoped & scope
+  : unscoped`), so a token scoped only `view_issues` is refused by Redmine
+  after this server had already admitted the call. The scope map justified the
+  empty entry with a comment about `/custom_fields.json` being admin-gated, an
+  endpoint this tool has never called.
 - `list_redmine_projects` now returns the six fields Redmine's project index
   renders and this serializer discarded: `homepage`, `parent`, `status`,
   `is_public`, `inherit_members` and `updated_on`. `status` is Redmine's

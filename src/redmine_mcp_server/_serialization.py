@@ -3,7 +3,7 @@
 import os
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import urlsplit, urlunsplit
 
 # Default cap on list_* tool results. Unbounded iteration over resource
@@ -40,6 +40,32 @@ def wrap_insecure_content(content: Any) -> Any:
     return (
         f"<insecure-content-{boundary}>\n{content}\n" f"</insecure-content-{boundary}>"
     )
+
+
+def _payload_attr(
+    resource: Any, name: str, convert: Optional[Callable[[Any], Any]] = None
+) -> Any:
+    """Read an attribute the Redmine payload may not have carried.
+
+    A missing attribute and a JSON null both answer ``None`` -- "not readable
+    on this token", never "false" or "empty". python-redmine raises
+    ``ResourceAttrError`` (an ``AttributeError`` subclass) for an attribute
+    absent from the response, which the three-argument ``getattr`` turns into
+    the default; a client configured with ``raise_attr_exception=False``
+    returns ``None`` directly. Both land here as ``None``, which is the honest
+    answer either way.
+
+    ``convert`` runs **only** on a value the payload really carried, so a
+    ``bool`` or list coercion can never manufacture ``False`` or ``[]`` for a
+    key Redmine never sent. That is the whole point: a plausible default is
+    indistinguishable from a real answer, so it must not be reachable.
+
+    Note this reads through ``Resource.__getattr__``, which for a name in the
+    resource's ``_includes`` or ``_relations`` will issue a second request
+    rather than report absence -- see :func:`_included_list` for that case.
+    """
+    value = getattr(resource, name, None)
+    return value if value is None or convert is None else convert(value)
 
 
 def _rewrite_to_public_url(url: Any) -> Any:
