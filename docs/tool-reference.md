@@ -210,13 +210,18 @@ This allows LLM consumers to distinguish trusted tool output from untrusted user
 
 Lists accessible projects in the Redmine instance, optionally narrowed server-side.
 
+**Returns only *active* projects unless `filters` says otherwise.** Redmine's `ProjectQuery` starts with a `status = 1` filter already set (`self.filters ||= {'status' => {:operator => "=", :values => ['1']}}`), so a call passing no `status` answers with active projects alone while looking like the whole list. Pass `filters={"status": "1|5"}` for closed projects alongside active ones. This tool keeps Redmine's own default deliberately rather than overriding it. Only `1` (active) and `5` (closed) are reachable: archived and scheduled-for-deletion come from `ProjectAdminQuery`, which this endpoint does not use, and `status` is a `:list` filter taking only `=` and `!`, so `"*"` is read as a literal value and matches nothing.
+
 **Parameters:**
 - `include_custom_fields` (boolean, optional): Add `custom_fields` to each project. Default: `false`
 - `limit` (integer, optional): Maximum number of projects to return, `1`–`1000`. Omitted by default, which returns every visible project — and omitting it is also the cheapest way to do that. With no limit python-redmine reads the collection's `total_count` and stops there; a supplied limit is paged in full regardless of how many projects exist, so `limit=1000` against an instance holding seven costs ten requests and returns the same seven. Ask for a number you want, not a large one meaning "all"
 - `offset` (integer, optional): Projects to skip before collecting results. Default: `0`
+- `include_pagination_info` (boolean, optional): Return `{"projects": [...], "pagination": {...}}` instead of a bare array. Default: `false`. The same envelope and keys as [`list_redmine_issues`](#list_redmine_issues) — `total`, `limit`, `offset`, `count`, `has_next`, `has_previous`, `next_offset`, `previous_offset`. `total` is read off the same response the rows came from, so it costs no extra request, and it is always reported: Redmine builds `@project_count` from `@query.result_count`, the same query as the rows, so a filter narrows the count along with the collection
 - `filters` (object, optional): Redmine query filters to narrow the list, for the filters this signature does not name — e.g. `{"cf_42": "Gold"}`. Accepted keys and value types are listed below
 
-**Returns:** List of project dictionaries with id, name, identifier, description and created_on, plus `custom_fields` when requested
+**Returns:** List of project dictionaries carrying `id`, `name`, `identifier`, `description`, `homepage`, `parent`, `status`, `is_public`, `inherit_members`, `created_on` and `updated_on` — what Redmine's project index renders — plus `custom_fields` when requested. With `include_pagination_info=true`, `{"projects": [...], "pagination": {...}}` instead.
+
+`status` is Redmine's integer code (`1` active, `5` closed). `parent` is `{id, name}` or `null`; Redmine renders it only when the parent exists **and** is visible to the caller, so `null` means top-level **or** a parent this caller cannot see, and the two cannot be told apart. A key the payload did not carry is `null` rather than a substituted default — for `is_public` and `inherit_members` especially, a `false` would read as a setting Redmine never sent.
 
 **Example:**
 ```json
@@ -226,26 +231,42 @@ Lists accessible projects in the Redmine instance, optionally narrowed server-si
     "name": "My Project",
     "identifier": "my-project",
     "description": "Project description",
-    "created_on": "2025-01-15T10:30:00"
+    "homepage": "https://example.com",
+    "parent": {"id": 7, "name": "Umbrella"},
+    "status": 1,
+    "is_public": true,
+    "inherit_members": false,
+    "created_on": "2025-01-15T10:30:00",
+    "updated_on": "2025-03-20T09:15:00"
   }
 ]
 ```
 
-**Example with `include_custom_fields=True`:**
+**Example with `include_custom_fields=True`:** each entry also carries
 ```json
-[
-  {
-    "id": 1,
-    "name": "My Project",
-    "identifier": "my-project",
-    "description": "Project description",
-    "created_on": "2025-01-15T10:30:00",
     "custom_fields": [
       {"id": 12, "name": "Size", "value": "S"}
     ]
-  }
-]
 ```
+
+**Example with `include_pagination_info=True`:**
+```json
+{
+  "projects": [ ... ],
+  "pagination": {
+    "total": 250,
+    "limit": 100,
+    "offset": 0,
+    "count": 100,
+    "has_next": true,
+    "has_previous": false,
+    "next_offset": 100,
+    "previous_offset": null
+  }
+}
+```
+
+With no `limit` there is no page size, so the envelope describes one complete read: `has_next` is `false`, `next_offset` is `null`, and `previous_offset` points back at the start of the collection rather than at the offset the caller is already on.
 
 **Project custom field values:** Redmine renders them on `GET /projects.json`
 unconditionally, so `include_custom_fields=True` adds them with no per-project

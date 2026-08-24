@@ -7,6 +7,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Fixed
+- Documentation no longer describes `list_redmine_projects` as listing every
+  accessible project. Redmine's `ProjectQuery` starts with a `status = 1`
+  filter already set, so a call passing no `status` has always answered with
+  active projects alone while reading as the whole list -- a partial answer an
+  LLM had no way to know was partial. The tool keeps Redmine's default rather
+  than overriding it, and now says so, along with the `filters={"status":
+  "1|5"}` remedy and the fact that only `1` and `5` are reachable here:
+  archived and scheduled-for-deletion belong to `ProjectAdminQuery`, which this
+  endpoint does not use
+  ([#ISSUE](https://github.com/jztan/redmine-mcp-server/issues/ISSUE)).
+
 ### Added
 - `list_redmine_projects` now returns the six fields Redmine's project index
   renders and this serializer discarded: `homepage`, `parent`, `status`,
