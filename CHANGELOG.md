@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deliberately not offered: Redmine gates that block on the caller being an
   admin, so a non-admin would get a 200 with the key missing, which is
   indistinguishable from belonging to no groups
-  ([#ISSUE](https://github.com/jztan/redmine-mcp-server/issues/ISSUE)).
+  ([#236](https://github.com/jztan/redmine-mcp-server/issues/236)).
 
 ### Fixed
 - `get_current_user` docs said the tool resolves to `GET /my/account.json`.

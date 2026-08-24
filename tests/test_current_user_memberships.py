@@ -1,5 +1,5 @@
 """``get_current_user(include_memberships=True)`` returns the caller's
-project memberships in one request (#ISSUE).
+project memberships in one request (#236).
 
 Before this, nothing exposed "which projects do I hold, with which roles":
 ``get_current_user`` hand-built eight profile keys and ``list_project_members``
