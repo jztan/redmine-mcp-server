@@ -324,7 +324,11 @@ class TestPaginationThroughTheRealClient:
 
 class TestUnchangedBehaviour:
     @pytest.mark.asyncio
-    async def test_default_keys_are_unchanged(self):
+    async def test_default_keys_are_the_full_rendered_set(self):
+        """Every key `index.api.rsb` renders, and nothing invented.
+
+        Was five keys; the six Redmine also sends were being dropped.
+        """
         manager = _RecordingProjectManager()
         with _patched(manager):
             result = await list_redmine_projects()
@@ -333,7 +337,13 @@ class TestUnchangedBehaviour:
             "name",
             "identifier",
             "description",
+            "homepage",
+            "parent",
+            "status",
+            "is_public",
+            "inherit_members",
             "created_on",
+            "updated_on",
         }
 
     @pytest.mark.asyncio

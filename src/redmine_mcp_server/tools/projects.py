@@ -330,10 +330,19 @@ def list_redmine_projects(
     Returns:
         A list of dictionaries, each representing a project -- or, with
         ``include_pagination_info``, a dict of ``projects`` and
-        ``pagination``. With ``include_custom_fields``, each project also
-        carries ``custom_fields``, a list of ``{id, name, value}`` entries --
-        empty if the project has none. On failure, a dict with an ``error``
-        key.
+        ``pagination``. Each project carries ``id``, ``name``,
+        ``identifier``, ``description``, ``homepage``, ``parent``,
+        ``status``, ``is_public``, ``inherit_members``, ``created_on`` and
+        ``updated_on``, which is what Redmine's project index renders.
+        ``status`` is Redmine's integer code -- ``1`` active, ``5`` closed.
+        ``parent`` is ``{id, name}``, or ``null``: Redmine renders it only
+        when the parent exists *and* is visible to the caller, so ``null``
+        means top-level **or** a parent this caller cannot see, and the two
+        cannot be told apart. A key the payload did not carry is ``null``
+        rather than a substituted default. With ``include_custom_fields``,
+        each project also carries ``custom_fields``, a list of
+        ``{id, name, value}`` entries -- empty if the project has none. On
+        failure, a dict with an ``error`` key.
     """
     if limit is not None and not _is_positive_int(limit):
         return {"error": "limit must be a positive integer."}
@@ -392,7 +401,18 @@ def list_redmine_projects(
                 "name": project.name,
                 "identifier": project.identifier,
                 "description": getattr(project, "description", ""),
+                # The rest of what `app/views/projects/index.api.rsb` renders
+                # and this serializer used to drop. `None` marks a key the
+                # payload did not carry, so an absent value is never returned
+                # as a real one -- `is_public` and `inherit_members` above all,
+                # where a fabricated `False` reads as a deliberate setting.
+                "homepage": getattr(project, "homepage", None),
+                "parent": _named_ref(getattr(project, "parent", None)),
+                "status": getattr(project, "status", None),
+                "is_public": getattr(project, "is_public", None),
+                "inherit_members": getattr(project, "inherit_members", None),
                 "created_on": _safe_isoformat(getattr(project, "created_on", None)),
+                "updated_on": _safe_isoformat(getattr(project, "updated_on", None)),
             }
             if include_custom_fields:
                 entry["custom_fields"] = _custom_fields_to_list(project)

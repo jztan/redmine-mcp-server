@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- `list_redmine_projects` now returns the six fields Redmine's project index
+  renders and this serializer discarded: `homepage`, `parent`, `status`,
+  `is_public`, `inherit_members` and `updated_on`. `status` is Redmine's
+  integer code (`1` active, `5` closed), which is what makes a
+  `filters={"status": "1|5"}` read legible -- until now a closed project
+  could be fetched but not identified. `parent` is `{id, name}` like every
+  other reference in this server, and `null` where Redmine omitted it, which
+  it does unless the parent exists *and* is visible to the caller: `null`
+  therefore means top-level **or** a parent this caller cannot see, and the
+  documentation says so rather than promising the first. A key the payload
+  did not carry is `null` and never a substituted default -- for
+  `is_public` and `inherit_members` in particular, a `False` would read as a
+  setting Redmine never sent
+  ([#ISSUE](https://github.com/jztan/redmine-mcp-server/issues/ISSUE)).
 - `list_redmine_projects` can return pagination metadata with
   `include_pagination_info=True` -- `{"projects": [...], "pagination": {...}}`,
   the same envelope and the same keys `list_redmine_issues` returns -- so a
