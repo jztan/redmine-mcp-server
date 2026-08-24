@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   archived and scheduled-for-deletion belong to `ProjectAdminQuery`, which this
   endpoint does not use
   ([#238](https://github.com/jztan/redmine-mcp-server/issues/238)).
+- `get_current_user` docs said the tool resolves to `GET /my/account.json`.
+  It resolves to `GET /users/current.json`; python-redmine only rewrites the
+  path for the `me` id, not `current`. The distinction matters because
+  `/my/account.json` renders no memberships at all.
 
 ### Added
 - `list_redmine_projects` now returns the six fields Redmine's project index
@@ -94,6 +98,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   out-of-range value comes back as the standard `INVALID_ARGUMENTS` envelope
   instead of an ad-hoc error string
   ([#238](https://github.com/jztan/redmine-mcp-server/issues/238)).
+- `manage_contact` `list` can return pagination metadata with
+  `include_pagination_info=True` -- `{"contacts": [...], "pagination": {...}}`,
+  the same envelope and the same keys `list_redmine_issues` returns -- so a
+  truncated read is visible from the response instead of only by paging until
+  an empty page comes back. `total` is the `total_count` the contacts response
+  already carries alongside the collection, so it costs no extra request, and
+  `has_next` is computed from it rather than inferred from a page that came
+  back full: the inference the issue tools still use reports one page too many
+  whenever the collection size is an exact multiple of the page size. Where no
+  total measures the collection being paged, `total` is null -- "not reported"
+  rather than a number nothing measured -- and `has_next` falls back to that
+  same full-page inference rather than going null, because a null is falsy and
+  a caller looping on it would stop mid-collection. Passing `search` is one
+  such case: the CRM plugin counts the collection before applying the search,
+  so its total does not describe the searched page. The default return is
+  still a bare array
+  ([#234](https://github.com/jztan/redmine-mcp-server/issues/234)).
+- `get_current_user` can return the caller's project memberships via
+  `include_memberships=True`, as `[{id, project: {id, name}, roles: [{id,
+  name}]}]` using Redmine's own keys. A role inherited from a group
+  membership carries `inherited: true`, the key being absent for a direct
+  role exactly as Redmine renders it. Previously nothing answered "which
+  projects do I hold, with which roles": `list_project_members` costs one
+  request per project. The include rides the existing
+  `GET /users/current.json` call, so this adds no request and needs no new
+  scope -- Redmine gates neither the endpoint nor the memberships block on
+  a permission, and already narrows the list to projects visible to the
+  caller. `groups`, the other include python-redmine accepts here, is
+  deliberately not offered: Redmine gates that block on the caller being an
+  admin, so a non-admin would get a 200 with the key missing, which is
+  indistinguishable from belonging to no groups
+  ([#236](https://github.com/jztan/redmine-mcp-server/issues/236)).
 
 ## [2.12.0] - 2026-08-22
 ### Added

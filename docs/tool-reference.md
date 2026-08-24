@@ -1750,11 +1750,16 @@ list_redmine_users(name="alice")
 
 ### `get_current_user`
 
-Retrieve the currently authenticated user's profile. Resolves to `GET /my/account.json`, so works for any authenticated user (not admin-only). Useful when a user asks the LLM to do something "for me" — the LLM can call this to resolve the current user's ID.
+Retrieve the currently authenticated user's profile. Resolves to `GET /users/current.json`, and works for any authenticated user (not admin-only) — Redmine exempts the `show` action from its admin filter and resolves the `current` id behind a plain login check. Useful when a user asks the LLM to do something "for me" — the LLM can call this to resolve the current user's ID.
 
-**Parameters:** None.
+With `include_memberships` it also answers "which projects am I a member of, and with which roles" in the same request. The alternative is `list_project_members` once per project.
 
-**Returns:** Dict with `id, login, firstname, lastname, mail, admin, created_on, last_login_on`.
+**Parameters:**
+- `include_memberships` (boolean, optional): Add `memberships` to the response. Default `false`. Costs no extra request — the include rides the same call.
+
+**Returns:** Dict with `id, login, firstname, lastname, mail, admin, created_on, last_login_on`. With `include_memberships`, also `memberships`: a list of `{id, project: {id, name}, roles: [{id, name}]}` entries. A role inherited from a group membership carries `inherited: true`; Redmine omits the key for a direct role, and so does this tool. Redmine limits the list to projects visible to the caller, which covers active and closed projects but not archived ones -- so an empty list means "holds none that are visible", not necessarily "holds none".
+
+Groups are deliberately not offered as an include: Redmine gates that block on the caller being an admin, so a non-admin would get a success response with the key simply missing — indistinguishable from "belongs to no groups".
 
 **Example:**
 ```json
@@ -1767,6 +1772,25 @@ Retrieve the currently authenticated user's profile. Resolves to `GET /my/accoun
   "admin": false,
   "created_on": "2025-01-15T10:00:00",
   "last_login_on": "2026-04-16T09:30:00"
+}
+```
+
+**Example** (`include_memberships=True`):
+```json
+{
+  "id": 5,
+  "login": "alice",
+  "admin": false,
+  "memberships": [
+    {
+      "id": 12,
+      "project": {"id": 1, "name": "Website"},
+      "roles": [
+        {"id": 3, "name": "Developer"},
+        {"id": 4, "name": "Manager", "inherited": true}
+      ]
+    }
+  ]
 }
 ```
 
@@ -2466,6 +2490,7 @@ Requires the **RedmineUP CRM** plugin and `REDMINE_CRM_ENABLED=true`. Visibility
 - `assigned_to_id` (integer, optional): For `list`, filter by assignee user ID
 - `limit` (integer, optional): For `list`, max results per call (default `100`, capped at 100 by Redmine)
 - `offset` (integer, optional): For `list`, contacts to skip — needed to page past the first 100
+- `include_pagination_info` (boolean, optional): For `list`, return `{"contacts": [...], "pagination": {...}}` instead of a bare array. Default: `false`. The same envelope and the same keys as [`list_redmine_issues`](#list_redmine_issues) — `total`, `limit`, `offset`, `count`, `has_next`, `has_previous`, `next_offset`, `previous_offset`
 - `contact_id` (integer): Required for all actions except `list` and `create`
 - `include` (string, optional): For `get`, comma-separated includes (`notes`, `deals`, `contacts`)
 - `first_name` (string): Required for `create`. Filters a `list` where `REDMINE_CRM_EDITION=pro`
@@ -2477,7 +2502,7 @@ Requires the **RedmineUP CRM** plugin and `REDMINE_CRM_ENABLED=true`. Visibility
 - `fields` (dict): For `update`, fields to update. Allowed keys: `first_name`, `last_name`, `middle_name`, `company`, `job_title`, `phone`, `email`, `website`, `skype_name`, `birthday`, `background`, `address_attributes`, `tag_list`, `is_company`, `assigned_to_id`, `custom_fields`, `visibility`, `project_id`. For `create`, additional fields beyond the named parameters
 
 **Returns:**
-- `list`: array of contact dicts
+- `list`: array of contact dicts — or, with `include_pagination_info=true`, `{"contacts": [...], "pagination": {...}}`
 - `get`/`create`: contact dict
 - `update`: `{"success": true, "contact_id": N, "updated_fields": [...]}`
 - `delete`: `{"success": true, "contact_id": N, "message": ...}`
@@ -2497,6 +2522,28 @@ manage_contact(
     assigned_to_id=5,
     limit=50,
 )
+
+# Page a large CRM, and see from the response how much is left
+manage_contact(
+    action="list",
+    limit=100,
+    offset=0,
+    include_pagination_info=True,
+)
+# Returns:
+# {
+#   "contacts": [...],
+#   "pagination": {
+#     "total": 250,
+#     "limit": 100,
+#     "offset": 0,
+#     "count": 100,
+#     "has_next": true,
+#     "has_previous": false,
+#     "next_offset": 100,
+#     "previous_offset": null
+#   }
+# }
 
 # Fetch a single contact with related notes and deals
 manage_contact(action="get", contact_id=42, include="notes,deals")
@@ -2527,6 +2574,10 @@ manage_contact(action="remove_from_project", contact_id=42, project_id="support"
 
 **Notes:**
 - `list` and `get` are allowed in read-only mode; `create`, `update`, `delete`, `assign_to_project`, and `remove_from_project` are blocked when `REDMINE_MCP_READ_ONLY=true`.
+- **Pagination metadata.** `total` is the `total_count` the contacts response carries alongside the collection itself, so it costs no extra request and a truncated read is visible without paging until an empty page comes back. The CRM plugin renders it: `app/views/contacts/index.api.rsb` wraps the array in `api_meta(:total_count => @contacts_count, :offset => @offset, :limit => @limit)` (confirmed on 4.4.5 Pro).
+- **`has_next` is measured, not guessed.** A further page exists when `offset + limit` is below the total, rather than when "the page came back full", so a collection whose size is an exact multiple of the page size is not reported as having one more page than it has. `list_redmine_issues` still infers `has_next` from a full page and can be wrong on that boundary.
+- **`total` is `null` when no reported total measures the collection being paged.** Read it as "not reported", never as a number. Two cases produce it. A build that renders no `total_count` at all is one. The other is `search`: `ContactsController#index` counts with `@query.object_count`, which applies the query filters but *not* `params[:search]` — `ContactQuery` registers no `search` filter — while the rows come from `results_scope(:search => ...)`. The reported total therefore describes the collection before the search, so it is not offered as this page's total. Every other narrowing parameter this tool sends (`project_id`, `tags`, `assigned_to_id`, `author_id` and the Pro attribute filters) *is* a registered filter, so those narrow the count too and `total` stays exact. Whenever `total` is `null`, `has_next` falls back to the full-page inference rather than going `null` too, because a `null` is falsy and a caller testing it would stop mid-collection.
+- **What the other keys mean.** `count` is the contacts actually returned in this response. `limit` and `offset` are the window Redmine reports having applied, falling back to the requested values when it reports none, so `next_offset` lands on a real page boundary even if a build serves a smaller page than was asked for. `has_previous` and `previous_offset` follow `offset` alone and never depend on the total.
 - **PII handling:** contact `email`, `phone`, `address`, `birthday`, `website` are returned as-is to the caller; the module never logs them. Error messages reference only `contact_id`.
 - **Prompt-injection wrapping:** `background` is free text and is wrapped in `<insecure-content>` boundary tags. Display fields (`first_name`, `last_name`, `middle_name`, `company`, `job_title`, `assigned_to.name`), and the `address` sub-document are returned verbatim, matching the policy set in #109 for short label-shaped values elsewhere in the server. Custom field values are returned verbatim too, consistent with issue custom fields — but note a `text`-format field holds free text rather than a short label, so treat those as untrusted.
 
