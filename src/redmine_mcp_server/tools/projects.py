@@ -289,8 +289,10 @@ def list_redmine_projects(
             definition and which discard every filter built from the rest of
             the request, and ``limit`` and ``offset``, which are named
             parameters here. Each value must be a single scalar -- a string,
-            number, boolean, date or datetime -- never a list, a dict or
-            ``None``; an operator rides inside the value as a prefix Redmine
+            number, date or datetime -- never a list, a dict, ``None`` or a
+            ``bool`` (which is sent as ``True`` and matches nothing; write a
+            yes/no filter as ``"1"`` or ``"0"``); an operator rides inside
+            the value as a prefix Redmine
             strips off -- ``{"created_on": ">=2024-01-01"}``,
             ``{"name": "~api"}`` -- and alternatives are joined with ``|``, as
             in ``{"status": "1|5"}``. Which operators a filter takes depends

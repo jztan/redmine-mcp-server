@@ -293,9 +293,12 @@ instead. `limit` and `offset` are refused inside `filters` too — pass them as
 the named parameters, which validate them.
 
 **Accepted values.** Each value must be a single scalar: a string, integer,
-float, boolean, `date` or `datetime`. Lists, dicts and `None` are refused. A
-filter's operator travels inside the value as a prefix Redmine strips off, and
-alternatives are joined with `|`, so a scalar is all a filter ever needs:
+float, `date` or `datetime`. Lists, dicts and `None` are refused, and so is a
+Python `bool` — it urlencodes as `True`, while a yes/no filter's values are
+`"1"` and `"0"`, so it would be accepted and then match nothing. Write
+`{"is_public": "1"}`. A filter's operator travels inside the value as a prefix
+Redmine strips off, and alternatives are joined with `|`, so a scalar is all a
+filter ever needs:
 
 ```python
 list_redmine_projects(filters={"created_on": ">=2024-01-01", "name": "~api"})

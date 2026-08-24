@@ -617,8 +617,6 @@ class TestValueTypes:
             "Gold",
             42,
             2.5,
-            True,
-            False,
             date(2026, 1, 2),
             datetime(2026, 1, 2, 3, 4, 5),
         ],
@@ -628,6 +626,23 @@ class TestValueTypes:
         with _patched(manager):
             await list_redmine_projects(filters={"cf_42": value})
         assert manager.calls == [{"cf_42": value}]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("value", [True, False])
+    async def test_a_bool_is_refused_rather_than_matching_nothing(self, value):
+        # A bool passes any reasonable "is this a scalar" test and then fails
+        # silently: requests urlencodes it as `is_public=True`, and the values
+        # a `:list` filter accepts are "1" and "0"
+        # (Query#operators_by_filter_type gives :list only "=" and "!"), so
+        # Redmine builds `IN ('True')` and matches nothing -- a 200 with an
+        # empty list, indistinguishable from a filter that legitimately found
+        # nothing. Refusing it names the spelling that works instead.
+        manager = _RecordingProjectManager()
+        with _patched(manager):
+            result = await list_redmine_projects(filters={"is_public": value})
+        assert isinstance(result, dict) and "error" in result
+        assert '"1" or "0"' in result["error"]
+        assert manager.calls == []
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(

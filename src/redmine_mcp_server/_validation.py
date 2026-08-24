@@ -49,7 +49,7 @@ def _reject_reserved_query_keys(filters: Any) -> Optional[str]:
 # and datetime strings before the request goes out; `bool` is listed for
 # intent, `is_public` being a yes/no filter, even though it is an `int`
 # subclass already.
-_FILTER_VALUE_TYPES = (str, int, float, bool, date, datetime)
+_FILTER_VALUE_TYPES = (str, int, float, date, datetime)
 
 # A custom field filter, in every spelling Redmine registers.
 # `Query#add_custom_field_filter` names it `cf_<id>`;
@@ -116,7 +116,11 @@ def _reject_non_scalar_filter_values(filters: Any) -> Optional[str]:
 
     A Redmine filter value is one string: ``add_short_filter`` strips an
     operator prefix off it and splits the rest on ``|``, so nothing a filter
-    needs is a list, a dict or ``None``. Constraining the values also keeps a
+    needs is a list, a dict or ``None``. ``bool`` is refused too -- it
+    urlencodes as ``True``, and a ``:list`` filter's values are ``"1"`` and
+    ``"0"``, so it would pass a type check and then match nothing.
+
+    Constraining the values also keeps a
     ``filters`` dict from reaching the parts of python-redmine's
     ``BaseResource.decode`` that treat a parameter as something other than a
     query parameter -- one branch walks a list of dicts and uploads each
@@ -129,19 +133,21 @@ def _reject_non_scalar_filter_values(filters: Any) -> Optional[str]:
     bad = sorted(
         str(key)
         for key, value in filters.items()
-        if not isinstance(value, _FILTER_VALUE_TYPES)
+        if isinstance(value, bool) or not isinstance(value, _FILTER_VALUE_TYPES)
     )
     if not bad:
         return None
     return (
         "filters values must each be a single scalar -- str, int, float, "
-        f"bool, date or datetime -- and {', '.join(bad)} is not. A filter's "
+        f"date or datetime -- and {', '.join(bad)} is not. A filter's "
         "operator belongs inside the value, as a prefix Redmine strips off "
         '(">=2024-01-01", "~api"), and alternatives are joined with "|" '
         '("1|5"). Neither a list nor a dict reaches Redmine as a filter -- '
         "repeated query parameters keep only the last value -- and None is "
         "dropped from the query string before it is sent, either of which "
-        "would leave the collection unnarrowed with a 200."
+        "would leave the collection unnarrowed with a 200. A bool is refused "
+        'for the same reason: it is sent as "True", which no Redmine filter '
+        'value matches -- write a yes/no filter as "1" or "0".'
     )
 
 
