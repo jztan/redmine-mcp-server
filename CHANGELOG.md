@@ -108,6 +108,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `list_redmine_projects` filters, pagination and the six dropped fields
   ([#238](https://github.com/jztan/redmine-mcp-server/issues/238),
   [#239](https://github.com/jztan/redmine-mcp-server/pull/239))
+- @aadnehovda, requested MCP tool annotations so clients can distinguish
+  read-only tools
+  ([#204](https://github.com/jztan/redmine-mcp-server/issues/204))
 
 ## [2.12.0] - 2026-08-22
 ### Added
