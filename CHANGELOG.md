@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   such case: the CRM plugin counts the collection before applying the search,
   so its total does not describe the searched page. The default return is
   still a bare array
-  ([#ISSUE](https://github.com/jztan/redmine-mcp-server/issues/ISSUE)).
+  ([#234](https://github.com/jztan/redmine-mcp-server/issues/234)).
 
 ## [2.12.0] - 2026-08-22
 ### Added

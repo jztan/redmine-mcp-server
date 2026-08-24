@@ -1,4 +1,4 @@
-"""``manage_contact(action="list")`` pagination metadata.
+"""``manage_contact(action="list")`` pagination metadata (#234).
 
 The bare array the ``list`` action returns by default says nothing about the
 size of the collection it came from, so a caller cannot tell a complete read
