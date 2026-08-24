@@ -393,3 +393,68 @@ class TestTheErrorEnvelopeIsUnaffected:
 
         assert "error" in result
         assert "projects" not in result
+
+
+class TestAnUnboundedOffsetCostsWhatReadingFromZeroCosts:
+    """``offset`` with no ``limit`` pages past the end of the collection.
+
+    ``bulk_request`` computes ``limit = limit or total_count`` and then pages
+    that many rows *from* ``offset``, rather than up to the end of the
+    collection. The requests past the end come back empty but are still
+    issued, so the request count is ``ceil(total_count / chunk)`` whatever
+    the offset is.
+
+    The rows are right either way -- this is a cost, not a correctness bug,
+    and it belongs to python-redmine rather than to this tool. It is pinned
+    because the parameter description makes a promise about that cost, and
+    an earlier wording claimed paging "runs to the end of the collection
+    from ``offset``", which reads as though a late offset were cheap.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_late_offset_costs_the_same_as_reading_everything(self):
+        client, requested = _client(total=250)
+        with patch("redmine_mcp_server._client.redmine", client):
+            everything = await list_redmine_projects()
+        from_zero = len(requested)
+
+        client, requested = _client(total=250)
+        with patch("redmine_mcp_server._client.redmine", client):
+            tail = await list_redmine_projects(offset=240)
+
+        assert len(everything) == 250
+        assert len(tail) == 10
+        # Ten rows cost what all 250 cost.
+        assert len(requested) == from_zero == 3
+        # Two of the three asked for rows that cannot exist.
+        assert [p["offset"] for p in requested] == [240, 340, 440]
+
+    @pytest.mark.asyncio
+    async def test_an_offset_past_the_end_still_pages(self):
+        client, requested = _client(total=250)
+        with patch("redmine_mcp_server._client.redmine", client):
+            result = await list_redmine_projects(
+                offset=300, include_pagination_info=True
+            )
+
+        assert result["projects"] == []
+        assert len(requested) == 3
+        # The envelope is still honest about the collection behind it.
+        assert result["pagination"]["total"] == 250
+        assert result["pagination"]["count"] == 0
+        assert result["pagination"]["has_next"] is False
+        # And the caller is sent back to the start, not to the offset they
+        # are already sitting on -- there is no page size to step back by.
+        assert result["pagination"]["previous_offset"] == 0
+
+    @pytest.mark.asyncio
+    async def test_pairing_the_offset_with_a_limit_is_the_cheap_form(self):
+        client, requested = _client(total=250)
+        with patch("redmine_mcp_server._client.redmine", client):
+            result = await list_redmine_projects(
+                limit=10, offset=240, include_pagination_info=True
+            )
+
+        assert len(result["projects"]) == 10
+        assert len(requested) == 1
+        assert result["pagination"]["previous_offset"] == 230

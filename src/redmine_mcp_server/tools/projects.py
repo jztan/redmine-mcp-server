@@ -267,12 +267,11 @@ def list_redmine_projects(
     it would be read as a literal value and match nothing.
 
     ``GET /projects.json`` runs the request's parameters through that
-    ``ProjectQuery``, so the collection can be narrowed server-side rather
-    than fetched whole and filtered afterwards. Redmine builds its query from
-    the filter parameters it registers and ignores every other one, answering
-    200 with the unnarrowed collection -- so a filter that did not narrow is
-    indistinguishable from one that matched everything. Check the result
-    against what was asked for instead of assuming the filter applied.
+    ``ProjectQuery``, so the collection is narrowed server-side rather than
+    fetched whole and filtered afterwards. A filter Redmine cannot read is
+    not an error there -- it answers 200 with the collection unnarrowed -- so
+    check the result against what was asked for rather than assuming the
+    filter applied.
 
     With ``include_custom_fields`` this is the only tool that returns project
     custom field *values*. Project custom fields and issue custom fields are
@@ -292,9 +291,12 @@ def list_redmine_projects(
             seven projects costs ten requests and returns the same seven, nine
             of them empty. So ask for a number you want, not a large one
             meaning "all".
-        offset: Projects to skip before collecting results. Without a
-            ``limit``, paging still runs to the end of the collection from
-            ``offset``.
+        offset: Projects to skip before collecting results. With no
+            ``limit`` this costs the same number of requests as reading from
+            zero: python-redmine pages ``total_count`` rows *from* ``offset``
+            rather than up to it, so the requests past the end come back
+            empty. On 250 projects, ``offset=240`` is three requests to
+            return ten rows. Pair a large ``offset`` with a ``limit``.
         include_pagination_info: Return
             ``{"projects": [...], "pagination": {...}}`` rather than a bare
             list (default: False), with the keys ``list_redmine_issues``
@@ -308,27 +310,21 @@ def list_redmine_projects(
             ``{"cf_42": "value"}`` for a project custom field. Accepted keys
             are ``status``, ``id``, ``name``, ``description``, ``parent_id``,
             ``is_public``, ``created_on`` and ``updated_on`` -- the filters
-            ``ProjectQuery`` registers -- plus ``cf_<id>`` for a project
-            custom field, optionally chained as ``cf_<id>.cf_<id>``,
-            ``cf_<id>.due_date`` or ``cf_<id>.status``. Any other key is
-            refused with an error naming that set, ``fields``, ``f`` and
-            ``query_id`` among them, which Redmine reads as the query's own
-            definition and which discard every filter built from the rest of
-            the request, and ``limit``, ``offset`` and
-            ``include_custom_fields``, which are named parameters here.
-            Each value must be a single scalar -- a string,
-            number, date or datetime -- never a list, a dict, ``None`` or a
-            ``bool`` (which is sent as ``True`` and matches nothing; write a
-            yes/no filter as ``"1"`` or ``"0"``); an operator rides inside
-            the value as a prefix Redmine
+            ``ProjectQuery`` registers -- plus ``cf_<id>``, optionally
+            chained as ``cf_<id>.cf_<id>``, ``cf_<id>.due_date`` or
+            ``cf_<id>.status``. Any other key is refused, with an error
+            naming what it objected to. Each value must be a single scalar:
+            a string, number, date or datetime, never a list, a dict,
+            ``None`` or a ``bool`` (write a yes/no filter as ``"1"`` or
+            ``"0"``). An operator rides inside the value as a prefix Redmine
             strips off -- ``{"created_on": ">=2024-01-01"}``,
-            ``{"name": "~api"}`` -- and alternatives are joined with ``|``, as
-            in ``{"status": "1|5"}``. Which operators a filter takes depends
-            on its type, so a rejected operator is read as a literal value
-            rather than erroring. A ``cf_<id>`` field also needs its
+            ``{"name": "~api"}`` -- and alternatives are joined with ``|``,
+            as in ``{"status": "1|5"}``. Which operators a filter takes
+            depends on its type, so a rejected operator is read as a literal
+            value rather than erroring. A ``cf_<id>`` field also needs its
             "Used as a filter" setting on and has to be visible to the
-            caller, and project custom fields are a different set from issue
-            custom fields, so the id has to come from a project one.
+            caller, and must be a *project* custom field -- a different set
+            from issue custom fields.
 
     Returns:
         A list of dictionaries, each representing a project -- or, with
