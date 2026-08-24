@@ -178,6 +178,8 @@ When `REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true`, `create_redmine_issue` retr
 - the Redmine custom field `default_value`, or
 - `REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS`
 
+In practice only the second one can fire. The server reads project custom fields from `GET /projects/{id}.json?include=issue_custom_fields`, which Redmine renders as id and name only, so it never sees `default_value` -- see [`list_project_issue_custom_fields`](docs/tool-reference.md#list_project_issue_custom_fields). Set the env map if you want autofill to have anything to work with.
+
 Example:
 
 ```bash
