@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "1|5"}` remedy and the fact that only `1` and `5` are reachable here:
   archived and scheduled-for-deletion belong to `ProjectAdminQuery`, which this
   endpoint does not use
-  ([#ISSUE](https://github.com/jztan/redmine-mcp-server/issues/ISSUE)).
+  ([#238](https://github.com/jztan/redmine-mcp-server/issues/238)).
 
 ### Added
 - `list_redmine_projects` now returns the six fields Redmine's project index
@@ -33,7 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   did not carry is `null` and never a substituted default -- for
   `is_public` and `inherit_members` in particular, a `False` would read as a
   setting Redmine never sent
-  ([#ISSUE](https://github.com/jztan/redmine-mcp-server/issues/ISSUE)).
+  ([#238](https://github.com/jztan/redmine-mcp-server/issues/238)).
 - `list_redmine_projects` can return pagination metadata with
   `include_pagination_info=True` -- `{"projects": [...], "pagination": {...}}`,
   the same envelope and the same keys `list_redmine_issues` returns -- so a
@@ -53,7 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one complete read -- `has_next` false, and `previous_offset` pointing back at
   the start rather than at the offset the caller is already on. The default
   return is still a bare array
-  ([#ISSUE](https://github.com/jztan/redmine-mcp-server/issues/ISSUE)).
+  ([#238](https://github.com/jztan/redmine-mcp-server/issues/238)).
 - `list_redmine_projects` gains `filters`, `limit` and `offset`, so a project
   list can be narrowed server-side instead of fetched whole and filtered by
   the caller. `filters` carries the query parameters the signature doesn't
@@ -93,7 +93,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carry their bounds in the tool schema like every other list tool, so an
   out-of-range value comes back as the standard `INVALID_ARGUMENTS` envelope
   instead of an ad-hoc error string
-  ([#ISSUE](https://github.com/jztan/redmine-mcp-server/issues/ISSUE)).
+  ([#238](https://github.com/jztan/redmine-mcp-server/issues/238)).
 
 ## [2.12.0] - 2026-08-22
 ### Added

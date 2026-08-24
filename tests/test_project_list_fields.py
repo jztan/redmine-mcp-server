@@ -12,7 +12,7 @@ be indistinguishable from Redmine having said so; and ``parent`` is rendered
 only ``if project.parent && project.parent.visible?``, so its absence is
 genuinely ambiguous and must not be reported as "top-level".
 
-See https://github.com/jztan/redmine-mcp-server/issues/ISSUE (#ISSUE).
+See https://github.com/jztan/redmine-mcp-server/issues/238 (#238).
 """
 
 import os

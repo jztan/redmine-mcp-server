@@ -4,7 +4,7 @@
 so the tool can hand it ``limit``, ``offset`` and a ``filters`` dict instead
 of fetching every visible project and filtering locally.
 
-See https://github.com/jztan/redmine-mcp-server/issues/ISSUE (#ISSUE).
+See https://github.com/jztan/redmine-mcp-server/issues/238 (#238).
 """
 
 import builtins

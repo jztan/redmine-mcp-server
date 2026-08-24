@@ -16,7 +16,7 @@ Driven through python-redmine with only the HTTP layer stubbed, because
 ``total_count`` is read off the evaluated ``ResourceSet`` and that is the
 library's arithmetic, not the tool's.
 
-See https://github.com/jztan/redmine-mcp-server/issues/ISSUE (#ISSUE).
+See https://github.com/jztan/redmine-mcp-server/issues/238 (#238).
 """
 
 import os
