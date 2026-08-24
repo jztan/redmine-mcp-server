@@ -19,7 +19,7 @@ from .._serialization import (
     _safe_isoformat,
     wrap_insecure_content,
 )
-from .._validation import _is_positive_int
+from .._validation import _is_positive_int, _reject_reserved_query_keys
 from ..server import mcp
 
 
@@ -204,13 +204,23 @@ def _membership_to_dict(membership: Any) -> Dict[str, Any]:
     return result
 
 
+# Query parameters `list_redmine_projects` owns. Each is validated by the
+# guards below, so accepting it through `filters` too would give a caller a
+# second, unchecked route to the same key. `filters` exists for the keys the
+# signature does not name -- `cf_<id>` most of all.
+_PROJECT_OWNED_QUERY_KEYS = frozenset({"limit", "offset"})
+
+
 @mcp.tool()
 @offloaded
 def list_redmine_projects(
     include_custom_fields: bool = False,
+    limit: Optional[int] = None,
+    offset: int = 0,
+    filters: Optional[Dict[str, Any]] = None,
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """
-    Lists all accessible projects in Redmine.
+    Lists accessible projects in Redmine.
 
     With ``include_custom_fields`` this is the only tool that returns project
     custom field *values*. Project custom fields and issue custom fields are
@@ -218,9 +228,36 @@ def list_redmine_projects(
     latter, a different set, and no tool exposes project custom field
     definitions.
 
+    ``GET /projects.json`` runs the request's parameters through Redmine's
+    ``ProjectQuery``, so the collection can be narrowed server-side rather than
+    fetched whole and filtered by the caller.
+
     Args:
         include_custom_fields: Add ``custom_fields`` to each project. Costs no
             extra request; opt-in only to keep the default response small.
+        limit: Maximum number of projects to return. Omitted by default, which
+            returns every visible project -- what this tool has always done.
+        offset: Projects to skip before collecting results. Without a
+            ``limit``, paging still runs to the end of the collection from
+            ``offset``.
+        filters: Additional Redmine query parameters, for filters this
+            signature does not name -- most usefully ``{"cf_42": "value"}`` to
+            filter on a project custom field. That field needs its "Used as a
+            filter" setting on, and project custom fields are a different set
+            from issue custom fields, so the id has to come from a project one.
+            What a deployment registers as a filter is its own business, and
+            Redmine ignores an unregistered filter parameter without erroring
+            -- so this cannot promise any key works: confirm a narrow filter
+            actually narrowed. Redmine's ``ProjectQuery`` registers ``status``,
+            ``id``, ``name``, ``description``, ``parent_id``, ``is_public``,
+            ``created_on``, ``updated_on`` where the version is new enough to
+            register it, and ``cf_<id>`` per filterable project custom field.
+            The query defaults to ``status = 1``, so pass ``{"status": "1|5"}``
+            to get closed projects alongside active ones. Keys this signature
+            already names are rejected -- pass them as the named parameter so
+            they are validated -- as are ``fields``, ``f`` and ``query_id``,
+            which Redmine reads as the query's own definition and which
+            discard every filter built from the rest of the request.
 
     Returns:
         A list of dictionaries, each representing a project. With
@@ -228,8 +265,43 @@ def list_redmine_projects(
         of ``{id, name, value}`` entries -- empty if the project has none. On
         failure, a dict with an ``error`` key.
     """
+    if limit is not None and not _is_positive_int(limit):
+        return {"error": "limit must be a positive integer."}
+    if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
+        return {"error": "offset must be a non-negative integer."}
+
+    params: Dict[str, Any] = {}
+    # No `limit` key unless the caller asked for one: python-redmine reads a
+    # missing limit as the collection's `total_count` and pages to the end,
+    # which is what this tool has always returned, so defaulting to a number
+    # here would silently truncate existing callers. That is also why
+    # `_REDMINE_API_PAGE_CAP` is not applied the way the single-request list
+    # tools apply it -- `project.all()` goes through python-redmine's
+    # `bulk_request`, which pages past 100 itself, so clamping would truncate a
+    # larger `limit` instead of honouring it.
+    if limit is not None:
+        params["limit"] = limit
+    if offset:
+        params["offset"] = offset
+
+    if filters is not None:
+        if not isinstance(filters, dict):
+            return {"error": "filters must be a dict of Redmine query parameters."}
+        reserved_error = _reject_reserved_query_keys(filters)
+        if reserved_error:
+            return {"error": reserved_error}
+        owned = sorted(_PROJECT_OWNED_QUERY_KEYS.intersection(filters))
+        if owned:
+            return {
+                "error": (
+                    f"filters may not contain {', '.join(owned)}: pass it as "
+                    "the named parameter instead, so it is validated."
+                )
+            }
+        params.update(filters)
+
     try:
-        projects = _get_redmine_client().project.all()
+        projects = _get_redmine_client().project.all(**params)
         result: List[Dict[str, Any]] = []
         for project in projects:
             entry = {

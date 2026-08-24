@@ -208,10 +208,13 @@ This allows LLM consumers to distinguish trusted tool output from untrusted user
 
 ### `list_redmine_projects`
 
-Lists all accessible projects in the Redmine instance.
+Lists accessible projects in the Redmine instance, optionally narrowed server-side.
 
 **Parameters:**
 - `include_custom_fields` (boolean, optional): Add `custom_fields` to each project. Default: `false`
+- `limit` (integer, optional): Maximum number of projects to return. Omitted by default, which returns every visible project
+- `offset` (integer, optional): Projects to skip before collecting results. Default: `0`
+- `filters` (object, optional): Additional Redmine query parameters, for filters this signature does not name — e.g. `{"cf_42": "Gold"}`
 
 **Returns:** List of project dictionaries with id, name, identifier, description and created_on, plus `custom_fields` when requested
 
@@ -252,6 +255,39 @@ see. This is the only tool that returns project custom field *values*. Project
 custom fields and issue custom fields are separate in Redmine:
 [`list_project_issue_custom_fields`](#list_project_issue_custom_fields) covers
 the latter, and no tool exposes project custom field definitions.
+
+**Narrowing the list (`filters`):** `GET /projects.json` runs the request
+through Redmine's `ProjectQuery`, so a filter can be applied server-side
+instead of fetching every project and filtering locally:
+
+```python
+list_redmine_projects(filters={"cf_42": "Gold"}, include_custom_fields=True)
+```
+
+`ProjectQuery` registers `status`, `id`, `name`, `description`, `parent_id`,
+`is_public`, `created_on`, `updated_on` where the Redmine version is new enough
+to register it, and `cf_<id>` for each project custom field flagged **Used as a
+filter**. Two things to know before relying on it:
+
+- Redmine ignores an unregistered filter parameter without erroring, answering
+  `200` with the unfiltered collection — which looks identical to a filter that
+  matched everything. Confirm a narrow filter actually narrowed. A project
+  custom field that is not marked "Used as a filter" is exactly this case, and
+  project custom fields are a different set from issue custom fields, so the id
+  has to come from a project one.
+- The query defaults to `status = 1` (active), so pass `{"status": "1|5"}` to
+  get closed projects alongside active ones.
+
+`fields`, `f` and `query_id` are refused: Redmine reads the first two as the
+query's own filter definition and empties the filters built from the rest of
+the request, and `query_id` selects a saved query instead. Any of them would
+return the wrong set with a `200`. `limit` and `offset` are refused inside
+`filters` too — pass them as the named parameters, which validate them.
+
+**Pagination:** omitting `limit` returns every visible project, unchanged from
+before these parameters existed. `limit` is not capped at Redmine's 100-per-request
+ceiling, because python-redmine pages past it internally; `limit=250` issues as
+many requests as it needs.
 
 ---
 

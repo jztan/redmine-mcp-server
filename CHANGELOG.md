@@ -7,6 +7,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `list_redmine_projects` gains `filters`, `limit` and `offset`, so a project
+  list can be narrowed server-side instead of fetched whole and filtered by
+  the caller. `filters` carries the query parameters the signature doesn't
+  name -- `{"cf_42": "Gold"}` for a project custom field above all, which
+  needs its "Used as a filter" setting on. Until now a project custom field
+  flagged filterable was unreachable from this connector, while the equivalent
+  contact custom field narrowed correctly through `manage_contact`'s `filters`
+  on the same deployment. Refuses `fields`, `f` and `query_id` (Redmine reads
+  the first two as the query's own filter definition and drops every other
+  filter alongside them, and `query_id` selects a saved query instead -- each
+  answers `200` with the wrong set), and any key the signature already
+  validates. Omitting `limit` still returns every visible project, so existing
+  callers are unaffected; `limit` is deliberately not clamped to Redmine's
+  100-per-request ceiling, since python-redmine pages past it itself
+  ([#ISSUE](https://github.com/jztan/redmine-mcp-server/issues/ISSUE)).
 
 ## [2.12.0] - 2026-08-22
 ### Added
