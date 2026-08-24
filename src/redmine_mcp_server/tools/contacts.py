@@ -205,6 +205,49 @@ def _contact_to_dict(contact: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
+def _contact_pagination_info(
+    payload: Dict[str, Any], limit: int, offset: int, count: int
+) -> Dict[str, Any]:
+    """Pagination metadata for a contact list, in the issue tools' shape.
+
+    The key set is the one ``list_redmine_issues`` returns under
+    ``pagination``, so a caller reads both tools the same way. ``has_next`` is
+    derived differently, and deliberately: the issue tools infer it from
+    ``len(result_issues) == limit``, which reports a further page whenever the
+    collection size is an exact multiple of the page size, while this endpoint
+    hands the connector Redmine's own ``total_count`` alongside ``contacts``.
+    The page covers rows ``[offset, offset + limit)``, so a further page exists
+    exactly when ``offset + limit`` is below the total -- measured, not guessed.
+    Counting from ``limit`` rather than from ``count`` matters when ``search``
+    is in play, since Redmine narrows the returned page without narrowing the
+    total, and the next page still starts a whole window along.
+
+    A total is reported only when the payload carries one. Redmine renders
+    ``total_count`` in the API metadata of a collection response, but what a
+    given CRM build renders is the build's own business, so an absent or
+    non-integer value leaves ``total``, ``has_next`` and ``next_offset`` null.
+    That says the total was not reported, rather than asserting a number or a
+    last page nothing measured.
+    """
+    raw_total = payload.get("total_count")
+    total = (
+        raw_total
+        if isinstance(raw_total, int) and not isinstance(raw_total, bool)
+        else None
+    )
+    has_next = None if total is None else offset + limit < total
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "count": count,
+        "has_next": has_next,
+        "has_previous": offset > 0,
+        "next_offset": offset + limit if has_next else None,
+        "previous_offset": max(0, offset - limit) if offset > 0 else None,
+    }
+
+
 @offloaded
 def _list_contacts_action(
     project_id: Optional[Union[str, int]] = None,
@@ -214,6 +257,7 @@ def _list_contacts_action(
     author_id: Optional[int] = None,
     limit: int = 100,
     offset: int = 0,
+    include_pagination_info: bool = False,
     first_name: Optional[str] = None,
     last_name: Optional[str] = None,
     middle_name: Optional[str] = None,
@@ -329,8 +373,17 @@ def _list_contacts_action(
         client = _get_redmine_client()
         url = f"{_client.REDMINE_URL}/contacts.json"
         payload = client.engine.request("get", url, params=params)
-        raw = payload.get("contacts", []) if isinstance(payload, dict) else []
-        return [_contact_to_dict(c) for c in raw[:limit]]
+        envelope = payload if isinstance(payload, dict) else {}
+        raw = envelope.get("contacts", [])
+        contacts = [_contact_to_dict(c) for c in raw[:limit]]
+        if not include_pagination_info:
+            return contacts
+        return {
+            "contacts": contacts,
+            "pagination": _contact_pagination_info(
+                envelope, limit, offset, len(contacts)
+            ),
+        }
     except Exception as e:
         return _handle_redmine_error(
             e, "listing contacts", {"resource_type": "contacts"}
@@ -611,6 +664,7 @@ async def manage_contact(
     author_id: Optional[int] = None,
     limit: Annotated[int, Field(ge=1, le=100)] = 100,
     offset: Annotated[int, Field(ge=0)] = 0,
+    include_pagination_info: bool = False,
     contact_id: Optional[int] = None,
     include: Optional[str] = None,
     first_name: Optional[str] = None,
@@ -662,6 +716,19 @@ async def manage_contact(
             contact. Needs ``REDMINE_CRM_EDITION=pro``.
         limit: ``list`` only. Contacts per call, capped at 100 by Redmine.
         offset: ``list`` only. Contacts to skip, for paging past the first 100.
+        include_pagination_info: ``list`` only. Return
+            ``{"contacts": [...], "pagination": {...}}`` rather than a bare
+            list (default: False) -- the envelope ``list_redmine_issues``
+            returns, with the same keys: ``total``, ``limit``, ``offset``,
+            ``count``, ``has_next``, ``has_previous``, ``next_offset``,
+            ``previous_offset``. ``total`` is the ``total_count`` Redmine
+            reports for the collection, so a truncated read is visible without
+            paging until an empty page comes back. ``total``, ``has_next`` and
+            ``next_offset`` are ``null`` if the response carried no
+            ``total_count``, meaning not reported rather than no further page.
+            A ``search`` narrows the page without narrowing the total, so read
+            ``count`` for what this call matched and ``total`` as the
+            collection it searched.
         include: ``get`` only. Comma-separated related data to request.
         first_name: Required on ``create``. Filters a ``list`` where
             ``REDMINE_CRM_EDITION=pro``.
@@ -699,9 +766,10 @@ async def manage_contact(
             from the rest of the request.
 
     Returns:
-        ``list`` a list of contact dicts, ``get`` / ``create`` one contact
-        dict, the remaining actions a status dict, and ``{"error": ...}`` on
-        failure.
+        ``list`` a list of contact dicts -- or, with
+        ``include_pagination_info=True``, a dict of ``contacts`` and
+        ``pagination`` -- ``get`` / ``create`` one contact dict, the remaining
+        actions a status dict, and ``{"error": ...}`` on failure.
     """
     if not _is_crm_enabled():
         return dict(_CRM_DISABLED_ERROR)
@@ -714,6 +782,7 @@ async def manage_contact(
         author_id=author_id,
         limit=limit,
         offset=offset,
+        include_pagination_info=include_pagination_info,
         contact_id=contact_id,
         include=include,
         first_name=first_name,

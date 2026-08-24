@@ -7,6 +7,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `manage_contact` `list` can return pagination metadata with
+  `include_pagination_info=True` -- `{"contacts": [...], "pagination": {...}}`,
+  the same envelope and the same keys `list_redmine_issues` returns -- so a
+  truncated read is visible from the response instead of only by paging until
+  an empty page comes back. `total` is the `total_count` the contacts response
+  already carries alongside the collection, so it costs no extra request, and
+  `has_next` is computed from it rather than inferred from a page that came
+  back full: the inference the issue tools still use reports one page too many
+  whenever the collection size is an exact multiple of the page size. A
+  response carrying no `total_count` leaves `total`, `has_next` and
+  `next_offset` null, which says the total was not reported rather than
+  asserting a number nothing measured. The default return is still a bare
+  array ([#ISSUE](https://github.com/jztan/redmine-mcp-server/issues/ISSUE)).
 
 ## [2.12.0] - 2026-08-22
 ### Added
