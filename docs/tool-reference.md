@@ -214,7 +214,7 @@ Lists accessible projects in the Redmine instance, optionally narrowed server-si
 - `include_custom_fields` (boolean, optional): Add `custom_fields` to each project. Default: `false`
 - `limit` (integer, optional): Maximum number of projects to return. Omitted by default, which returns every visible project
 - `offset` (integer, optional): Projects to skip before collecting results. Default: `0`
-- `filters` (object, optional): Additional Redmine query parameters, for filters this signature does not name — e.g. `{"cf_42": "Gold"}`
+- `filters` (object, optional): Redmine query filters to narrow the list, for the filters this signature does not name — e.g. `{"cf_42": "Gold"}`. Accepted keys and value types are listed below
 
 **Returns:** List of project dictionaries with id, name, identifier, description and created_on, plus `custom_fields` when requested
 
@@ -264,11 +264,44 @@ instead of fetching every project and filtering locally:
 list_redmine_projects(filters={"cf_42": "Gold"}, include_custom_fields=True)
 ```
 
-`ProjectQuery` registers `status`, `id`, `name`, `description`, `parent_id`,
-`is_public`, `created_on` and `updated_on`, plus `cf_<id>` for each project
-custom field that is both visible to the caller and flagged **Used as a
-filter**. (`updated_on` is absent on some older Redmine versions; it is
-registered on 6.1.) Two things to know before relying on it:
+**Accepted keys.** `filters` takes the filters `ProjectQuery` registers and
+nothing else:
+
+| Key | Notes |
+| --- | --- |
+| `status` | Only the `=` and `!` operators; `*` is not one of them |
+| `id` | |
+| `name` | |
+| `description` | |
+| `parent_id` | |
+| `is_public` | `"1"` or `"0"` |
+| `created_on` | |
+| `updated_on` | Registered on 6.1; absent on some older versions |
+| `cf_<id>` | A project custom field, visible to the caller and flagged **Used as a filter** |
+| `cf_<id>.cf_<id>`, `cf_<id>.due_date`, `cf_<id>.status` | The chained filters Redmine registers for a custom field whose format targets another record |
+
+Any other key is refused with an error naming that set, rather than being
+forwarded. This is an allowlist because the two directions are not symmetric:
+Redmine builds its query from the filter parameters it registers and ignores
+every other one, so refusing an unregistered key costs a caller nothing it
+could have used — while a parameter that is not a filter at all can still be
+read by another part of the same request instead of being ignored. `fields`,
+`f` and `query_id` are called out separately in the error, since Redmine reads
+the first two as the query's own filter definition and empties the filters
+built from the rest of the request, and `query_id` selects a saved query
+instead. `limit` and `offset` are refused inside `filters` too — pass them as
+the named parameters, which validate them.
+
+**Accepted values.** Each value must be a single scalar: a string, integer,
+float, boolean, `date` or `datetime`. Lists, dicts and `None` are refused. A
+filter's operator travels inside the value as a prefix Redmine strips off, and
+alternatives are joined with `|`, so a scalar is all a filter ever needs:
+
+```python
+list_redmine_projects(filters={"created_on": ">=2024-01-01", "name": "~api"})
+```
+
+Two more things to know before relying on `filters`:
 
 - Redmine ignores an unregistered filter parameter without erroring, answering
   `200` with the unfiltered collection — which looks identical to a filter that
@@ -276,14 +309,9 @@ registered on 6.1.) Two things to know before relying on it:
   custom field that is not marked "Used as a filter" is exactly this case, and
   project custom fields are a different set from issue custom fields, so the id
   has to come from a project one.
-- The query defaults to `status = 1` (active), so pass `{"status": "1|5"}` to
-  get closed projects alongside active ones.
-
-`fields`, `f` and `query_id` are refused: Redmine reads the first two as the
-query's own filter definition and empties the filters built from the rest of
-the request, and `query_id` selects a saved query instead. Any of them would
-return the wrong set with a `200`. `limit` and `offset` are refused inside
-`filters` too — pass them as the named parameters, which validate them.
+- The query defaults to `status = 1` (active), so this tool returns **only
+  active projects** unless `filters` says otherwise. Pass `{"status": "1|5"}`
+  to get closed projects alongside active ones.
 
 **Pagination:** omitting `limit` returns every visible project, unchanged from
 before these parameters existed. `limit` is not capped at Redmine's 100-per-request

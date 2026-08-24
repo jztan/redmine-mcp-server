@@ -19,7 +19,12 @@ from .._serialization import (
     _safe_isoformat,
     wrap_insecure_content,
 )
-from .._validation import _is_positive_int, _reject_reserved_query_keys
+from .._validation import (
+    _is_positive_int,
+    _reject_non_scalar_filter_values,
+    _reject_reserved_query_keys,
+    _reject_unregistered_filter_keys,
+)
 from ..server import mcp
 
 
@@ -211,6 +216,25 @@ def _membership_to_dict(membership: Any) -> Dict[str, Any]:
 _PROJECT_OWNED_QUERY_KEYS = frozenset({"limit", "offset"})
 
 
+# The filter names Redmine's `ProjectQuery` hands to `add_available_filter`
+# (`app/models/project_query.rb:66-89` on 6.1). `cf_<id>` and its chained
+# spellings are accepted on top of these by
+# `_reject_unregistered_filter_keys`, project custom field filters being
+# registered per field and so not enumerable from here.
+_PROJECT_QUERY_FILTER_NAMES = frozenset(
+    {
+        "status",
+        "id",
+        "name",
+        "description",
+        "parent_id",
+        "is_public",
+        "created_on",
+        "updated_on",
+    }
+)
+
+
 @mcp.tool()
 @offloaded
 def list_redmine_projects(
@@ -222,15 +246,27 @@ def list_redmine_projects(
     """
     Lists accessible projects in Redmine.
 
+    Returns ONLY active projects unless ``filters`` says otherwise. Redmine's
+    ``ProjectQuery`` starts out with a ``status = 1`` filter already set, so a
+    call that passes no ``status`` answers with active projects alone while
+    looking like the whole list. Pass ``filters={"status": "1|5"}`` to get
+    closed projects alongside active ones. ``status`` takes only the ``=``
+    and ``!`` operators, so ``"*"`` is not a way to ask for every status --
+    it would be read as a literal value and match nothing.
+
+    ``GET /projects.json`` runs the request's parameters through that
+    ``ProjectQuery``, so the collection can be narrowed server-side rather
+    than fetched whole and filtered afterwards. Redmine builds its query from
+    the filter parameters it registers and ignores every other one, answering
+    200 with the unnarrowed collection -- so a filter that did not narrow is
+    indistinguishable from one that matched everything. Check the result
+    against what was asked for instead of assuming the filter applied.
+
     With ``include_custom_fields`` this is the only tool that returns project
     custom field *values*. Project custom fields and issue custom fields are
     separate in Redmine: ``list_project_issue_custom_fields`` covers the
     latter, a different set, and no tool exposes project custom field
     definitions.
-
-    ``GET /projects.json`` runs the request's parameters through Redmine's
-    ``ProjectQuery``, so the collection can be narrowed server-side rather than
-    fetched whole and filtered by the caller.
 
     Args:
         include_custom_fields: Add ``custom_fields`` to each project. Costs no
@@ -240,26 +276,29 @@ def list_redmine_projects(
         offset: Projects to skip before collecting results. Without a
             ``limit``, paging still runs to the end of the collection from
             ``offset``.
-        filters: Additional Redmine query parameters, for filters this
-            signature does not name -- most usefully ``{"cf_42": "value"}`` to
-            filter on a project custom field. That field needs its "Used as a
-            filter" setting on, and project custom fields are a different set
-            from issue custom fields, so the id has to come from a project one.
-            What a deployment registers as a filter is its own business, and
-            Redmine ignores an unregistered filter parameter without erroring
-            -- so this cannot promise any key works: confirm a narrow filter
-            actually narrowed. Redmine's ``ProjectQuery`` registers ``status``,
-            ``id``, ``name``, ``description``, ``parent_id``, ``is_public``,
-            ``created_on`` and ``updated_on``, plus ``cf_<id>`` per project
-            custom field that is both visible to the caller and flagged
-            ``is_filter``. ``updated_on`` is absent on some older Redmine
-            versions.
-            The query defaults to ``status = 1``, so pass ``{"status": "1|5"}``
-            to get closed projects alongside active ones. Keys this signature
-            already names are rejected -- pass them as the named parameter so
-            they are validated -- as are ``fields``, ``f`` and ``query_id``,
-            which Redmine reads as the query's own definition and which
-            discard every filter built from the rest of the request.
+        filters: Redmine query filters to narrow the list, for the filters
+            this signature does not name -- most usefully
+            ``{"cf_42": "value"}`` for a project custom field. Accepted keys
+            are ``status``, ``id``, ``name``, ``description``, ``parent_id``,
+            ``is_public``, ``created_on`` and ``updated_on`` -- the filters
+            ``ProjectQuery`` registers -- plus ``cf_<id>`` for a project
+            custom field, optionally chained as ``cf_<id>.cf_<id>``,
+            ``cf_<id>.due_date`` or ``cf_<id>.status``. Any other key is
+            refused with an error naming that set, ``fields``, ``f`` and
+            ``query_id`` among them, which Redmine reads as the query's own
+            definition and which discard every filter built from the rest of
+            the request, and ``limit`` and ``offset``, which are named
+            parameters here. Each value must be a single scalar -- a string,
+            number, boolean, date or datetime -- never a list, a dict or
+            ``None``; an operator rides inside the value as a prefix Redmine
+            strips off -- ``{"created_on": ">=2024-01-01"}``,
+            ``{"name": "~api"}`` -- and alternatives are joined with ``|``, as
+            in ``{"status": "1|5"}``. Which operators a filter takes depends
+            on its type, so a rejected operator is read as a literal value
+            rather than erroring. A ``cf_<id>`` field also needs its
+            "Used as a filter" setting on and has to be visible to the
+            caller, and project custom fields are a different set from issue
+            custom fields, so the id has to come from a project one.
 
     Returns:
         A list of dictionaries, each representing a project. With
@@ -300,6 +339,19 @@ def list_redmine_projects(
                     "the named parameter instead, so it is validated."
                 )
             }
+        # An allowlist, not a longer denylist. Every key here is forwarded
+        # into a request python-redmine decodes and Redmine parses, and a key
+        # that is not one of Redmine's filters can still carry meaning to
+        # another layer of that request rather than being ignored the way an
+        # unregistered filter is.
+        unregistered_error = _reject_unregistered_filter_keys(
+            filters, _PROJECT_QUERY_FILTER_NAMES
+        )
+        if unregistered_error:
+            return {"error": unregistered_error}
+        value_error = _reject_non_scalar_filter_values(filters)
+        if value_error:
+            return {"error": value_error}
         params.update(filters)
 
     try:
