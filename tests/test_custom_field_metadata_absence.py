@@ -1,4 +1,4 @@
-"""Custom field metadata must never be invented (#ISSUE).
+"""Custom field metadata must never be invented (#232).
 
 ``list_project_issue_custom_fields`` reads
 ``GET /projects/{id}.json?include=issue_custom_fields``, which Redmine renders

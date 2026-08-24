@@ -51,7 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [#42581](https://www.redmine.org/issues/42581) and
   [#43407](https://www.redmine.org/issues/43407), the last asking for exactly
   these keys.
-  ([#ISSUE](https://github.com/jztan/redmine-mcp-server/issues/ISSUE))
+  ([#232](https://github.com/jztan/redmine-mcp-server/issues/232))
 - `list_project_issue_custom_fields` now returns an error --
   `code: "TRACKER_BINDINGS_UNREADABLE"`, with the recovery in `hint` -- when
   `tracker_id` is passed and the response does not describe tracker bindings,
