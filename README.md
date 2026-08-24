@@ -620,7 +620,7 @@ This MCP server provides 52 tools for interacting with Redmine (plus 1 operator 
 These tools require only a Redmine instance and credentials, with no extra plugins or feature flags.
 
 - **Project Management** (9 tools)
-  - [`list_redmine_projects`](docs/tool-reference.md#list_redmine_projects) - List all accessible projects
+  - [`list_redmine_projects`](docs/tool-reference.md#list_redmine_projects) - List accessible projects (active only unless `filters` asks for more), narrowed server-side and optionally paginated
   - [`list_project_issue_custom_fields`](docs/tool-reference.md#list_project_issue_custom_fields) - List issue custom fields configured for a project
   - [`list_redmine_versions`](docs/tool-reference.md#list_redmine_versions) - List versions/milestones for a project
   - [`manage_redmine_version`](docs/tool-reference.md#manage_redmine_version) - Create, update, or delete a version/milestone

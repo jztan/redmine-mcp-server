@@ -58,8 +58,8 @@ class TestProjectCustomFieldValues:
     """The values Redmine already sends on GET /projects.json, opt-in."""
 
     @pytest.mark.asyncio
-    async def test_default_keys_are_unchanged(self, mock_redmine):
-        """The five existing keys are the contract; the flag only adds one."""
+    async def test_default_keys_are_the_full_rendered_set(self, mock_redmine):
+        """The rendered keys are the contract; the flag only adds one."""
         mock_redmine.project.all.return_value = [
             _mock_project(custom_fields=[_custom_field(12, "Size", "S")])
         ]
@@ -69,7 +69,13 @@ class TestProjectCustomFieldValues:
             "name",
             "identifier",
             "description",
+            "homepage",
+            "parent",
+            "status",
+            "is_public",
+            "inherit_members",
             "created_on",
+            "updated_on",
         }
 
     @pytest.mark.asyncio
