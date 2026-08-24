@@ -265,9 +265,10 @@ list_redmine_projects(filters={"cf_42": "Gold"}, include_custom_fields=True)
 ```
 
 `ProjectQuery` registers `status`, `id`, `name`, `description`, `parent_id`,
-`is_public`, `created_on`, `updated_on` where the Redmine version is new enough
-to register it, and `cf_<id>` for each project custom field flagged **Used as a
-filter**. Two things to know before relying on it:
+`is_public`, `created_on` and `updated_on`, plus `cf_<id>` for each project
+custom field that is both visible to the caller and flagged **Used as a
+filter**. (`updated_on` is absent on some older Redmine versions; it is
+registered on 6.1.) Two things to know before relying on it:
 
 - Redmine ignores an unregistered filter parameter without erroring, answering
   `200` with the unfiltered collection — which looks identical to a filter that

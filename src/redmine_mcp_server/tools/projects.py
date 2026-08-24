@@ -250,8 +250,10 @@ def list_redmine_projects(
             -- so this cannot promise any key works: confirm a narrow filter
             actually narrowed. Redmine's ``ProjectQuery`` registers ``status``,
             ``id``, ``name``, ``description``, ``parent_id``, ``is_public``,
-            ``created_on``, ``updated_on`` where the version is new enough to
-            register it, and ``cf_<id>`` per filterable project custom field.
+            ``created_on`` and ``updated_on``, plus ``cf_<id>`` per project
+            custom field that is both visible to the caller and flagged
+            ``is_filter``. ``updated_on`` is absent on some older Redmine
+            versions.
             The query defaults to ``status = 1``, so pass ``{"status": "1|5"}``
             to get closed projects alongside active ones. Keys this signature
             already names are rejected -- pass them as the named parameter so
