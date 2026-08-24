@@ -15,6 +15,8 @@ from .._serialization import (
     _custom_fields_to_list,
     _named_ref,
     _normalize_tag_list,
+    _pagination_info,
+    _payload_int,
     _safe_isoformat,
     wrap_insecure_content,
 )
@@ -57,6 +59,11 @@ _CONTACT_OWNED_QUERY_KEYS = frozenset(
         "job_title",
         "email",
         "phone",
+        # Not a query parameter at all: it selects the response shape. Named
+        # here so `filters` cannot swallow it, which would send Redmine a key
+        # it ignores and hand the caller a bare list they asked to be an
+        # envelope -- back to paging blind, with nothing saying so.
+        "include_pagination_info",
     }
 )
 
@@ -205,24 +212,10 @@ def _contact_to_dict(contact: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
-def _payload_int(value: Any) -> Optional[int]:
-    """An integer from a response payload, or ``None`` when it is not one.
-
-    ``bool`` is an ``int`` subclass, so it is excluded explicitly rather than
-    counted as a page number.
-    """
-    if isinstance(value, bool) or not isinstance(value, int):
-        return None
-    return value
-
-
 def _contact_pagination_info(
-    payload: Dict[str, Any], limit: int, offset: int, count: int
+    payload: Dict[str, Any], limit: int, offset: int, count: int, *, searched: bool
 ) -> Dict[str, Any]:
     """Pagination metadata for a contact list, in the issue tools' shape.
-
-    The key set is the one ``list_redmine_issues`` returns under
-    ``pagination``, so a caller reads both tools the same way.
 
     ``limit`` and ``offset`` are the window Redmine reports having applied,
     falling back to the requested values when it reports none. Redmine echoes
@@ -230,52 +223,30 @@ def _contact_pagination_info(
     was asked for would otherwise get a ``next_offset`` that steps over the
     rows it withheld.
 
-    ``has_next`` prefers measurement over inference. Given a total, the page
-    covers rows ``[offset, offset + limit)``, so a further page exists exactly
-    when ``offset + limit`` is below the total -- unlike the issue tools, which
-    infer it from a full page and so claim one whenever the collection size is
-    an exact multiple of the page size. Counting from ``limit`` rather than
-    from ``count`` matters when ``search`` is in play, since Redmine narrows
-    the returned page without narrowing the total, and the next page still
-    starts a whole window along.
-
-    The CRM plugin does render the metadata --
-    ``app/views/contacts/index.api.rsb`` wraps the array in
-    ``api_meta(:total_count => ..., :offset => ..., :limit => ...)``, confirmed
-    on 4.4.5 Pro -- but a build that renders none is still handled rather than
-    assumed away. In that case ``total`` stays ``None``, so an unreported total
-    is never dressed up as a number, while ``has_next`` falls back to the
-    full-page inference instead of going ``None``: ``None`` is falsy, so a
-    caller testing ``has_next`` would read it as a last page and stop
-    mid-collection. A full page reported as "ask again" costs one extra
-    request at worst.
+    ``total`` is Redmine's own ``total_count``, which arrives beside the
+    collection and so costs no second request -- except under ``search``,
+    where it does not measure the collection being paged.
+    ``ContactsController#index`` counts with ``@query.object_count``, which is
+    ``objects_scope`` with no options, while the rows come from
+    ``results_scope(:search => params[:search])``, and ``ContactQuery``
+    registers no ``search`` filter (confirmed on 4.4.5 Pro). So the reported
+    total is the collection *before* the search. Believing it walks the caller
+    through empty pages: a search matching 3 of 250 contacts answers
+    ``has_next`` true at offset 0 and again at offset 100, three requests to
+    read three rows, where the full-page inference would have said "done"
+    correctly. A searched page therefore reports no total, exactly as a build
+    that renders none does. Every other narrowing parameter this tool sends is
+    a registered ``ContactQuery`` filter, so those narrow the count too and
+    the total stays honest.
     """
-    total = _payload_int(payload.get("total_count"))
-
-    applied_limit = _payload_int(payload.get("limit"))
-    if not applied_limit or applied_limit < 1:
-        applied_limit = limit
-    applied_offset = _payload_int(payload.get("offset"))
-    if applied_offset is None or applied_offset < 0:
-        applied_offset = offset
-
-    if total is None:
-        has_next = count >= applied_limit
-    else:
-        has_next = applied_offset + applied_limit < total
-
-    return {
-        "total": total,
-        "limit": applied_limit,
-        "offset": applied_offset,
-        "count": count,
-        "has_next": has_next,
-        "has_previous": applied_offset > 0,
-        "next_offset": applied_offset + applied_limit if has_next else None,
-        "previous_offset": (
-            max(0, applied_offset - applied_limit) if applied_offset > 0 else None
-        ),
-    }
+    applied_limit = _payload_int(payload.get("limit"), minimum=1)
+    applied_offset = _payload_int(payload.get("offset"), minimum=0)
+    return _pagination_info(
+        limit=limit if applied_limit is None else applied_limit,
+        offset=offset if applied_offset is None else applied_offset,
+        count=count,
+        total=None if searched else _payload_int(payload.get("total_count"), minimum=0),
+    )
 
 
 @offloaded
@@ -411,7 +382,7 @@ def _list_contacts_action(
         return {
             "contacts": contacts,
             "pagination": _contact_pagination_info(
-                envelope, limit, offset, len(contacts)
+                envelope, limit, offset, len(contacts), searched=search is not None
             ),
         }
     except Exception as e:
@@ -748,19 +719,12 @@ async def manage_contact(
         offset: ``list`` only. Contacts to skip, for paging past the first 100.
         include_pagination_info: ``list`` only. Return
             ``{"contacts": [...], "pagination": {...}}`` rather than a bare
-            list (default: False) -- the envelope ``list_redmine_issues``
-            returns, with the same keys: ``total``, ``limit``, ``offset``,
-            ``count``, ``has_next``, ``has_previous``, ``next_offset``,
-            ``previous_offset``. ``total`` is the ``total_count`` Redmine
-            reports for the collection, so a truncated read is visible without
-            paging until an empty page comes back. ``limit`` and ``offset``
-            are the window Redmine reports applying, so ``next_offset`` is a
-            real page boundary. If a response carries no ``total_count``,
-            ``total`` is ``null`` -- read that as not reported, never as a
-            number -- and ``has_next`` falls back to "the page came back
-            full", so it stays safe to loop on. A ``search`` narrows the page
-            without narrowing the total, so read ``count`` for what this call
-            matched and ``total`` as the collection it searched.
+            list (default: False), with the keys ``list_redmine_issues``
+            returns. ``total`` is ``null`` whenever Redmine reported no total
+            that measures the collection being paged -- read it as "not
+            reported", never as a number, and note that passing ``search`` is
+            one such case. ``has_next`` is always a boolean, never ``null``,
+            so it is safe to loop on.
         include: ``get`` only. Comma-separated related data to request.
         first_name: Required on ``create``. Filters a ``list`` where
             ``REDMINE_CRM_EDITION=pro``.

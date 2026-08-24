@@ -16,11 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   already carries alongside the collection, so it costs no extra request, and
   `has_next` is computed from it rather than inferred from a page that came
   back full: the inference the issue tools still use reports one page too many
-  whenever the collection size is an exact multiple of the page size. A
-  response carrying no `total_count` leaves `total`, `has_next` and
-  `next_offset` null, which says the total was not reported rather than
-  asserting a number nothing measured. The default return is still a bare
-  array ([#ISSUE](https://github.com/jztan/redmine-mcp-server/issues/ISSUE)).
+  whenever the collection size is an exact multiple of the page size. Where no
+  total measures the collection being paged, `total` is null -- "not reported"
+  rather than a number nothing measured -- and `has_next` falls back to that
+  same full-page inference rather than going null, because a null is falsy and
+  a caller looping on it would stop mid-collection. Passing `search` is one
+  such case: the CRM plugin counts the collection before applying the search,
+  so its total does not describe the searched page. The default return is
+  still a bare array
+  ([#ISSUE](https://github.com/jztan/redmine-mcp-server/issues/ISSUE)).
 
 ## [2.12.0] - 2026-08-22
 ### Added

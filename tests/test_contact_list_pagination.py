@@ -14,6 +14,7 @@ carried one or not, which is the one thing these tests are about.
 
 import os
 import sys
+from typing import Optional
 from unittest.mock import patch
 
 import pytest
@@ -38,7 +39,7 @@ PAGINATION_KEYS = {
 }
 
 
-def _api_contact(contact_id: int) -> dict:
+def _api_contact_row(contact_id: int) -> dict:
     """A contact as the CRM API renders it inside a collection response."""
     return {
         "id": contact_id,
@@ -51,23 +52,24 @@ def _api_contact(contact_id: int) -> dict:
     }
 
 
-def _collection(count: int, *, limit: int = 100, offset: int = 0, **meta) -> dict:
+def _collection(
+    count: int, *, total_count: Optional[int], limit: int = 100, offset: int = 0
+) -> dict:
     """The decoded ``GET /contacts.json`` envelope.
 
     Redmine renders ``total_count``, ``offset`` and ``limit`` as siblings of the
     collection, so the metadata this feature reads arrives in the same dict as
-    the contacts. Pass ``total_count=None`` to drop it.
+    the contacts. ``total_count`` is required rather than defaulted because
+    every test here turns on which total the payload carried; pass ``None`` to
+    build a payload that omits the key.
     """
     payload = {
-        "contacts": [_api_contact(offset + i + 1) for i in range(count)],
+        "contacts": [_api_contact_row(offset + i + 1) for i in range(count)],
         "offset": offset,
         "limit": limit,
     }
-    if "total_count" in meta:
-        if meta["total_count"] is not None:
-            payload["total_count"] = meta["total_count"]
-    else:
-        payload["total_count"] = offset + count
+    if total_count is not None:
+        payload["total_count"] = total_count
     return payload
 
 
@@ -380,8 +382,7 @@ class TestAPayloadWithNoTotalCount:
         with patch.dict(os.environ, CRM_ON):
             result = await manage_contact(action="list", include_pagination_info=True)
 
-        assert result["pagination"]["has_next"] is not None
-        assert bool(result["pagination"]["has_next"]) is True
+        assert result["pagination"]["has_next"] is True
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
@@ -430,6 +431,138 @@ class TestAPayloadWithNoTotalCount:
         assert result["contacts"] == []
         assert result["pagination"]["total"] is None
         assert result["pagination"]["count"] == 0
+
+
+class TestASearchedPageForfeitsTheTotal:
+    """A ``search`` narrows the page but not the total Redmine reports.
+
+    ``ContactsController#index`` counts with ``@query.object_count``, which is
+    ``objects_scope`` with no options, while the rows come from
+    ``results_scope(:search => params[:search])`` -- and ``ContactQuery``
+    registers no ``search`` filter, so the search is not part of the counted
+    scope. ``total_count`` therefore describes the collection *before* the
+    search. Deriving ``has_next`` from it claims pages that do not exist and
+    marches the caller through empty ones.
+    """
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_a_search_does_not_borrow_the_unsearched_total(self, mock_redmine):
+        """3 rows matched out of a 250-contact collection."""
+        mock_redmine.engine.request.return_value = _collection(3, total_count=250)
+        with patch.dict(os.environ, CRM_ON):
+            result = await manage_contact(
+                action="list", search="zzz", include_pagination_info=True
+            )
+
+        assert result["pagination"]["total"] is None
+        assert result["pagination"]["count"] == 3
+        # The regression: `0 + 100 < 250` reported a further page and sent the
+        # caller to offset 100 of a three-row result set.
+        assert result["pagination"]["has_next"] is False
+        assert result["pagination"]["next_offset"] is None
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_an_empty_searched_page_never_claims_another(self, mock_redmine):
+        """Walking a searched collection has to terminate.
+
+        With the unsearched total in play this answered ``has_next`` true on a
+        page that returned nothing, because ``100 + 100`` is still below 250.
+        """
+        mock_redmine.engine.request.return_value = _collection(
+            0, offset=100, total_count=250
+        )
+        with patch.dict(os.environ, CRM_ON):
+            result = await manage_contact(
+                action="list", search="zzz", offset=100, include_pagination_info=True
+            )
+
+        assert result["pagination"]["count"] == 0
+        assert result["pagination"]["has_next"] is False
+        assert result["pagination"]["next_offset"] is None
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_a_searched_full_page_still_offers_the_next(self, mock_redmine):
+        """Forfeiting the total must not strand a caller mid-collection."""
+        mock_redmine.engine.request.return_value = _collection(100, total_count=250)
+        with patch.dict(os.environ, CRM_ON):
+            result = await manage_contact(
+                action="list", search="a", include_pagination_info=True
+            )
+
+        assert result["pagination"]["total"] is None
+        assert result["pagination"]["has_next"] is True
+        assert result["pagination"]["next_offset"] == 100
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    @pytest.mark.parametrize(
+        "narrowing",
+        [
+            {"tags": "vip"},
+            {"project_id": "crm"},
+            {"assigned_to_id": 7},
+            {"filters": {"cf_447": "yes"}},
+        ],
+    )
+    async def test_only_search_forfeits_it(self, mock_redmine, narrowing):
+        """Every other narrowing input is a registered filter, so it is counted.
+
+        ``@query.object_count`` applies the query's own filters, so a total
+        taken alongside them describes exactly the collection being paged.
+        """
+        mock_redmine.engine.request.return_value = _collection(100, total_count=250)
+        with patch.dict(os.environ, CRM_ON):
+            result = await manage_contact(
+                action="list", include_pagination_info=True, **narrowing
+            )
+
+        assert result["pagination"]["total"] == 250
+        assert result["pagination"]["has_next"] is True
+
+
+class TestTheTotalCostsNothingExtra:
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_the_envelope_is_read_from_the_one_response(self, mock_redmine):
+        """The whole point: ``total_count`` is a sibling of ``contacts``.
+
+        ``list_redmine_issues`` spends a second ``limit=1`` request on its
+        total. This endpoint hands the connector both in one payload, so the
+        request count must not drift upwards.
+        """
+        mock_redmine.engine.request.return_value = _collection(100, total_count=250)
+        with patch.dict(os.environ, CRM_ON):
+            result = await manage_contact(action="list", include_pagination_info=True)
+
+        assert result["pagination"]["total"] == 250
+        assert mock_redmine.engine.request.call_count == 1
+
+
+class TestTheFlagIsNotAQueryParameter:
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_it_cannot_be_smuggled_through_filters(self, mock_redmine):
+        """It selects the response shape, so `filters` must refuse it.
+
+        Forwarded, it would reach Redmine as a key it ignores and leave the
+        caller holding the bare list they asked to be an envelope.
+        """
+        with patch.dict(os.environ, CRM_ON):
+            result = await manage_contact(
+                action="list", filters={"include_pagination_info": True}
+            )
+
+        assert "include_pagination_info" in result["error"]
+        mock_redmine.engine.request.assert_not_called()
 
 
 class TestTheErrorEnvelopeIsUnaffected:
