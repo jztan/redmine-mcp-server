@@ -23,7 +23,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   path for the `me` id, not `current`. The distinction matters because
   `/my/account.json` renders no memberships at all.
 
-### Added
+- `list_project_issue_custom_fields` no longer invents the six keys Redmine
+  never sends. It reads
+  `GET /projects/{id}.json?include=issue_custom_fields`, which Redmine renders
+  as exactly `id` and `name` per field
+  (`app/helpers/projects_helper.rb`, unchanged in 6.1, 7.0 and trunk), and
+  every other attribute was read through a `getattr` fallback -- so
+  `field_format: ""`, `is_required: false`, `multiple: false`,
+  `default_value: null`, `possible_values: []` and `trackers: []` came back
+  for every field, always. `is_required: false` was the sharp edge: it is
+  byte-identical to a real "this field is optional", so a caller omitted the
+  field and Redmine rejected the create with `"<field> cannot be blank"` --
+  the failure #119 reported and could not explain. Those keys are now `null`,
+  documented as "not readable on this token". They are kept rather than
+  dropped so the response shape is stable and so they populate for free if a
+  future Redmine fills the include in.
+
+  The definitions live on `GET /custom_fields.json`, which Redmine restricts
+  to administrators (`before_action :require_admin`, still covering `index` in
+  7.0), so no non-admin token can obtain them; under OAuth an administrator's
+  token cannot either, since `User#admin?` also requires the `admin` scope,
+  which this server deliberately never requests. Redmine has four open
+  requests to expose this metadata to non-admins, the oldest from 2015 and
+  none with a target version:
+  [#18875](https://www.redmine.org/issues/18875),
+  [#41318](https://www.redmine.org/issues/41318),
+  [#42581](https://www.redmine.org/issues/42581) and
+  [#43407](https://www.redmine.org/issues/43407), the last asking for exactly
+  these keys.
+  ([#232](https://github.com/jztan/redmine-mcp-server/issues/232))
+- `list_project_issue_custom_fields` now returns an error --
+  `code: "TRACKER_BINDINGS_UNREADABLE"`, with the recovery in `hint` -- when
+  `tracker_id` is passed and the response does not describe tracker bindings,
+  which on a stock Redmine is always. It used to read absent bindings as "applies to every
+  tracker" and return every field in the project, indistinguishable from a
+  filtered list. Where bindings *are* readable, a field bound to no tracker is
+  now excluded rather than treated as global: Redmine computes an issue's
+  fields as `project.all_issue_custom_fields & tracker.custom_fields`
+  (`app/models/issue.rb`), so an unbound field reaches no issue.
+- `list_project_issue_custom_fields` requires the `view_project` scope instead
+  of none, for the `projects#show` request it makes. `view_project` being a
+  `:public => true` permission is not an exemption, because
+  `Role#allowed_permissions` intersects the public permissions with the
+  token's scopes too (`scope.present? ? unscoped & scope : unscoped`), so a
+  token carrying no scopes is refused by Redmine after this server had already
+  admitted the call. Nothing beyond `view_project` is required: every released
+  Redmine renders the `issue_custom_fields` include gated on
+  `include_in_api_response?` alone, with no permission check. The scope map
+  previously justified an empty entry with a comment about
+  `/custom_fields.json` being admin-gated, an endpoint this tool has never
+  called.
 - `list_redmine_projects` now returns the six fields Redmine's project index
   renders and this serializer discarded: `homepage`, `parent`, `status`,
   `is_public`, `inherit_members` and `updated_on`. `status` is Redmine's

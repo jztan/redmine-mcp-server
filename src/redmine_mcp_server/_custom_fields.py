@@ -103,11 +103,16 @@ def _parse_optional_object_payload(
     return dict(parsed)
 
 
-def _extract_possible_values(custom_field: Any) -> List[str]:
-    """Extract possible values from a Redmine custom field in a robust way."""
-    possible_values = getattr(custom_field, "possible_values", None) or []
+def _normalize_possible_values(possible_values: Any) -> List[str]:
+    """Normalize a Redmine ``possible_values`` payload into a list of strings.
+
+    Split out from :func:`_extract_possible_values` so a caller that has
+    already read the attribute -- and needs to tell "the payload did not carry
+    it" from "it carried an empty list" -- can normalize without reading it a
+    second time through a different absence rule.
+    """
     result: List[str] = []
-    for value in possible_values:
+    for value in possible_values or []:
         if isinstance(value, dict):
             extracted = value.get("value")
         else:
@@ -115,6 +120,16 @@ def _extract_possible_values(custom_field: Any) -> List[str]:
         if extracted is not None:
             result.append(str(extracted))
     return result
+
+
+def _extract_possible_values(custom_field: Any) -> List[str]:
+    """Extract possible values from a Redmine custom field in a robust way.
+
+    Absence collapses to ``[]`` here, which the write paths read as "this
+    field restricts nothing". A reader that must distinguish absence from an
+    empty list should use :func:`_normalize_possible_values` instead.
+    """
+    return _normalize_possible_values(getattr(custom_field, "possible_values", None))
 
 
 def _load_required_custom_field_defaults() -> Dict[str, Any]:
@@ -261,15 +276,18 @@ def _augment_validation_error_with_field_hint(
             'id form -- extra_fields={"custom_fields": '
             '[{"id": N, "value": "..."}]} with N from '
             "list_project_issue_custom_fields -- also works on either "
-            "tool. Note the #119 caveat: is_required=false from the "
-            "discovery tool only reflects the field-definition flag; "
-            "workflow rules, role-based field permissions, and "
-            "tracker-bound required-field settings can still require "
-            "a field at create/update time. Setting "
-            "REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true lets the "
-            "server retry with values from each custom field's "
-            "`default_value` or the "
-            "REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS env map."
+            "tool. Note the #119 caveat: against a stock Redmine "
+            "list_project_issue_custom_fields reports is_required=null "
+            '("not readable on this token"), so it cannot tell you which '
+            "fields are required -- and even where the flag is readable it "
+            "reflects only the field-definition flag, while workflow rules, "
+            "role-based field permissions and tracker-bound required-field "
+            "settings can still require a field at create/update time. "
+            "Setting REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true lets the "
+            "server retry with values from the "
+            "REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS env map; the "
+            "`default_value` half of that retry is inert on a stock Redmine, "
+            "which does not send default_value on the include."
         )
 
     augmented["hint"] = " ".join(parts)
