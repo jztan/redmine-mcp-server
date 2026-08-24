@@ -239,13 +239,16 @@ def _contact_pagination_info(
     the returned page without narrowing the total, and the next page still
     starts a whole window along.
 
-    Without a total it falls back to that same inference rather than to
-    ``None``. Redmine renders ``total_count`` in the API metadata of a
-    collection response, but what a given CRM build renders is the build's own
-    business, and ``None`` is falsy: a caller testing ``has_next`` would read
-    it as a last page and stop mid-collection. A full page reported as "ask
-    again" costs one extra request at worst. ``total`` stays ``None`` either
-    way, so an unreported total is never dressed up as a number.
+    The CRM plugin does render the metadata --
+    ``app/views/contacts/index.api.rsb`` wraps the array in
+    ``api_meta(:total_count => ..., :offset => ..., :limit => ...)``, confirmed
+    on 4.4.5 Pro -- but a build that renders none is still handled rather than
+    assumed away. In that case ``total`` stays ``None``, so an unreported total
+    is never dressed up as a number, while ``has_next`` falls back to the
+    full-page inference instead of going ``None``: ``None`` is falsy, so a
+    caller testing ``has_next`` would read it as a last page and stop
+    mid-collection. A full page reported as "ask again" costs one extra
+    request at worst.
     """
     total = _payload_int(payload.get("total_count"))
 
