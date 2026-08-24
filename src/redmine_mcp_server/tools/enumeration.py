@@ -277,11 +277,13 @@ def get_current_user(include_memberships: bool = False) -> Dict[str, Any]:
         A dictionary with ``id``, ``login``, ``firstname``, ``lastname``,
         ``mail``, ``admin`` (bool), ``created_on``, and ``last_login_on``.
         With ``include_memberships``, also ``memberships``: a list of
-        ``{id, project: {id, name}, roles: [{id, name}]}`` entries, empty
-        when the caller holds none. A role inherited from a group
-        membership carries ``inherited: true``; the key is absent
-        otherwise, mirroring Redmine. Redmine limits the list to projects
-        visible to the caller. On failure, a dict with an ``"error"`` key.
+        ``{id, project: {id, name}, roles: [{id, name}]}`` entries. A role
+        inherited from a group membership carries ``inherited: true``; the
+        key is absent otherwise, mirroring Redmine. Redmine limits the list
+        to projects visible to the caller -- active and closed ones, not
+        archived -- so an empty list means the caller holds none that are
+        visible, not necessarily none at all. On failure, a dict with an
+        ``"error"`` key.
 
     Example:
         >>> await get_current_user(include_memberships=True)
