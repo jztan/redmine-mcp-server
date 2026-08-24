@@ -92,6 +92,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   called.
 
 ### Added
+- MCP tool annotations on every tool, so clients can tell read-only queries
+  from writes. Read tools now advertise `readOnlyHint`, which lets annotation
+  aware clients skip write-operation approval prompts for ordinary Redmine
+  queries. Additive tools advertise `destructiveHint=false`. Annotations are
+  advisory client metadata: OAuth scope enforcement and
+  `REDMINE_MCP_READ_ONLY` remain the server-side controls. ([#204](https://github.com/jztan/redmine-mcp-server/issues/204))
 - `list_redmine_projects` now returns the six fields Redmine's project index
   renders and this serializer discarded: `homepage`, `parent`, `status`,
   `is_public`, `inherit_members` and `updated_on`. `status` is Redmine's
