@@ -121,7 +121,6 @@ _EMPTY_SCOPE_KINDS = {
     "cleanup_attachment_files": ToolKind.WRITE_DESTRUCTIVE_IDEMPOTENT,
     "get_current_user": ToolKind.READ,
     "get_mcp_server_info": ToolKind.READ,
-    "list_project_issue_custom_fields": ToolKind.READ,
     "list_redmine_issue_priorities": ToolKind.READ,
     "list_redmine_issue_statuses": ToolKind.READ,
     "list_redmine_roles": ToolKind.READ,
