@@ -1661,11 +1661,16 @@ list_redmine_users(name="alice")
 
 ### `get_current_user`
 
-Retrieve the currently authenticated user's profile. Resolves to `GET /my/account.json`, so works for any authenticated user (not admin-only). Useful when a user asks the LLM to do something "for me" — the LLM can call this to resolve the current user's ID.
+Retrieve the currently authenticated user's profile. Resolves to `GET /users/current.json`, and works for any authenticated user (not admin-only) — Redmine exempts the `show` action from its admin filter and resolves the `current` id behind a plain login check. Useful when a user asks the LLM to do something "for me" — the LLM can call this to resolve the current user's ID.
 
-**Parameters:** None.
+With `include_memberships` it also answers "which projects am I a member of, and with which roles" in the same request. The alternative is `list_project_members` once per project.
 
-**Returns:** Dict with `id, login, firstname, lastname, mail, admin, created_on, last_login_on`.
+**Parameters:**
+- `include_memberships` (boolean, optional): Add `memberships` to the response. Default `false`. Costs no extra request — the include rides the same call.
+
+**Returns:** Dict with `id, login, firstname, lastname, mail, admin, created_on, last_login_on`. With `include_memberships`, also `memberships`: a list of `{id, project: {id, name}, roles: [{id, name}]}` entries. A role inherited from a group membership carries `inherited: true`; Redmine omits the key for a direct role, and so does this tool. Redmine limits the list to projects visible to the caller, which covers active and closed projects but not archived ones -- so an empty list means "holds none that are visible", not necessarily "holds none".
+
+Groups are deliberately not offered as an include: Redmine gates that block on the caller being an admin, so a non-admin would get a success response with the key simply missing — indistinguishable from "belongs to no groups".
 
 **Example:**
 ```json
@@ -1678,6 +1683,25 @@ Retrieve the currently authenticated user's profile. Resolves to `GET /my/accoun
   "admin": false,
   "created_on": "2025-01-15T10:00:00",
   "last_login_on": "2026-04-16T09:30:00"
+}
+```
+
+**Example** (`include_memberships=True`):
+```json
+{
+  "id": 5,
+  "login": "alice",
+  "admin": false,
+  "memberships": [
+    {
+      "id": 12,
+      "project": {"id": 1, "name": "Website"},
+      "roles": [
+        {"id": 3, "name": "Developer"},
+        {"id": 4, "name": "Manager", "inherited": true}
+      ]
+    }
+  ]
 }
 ```
 

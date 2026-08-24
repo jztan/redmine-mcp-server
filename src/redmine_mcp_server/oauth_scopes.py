@@ -351,6 +351,14 @@ TOOL_SCOPES: Dict[str, ToolScopeEntry] = {
     "list_redmine_issue_priorities": frozenset(),
     # GET /users.json is admin-gated by Redmine itself.
     "list_redmine_users": frozenset(),
+    # GET /users/current.json is exempt from UsersController's require_admin
+    # filter and resolves 'current' behind a bare require_login, so any token
+    # may call it. include_memberships does not change that: the memberships
+    # block in app/views/users/show.api.rsb has no permission check, and
+    # Redmine already narrows the list with Project.visible_condition for the
+    # caller. view_members would be the wrong scope to require -- it gates
+    # GET /projects/:id/memberships.json, i.e. reading who else is a member,
+    # and demanding it would deny a call Redmine itself allows.
     "get_current_user": frozenset(),
     # --- meta ---
     "get_mcp_server_info": frozenset(),
