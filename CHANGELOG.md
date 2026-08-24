@@ -7,45 +7,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-### Fixed
-- The issue tools build their pagination envelope through the shared
-  `_pagination_info` helper
-  ([#240](https://github.com/jztan/redmine-mcp-server/issues/240)).
-  `has_next` is now measured as `offset + limit < total` instead of inferred
-  from a full page, which claimed one page too many whenever the collection
-  size was an exact multiple of the page size. The total reads off the same
-  response the issues came from instead of costing a second `limit=1`
-  request. A `limit` above 100 is passed through whole instead of being
-  silently truncated to 100 rows. An unmeasured total is reported as `null`,
-  never an estimate, and `search_redmine_issues` now reports `total: null`
-  explicitly instead of omitting the key.
-- Documentation no longer describes `list_redmine_projects` as listing every
-  accessible project. Redmine defaults the query to `status = 1`, so the
-  tool has always returned active projects only; the docs now say so and
-  give the `filters={"status": "1|5"}` remedy
-  ([#238](https://github.com/jztan/redmine-mcp-server/issues/238)).
-- `get_current_user` docs named `GET /my/account.json` as the endpoint. The
-  call is `GET /users/current.json`, the one that can render memberships.
-- `list_project_issue_custom_fields` no longer invents the six metadata keys
-  Redmine never sends. The include renders only `id` and `name` per field;
-  `field_format`, `is_required`, `multiple`, `default_value`,
-  `possible_values` and `trackers` were local defaults, and
-  `is_required: false` invited a caller to omit a required field and fail
-  the create (the failure #119 reported). Those keys now report `null`,
-  documented as "not readable on this token"; the real definitions live on
-  an admin-only endpoint no non-admin token can read
-  ([#232](https://github.com/jztan/redmine-mcp-server/issues/232)).
-- `list_project_issue_custom_fields` returns a `TRACKER_BINDINGS_UNREADABLE`
-  error when `tracker_id` is passed and the response carries no tracker
-  bindings (on a stock Redmine it never does), instead of silently returning
-  an unfiltered list. Where bindings are readable, a field bound to no
-  tracker is excluded rather than treated as global
-  ([#232](https://github.com/jztan/redmine-mcp-server/issues/232)).
-- `list_project_issue_custom_fields` requires the `view_project` scope
-  instead of none, matching the `projects#show` request it makes; a token
-  without it was refused by Redmine after this server had already admitted
-  the call ([#232](https://github.com/jztan/redmine-mcp-server/issues/232)).
-
 ### Added
 - MCP tool annotations on every tool, so clients can tell read-only queries
   from writes. Read tools advertise `readOnlyHint`, which lets annotation
@@ -94,6 +55,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   request, no new scope. `groups` is deliberately not offered, since Redmine
   renders it only for admins and silently omits it otherwise
   ([#236](https://github.com/jztan/redmine-mcp-server/issues/236)).
+
+### Fixed
+- The issue tools build their pagination envelope through the shared
+  `_pagination_info` helper
+  ([#240](https://github.com/jztan/redmine-mcp-server/issues/240)).
+  `has_next` is now measured as `offset + limit < total` instead of inferred
+  from a full page, which claimed one page too many whenever the collection
+  size was an exact multiple of the page size. The total reads off the same
+  response the issues came from instead of costing a second `limit=1`
+  request. A `limit` above 100 is passed through whole instead of being
+  silently truncated to 100 rows. An unmeasured total is reported as `null`,
+  never an estimate, and `search_redmine_issues` now reports `total: null`
+  explicitly instead of omitting the key.
+- Documentation no longer describes `list_redmine_projects` as listing every
+  accessible project. Redmine defaults the query to `status = 1`, so the
+  tool has always returned active projects only; the docs now say so and
+  give the `filters={"status": "1|5"}` remedy
+  ([#238](https://github.com/jztan/redmine-mcp-server/issues/238)).
+- `get_current_user` docs named `GET /my/account.json` as the endpoint. The
+  call is `GET /users/current.json`, the one that can render memberships.
+- `list_project_issue_custom_fields` no longer invents the six metadata keys
+  Redmine never sends. The include renders only `id` and `name` per field;
+  `field_format`, `is_required`, `multiple`, `default_value`,
+  `possible_values` and `trackers` were local defaults, and
+  `is_required: false` invited a caller to omit a required field and fail
+  the create (the failure #119 reported). Those keys now report `null`,
+  documented as "not readable on this token"; the real definitions live on
+  an admin-only endpoint no non-admin token can read
+  ([#232](https://github.com/jztan/redmine-mcp-server/issues/232)).
+- `list_project_issue_custom_fields` returns a `TRACKER_BINDINGS_UNREADABLE`
+  error when `tracker_id` is passed and the response carries no tracker
+  bindings (on a stock Redmine it never does), instead of silently returning
+  an unfiltered list. Where bindings are readable, a field bound to no
+  tracker is excluded rather than treated as global
+  ([#232](https://github.com/jztan/redmine-mcp-server/issues/232)).
+- `list_project_issue_custom_fields` requires the `view_project` scope
+  instead of none, matching the `projects#show` request it makes; a token
+  without it was refused by Redmine after this server had already admitted
+  the call ([#232](https://github.com/jztan/redmine-mcp-server/issues/232)).
 
 ### Contributors
 - @mmahmed, reported and fixed the fabricated custom field metadata
