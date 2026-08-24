@@ -323,7 +323,10 @@ def list_redmine_projects(
 
     With ``include_custom_fields`` this is the only tool that returns project
     custom field *values*, which are a different set from the issue custom
-    fields ``list_project_issue_custom_fields`` covers.
+    fields ``list_project_issue_custom_fields`` covers. No tool exposes custom
+    field *definitions* -- ``field_format``, ``is_required``,
+    ``possible_values`` -- for either set: Redmine serves those to
+    administrators only.
 
     Args:
         include_custom_fields: Add ``custom_fields`` to each project. Costs no
