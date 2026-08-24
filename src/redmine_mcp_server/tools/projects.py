@@ -266,65 +266,49 @@ def list_redmine_projects(
     and ``!`` operators, so ``"*"`` is not a way to ask for every status --
     it would be read as a literal value and match nothing.
 
-    ``GET /projects.json`` runs the request's parameters through that
-    ``ProjectQuery``, so the collection is narrowed server-side rather than
-    fetched whole and filtered afterwards. A filter Redmine cannot read is
-    not an error there -- it answers 200 with the collection unnarrowed -- so
-    check the result against what was asked for rather than assuming the
-    filter applied.
+    ``filters`` narrows the collection server-side. A filter Redmine cannot
+    read is not an error there -- it answers 200 with the collection
+    unnarrowed -- so check the result against what was asked for.
 
     With ``include_custom_fields`` this is the only tool that returns project
-    custom field *values*. Project custom fields and issue custom fields are
-    separate in Redmine: ``list_project_issue_custom_fields`` covers the
-    latter, a different set, and no tool exposes project custom field
-    definitions.
+    custom field *values*, which are a different set from the issue custom
+    fields ``list_project_issue_custom_fields`` covers.
 
     Args:
         include_custom_fields: Add ``custom_fields`` to each project. Costs no
             extra request; opt-in only to keep the default response small.
         limit: Maximum number of projects to return, up to 1000. Omitted by
             default, which returns every visible project -- what this tool has
-            always done. Omitting it is also the cheapest way to do that: with
-            no limit python-redmine reads the collection's ``total_count`` and
-            stops there, whereas a supplied limit is paged in full regardless
-            of how many projects exist. ``limit=1000`` on an instance holding
-            seven projects costs ten requests and returns the same seven, nine
-            of them empty. So ask for a number you want, not a large one
-            meaning "all".
+            always done, and the cheapest way to do it. A supplied limit is
+            paged in full however few projects exist, so ``limit=1000`` on a
+            seven-project instance costs ten requests to return seven rows:
+            ask for a number you want, not a large one meaning "all".
         offset: Projects to skip before collecting results. With no
-            ``limit`` this costs the same number of requests as reading from
-            zero: python-redmine pages ``total_count`` rows *from* ``offset``
-            rather than up to it, so the requests past the end come back
-            empty. On 250 projects, ``offset=240`` is three requests to
-            return ten rows. Pair a large ``offset`` with a ``limit``.
+            ``limit`` a late offset costs what reading from zero costs --
+            paging runs ``total_count`` rows *from* ``offset`` rather than up
+            to it -- so pair a large ``offset`` with a ``limit``.
         include_pagination_info: Return
             ``{"projects": [...], "pagination": {...}}`` rather than a bare
             list (default: False), with the keys ``list_redmine_issues``
             returns. ``total`` is Redmine's own count for the filtered
-            collection, so it costs no extra request. A deployment that
-            suppresses API metadata (``nometa``) is the one case it cannot be
-            trusted: the list is then truncated at one page and ``total``
-            reports that page, so it reads as complete.
-        filters: Redmine query filters to narrow the list, for the filters
-            this signature does not name -- most usefully
-            ``{"cf_42": "value"}`` for a project custom field. Accepted keys
-            are ``status``, ``id``, ``name``, ``description``, ``parent_id``,
-            ``is_public``, ``created_on`` and ``updated_on`` -- the filters
-            ``ProjectQuery`` registers -- plus ``cf_<id>``, optionally
-            chained as ``cf_<id>.cf_<id>``, ``cf_<id>.due_date`` or
-            ``cf_<id>.status``. Any other key is refused, with an error
-            naming what it objected to. Each value must be a single scalar:
-            a string, number, date or datetime, never a list, a dict,
-            ``None`` or a ``bool`` (write a yes/no filter as ``"1"`` or
-            ``"0"``). An operator rides inside the value as a prefix Redmine
-            strips off -- ``{"created_on": ">=2024-01-01"}``,
-            ``{"name": "~api"}`` -- and alternatives are joined with ``|``,
-            as in ``{"status": "1|5"}``. Which operators a filter takes
-            depends on its type, so a rejected operator is read as a literal
-            value rather than erroring. A ``cf_<id>`` field also needs its
-            "Used as a filter" setting on and has to be visible to the
-            caller, and must be a *project* custom field -- a different set
-            from issue custom fields.
+            collection and costs no extra request -- except where a
+            deployment suppresses API metadata (``nometa``), which truncates
+            the list at one page and reports a ``total`` that agrees with it.
+        filters: Redmine query filters, for what this signature does not
+            name -- most usefully ``{"cf_42": "value"}`` for a project custom
+            field. Accepted keys are ``status``, ``id``, ``name``,
+            ``description``, ``parent_id``, ``is_public``, ``created_on`` and
+            ``updated_on``, plus ``cf_<id>`` and its chained spellings; any
+            other key is refused, with an error naming what it objected to.
+            Each value is one scalar -- a string, number, date or datetime,
+            never a list, a dict, ``None`` or a ``bool`` (write a yes/no
+            filter as ``"1"``). An operator rides inside the value as a
+            prefix, as in ``{"created_on": ">=2024-01-01"}`` or
+            ``{"name": "~api"}``, and alternatives join with ``|``, as in
+            ``{"status": "1|5"}``; an operator the filter's type does not
+            accept is read as a literal value rather than erroring. A
+            ``cf_<id>`` must be a *project* custom field, visible to the
+            caller, with "Used as a filter" on.
 
     Returns:
         A list of dictionaries, each representing a project -- or, with
