@@ -19,7 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   registers -- `status`, `id`, `name`, `description`, `parent_id`,
   `is_public`, `created_on`, `updated_on` -- plus `cf_<id>` and the chained
   `cf_<id>.cf_<id>`, `cf_<id>.due_date` and `cf_<id>.status` spellings, with
-  each value a single scalar rather than a list, a dict or `None`. An
+  each value a single scalar rather than a list, a dict, `None` or a `bool`
+  (which urlencodes as `True`, so a yes/no filter has to be written `"1"` or
+  `"0"` to match anything). An
   allowlist rather than a denylist because the two directions are not
   symmetric: Redmine ignores a filter parameter it does not register, so
   refusing an unknown key costs a caller nothing it could have used, whereas a
@@ -34,9 +36,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carries a `status`, `ProjectQuery` starting out with `status = 1` already
   set; the tool description now says so, since an LLM that does not know it
   reports a partial list as complete. Omitting `limit` still returns every
-  visible project, so existing callers are unaffected; `limit` is deliberately
+  visible project, so existing callers are unaffected. `limit` is deliberately
   not clamped to Redmine's 100-per-request ceiling, since python-redmine pages
-  past it itself
+  past it itself, but it is capped at 1000 -- the ceiling
+  `list_redmine_issues` already uses -- because that paging is driven by the
+  limit asked for rather than by the collection's `total_count`: an
+  unbounded `limit` turns into `ceil(limit/100)` sequential requests however
+  few projects exist, so `limit=10000` on a seven-project instance issued a
+  hundred of them, ninety-nine returning nothing. `limit` and `offset` now
+  carry their bounds in the tool schema like every other list tool, so an
+  out-of-range value comes back as the standard `INVALID_ARGUMENTS` envelope
+  instead of an ad-hoc error string
   ([#ISSUE](https://github.com/jztan/redmine-mcp-server/issues/ISSUE)).
 
 ## [2.12.0] - 2026-08-22

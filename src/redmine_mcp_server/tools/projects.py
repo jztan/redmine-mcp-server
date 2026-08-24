@@ -3,8 +3,9 @@ roles, modules, status summaries.
 """
 
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 
+from pydantic import Field
 from redminelib.exceptions import ResourceNotFoundError
 
 from .._cleanup import _ensure_cleanup_started
@@ -213,7 +214,14 @@ def _membership_to_dict(membership: Any) -> Dict[str, Any]:
 # guards below, so accepting it through `filters` too would give a caller a
 # second, unchecked route to the same key. `filters` exists for the keys the
 # signature does not name -- `cf_<id>` most of all.
-_PROJECT_OWNED_QUERY_KEYS = frozenset({"limit", "offset"})
+#
+# `include_custom_fields` is named here even though it is not a query
+# parameter at all: it selects the response shape. The allowlist below would
+# refuse it anyway, for not being one of Redmine's filters, but it would say
+# "the accepted keys are status, id, name, ..." -- true, and no help to a
+# caller whose actual mistake was reaching for `filters` instead of the named
+# argument. Owning it puts that guard first and answers the question asked.
+_PROJECT_OWNED_QUERY_KEYS = frozenset({"limit", "offset", "include_custom_fields"})
 
 
 # The filter names Redmine's `ProjectQuery` hands to `add_available_filter`
@@ -239,8 +247,8 @@ _PROJECT_QUERY_FILTER_NAMES = frozenset(
 @offloaded
 def list_redmine_projects(
     include_custom_fields: bool = False,
-    limit: Optional[int] = None,
-    offset: int = 0,
+    limit: Annotated[Optional[int], Field(ge=1, le=1000)] = None,
+    offset: Annotated[int, Field(ge=0)] = 0,
     filters: Optional[Dict[str, Any]] = None,
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """
@@ -271,8 +279,15 @@ def list_redmine_projects(
     Args:
         include_custom_fields: Add ``custom_fields`` to each project. Costs no
             extra request; opt-in only to keep the default response small.
-        limit: Maximum number of projects to return. Omitted by default, which
-            returns every visible project -- what this tool has always done.
+        limit: Maximum number of projects to return, up to 1000. Omitted by
+            default, which returns every visible project -- what this tool has
+            always done. Omitting it is also the cheapest way to do that: with
+            no limit python-redmine reads the collection's ``total_count`` and
+            stops there, whereas a supplied limit is paged in full regardless
+            of how many projects exist. ``limit=1000`` on an instance holding
+            seven projects costs ten requests and returns the same seven, nine
+            of them empty. So ask for a number you want, not a large one
+            meaning "all".
         offset: Projects to skip before collecting results. Without a
             ``limit``, paging still runs to the end of the collection from
             ``offset``.
@@ -287,8 +302,9 @@ def list_redmine_projects(
             refused with an error naming that set, ``fields``, ``f`` and
             ``query_id`` among them, which Redmine reads as the query's own
             definition and which discard every filter built from the rest of
-            the request, and ``limit`` and ``offset``, which are named
-            parameters here. Each value must be a single scalar -- a string,
+            the request, and ``limit``, ``offset`` and
+            ``include_custom_fields``, which are named parameters here.
+            Each value must be a single scalar -- a string,
             number, date or datetime -- never a list, a dict, ``None`` or a
             ``bool`` (which is sent as ``True`` and matches nothing; write a
             yes/no filter as ``"1"`` or ``"0"``); an operator rides inside

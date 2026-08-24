@@ -212,7 +212,7 @@ Lists accessible projects in the Redmine instance, optionally narrowed server-si
 
 **Parameters:**
 - `include_custom_fields` (boolean, optional): Add `custom_fields` to each project. Default: `false`
-- `limit` (integer, optional): Maximum number of projects to return. Omitted by default, which returns every visible project
+- `limit` (integer, optional): Maximum number of projects to return, `1`–`1000`. Omitted by default, which returns every visible project — and omitting it is also the cheapest way to do that. With no limit python-redmine reads the collection's `total_count` and stops there; a supplied limit is paged in full regardless of how many projects exist, so `limit=1000` against an instance holding seven costs ten requests and returns the same seven. Ask for a number you want, not a large one meaning "all"
 - `offset` (integer, optional): Projects to skip before collecting results. Default: `0`
 - `filters` (object, optional): Redmine query filters to narrow the list, for the filters this signature does not name — e.g. `{"cf_42": "Gold"}`. Accepted keys and value types are listed below
 

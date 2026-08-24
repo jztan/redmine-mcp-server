@@ -39,6 +39,7 @@ EXPECTED_BOUNDS = [
     ("search_redmine_issues", "limit", 1, 1000, 25),
     ("search_redmine_issues", "offset", 0, None, 0),
     ("manage_document", "limit", 1, 100, 100),
+    ("list_redmine_projects", "offset", 0, None, 0),
 ]
 
 
@@ -82,6 +83,35 @@ async def test_limit_offset_carry_explicit_bounds(
         f"{tool_name}.{param}: expected default={default}, "
         f"got {prop.get('default')}"
     )
+
+
+@pytest.mark.asyncio
+async def test_project_list_limit_is_bounded_optional_int():
+    """`list_redmine_projects.limit` is genuinely optional.
+
+    ``None`` means "every visible project", which is what the tool returned
+    before it took a limit at all, so the default cannot become a number
+    without truncating existing callers. The integer branch still has to carry
+    bounds: python-redmine pages a supplied limit in full rather than stopping
+    at ``total_count``, so an unbounded one turns into ``ceil(limit/100)``
+    sequential requests no matter how few projects exist.
+    """
+    async with Client(_server.mcp) as client:
+        listed = {t.name: t for t in await client.list_tools()}
+
+    schema = listed["list_redmine_projects"].inputSchema
+    prop = schema["properties"]["limit"]
+
+    any_of = prop.get("anyOf")
+    assert any_of, f"limit must remain Optional (anyOf with null); got {prop}"
+    int_branch = next((b for b in any_of if b.get("type") == "integer"), None)
+    assert int_branch is not None
+    assert int_branch.get("minimum") == 1
+    assert int_branch.get("maximum") == 1000
+
+    null_branch = next((b for b in any_of if b.get("type") == "null"), None)
+    assert null_branch is not None
+    assert prop.get("default") is None
 
 
 @pytest.mark.asyncio

@@ -134,7 +134,7 @@ class TestReservedQueryKeys:
 
 class TestOwnedQueryKeys:
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("key", ["limit", "offset"])
+    @pytest.mark.parametrize("key", ["limit", "offset", "include_custom_fields"])
     async def test_signature_owned_key_is_rejected(self, key):
         """Routing around the named parameter would skip its validation."""
         manager = _RecordingProjectManager()
@@ -153,6 +153,26 @@ class TestOwnedQueryKeys:
         with _patched(manager):
             result = await list_redmine_projects(filters={"offset": 1, "limit": 5})
         assert "limit, offset" in result["error"]
+        assert manager.calls == []
+
+    @pytest.mark.asyncio
+    async def test_the_response_shape_flag_gets_the_useful_message(self):
+        """`include_custom_fields` is not a query parameter at all.
+
+        The unregistered-key allowlist would refuse it too, but its message
+        lists Redmine's filter names -- which is not the answer to "why did
+        my key not work" when the answer is "it is a named argument". Owning
+        the key puts that guard first.
+        """
+        manager = _RecordingProjectManager()
+        with _patched(manager):
+            result = await list_redmine_projects(
+                filters={"include_custom_fields": True}
+            )
+        assert result["error"] == (
+            "filters may not contain include_custom_fields: pass it as the "
+            "named parameter instead, so it is validated."
+        )
         assert manager.calls == []
 
 
