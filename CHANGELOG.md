@@ -90,6 +90,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   previously justified an empty entry with a comment about
   `/custom_fields.json` being admin-gated, an endpoint this tool has never
   called.
+
+### Added
 - `list_redmine_projects` now returns the six fields Redmine's project index
   renders and this serializer discarded: `homepage`, `parent`, `status`,
   `is_public`, `inherit_members` and `updated_on`. `status` is Redmine's
