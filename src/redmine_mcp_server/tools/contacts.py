@@ -753,12 +753,14 @@ async def manage_contact(
             ``count``, ``has_next``, ``has_previous``, ``next_offset``,
             ``previous_offset``. ``total`` is the ``total_count`` Redmine
             reports for the collection, so a truncated read is visible without
-            paging until an empty page comes back. ``total``, ``has_next`` and
-            ``next_offset`` are ``null`` if the response carried no
-            ``total_count``, meaning not reported rather than no further page.
-            A ``search`` narrows the page without narrowing the total, so read
-            ``count`` for what this call matched and ``total`` as the
-            collection it searched.
+            paging until an empty page comes back. ``limit`` and ``offset``
+            are the window Redmine reports applying, so ``next_offset`` is a
+            real page boundary. If a response carries no ``total_count``,
+            ``total`` is ``null`` -- read that as not reported, never as a
+            number -- and ``has_next`` falls back to "the page came back
+            full", so it stays safe to loop on. A ``search`` narrows the page
+            without narrowing the total, so read ``count`` for what this call
+            matched and ``total`` as the collection it searched.
         include: ``get`` only. Comma-separated related data to request.
         first_name: Required on ``create``. Filters a ``list`` where
             ``REDMINE_CRM_EDITION=pro``.
