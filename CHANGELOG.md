@@ -10,200 +10,104 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - The issue tools build their pagination envelope through the shared
   `_pagination_info` helper
-  ([#240](https://github.com/jztan/redmine-mcp-server/issues/240)). Three
-  defects go with it. `list_redmine_issues` computed `has_next` from a full
-  page (`len(result) == limit`), which reported one page too many whenever
-  the collection size was an exact multiple of the page size; with the total
-  in hand it is now measured as `offset + limit < total`. It spent a second
-  `limit=1` request on that total, which now reads off the same response the
-  issues came from, so the envelope costs nothing extra. And it capped the
-  request at 100 rows while reporting the requested window, so `limit=250`
-  silently returned 100 issues; the limit is now passed through whole, which
-  python-redmine pages itself in chunks of 100. When a response carries no
-  usable total, `total` is now `null` rather than the invented
-  `offset + count + 1` estimate, and `has_next` falls back to the full-page
-  inference. `search_redmine_issues` now reports `total: null` explicitly
-  (the Search API measures nothing), where it used to omit the key and
-  disagree with every other pagination envelope in the server.
+  ([#240](https://github.com/jztan/redmine-mcp-server/issues/240)).
+  `has_next` is now measured as `offset + limit < total` instead of inferred
+  from a full page, which claimed one page too many whenever the collection
+  size was an exact multiple of the page size. The total reads off the same
+  response the issues came from instead of costing a second `limit=1`
+  request. A `limit` above 100 is passed through whole instead of being
+  silently truncated to 100 rows. An unmeasured total is reported as `null`,
+  never an estimate, and `search_redmine_issues` now reports `total: null`
+  explicitly instead of omitting the key.
 - Documentation no longer describes `list_redmine_projects` as listing every
-  accessible project. Redmine's `ProjectQuery` starts with a `status = 1`
-  filter already set, so a call passing no `status` has always answered with
-  active projects alone while reading as the whole list -- a partial answer an
-  LLM had no way to know was partial. The tool keeps Redmine's default rather
-  than overriding it, and now says so, along with the `filters={"status":
-  "1|5"}` remedy and the fact that only `1` and `5` are reachable here:
-  archived and scheduled-for-deletion belong to `ProjectAdminQuery`, which this
-  endpoint does not use
+  accessible project. Redmine defaults the query to `status = 1`, so the
+  tool has always returned active projects only; the docs now say so and
+  give the `filters={"status": "1|5"}` remedy
   ([#238](https://github.com/jztan/redmine-mcp-server/issues/238)).
-- `get_current_user` docs said the tool resolves to `GET /my/account.json`.
-  It resolves to `GET /users/current.json`; python-redmine only rewrites the
-  path for the `me` id, not `current`. The distinction matters because
-  `/my/account.json` renders no memberships at all.
-
-- `list_project_issue_custom_fields` no longer invents the six keys Redmine
-  never sends. It reads
-  `GET /projects/{id}.json?include=issue_custom_fields`, which Redmine renders
-  as exactly `id` and `name` per field
-  (`app/helpers/projects_helper.rb`, unchanged in 6.1, 7.0 and trunk), and
-  every other attribute was read through a `getattr` fallback -- so
-  `field_format: ""`, `is_required: false`, `multiple: false`,
-  `default_value: null`, `possible_values: []` and `trackers: []` came back
-  for every field, always. `is_required: false` was the sharp edge: it is
-  byte-identical to a real "this field is optional", so a caller omitted the
-  field and Redmine rejected the create with `"<field> cannot be blank"` --
-  the failure #119 reported and could not explain. Those keys are now `null`,
-  documented as "not readable on this token". They are kept rather than
-  dropped so the response shape is stable and so they populate for free if a
-  future Redmine fills the include in.
-
-  The definitions live on `GET /custom_fields.json`, which Redmine restricts
-  to administrators (`before_action :require_admin`, still covering `index` in
-  7.0), so no non-admin token can obtain them; under OAuth an administrator's
-  token cannot either, since `User#admin?` also requires the `admin` scope,
-  which this server deliberately never requests. Redmine has four open
-  requests to expose this metadata to non-admins, the oldest from 2015 and
-  none with a target version:
-  [#18875](https://www.redmine.org/issues/18875),
-  [#41318](https://www.redmine.org/issues/41318),
-  [#42581](https://www.redmine.org/issues/42581) and
-  [#43407](https://www.redmine.org/issues/43407), the last asking for exactly
-  these keys.
-  ([#232](https://github.com/jztan/redmine-mcp-server/issues/232))
-- `list_project_issue_custom_fields` now returns an error --
-  `code: "TRACKER_BINDINGS_UNREADABLE"`, with the recovery in `hint` -- when
-  `tracker_id` is passed and the response does not describe tracker bindings,
-  which on a stock Redmine is always. It used to read absent bindings as "applies to every
-  tracker" and return every field in the project, indistinguishable from a
-  filtered list. Where bindings *are* readable, a field bound to no tracker is
-  now excluded rather than treated as global: Redmine computes an issue's
-  fields as `project.all_issue_custom_fields & tracker.custom_fields`
-  (`app/models/issue.rb`), so an unbound field reaches no issue.
-- `list_project_issue_custom_fields` requires the `view_project` scope instead
-  of none, for the `projects#show` request it makes. `view_project` being a
-  `:public => true` permission is not an exemption, because
-  `Role#allowed_permissions` intersects the public permissions with the
-  token's scopes too (`scope.present? ? unscoped & scope : unscoped`), so a
-  token carrying no scopes is refused by Redmine after this server had already
-  admitted the call. Nothing beyond `view_project` is required: every released
-  Redmine renders the `issue_custom_fields` include gated on
-  `include_in_api_response?` alone, with no permission check. The scope map
-  previously justified an empty entry with a comment about
-  `/custom_fields.json` being admin-gated, an endpoint this tool has never
-  called.
+- `get_current_user` docs named `GET /my/account.json` as the endpoint. The
+  call is `GET /users/current.json`, the one that can render memberships.
+- `list_project_issue_custom_fields` no longer invents the six metadata keys
+  Redmine never sends. The include renders only `id` and `name` per field;
+  `field_format`, `is_required`, `multiple`, `default_value`,
+  `possible_values` and `trackers` were local defaults, and
+  `is_required: false` invited a caller to omit a required field and fail
+  the create (the failure #119 reported). Those keys now report `null`,
+  documented as "not readable on this token"; the real definitions live on
+  an admin-only endpoint no non-admin token can read
+  ([#232](https://github.com/jztan/redmine-mcp-server/issues/232)).
+- `list_project_issue_custom_fields` returns a `TRACKER_BINDINGS_UNREADABLE`
+  error when `tracker_id` is passed and the response carries no tracker
+  bindings (on a stock Redmine it never does), instead of silently returning
+  an unfiltered list. Where bindings are readable, a field bound to no
+  tracker is excluded rather than treated as global
+  ([#232](https://github.com/jztan/redmine-mcp-server/issues/232)).
+- `list_project_issue_custom_fields` requires the `view_project` scope
+  instead of none, matching the `projects#show` request it makes; a token
+  without it was refused by Redmine after this server had already admitted
+  the call ([#232](https://github.com/jztan/redmine-mcp-server/issues/232)).
 
 ### Added
 - MCP tool annotations on every tool, so clients can tell read-only queries
-  from writes. Read tools now advertise `readOnlyHint`, which lets annotation
+  from writes. Read tools advertise `readOnlyHint`, which lets annotation
   aware clients skip write-operation approval prompts for ordinary Redmine
-  queries. Additive tools advertise `destructiveHint=false`. Annotations are
+  queries; additive tools advertise `destructiveHint=false`. Annotations are
   advisory client metadata: OAuth scope enforcement and
-  `REDMINE_MCP_READ_ONLY` remain the server-side controls. ([#204](https://github.com/jztan/redmine-mcp-server/issues/204))
-- `list_redmine_projects` now returns the six fields Redmine's project index
-  renders and this serializer discarded: `homepage`, `parent`, `status`,
+  `REDMINE_MCP_READ_ONLY` remain the server-side controls
+  ([#204](https://github.com/jztan/redmine-mcp-server/issues/204)).
+- `list_redmine_projects` returns the six fields Redmine's project index
+  renders and the serializer discarded: `homepage`, `parent`, `status`,
   `is_public`, `inherit_members` and `updated_on`. `status` is Redmine's
-  integer code (`1` active, `5` closed), which is what makes a
-  `filters={"status": "1|5"}` read legible -- until now a closed project
-  could be fetched but not identified. `parent` is `{id, name}` like every
-  other reference in this server, and `null` where Redmine omitted it, which
-  it does unless the parent exists *and* is visible to the caller: `null`
-  therefore means top-level **or** a parent this caller cannot see, and the
-  documentation says so rather than promising the first. A key the payload
-  did not carry is `null` and never a substituted default -- for
-  `is_public` and `inherit_members` in particular, a `False` would read as a
-  setting Redmine never sent
+  integer code (`1` active, `5` closed). `parent` is `{id, name}`, `null`
+  when Redmine omits it (top-level, or a parent the caller cannot see). An
+  absent key is `null`, never a substituted default
   ([#238](https://github.com/jztan/redmine-mcp-server/issues/238)).
 - `list_redmine_projects` can return pagination metadata with
-  `include_pagination_info=True` -- `{"projects": [...], "pagination": {...}}`,
-  the same envelope and the same keys `list_redmine_issues` returns -- so a
-  caller can state a count without counting and tell a narrowed read from a
-  complete one. `total` is Redmine's own `total_count`, read off the resource
-  set the rows already came from, so it costs no extra request; unlike the
-  issue tools, which spend a second `limit=1` query on it. It is reported for
-  every read Redmine measures: `@project_count` comes from
-  `@query.result_count`, the same query the rows come from, so a filter narrows
-  the count along with the collection. The exception is a deployment that
-  suppresses API metadata (`nometa` or `X-Redmine-Nometa`), where the response
-  carries no `total_count`, python-redmine stops after one page and reports its
-  length, and the envelope therefore reads as a complete collection when it is
-  one chunk of a larger one -- documented on the parameter, since nothing
-  reachable from a client can tell that apart from a genuinely small instance.
-  With no `limit` there is no page size, so the envelope describes
-  one complete read -- `has_next` false, and `previous_offset` pointing back at
-  the start rather than at the offset the caller is already on. The default
-  return is still a bare array
+  `include_pagination_info=True`: the same envelope and keys as
+  `list_redmine_issues`. `total` is Redmine's own `total_count`, read off
+  the same response, so it costs no extra request. A deployment that
+  suppresses API metadata (`nometa` or `X-Redmine-Nometa`) truncates the
+  read to one page with a total that agrees; this is documented, since no
+  client can detect it. The default return is still a bare array
   ([#238](https://github.com/jztan/redmine-mcp-server/issues/238)).
-- `list_redmine_projects` gains `filters`, `limit` and `offset`, so a project
-  list can be narrowed server-side instead of fetched whole and filtered by
-  the caller. `filters` carries the query parameters the signature doesn't
-  name -- `{"cf_42": "Gold"}` for a project custom field above all, which
-  needs its "Used as a filter" setting on. Until now a project custom field
-  flagged filterable was unreachable from this connector, while the equivalent
-  contact custom field narrowed correctly through `manage_contact`'s `filters`
-  on the same deployment. `filters` accepts only the filters `ProjectQuery`
-  registers -- `status`, `id`, `name`, `description`, `parent_id`,
-  `is_public`, `created_on`, `updated_on` -- plus `cf_<id>` and the chained
-  `cf_<id>.cf_<id>`, `cf_<id>.due_date` and `cf_<id>.status` spellings, with
-  each value a single scalar rather than a list, a dict, `None` or a `bool`
-  (which urlencodes as `True`, so a yes/no filter has to be written `"1"` or
-  `"0"` to match anything). An
-  allowlist rather than a denylist because the two directions are not
-  symmetric: Redmine ignores a filter parameter it does not register, so
-  refusing an unknown key costs a caller nothing it could have used, whereas a
-  parameter that is not a filter at all can still be read by another part of
-  the same request -- `key`, which Redmine prefers over the
-  `X-Redmine-API-Key` header python-redmine sets, being the case in point.
-  `fields`, `f` and `query_id` stay named in the refusal (Redmine reads the
-  first two as the query's own filter definition and drops every other filter
-  alongside them, and `query_id` selects a saved query instead -- each answers
-  `200` with the wrong set), as do `limit` and `offset`, which are named
-  parameters here. The tool returns only *active* projects unless `filters`
-  carries a `status`, `ProjectQuery` starting out with `status = 1` already
-  set; the tool description now says so, since an LLM that does not know it
-  reports a partial list as complete. Omitting `limit` still returns every
-  visible project, so existing callers are unaffected. `limit` is deliberately
-  not clamped to Redmine's 100-per-request ceiling, since python-redmine pages
-  past it itself, but it is capped at 1000 -- the ceiling
-  `list_redmine_issues` already uses -- because that paging is driven by the
-  limit asked for rather than by the collection's `total_count`: an
-  unbounded `limit` turns into `ceil(limit/100)` sequential requests however
-  few projects exist, so `limit=10000` on a seven-project instance issued a
-  hundred of them, ninety-nine returning nothing. `limit` and `offset` now
-  carry their bounds in the tool schema like every other list tool, so an
-  out-of-range value comes back as the standard `INVALID_ARGUMENTS` envelope
-  instead of an ad-hoc error string
+- `list_redmine_projects` gains `filters`, `limit` and `offset` for
+  server-side narrowing, above all `{"cf_42": "..."}` for a project custom
+  field. `filters` accepts only the filter names `ProjectQuery` registers
+  plus the `cf_<id>` spellings, each value a single scalar: Redmine silently
+  ignores an unregistered filter key, and a non-filter parameter can be read
+  by another part of the request (`key` substitutes the configured API key;
+  `uploads` would read and POST a local file). `limit` is capped at 1000 and
+  bounded in the schema, and the tool still returns only active projects
+  unless `filters` carries a `status`
   ([#238](https://github.com/jztan/redmine-mcp-server/issues/238)).
-- `manage_contact` `list` can return pagination metadata with
-  `include_pagination_info=True` -- `{"contacts": [...], "pagination": {...}}`,
-  the same envelope and the same keys `list_redmine_issues` returns -- so a
-  truncated read is visible from the response instead of only by paging until
-  an empty page comes back. `total` is the `total_count` the contacts response
-  already carries alongside the collection, so it costs no extra request, and
-  `has_next` is computed from it rather than inferred from a page that came
-  back full: the inference the issue tools still use reports one page too many
-  whenever the collection size is an exact multiple of the page size. Where no
-  total measures the collection being paged, `total` is null -- "not reported"
-  rather than a number nothing measured -- and `has_next` falls back to that
-  same full-page inference rather than going null, because a null is falsy and
-  a caller looping on it would stop mid-collection. Passing `search` is one
-  such case: the CRM plugin counts the collection before applying the search,
-  so its total does not describe the searched page. The default return is
-  still a bare array
+- `manage_contact` `list` can return the same pagination envelope with
+  `include_pagination_info=True`. `total` is the `total_count` already in
+  the contacts response (no extra request) and `has_next` is measured from
+  it. When no reported total measures the collection, notably under
+  `search`, whose total the CRM plugin counts before searching, `total` is
+  `null` and `has_next` falls back to the full-page inference, staying a
+  boolean a caller can loop on. The default return is still a bare array
   ([#234](https://github.com/jztan/redmine-mcp-server/issues/234)).
 - `get_current_user` can return the caller's project memberships via
   `include_memberships=True`, as `[{id, project: {id, name}, roles: [{id,
-  name}]}]` using Redmine's own keys. A role inherited from a group
-  membership carries `inherited: true`, the key being absent for a direct
-  role exactly as Redmine renders it. Previously nothing answered "which
-  projects do I hold, with which roles": `list_project_members` costs one
-  request per project. The include rides the existing
-  `GET /users/current.json` call, so this adds no request and needs no new
-  scope -- Redmine gates neither the endpoint nor the memberships block on
-  a permission, and already narrows the list to projects visible to the
-  caller. `groups`, the other include python-redmine accepts here, is
-  deliberately not offered: Redmine gates that block on the caller being an
-  admin, so a non-admin would get a 200 with the key missing, which is
-  indistinguishable from belonging to no groups
+  name}]}]` with `inherited: true` preserved on a group-inherited role. The
+  include rides the existing `GET /users/current.json` call: no extra
+  request, no new scope. `groups` is deliberately not offered, since Redmine
+  renders it only for admins and silently omits it otherwise
   ([#236](https://github.com/jztan/redmine-mcp-server/issues/236)).
+
+### Contributors
+- @mmahmed, reported and fixed the fabricated custom field metadata
+  ([#232](https://github.com/jztan/redmine-mcp-server/issues/232),
+  [#233](https://github.com/jztan/redmine-mcp-server/pull/233)), added
+  pagination metadata to contact lists
+  ([#234](https://github.com/jztan/redmine-mcp-server/issues/234),
+  [#235](https://github.com/jztan/redmine-mcp-server/pull/235)), returned
+  the caller's memberships from `get_current_user`
+  ([#236](https://github.com/jztan/redmine-mcp-server/issues/236),
+  [#237](https://github.com/jztan/redmine-mcp-server/pull/237)), and gave
+  `list_redmine_projects` filters, pagination and the six dropped fields
+  ([#238](https://github.com/jztan/redmine-mcp-server/issues/238),
+  [#239](https://github.com/jztan/redmine-mcp-server/pull/239))
 
 ## [2.12.0] - 2026-08-22
 ### Added
