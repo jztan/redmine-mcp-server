@@ -205,46 +205,73 @@ def _contact_to_dict(contact: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
+def _payload_int(value: Any) -> Optional[int]:
+    """An integer from a response payload, or ``None`` when it is not one.
+
+    ``bool`` is an ``int`` subclass, so it is excluded explicitly rather than
+    counted as a page number.
+    """
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
 def _contact_pagination_info(
     payload: Dict[str, Any], limit: int, offset: int, count: int
 ) -> Dict[str, Any]:
     """Pagination metadata for a contact list, in the issue tools' shape.
 
     The key set is the one ``list_redmine_issues`` returns under
-    ``pagination``, so a caller reads both tools the same way. ``has_next`` is
-    derived differently, and deliberately: the issue tools infer it from
-    ``len(result_issues) == limit``, which reports a further page whenever the
-    collection size is an exact multiple of the page size, while this endpoint
-    hands the connector Redmine's own ``total_count`` alongside ``contacts``.
-    The page covers rows ``[offset, offset + limit)``, so a further page exists
-    exactly when ``offset + limit`` is below the total -- measured, not guessed.
-    Counting from ``limit`` rather than from ``count`` matters when ``search``
-    is in play, since Redmine narrows the returned page without narrowing the
-    total, and the next page still starts a whole window along.
+    ``pagination``, so a caller reads both tools the same way.
 
-    A total is reported only when the payload carries one. Redmine renders
-    ``total_count`` in the API metadata of a collection response, but what a
-    given CRM build renders is the build's own business, so an absent or
-    non-integer value leaves ``total``, ``has_next`` and ``next_offset`` null.
-    That says the total was not reported, rather than asserting a number or a
-    last page nothing measured.
+    ``limit`` and ``offset`` are the window Redmine reports having applied,
+    falling back to the requested values when it reports none. Redmine echoes
+    both alongside ``total_count``, and a build that served a smaller page than
+    was asked for would otherwise get a ``next_offset`` that steps over the
+    rows it withheld.
+
+    ``has_next`` prefers measurement over inference. Given a total, the page
+    covers rows ``[offset, offset + limit)``, so a further page exists exactly
+    when ``offset + limit`` is below the total -- unlike the issue tools, which
+    infer it from a full page and so claim one whenever the collection size is
+    an exact multiple of the page size. Counting from ``limit`` rather than
+    from ``count`` matters when ``search`` is in play, since Redmine narrows
+    the returned page without narrowing the total, and the next page still
+    starts a whole window along.
+
+    Without a total it falls back to that same inference rather than to
+    ``None``. Redmine renders ``total_count`` in the API metadata of a
+    collection response, but what a given CRM build renders is the build's own
+    business, and ``None`` is falsy: a caller testing ``has_next`` would read
+    it as a last page and stop mid-collection. A full page reported as "ask
+    again" costs one extra request at worst. ``total`` stays ``None`` either
+    way, so an unreported total is never dressed up as a number.
     """
-    raw_total = payload.get("total_count")
-    total = (
-        raw_total
-        if isinstance(raw_total, int) and not isinstance(raw_total, bool)
-        else None
-    )
-    has_next = None if total is None else offset + limit < total
+    total = _payload_int(payload.get("total_count"))
+
+    applied_limit = _payload_int(payload.get("limit"))
+    if not applied_limit or applied_limit < 1:
+        applied_limit = limit
+    applied_offset = _payload_int(payload.get("offset"))
+    if applied_offset is None or applied_offset < 0:
+        applied_offset = offset
+
+    if total is None:
+        has_next = count >= applied_limit
+    else:
+        has_next = applied_offset + applied_limit < total
+
     return {
         "total": total,
-        "limit": limit,
-        "offset": offset,
+        "limit": applied_limit,
+        "offset": applied_offset,
         "count": count,
         "has_next": has_next,
-        "has_previous": offset > 0,
-        "next_offset": offset + limit if has_next else None,
-        "previous_offset": max(0, offset - limit) if offset > 0 else None,
+        "has_previous": applied_offset > 0,
+        "next_offset": applied_offset + applied_limit if has_next else None,
+        "previous_offset": (
+            max(0, applied_offset - applied_limit) if applied_offset > 0 else None
+        ),
     }
 
 

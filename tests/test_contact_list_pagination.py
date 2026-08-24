@@ -319,7 +319,14 @@ class TestWhereTheCallerIsInTheCollection:
 
 
 class TestAPayloadWithNoTotalCount:
-    """An absent total is reported as absent, not filled in with a guess."""
+    """An absent total is reported as absent, but paging still works.
+
+    ``total`` stays ``None`` -- an unreported total is never dressed up as a
+    number. ``has_next`` does not: ``None`` is falsy, so a caller testing it
+    would read a full page as the last one and stop mid-collection. Without a
+    total it falls back to the issue tools' full-page inference, which at worst
+    costs one extra request.
+    """
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
@@ -332,17 +339,49 @@ class TestAPayloadWithNoTotalCount:
             result = await manage_contact(action="list", include_pagination_info=True)
 
         assert result["pagination"] == {
+            # Not reported by this build, and not invented here.
             "total": None,
             "limit": 100,
             "offset": 0,
             "count": 100,
-            # Unknown, not "no further page": a full page proves nothing here.
-            "has_next": None,
+            # A full page with no total to check it against: say "ask again"
+            # rather than the falsy None a caller would stop on.
+            "has_next": True,
             "has_previous": False,
-            "next_offset": None,
+            "next_offset": 100,
             "previous_offset": None,
         }
         assert len(result["contacts"]) == 100
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_a_short_page_with_no_total_is_the_last_one(self, mock_redmine):
+        # The inference is only ever optimistic: short page, so there is
+        # nothing further to ask for even without a total to confirm it.
+        mock_redmine.engine.request.return_value = _collection(40, total_count=None)
+        with patch.dict(os.environ, CRM_ON):
+            result = await manage_contact(action="list", include_pagination_info=True)
+
+        assert result["pagination"]["total"] is None
+        assert result["pagination"]["has_next"] is False
+        assert result["pagination"]["next_offset"] is None
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_has_next_is_never_the_falsy_null_a_caller_would_stop_on(
+        self, mock_redmine
+    ):
+        # The regression this class exists for: `if pagination["has_next"]`
+        # must not silently truncate a collection just because the build
+        # reported no total.
+        mock_redmine.engine.request.return_value = _collection(100, total_count=None)
+        with patch.dict(os.environ, CRM_ON):
+            result = await manage_contact(action="list", include_pagination_info=True)
+
+        assert result["pagination"]["has_next"] is not None
+        assert bool(result["pagination"]["has_next"]) is True
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
@@ -375,7 +414,8 @@ class TestAPayloadWithNoTotalCount:
             result = await manage_contact(action="list", include_pagination_info=True)
 
         assert result["pagination"]["total"] is None
-        assert result["pagination"]["has_next"] is None
+        # Untrusted total, so has_next comes from the page-size inference.
+        assert result["pagination"]["has_next"] is False
         assert result["pagination"]["next_offset"] is None
 
     @pytest.mark.asyncio
