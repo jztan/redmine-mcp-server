@@ -251,9 +251,7 @@ def get_current_user(include_memberships: bool = False) -> Dict[str, Any]:
     """Retrieve the currently authenticated user's profile.
 
     Resolves to ``GET /users/current.json`` under the hood. Works for any
-    authenticated user (not admin-only): Redmine's ``UsersController``
-    exempts ``show`` from ``require_admin`` and resolves the ``current``
-    id behind a bare ``require_login``. Useful when an LLM needs to
+    authenticated user, not admin-only. Useful when an LLM needs to
     identify "me" — for example, when a user says "log 2h on this issue
     for me", the LLM can call this tool to get the current user's ID.
 
@@ -297,6 +295,11 @@ def get_current_user(include_memberships: bool = False) -> Dict[str, Any]:
         }
     """
     try:
+        # Not admin-gated: ``UsersController`` exempts ``show`` from
+        # ``require_admin`` and resolves the ``current`` id behind a bare
+        # ``require_login``. Stated here rather than in the docstring, whose
+        # leading prose ships in every ``tools/list``; see also the
+        # ``get_current_user`` note in ``oauth_scopes.py``.
         # Only ``memberships`` is exposed, not a free-text ``include``.
         # ``User._includes`` also accepts ``groups``, which Redmine gates on
         # ``User.current.admin?`` -- a non-admin would get a 200 with the key
