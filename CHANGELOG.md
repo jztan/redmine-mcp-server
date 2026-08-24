@@ -40,10 +40,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   caller can state a count without counting and tell a narrowed read from a
   complete one. `total` is Redmine's own `total_count`, read off the resource
   set the rows already came from, so it costs no extra request; unlike the
-  issue tools, which spend a second `limit=1` query on it. It is also always
-  reported: Redmine builds `@project_count` from `@query.result_count`, the
-  same query the rows come from, so a filter narrows the count along with the
-  collection. With no `limit` there is no page size, so the envelope describes
+  issue tools, which spend a second `limit=1` query on it. It is reported for
+  every read Redmine measures: `@project_count` comes from
+  `@query.result_count`, the same query the rows come from, so a filter narrows
+  the count along with the collection. The exception is a deployment that
+  suppresses API metadata (`nometa` or `X-Redmine-Nometa`), where the response
+  carries no `total_count`, python-redmine stops after one page and reports its
+  length, and the envelope therefore reads as a complete collection when it is
+  one chunk of a larger one -- documented on the parameter, since nothing
+  reachable from a client can tell that apart from a genuinely small instance.
+  With no `limit` there is no page size, so the envelope describes
   one complete read -- `has_next` false, and `previous_offset` pointing back at
   the start rather than at the offset the caller is already on. The default
   return is still a bare array
