@@ -17,6 +17,7 @@ from .._offload import in_thread, offloaded
 from .._serialization import (
     _custom_fields_to_list,
     _named_ref,
+    _pagination_info,
     _safe_isoformat,
     wrap_insecure_content,
 )
@@ -221,7 +222,9 @@ def _membership_to_dict(membership: Any) -> Dict[str, Any]:
 # "the accepted keys are status, id, name, ..." -- true, and no help to a
 # caller whose actual mistake was reaching for `filters` instead of the named
 # argument. Owning it puts that guard first and answers the question asked.
-_PROJECT_OWNED_QUERY_KEYS = frozenset({"limit", "offset", "include_custom_fields"})
+_PROJECT_OWNED_QUERY_KEYS = frozenset(
+    {"limit", "offset", "include_custom_fields", "include_pagination_info"}
+)
 
 
 # The filter names Redmine's `ProjectQuery` hands to `add_available_filter`
@@ -249,6 +252,7 @@ def list_redmine_projects(
     include_custom_fields: bool = False,
     limit: Annotated[Optional[int], Field(ge=1, le=1000)] = None,
     offset: Annotated[int, Field(ge=0)] = 0,
+    include_pagination_info: bool = False,
     filters: Optional[Dict[str, Any]] = None,
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """
@@ -291,6 +295,11 @@ def list_redmine_projects(
         offset: Projects to skip before collecting results. Without a
             ``limit``, paging still runs to the end of the collection from
             ``offset``.
+        include_pagination_info: Return
+            ``{"projects": [...], "pagination": {...}}`` rather than a bare
+            list (default: False), with the keys ``list_redmine_issues``
+            returns. ``total`` is Redmine's own count for the filtered
+            collection, so it costs no extra request.
         filters: Redmine query filters to narrow the list, for the filters
             this signature does not name -- most usefully
             ``{"cf_42": "value"}`` for a project custom field. Accepted keys
@@ -319,10 +328,12 @@ def list_redmine_projects(
             custom fields, so the id has to come from a project one.
 
     Returns:
-        A list of dictionaries, each representing a project. With
-        ``include_custom_fields``, each also carries ``custom_fields``, a list
-        of ``{id, name, value}`` entries -- empty if the project has none. On
-        failure, a dict with an ``error`` key.
+        A list of dictionaries, each representing a project -- or, with
+        ``include_pagination_info``, a dict of ``projects`` and
+        ``pagination``. With ``include_custom_fields``, each project also
+        carries ``custom_fields``, a list of ``{id, name, value}`` entries --
+        empty if the project has none. On failure, a dict with an ``error``
+        key.
     """
     if limit is not None and not _is_positive_int(limit):
         return {"error": "limit must be a positive integer."}
@@ -386,7 +397,39 @@ def list_redmine_projects(
             if include_custom_fields:
                 entry["custom_fields"] = _custom_fields_to_list(project)
             result.append(entry)
-        return result
+        if not include_pagination_info:
+            return result
+        # Read after the loop, never before: `ResourceSet.total_count` raises
+        # `ResultSetTotalCountError` until the set has been evaluated, and
+        # iterating it above is what evaluates it. So this costs no request.
+        #
+        # The total is honest here, unlike the contacts endpoint's. Redmine
+        # builds `@project_count` from `@query.result_count` and the rows from
+        # `project_scope(:offset, :limit)` -- the same query -- so it measures
+        # exactly the collection being paged, filters included. Passing it is
+        # right; suppressing it the way a searched contact list has to would
+        # throw away a number that does describe this page.
+        #
+        # With no `limit` the window is the whole remainder of the collection,
+        # so the page delivered *is* its own limit: reporting `len(result)`
+        # describes what came back and makes `has_next` come out false, which
+        # is correct -- there is nothing left to ask for. Reporting the
+        # requested `None` instead would leave the arithmetic undefined.
+        pagination = _pagination_info(
+            limit=limit if limit is not None else len(result),
+            offset=offset,
+            count=len(result),
+            total=projects.total_count,
+        )
+        if limit is None and offset:
+            # No limit means "everything from `offset`", so there is no page
+            # size to step back by. `_pagination_info` derives
+            # `previous_offset` from the limit, which here is only the row
+            # count -- and for an offset past the end that count is 0, which
+            # would point the caller at the offset they are already on. The
+            # one meaningful predecessor of an unbounded read is the start.
+            pagination["previous_offset"] = 0
+        return {"projects": result, "pagination": pagination}
     except Exception as e:
         return _handle_redmine_error(e, "listing projects")
 

@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- `list_redmine_projects` can return pagination metadata with
+  `include_pagination_info=True` -- `{"projects": [...], "pagination": {...}}`,
+  the same envelope and the same keys `list_redmine_issues` returns -- so a
+  caller can state a count without counting and tell a narrowed read from a
+  complete one. `total` is Redmine's own `total_count`, read off the resource
+  set the rows already came from, so it costs no extra request; unlike the
+  issue tools, which spend a second `limit=1` query on it. It is also always
+  reported: Redmine builds `@project_count` from `@query.result_count`, the
+  same query the rows come from, so a filter narrows the count along with the
+  collection. With no `limit` there is no page size, so the envelope describes
+  one complete read -- `has_next` false, and `previous_offset` pointing back at
+  the start rather than at the offset the caller is already on. The default
+  return is still a bare array
+  ([#ISSUE](https://github.com/jztan/redmine-mcp-server/issues/ISSUE)).
 - `list_redmine_projects` gains `filters`, `limit` and `offset`, so a project
   list can be narrowed server-side instead of fetched whole and filtered by
   the caller. `filters` carries the query parameters the signature doesn't
