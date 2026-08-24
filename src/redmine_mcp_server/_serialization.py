@@ -131,6 +131,58 @@ def _iter_capped(resources: Any, cap: int = _DEFAULT_LIST_RESULT_CAP) -> List[An
     return out
 
 
+def _payload_int(value: Any, *, minimum: int) -> Optional[int]:
+    """An integer read out of a Redmine response envelope, or ``None``.
+
+    ``bool`` is an ``int`` subclass, so it is excluded explicitly rather than
+    counted as a number. A value below ``minimum`` is refused the same way an
+    absent one is: a negative offset, or a page size of zero, describes no
+    window, and carrying it into the envelope would state a number Redmine
+    never meant.
+    """
+    if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+        return None
+    return value
+
+
+def _pagination_info(
+    *, limit: int, offset: int, count: int, total: Optional[int] = None
+) -> Dict[str, Any]:
+    """The ``pagination`` block a paginated tool returns.
+
+    The key set is the one ``list_redmine_issues`` returns, so a caller reads
+    every tool offering ``include_pagination_info`` the same way.
+
+    ``total`` is the size of the collection being paged. Pass ``None`` when
+    nothing measured it, or when the number Redmine reported measures some
+    other collection -- an unreported total is never dressed up as a number.
+
+    ``has_next`` prefers measurement over inference. Given a total, the page
+    covers rows ``[offset, offset + limit)``, so a further page exists exactly
+    when ``offset + limit`` is below the total; the inference the issue tools
+    use instead reports one more page than there is whenever the collection
+    size is an exact multiple of the page size. Without a total it falls back
+    to that inference rather than to ``None``: ``None`` is falsy, so a caller
+    testing ``has_next`` would read a full page as the last one and stop
+    mid-collection, whereas the inference is only ever optimistic and costs
+    one wasted request at worst.
+    """
+    if total is None:
+        has_next = count >= limit
+    else:
+        has_next = offset + limit < total
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "count": count,
+        "has_next": has_next,
+        "has_previous": offset > 0,
+        "next_offset": offset + limit if has_next else None,
+        "previous_offset": max(0, offset - limit) if offset > 0 else None,
+    }
+
+
 def _normalize_csv_list(value: Any) -> List[str]:
     """Coerce a comma-separated string, list, tuple or scalar to a str list.
 
