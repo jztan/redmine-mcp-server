@@ -299,7 +299,10 @@ def list_redmine_projects(
             ``{"projects": [...], "pagination": {...}}`` rather than a bare
             list (default: False), with the keys ``list_redmine_issues``
             returns. ``total`` is Redmine's own count for the filtered
-            collection, so it costs no extra request.
+            collection, so it costs no extra request. A deployment that
+            suppresses API metadata (``nometa``) is the one case it cannot be
+            trusted: the list is then truncated at one page and ``total``
+            reports that page, so it reads as complete.
         filters: Redmine query filters to narrow the list, for the filters
             this signature does not name -- most usefully
             ``{"cf_42": "value"}`` for a project custom field. Accepted keys
@@ -429,6 +432,20 @@ def list_redmine_projects(
         # exactly the collection being paged, filters included. Passing it is
         # right; suppressing it the way a searched contact list has to would
         # throw away a number that does describe this page.
+        #
+        # One deployment shape defeats that, and it cannot be detected from
+        # here. `api_meta` returns nil when `nometa` is in the request or
+        # `X-Redmine-Nometa` is set, so the response carries no `total_count`,
+        # `limit` or `offset` at all; `bulk_request` then takes its fallback
+        # branch, sets `total_count = len(first page)` and stops paging. The
+        # list is truncated at one chunk -- which it already was before this
+        # tool reported anything -- but `total` now agrees with the truncated
+        # count, so the envelope reads as a complete collection. A caller
+        # cannot tell that from a genuinely 100-project instance and neither
+        # can this code: same row count, same total, same single request. It is
+        # documented rather than guarded because a guess would be worse than
+        # the caveat. `nometa` cannot arrive through `filters` -- it is not a
+        # registered filter name, so the allowlist refuses it.
         #
         # With no `limit` the window is the whole remainder of the collection,
         # so the page delivered *is* its own limit: reporting `len(result)`

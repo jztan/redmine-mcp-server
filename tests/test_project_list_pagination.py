@@ -313,6 +313,60 @@ class TestTheTotalIsNeverSuppressed:
         assert result["pagination"]["has_next"] is False
 
 
+class TestAMetadataSuppressingDeployment:
+    """`nometa` truncates the list and makes the total agree with it.
+
+    `api_meta` returns nil when `nometa` is in the request or the
+    `X-Redmine-Nometa` header is set, so the response carries no
+    `total_count`, `limit` or `offset`. `bulk_request` then takes its
+    fallback branch, sets `total_count = len(first page)` and stops paging.
+
+    This pins the behaviour rather than endorsing it: the envelope reads as a
+    complete collection when it is one chunk of a larger one, and nothing
+    reachable from this tool can tell that apart from a genuinely small
+    instance. It is documented in the tool, and the test exists so the day
+    someone finds a signal for it, this is the assertion that changes.
+    """
+
+    @staticmethod
+    def _client(real_total: int, chunk: int = 100):
+        client = Redmine("https://redmine.example.test", key="unused")
+        client.engine.chunk = chunk
+        rows = [_payload(n) for n in range(1, real_total + 1)]
+
+        def _request(method, url, headers=None, params=None, data=None):
+            params = dict(params or {})
+            offset = params.get("offset", 0)
+            limit = min(params.get("limit", chunk), chunk)
+            # No total_count, limit or offset: api_meta returned nil.
+            return {"projects": rows[offset : offset + limit]}
+
+        client.engine.request = _request
+        return client
+
+    @pytest.mark.asyncio
+    async def test_the_total_describes_the_page_not_the_collection(self):
+        with patch("redmine_mcp_server._client.redmine", self._client(5000)):
+            result = await list_redmine_projects(include_pagination_info=True)
+
+        # Truncated at one chunk -- which it was before this tool reported
+        # anything, since `bulk_request` cannot page without the metadata.
+        assert len(result["projects"]) == 100
+        # And the total agrees with the truncation, so it reads as complete.
+        assert result["pagination"]["total"] == 100
+        assert result["pagination"]["count"] == 100
+
+    @pytest.mark.asyncio
+    async def test_nometa_cannot_be_requested_through_filters(self):
+        """The allowlist keeps a caller from inducing this deliberately."""
+        with patch("redmine_mcp_server._client.redmine", self._client(5)):
+            result = await list_redmine_projects(
+                filters={"nometa": "1"}, include_pagination_info=True
+            )
+
+        assert "nometa" in result["error"]
+
+
 class TestTheErrorEnvelopeIsUnaffected:
     @pytest.mark.asyncio
     async def test_a_rejected_offset_is_still_an_error(self):
