@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Fixed
+- The issue tools build their pagination envelope through the shared
+  `_pagination_info` helper
+  ([#240](https://github.com/jztan/redmine-mcp-server/issues/240)). Three
+  defects go with it. `list_redmine_issues` computed `has_next` from a full
+  page (`len(result) == limit`), which reported one page too many whenever
+  the collection size was an exact multiple of the page size; with the total
+  in hand it is now measured as `offset + limit < total`. It spent a second
+  `limit=1` request on that total, which now reads off the same response the
+  issues came from, so the envelope costs nothing extra. And it capped the
+  request at 100 rows while reporting the requested window, so `limit=250`
+  silently returned 100 issues; the limit is now passed through whole, which
+  python-redmine pages itself in chunks of 100. When a response carries no
+  usable total, `total` is now `null` rather than the invented
+  `offset + count + 1` estimate, and `has_next` falls back to the full-page
+  inference. `search_redmine_issues` now reports `total: null` explicitly
+  (the Search API measures nothing), where it used to omit the key and
+  disagree with every other pagination envelope in the server.
 - Documentation no longer describes `list_redmine_projects` as listing every
   accessible project. Redmine's `ProjectQuery` starts with a `status = 1`
   filter already set, so a call passing no `status` has always answered with

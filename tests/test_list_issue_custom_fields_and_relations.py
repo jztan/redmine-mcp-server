@@ -231,12 +231,17 @@ class TestIssueRelations:
         assert result[0] == {"id": 1, "custom_fields": _CF}
 
     @pytest.mark.asyncio
-    async def test_count_query_drops_the_include(self, mock_redmine):
-        """The pagination count reads total_count off the envelope."""
+    async def test_pagination_total_needs_no_count_query(self, mock_redmine):
+        """The total reads off the page response; no second request.
+
+        There used to be a separate ``limit=1`` count query (which had to
+        drop the ``include``); since #240 the total comes from the same
+        response the rows did, so the one request keeps its include.
+        """
         mock_redmine.issue.filter.return_value = [_mock_issue(relations=_REL)]
         await list_redmine_issues(
             project_id=1, include_relations=True, include_pagination_info=True
         )
-        count_call = mock_redmine.issue.filter.call_args_list[-1][1]
-        assert count_call["limit"] == 1
-        assert "include" not in count_call
+        assert mock_redmine.issue.filter.call_count == 1
+        only_call = mock_redmine.issue.filter.call_args_list[0][1]
+        assert only_call["include"] == "relations"

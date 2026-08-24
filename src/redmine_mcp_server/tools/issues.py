@@ -40,6 +40,8 @@ from .._serialization import (
     _normalize_tag_list,
     _named_ref,
     _normalize_csv_list,
+    _pagination_info,
+    _payload_int,
     _safe_isoformat,
     wrap_insecure_content,
 )
@@ -1036,11 +1038,18 @@ async def list_redmine_issues(
                 logging.warning(f"Invalid offset {offset}, reset to 0")
                 offset = 0
 
+            if limit is None:
+                limit = 25
+
             # Use python-redmine ResourceSet native pagination
-            # Server-side filtering more efficient than client-side
+            # Server-side filtering more efficient than client-side.
+            # The limit is passed through whole: python-redmine pages a
+            # limit above 100 itself, in chunks of 100, so capping the
+            # request here would silently truncate the rows while the
+            # pagination envelope reported the window actually asked for.
             redmine_filters = {
                 "offset": offset,
-                "limit": min(limit or 25, 100),  # Redmine API max per request
+                "limit": limit,
                 **filters,
             }
 
@@ -1072,48 +1081,23 @@ async def list_redmine_issues(
 
             # Handle metadata response format
             if include_pagination_info:
-                # Get total count from a separate query.
+                # The total rides the response the rows already came from:
+                # python-redmine reads ``total_count`` off the first page's
+                # envelope, and iterating the set above is what populated
+                # it. A response carrying no usable number (raised, or not
+                # an int) reports ``null`` rather than an estimate.
+                total_count = None
                 try:
-                    # Redmine returns the full ``total_count`` in the first page of
-                    # any filtered response, so we only need to fetch a single
-                    # issue to read it. Omitting the limit here would make
-                    # python-redmine's ResourceSet materialize *every* matching
-                    # issue (chunk-by-chunk, dozens of sequential requests for a
-                    # large project) just to compute the count, which can exceed
-                    # the MCP ``tools/call`` timeout.
-                    count_filters = {**filters, "limit": 1, "offset": 0}
-                    # The count query reads total_count off the envelope; it
-                    # has no use for included collections.
-                    count_filters.pop("include", None)
-                    count_query = _get_redmine_client().issue.filter(**count_filters)
-                    # Trigger a single request so total_count is populated.
-                    list(count_query)
-                    total_count = count_query.total_count
-                    logging.debug(f"Got total count from separate query: {total_count}")
+                    total_count = _payload_int(issues.total_count, minimum=0)
                 except Exception as e:
-                    logging.warning(
-                        f"Could not get total count: {e}, using estimated value"
-                    )
-                    # For unknown total, use a conservative estimate
-                    if len(result_issues) == limit:
-                        # If we got a full page, there might be more
-                        total_count = offset + len(result_issues) + 1
-                    else:
-                        # If we got less than requested, this is likely the end
-                        total_count = offset + len(result_issues)
+                    logging.debug(f"No total_count on the response: {e}")
 
-                pagination_info = {
-                    "total": total_count,
-                    "limit": limit,
-                    "offset": offset,
-                    "count": len(result_issues),
-                    "has_next": len(result_issues) == limit,
-                    "has_previous": offset > 0,
-                    "next_offset": (
-                        offset + limit if len(result_issues) == limit else None
-                    ),
-                    "previous_offset": max(0, offset - limit) if offset > 0 else None,
-                }
+                pagination_info = _pagination_info(
+                    limit=limit,
+                    offset=offset,
+                    count=len(result_issues),
+                    total=total_count,
+                )
 
                 result = {"issues": result_issues, "pagination": pagination_info}
 
@@ -1186,7 +1170,7 @@ def search_redmine_issues(
         ... )
         {
             "issues": [...],
-            "pagination": {"limit": 10, "offset": 0, "has_next": True, ...}
+            "pagination": {"total": None, "limit": 10, "has_next": True, ...}
         }
 
         >>> await search_redmine_issues("urgent", fields=["id", "subject", "status"])
@@ -1196,9 +1180,11 @@ def search_redmine_issues(
         [{"id": 1, "subject": "Open bug in my project", ...}, ...]
 
     Note:
-        The Redmine Search API does not provide total_count. Pagination
-        metadata uses conservative estimation: has_next=True if result
-        count equals limit.
+        The Redmine Search API does not provide total_count, so the
+        pagination metadata reports ``total: null`` ("not reported") and
+        ``has_next`` falls back to the full-page inference: true whenever
+        the page came back full, which is only ever optimistic and costs
+        one wasted request at worst.
 
         Search API Limitations: The Search API supports text search with
         scope and open_issues filters only. For advanced filtering by
@@ -1248,6 +1234,7 @@ def search_redmine_issues(
                     empty_result = {
                         "issues": [],
                         "pagination": {
+                            "total": None,
                             "limit": limit,
                             "offset": offset,
                             "count": 0,
@@ -1272,6 +1259,9 @@ def search_redmine_issues(
         if not isinstance(offset, int) or offset < 0:
             logging.warning(f"Invalid offset {offset}, reset to 0")
             offset = 0
+
+        if limit is None:
+            limit = 25
 
         # Pass offset and limit to Redmine Search API
         search_params = {"offset": offset, "limit": limit, **options}
@@ -1308,19 +1298,15 @@ def search_redmine_issues(
 
         # Handle metadata response format
         if include_pagination_info:
-            # Search API doesn't provide total_count
-            # Use conservative estimation
-            pagination_info = {
-                "limit": limit,
-                "offset": offset,
-                "count": len(result_issues),
-                "has_next": len(result_issues) == limit,
-                "has_previous": offset > 0,
-                "next_offset": (
-                    offset + limit if len(result_issues) == limit else None
-                ),
-                "previous_offset": max(0, offset - limit) if offset > 0 else None,
-            }
+            # The Search API reports no total_count, so ``total`` is null
+            # ("not reported") and ``has_next`` falls back to the shared
+            # helper's full-page inference.
+            pagination_info = _pagination_info(
+                limit=limit,
+                offset=offset,
+                count=len(result_issues),
+                total=None,
+            )
 
             result = {"issues": result_issues, "pagination": pagination_info}
 
