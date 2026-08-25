@@ -27,6 +27,7 @@ from .._serialization import (
     wrap_insecure_content,
 )
 from .._validation import _is_positive_int, _is_valid_project_id
+from .._plugin_visibility import plugin_tag
 from ..server import mcp
 
 _DEALS_DISABLED_ERROR = {
@@ -433,7 +434,7 @@ async def _manage_deal_dispatch(action: str, **kwargs: Any) -> Any:
     }
 
 
-@mcp.tool()
+@mcp.tool(tags={plugin_tag("deals")})
 async def manage_deal(
     action: Literal["list", "get", "create", "update", "delete"],
     project_id: Optional[Union[str, int]] = None,

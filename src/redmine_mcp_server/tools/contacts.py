@@ -25,6 +25,7 @@ from .._validation import (
     _is_valid_project_id,
     _reject_reserved_query_keys,
 )
+from .._plugin_visibility import plugin_tag
 from ..server import mcp
 
 _CRM_DISABLED_ERROR = {
@@ -647,7 +648,7 @@ async def _manage_contact_dispatch(action: str, **kwargs: Any) -> Any:
     }
 
 
-@mcp.tool()
+@mcp.tool(tags={plugin_tag("crm")})
 async def manage_contact(
     action: Literal[
         "list",
