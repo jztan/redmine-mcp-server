@@ -23,6 +23,7 @@ PLUGIN_TOOLS = {
     "products": {"manage_product"},
     "dmsf": {"manage_document"},
     "crm-shared": {"manage_crm_note", "list_crm_queries"},
+    "deal-products": {"add_deal_product"},
 }
 ALL_PLUGIN_TOOLS = set().union(*PLUGIN_TOOLS.values())
 FLAG_ENV = {
@@ -107,3 +108,20 @@ async def test_enable_all_restores_full_surface():
         apply_plugin_visibility(_server.mcp)
     enable_all_plugin_tools(_server.mcp)
     assert ALL_PLUGIN_TOOLS <= await _listed()
+
+
+@pytest.mark.asyncio
+async def test_deal_products_needs_both_flags():
+    with patch.dict(
+        os.environ,
+        {
+            **ALL_OFF,
+            "REDMINE_DEALS_ENABLED": "true",
+            "REDMINE_PRODUCTS_ENABLED": "true",
+        },
+    ):
+        apply_plugin_visibility(_server.mcp)
+    assert "add_deal_product" in await _listed()
+    with patch.dict(os.environ, {**ALL_OFF, "REDMINE_PRODUCTS_ENABLED": "true"}):
+        apply_plugin_visibility(_server.mcp)
+    assert "add_deal_product" not in await _listed()

@@ -33,6 +33,9 @@ PLUGIN_FLAGS: Dict[str, Callable[[], bool]] = {
     # Tools spanning contacts and deals (notes, saved queries): either flag
     # exposes them.
     "crm-shared": lambda: _is_crm_enabled() or _is_deals_enabled(),
+    # add_deal_product hits an endpoint that exists only when the Products
+    # plugin sits next to CRM, so both flags are needed.
+    "deal-products": lambda: _is_deals_enabled() and _is_products_enabled(),
 }
 
 

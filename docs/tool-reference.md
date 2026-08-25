@@ -2483,7 +2483,7 @@ manage_product(action="update", product_id=42, fields={"price": 39.99})
 
 ## Contacts and Deals / CRM (RedmineUP CRM plugin)
 
-These tools require the **RedmineUP CRM** plugin. `manage_contact` and `list_contact_tags` need `REDMINE_CRM_ENABLED=true`; `manage_deal`, `list_deal_statuses` and `manage_deal_category` need `REDMINE_DEALS_ENABLED=true`.
+These tools require the **RedmineUP CRM** plugin. `manage_contact` and `list_contact_tags` need `REDMINE_CRM_ENABLED=true`; `manage_deal`, `list_deal_statuses` and `manage_deal_category` need `REDMINE_DEALS_ENABLED=true`; `add_deal_product` needs that plus `REDMINE_PRODUCTS_ENABLED=true`.
 
 The two flags are deliberately separate. Contacts and deals are separate Redmine *project modules* (`contacts` and `deals` in the plugin's `init.rb`), each with its own permission set, so a project reachable by `manage_contact` is not necessarily reachable by `manage_deal`. More importantly, the plugin's **Light** edition ships no deals at all — no `project_module :deals`, and therefore none of the `*_deals` permissions. Redmine derives its OAuth scope list from `Redmine::AccessControl.permissions` and applies `enforce_configured_scopes`, so on a Light install a deal scope cannot be held by the OAuth application and a client requesting it fails consent with `invalid_scope`. Advertising deals under `REDMINE_CRM_ENABLED` would therefore break contacts for Light deployments; a separate flag leaves them untouched.
 
@@ -2610,7 +2610,7 @@ Requires the **RedmineUP CRM** plugin in its **Pro** edition, `REDMINE_DEALS_ENA
 - `assigned_to_id` (integer, optional): For `list`, filter by assignee user ID
 - `limit` (integer, optional): For `list`, max results per call (default `100`, capped at 100 by Redmine)
 - `deal_id` (integer): Required for `get`, `update`, and `delete`
-- `include` (string, optional): For `get`, comma-separated includes (`notes`)
+- `include` (string, optional): For `get`, comma-separated includes: `notes`, and `lines` (product lines, when the Products plugin is installed)
 - `name` (string): Required for `create`
 - `contact_id` (integer, optional): For `create`, the contact the deal belongs to
 - `assigned_to_id` (integer, optional): For `list`, filter by assignee. For `create`, the user to assign the new deal to
@@ -2749,6 +2749,24 @@ Available with `REDMINE_CRM_ENABLED=true` (`object_type=contact`) or `REDMINE_DE
 - `offset` (integer, optional): default 0
 
 **Returns:** a list of `{id, name, is_public, project_id}`; `project_id` is `null` for global queries. Only queries visible to the calling user are returned.
+
+### `add_deal_product`
+
+Add a product line to a RedmineUP CRM deal. The plugin recalculates the deal's `price` from its lines after each addition; read them back with `manage_deal(action="get", include="lines")`.
+
+Requires `REDMINE_DEALS_ENABLED=true` **and** `REDMINE_PRODUCTS_ENABLED=true`: the `PUT /deals/:id/add_product.json` endpoint is registered by the CRM plugin only when the RedmineUP Products plugin (2.0.2 or later) is installed. The tool is hidden unless both flags are set. Write-additive (`destructiveHint=false`).
+
+**Parameters:**
+- `deal_id` (integer, required)
+- `product_id` (integer): catalogue product to add; its description and price are used unless overridden. Optional when `description` is given, which creates a free-form line
+- `quantity` (number, optional): positive; the plugin defaults to 1
+- `price` (string or number, optional): unit price, sent as a string like `manage_deal`'s `price`
+- `description` (string, optional): line text; required without `product_id`
+- `tax`, `discount` (number, optional): percentages 0 to 100, checked client-side and by the plugin (422)
+
+**Returns:** `{success, deal_id, line}` with the line as sent, or `{"error": ...}`. An unknown `deal_id` makes the plugin answer 500 rather than 404.
+
+**Line shape** (from `manage_deal(get, include="lines")`): `{id, position, product {id, name} | null, description, quantity, tax, discount, price, total}`; `description` is wrapped in `<insecure-content>` tags.
 
 ## Documents (DMSF plugin)
 

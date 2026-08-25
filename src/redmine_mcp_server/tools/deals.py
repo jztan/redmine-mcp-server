@@ -16,10 +16,11 @@ from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 from pydantic import Field
 from redminelib.exceptions import ForbiddenError
 
+from .._cleanup import _ensure_cleanup_started
 from .._client import _get_redmine_client
 from .._decorators import ActionMode, action_dispatch
-from .._env import _is_deals_enabled
-from .._errors import _handle_redmine_error
+from .._env import _is_deals_enabled, _is_products_enabled, _is_read_only_mode
+from .._errors import _READ_ONLY_ERROR, _handle_redmine_error
 from .._offload import offloaded
 from .._serialization import (
     _REDMINE_API_PAGE_CAP,
@@ -150,6 +151,32 @@ def _deal_note_to_dict(note: Any) -> Dict[str, Any]:
     }
 
 
+def _deal_line_to_dict(line: Dict[str, Any]) -> Dict[str, Any]:
+    """Serialize one product line of a deal (``include=lines``).
+
+    Mirrors ``api.line_attributes`` in the plugin's show.api.rsb; present
+    only when the Products plugin is installed. ``description`` is free
+    text and is wrapped in boundary tags.
+    """
+    if not isinstance(line, dict):
+        return {}
+    return {
+        "id": line.get("id"),
+        "position": line.get("position"),
+        "product": _named_ref(line.get("product")),
+        "description": (
+            wrap_insecure_content(line["description"])
+            if line.get("description")
+            else None
+        ),
+        "quantity": line.get("quantity"),
+        "tax": line.get("tax"),
+        "discount": line.get("discount"),
+        "price": line.get("price"),
+        "total": line.get("total"),
+    }
+
+
 def _deal_to_dict(deal: Dict[str, Any]) -> Dict[str, Any]:
     """Serialize a RedmineUP CRM deal API response into a stable dict.
 
@@ -174,6 +201,7 @@ def _deal_to_dict(deal: Dict[str, Any]) -> Dict[str, Any]:
         return {}
     related = deal.get("related_contacts")
     notes = deal.get("notes")
+    lines = deal.get("lines")
     return {
         "id": deal.get("id"),
         "name": deal.get("name", ""),
@@ -198,6 +226,11 @@ def _deal_to_dict(deal: Dict[str, Any]) -> Dict[str, Any]:
         **(
             {"notes": [_deal_note_to_dict(n) for n in notes]}
             if isinstance(notes, list)
+            else {}
+        ),
+        **(
+            {"lines": [_deal_line_to_dict(ln) for ln in lines]}
+            if isinstance(lines, list)
             else {}
         ),
     }
@@ -509,8 +542,9 @@ async def manage_deal(
         limit: ``list`` only. Deals per call, capped at 100 by Redmine.
         deal_id: The deal to act on. Required by every action except
             ``list`` and ``create``.
-        include: ``get`` only. Accepts ``"notes"``, returned under a
-            ``notes`` key.
+        include: ``get`` only. Comma-separated: ``"notes"`` (returned
+            under a ``notes`` key) and, when the Products plugin is
+            installed, ``"lines"`` (the deal's product lines).
         name: ``create`` only -- the new deal's name (required).
         contact_id: ``create`` only. The contact the deal belongs to.
         price: ``create`` only. Send an unformatted string such as
@@ -836,4 +870,136 @@ async def manage_deal_category(
         category_id=category_id,
         name=name,
         reassign_to_id=reassign_to_id,
+    )
+
+
+_DEAL_PRODUCTS_DISABLED_ERROR = {
+    "error": (
+        "Deal product lines require the RedmineUP Products plugin. "
+        "Set REDMINE_PRODUCTS_ENABLED=true (and REDMINE_DEALS_ENABLED=true) "
+        "to enable add_deal_product."
+    )
+}
+
+
+def _validate_percent(name: str, value: Any) -> Optional[Dict[str, Any]]:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return {"error": f"{name} must be a number between 0 and 100."}
+    if not math.isfinite(value) or value < 0 or value > 100:
+        return {"error": f"{name} must be a number between 0 and 100."}
+    return None
+
+
+@offloaded
+def _add_deal_product_impl(
+    deal_id: Optional[int],
+    product_id: Optional[int],
+    quantity: Optional[Union[int, float]],
+    price: Optional[Union[str, int, float]],
+    description: Optional[str],
+    tax: Optional[Union[int, float]],
+    discount: Optional[Union[int, float]],
+) -> Dict[str, Any]:
+    if not _is_positive_int(deal_id):
+        return {"error": "deal_id must be a positive integer."}
+    if product_id is None and not (
+        isinstance(description, str) and description.strip()
+    ):
+        return {
+            "error": (
+                "product_id is required unless description is given "
+                "(a free-form line without a catalogue product)."
+            )
+        }
+    if product_id is not None and not _is_positive_int(product_id):
+        return {"error": "product_id must be a positive integer."}
+    if quantity is not None and (
+        isinstance(quantity, bool)
+        or not isinstance(quantity, (int, float))
+        or not math.isfinite(quantity)
+        or quantity <= 0
+    ):
+        return {"error": "quantity must be a positive number."}
+    for name, value in (("tax", tax), ("discount", discount)):
+        bad = _validate_percent(name, value)
+        if bad:
+            return bad
+    line: Dict[str, Any] = {}
+    if product_id is not None:
+        line["product_id"] = product_id
+    if description is not None:
+        line["description"] = description
+    if quantity is not None:
+        line["quantity"] = quantity
+    if price is not None:
+        coerced = _coerce_price(price)
+        if coerced is None:
+            return {"error": "price must be a finite number or a string."}
+        line["price"] = coerced
+    if tax is not None:
+        line["tax"] = tax
+    if discount is not None:
+        line["discount"] = discount
+    from .. import _client
+
+    try:
+        client = _get_redmine_client()
+        client.engine.request(
+            "put",
+            f"{_client.REDMINE_URL}/deals/{deal_id}/add_product.json",
+            data=json.dumps({"product": line}),
+            headers={"Content-Type": "application/json"},
+        )
+        return {"success": True, "deal_id": deal_id, "line": line}
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"adding product line to deal {deal_id}",
+            {"resource_type": "deal", "resource_id": deal_id},
+        )
+
+
+@mcp.tool(tags={plugin_tag("deal-products")})
+async def add_deal_product(
+    deal_id: Optional[int] = None,
+    product_id: Optional[int] = None,
+    quantity: Optional[Union[int, float]] = None,
+    price: Optional[Union[str, int, float]] = None,
+    description: Optional[str] = None,
+    tax: Optional[Union[int, float]] = None,
+    discount: Optional[Union[int, float]] = None,
+) -> Dict[str, Any]:
+    """Add a product line to a RedmineUP CRM deal.
+
+    The plugin recalculates the deal's ``price`` from its lines after each
+    addition. Read the lines back with ``manage_deal(action="get",
+    include="lines")``. Requires ``REDMINE_DEALS_ENABLED=true`` and
+    ``REDMINE_PRODUCTS_ENABLED=true`` (the endpoint only exists when the
+    RedmineUP Products plugin is installed next to CRM).
+
+    Args:
+        deal_id: The deal to add the line to (required).
+        product_id: Catalogue product to add. Its description and price are
+            used unless overridden. Optional when ``description`` is given,
+            which creates a free-form line.
+        quantity: Positive number (default 1 on the plugin side).
+        price: Unit price, as a string such as ``"100.0"`` or a number.
+        description: Line text; required when no ``product_id``.
+        tax, discount: Percentages, 0 to 100.
+
+    Returns:
+        ``{"success": true, "deal_id", "line"}`` with the line as sent, or
+        ``{"error": ...}``.
+    """
+    if not _is_deals_enabled():
+        return dict(_DEALS_DISABLED_ERROR)
+    if not _is_products_enabled():
+        return dict(_DEAL_PRODUCTS_DISABLED_ERROR)
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+    await _ensure_cleanup_started()
+    return await _add_deal_product_impl(
+        deal_id, product_id, quantity, price, description, tax, discount
     )
