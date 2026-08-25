@@ -202,6 +202,39 @@ def _deal_to_dict(deal: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+# DealStatus::OPEN_STATUS / WON_STATUS / LOST_STATUS in the plugin.
+_DEAL_STATUS_TYPES = {0: "open", 1: "won", 2: "lost"}
+
+
+def _deal_status_to_dict(status: Dict[str, Any]) -> Dict[str, Any]:
+    """Serialize one entry of GET /deal_statuses.json.
+
+    ``status_type`` is rendered as ``open``/``won``/``lost`` so a caller can
+    pick a closing status without knowing the plugin's enum; the raw code is
+    kept as ``status_type_id``. ``name`` and ``color`` are label-shaped and
+    returned verbatim (same rule as deal ``name``, #109).
+    """
+    if not isinstance(status, dict):
+        return {}
+    code = status.get("status_type")
+    return {
+        "id": status.get("id"),
+        "name": status.get("name", ""),
+        "position": status.get("position"),
+        "is_default": bool(status.get("is_default", False)),
+        "status_type": _DEAL_STATUS_TYPES.get(code),
+        "status_type_id": code,
+        "color": status.get("color"),
+    }
+
+
+def _deal_category_to_dict(category: Dict[str, Any]) -> Dict[str, Any]:
+    """Serialize one entry of GET /projects/<id>/deal_categories.json."""
+    if not isinstance(category, dict):
+        return {}
+    return {"id": category.get("id"), "name": category.get("name", "")}
+
+
 @offloaded
 def _list_deals_action(
     project_id: Optional[Union[str, int]] = None,
@@ -511,3 +544,7 @@ async def manage_deal(
         due_date=due_date,
         fields=fields,
     )
+
+
+async def list_deal_statuses(project_id=None):  # replaced in the next commit
+    raise NotImplementedError
