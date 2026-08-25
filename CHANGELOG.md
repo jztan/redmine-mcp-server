@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the flag matching the note's source. Advertises `add_notes`,
   `delete_notes` and `delete_own_notes` as OAuth scopes when enabled.
   Verified against CRM PRO 4.4.7 on Redmine 6.1.
+- `list_contact_tags`: the tags in use on CRM contacts, with colors, so the
+  `tags` filter and `tag_list` no longer have to be guessed.
+- `manage_deal_category`: list, create, rename and delete a project's deal
+  categories, with optional reassignment of the affected deals on delete.
+  Advertises `manage_deals` as an OAuth scope when deals are enabled.
 - MCP tool annotations on every tool, so clients can tell read-only queries
   from writes. Read tools advertise `readOnlyHint`, which lets annotation
   aware clients skip write-operation approval prompts for ordinary Redmine
@@ -118,7 +123,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Contributors
 - RedmineUP, provided an evaluation copy of the CRM PRO plugin (4.4.7) so
-  `manage_deal`, `list_deal_statuses` and `manage_crm_note` could be verified
+  the deals, deal category, contact tag and CRM note tools could be verified
   against a real Pro instance
   ([#247](https://github.com/jztan/redmine-mcp-server/issues/247),
   [#248](https://github.com/jztan/redmine-mcp-server/pull/248))

@@ -2483,7 +2483,7 @@ manage_product(action="update", product_id=42, fields={"price": 39.99})
 
 ## Contacts and Deals / CRM (RedmineUP CRM plugin)
 
-These tools require the **RedmineUP CRM** plugin. `manage_contact` needs `REDMINE_CRM_ENABLED=true`; `manage_deal` and `list_deal_statuses` need `REDMINE_DEALS_ENABLED=true`.
+These tools require the **RedmineUP CRM** plugin. `manage_contact` and `list_contact_tags` need `REDMINE_CRM_ENABLED=true`; `manage_deal`, `list_deal_statuses` and `manage_deal_category` need `REDMINE_DEALS_ENABLED=true`.
 
 The two flags are deliberately separate. Contacts and deals are separate Redmine *project modules* (`contacts` and `deals` in the plugin's `init.rb`), each with its own permission set, so a project reachable by `manage_contact` is not necessarily reachable by `manage_deal`. More importantly, the plugin's **Light** edition ships no deals at all — no `project_module :deals`, and therefore none of the `*_deals` permissions. Redmine derives its OAuth scope list from `Redmine::AccessControl.permissions` and applies `enforce_configured_scopes`, so on a Light install a deal scope cannot be held by the OAuth application and a client requesting it fails consent with `invalid_scope`. Advertising deals under `REDMINE_CRM_ENABLED` would therefore break contacts for Light deployments; a separate flag leaves them untouched.
 
@@ -2711,6 +2711,31 @@ Available when `REDMINE_CRM_ENABLED=true` or `REDMINE_DEALS_ENABLED=true`. A not
 ```json
 {"action": "create", "source_type": "deal", "source_id": 12, "project_id": "sales", "content": "Called, they want a revised quote by Friday.", "type_id": 1}
 ```
+
+### `list_contact_tags`
+
+List the tags in use on RedmineUP CRM contacts, with their colors. Use it to discover valid names for the `tags` filter of `manage_contact(action="list")` and for `tag_list` on create/update.
+
+Requires `REDMINE_CRM_ENABLED=true`. Read-only. No parameters.
+
+**Returns:** a list of `{id, name, color}` ordered by name.
+
+### `manage_deal_category`
+
+List, create, rename, or delete RedmineUP CRM deal categories. Categories are defined per project and referenced by `category_id` on deals.
+
+Requires `REDMINE_DEALS_ENABLED=true`. Writes need the plugin's `manage_deals` permission, which enabling the flag advertises as an OAuth scope.
+
+**Parameters:**
+- `action` (string, required): `list`, `create`, `update`, `delete`
+- `project_id` (integer or string): required for `list` and `create`
+- `category_id` (integer): required for `update` and `delete`
+- `name` (string): required for `create` and `update`; at most 30 characters and unique within the project (the plugin answers 422 otherwise)
+- `reassign_to_id` (integer, optional): `delete` only. Category to move the deleted category's deals to. Without it the plugin leaves those deals uncategorised.
+
+**Returns:** `list` a list of `{id, name}`; `create` `{id, name, project_id}`; `update` `{success, category_id, updated_fields}`; `delete` `{success, category_id, message}`.
+
+**Plugin quirk:** deleting an unknown `category_id` makes the plugin answer 500 rather than 404, which the tool reports as a server error. `list_deal_statuses` also returns a project's categories, so a deal-creation flow needs only that one call.
 
 ## Documents (DMSF plugin)
 
