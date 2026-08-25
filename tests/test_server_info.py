@@ -13,6 +13,12 @@ from redmine_mcp_server import server as _server  # noqa: F401
 from redmine_mcp_server import tools  # noqa: F401
 
 
+@pytest.fixture(autouse=True)
+def _full_surface(all_plugin_tools_visible):
+    """Enumerating tests must see every plugin tool (see conftest)."""
+    yield
+
+
 @pytest.mark.asyncio
 async def test_returns_a_version_string():
     """Always returns a server_version string, even when package

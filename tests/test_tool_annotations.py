@@ -18,6 +18,12 @@ from redmine_mcp_server.oauth_scopes import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _full_surface(all_plugin_tools_visible):
+    """Enumerating tests must see every plugin tool (see conftest)."""
+    yield
+
+
 class TestAnnotationsTable:
     def test_read_tool_is_read_only(self):
         ann = annotations_for("list_redmine_projects")

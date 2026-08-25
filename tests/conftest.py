@@ -114,3 +114,19 @@ def _reset_legacy_client_cache_between_tests():
     _client._reset_legacy_client_cache()
     yield
     _client._reset_legacy_client_cache()
+
+
+@pytest.fixture
+def all_plugin_tools_visible():
+    """Re-enable every plugin family on the shared FastMCP instance.
+
+    Importing ``redmine_mcp_server.main`` applies plugin visibility with the
+    unit-suite environment (all flags off), which hides plugin tools from
+    ``list_tools()``. Tests that enumerate the full surface use this fixture
+    so their result does not depend on which test imported main first.
+    """
+    from redmine_mcp_server import server as _server
+    from redmine_mcp_server._plugin_visibility import enable_all_plugin_tools
+
+    enable_all_plugin_tools(_server.mcp)
+    yield
