@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `manage_deal(action="create")` needs. The plugin serves the status list to
   administrators only, so for other users the tool returns the categories
   together with a `statuses_error` instead of failing. Verified against
-  CRM PRO 4.4.7 on Redmine 6.1.
+  CRM PRO 4.4.7 on Redmine 6.1 and 7.0.
 - `manage_crm_note`: get, create, update and delete RedmineUP CRM notes on
   contacts and deals (the CRM's activity log). Available with either
   `REDMINE_CRM_ENABLED` or `REDMINE_DEALS_ENABLED`; each call is gated on
