@@ -59,11 +59,11 @@ class TestAnnotationsTable:
         assert annotations_for("list_redmine_projects").readOnlyHint is True
 
     def test_table_size_and_kind_counts(self):
-        assert len(TOOL_KINDS) == 53
+        assert len(TOOL_KINDS) == 54
         counts = {kind: 0 for kind in ToolKind}
         for kind in TOOL_KINDS.values():
             counts[kind] += 1
-        assert counts[ToolKind.READ] == 31
+        assert counts[ToolKind.READ] == 32
         assert counts[ToolKind.WRITE_ADDITIVE] == 5
         assert counts[ToolKind.WRITE_DESTRUCTIVE] == 13
         assert counts[ToolKind.WRITE_DESTRUCTIVE_IDEMPOTENT] == 4

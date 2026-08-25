@@ -14,6 +14,7 @@ import math
 from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 
 from pydantic import Field
+from redminelib.exceptions import ForbiddenError
 
 from .._client import _get_redmine_client
 from .._decorators import ActionMode, action_dispatch
@@ -502,8 +503,7 @@ async def manage_deal(
             otherwise.** Accepts ``"o"`` (open), ``"c"`` (won and lost),
             ``"*"`` (every status), or a numeric status id. On ``create``,
             the status to open the deal in, as a numeric id. Status and deal
-            category ids are not discoverable through this server; read them
-            off an existing deal's ``status`` and ``category`` refs.
+            category ids come from ``list_deal_statuses``.
         assigned_to_id: On ``list``, filter by the assigned user's ID. On
             ``create``, the user to assign the new deal to.
         limit: ``list`` only. Deals per call, capped at 100 by Redmine.
@@ -546,5 +546,86 @@ async def manage_deal(
     )
 
 
-async def list_deal_statuses(project_id=None):  # replaced in the next commit
-    raise NotImplementedError
+_DEAL_STATUSES_ADMIN_ONLY = (
+    "The CRM plugin restricts GET /deal_statuses.json to Redmine "
+    "administrators and the current user is not one. Read status ids off "
+    "existing deals instead (manage_deal action=list with status_id='*'), "
+    "or ask an administrator for the list."
+)
+
+
+@offloaded
+def _list_deal_statuses_impl(
+    project_id: Optional[Union[str, int]] = None,
+) -> Dict[str, Any]:
+    if project_id is not None and not _is_valid_project_id(project_id):
+        return {
+            "error": (
+                "project_id must be a non-empty string identifier or "
+                "positive integer."
+            )
+        }
+    from .. import _client
+
+    result: Dict[str, Any] = {}
+    try:
+        client = _get_redmine_client()
+        try:
+            payload = client.engine.request(
+                "get", f"{_client.REDMINE_URL}/deal_statuses.json"
+            )
+            raw = payload.get("deal_statuses", []) if isinstance(payload, dict) else []
+            result["statuses"] = [_deal_status_to_dict(s) for s in raw]
+        except ForbiddenError:
+            # Admin-only endpoint: degrade to a partial answer rather than
+            # fail the whole lookup for every non-admin caller.
+            result["statuses"] = None
+            result["statuses_error"] = _DEAL_STATUSES_ADMIN_ONLY
+        if project_id is not None:
+            payload = client.engine.request(
+                "get",
+                f"{_client.REDMINE_URL}/projects/{project_id}/deal_categories.json",
+            )
+            raw = (
+                payload.get("deal_categories", []) if isinstance(payload, dict) else []
+            )
+            result["categories"] = [_deal_category_to_dict(c) for c in raw]
+            result["project_id"] = project_id
+        return result
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            "listing deal statuses",
+            {"resource_type": "project", "resource_id": project_id or ""},
+        )
+
+
+@mcp.tool(tags={plugin_tag("deals")})
+async def list_deal_statuses(
+    project_id: Optional[Union[str, int]] = None,
+) -> Dict[str, Any]:
+    """List RedmineUP CRM deal statuses, and a project's deal categories.
+
+    Call this before ``manage_deal(action="create")``, which requires a
+    numeric ``status_id`` and accepts an optional ``category_id``.
+
+    Requires ``REDMINE_DEALS_ENABLED=true`` and the CRM plugin, Pro edition.
+
+    Args:
+        project_id: Optional project identifier or id. When given, the
+            project's deal categories are returned as well (categories are
+            defined per project).
+
+    Returns:
+        ``statuses``: list of ``{id, name, position, is_default,
+        status_type (open|won|lost), status_type_id, color}`` ordered by
+        position. The plugin only serves this list to Redmine
+        administrators; for other users ``statuses`` is ``None`` and
+        ``statuses_error`` explains the restriction while the rest of the
+        answer is still returned. ``categories``: list of ``{id, name}``,
+        present only when ``project_id`` was given. ``{"error": ...}`` on
+        failure.
+    """
+    if not _is_deals_enabled():
+        return dict(_DEALS_DISABLED_ERROR)
+    return await _list_deal_statuses_impl(project_id)

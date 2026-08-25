@@ -179,7 +179,8 @@ DEALS_READ_SCOPES: list[str] = [
     "view_deals",  # manage_deal(action=list|get): the plugin maps deals#index
     # and deals#show to this permission. Declared
     # ``:read => true``, so it also applies in closed and
-    # archived projects.
+    # archived projects. Also list_deal_statuses: deal_categories#index
+    # maps to it; deal_statuses#index is admin-only and no scope grants it.
 ]
 
 # RedmineUP CRM deal write permissions, advertised only when the deals feature
