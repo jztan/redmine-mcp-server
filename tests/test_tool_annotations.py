@@ -134,6 +134,8 @@ _EMPTY_SCOPE_KINDS = {
     "list_redmine_users": ToolKind.READ,
     "manage_contact": ToolKind.WRITE_DESTRUCTIVE,
     "manage_deal": ToolKind.WRITE_DESTRUCTIVE,
+    "list_deal_statuses": ToolKind.READ,
+    "manage_crm_note": ToolKind.WRITE_DESTRUCTIVE,
     "manage_product": ToolKind.WRITE_DESTRUCTIVE,
 }
 
