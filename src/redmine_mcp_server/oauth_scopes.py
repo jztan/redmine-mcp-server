@@ -432,6 +432,7 @@ TOOL_SCOPES: Dict[str, ToolScopeEntry] = {
     # REDMINE_DEALS_ENABLED. Product scopes are not advertised at all yet.) ---
     "manage_product": frozenset(),
     "manage_contact": frozenset(),
+    "list_contact_tags": frozenset(),
     "manage_deal": frozenset(),
     "list_deal_statuses": frozenset(),
     "manage_crm_note": frozenset(),

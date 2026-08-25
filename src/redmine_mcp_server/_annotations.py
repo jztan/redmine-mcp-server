@@ -121,6 +121,7 @@ TOOL_KINDS: Dict[str, ToolKind] = {
     # Empty scope sets, but all four are mixed read/write dispatchers.
     "manage_product": ToolKind.WRITE_DESTRUCTIVE,
     "manage_contact": ToolKind.WRITE_DESTRUCTIVE,
+    "list_contact_tags": ToolKind.READ,
     "manage_deal": ToolKind.WRITE_DESTRUCTIVE,
     # First plugin READ tool: a lookup, so readOnlyHint applies even though
     # the family is feature-gated.
