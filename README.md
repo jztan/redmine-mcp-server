@@ -794,7 +794,7 @@ Thank you to everyone who has helped improve this project through code, reviews,
 
 Per-release contributor credits are listed in the [Changelog](./CHANGELOG.md).
 
-Thanks also to [RedmineUP](https://www.redmineup.com), who provided an evaluation copy of their CRM PRO plugin so the deals and CRM tools (`manage_deal`, `list_deal_statuses`, `manage_deal_category`, `manage_crm_note`, `list_contact_tags`, `list_crm_queries`, `add_deal_product`) could be verified against a real Pro instance.
+Thanks also to [RedmineUP](https://www.redmineup.com) for providing an evaluation copy of CRM PRO, which let the CRM tools be verified against a real Pro instance.
 
 ## License
 
