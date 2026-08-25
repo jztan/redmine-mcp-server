@@ -282,6 +282,12 @@ python tests/run_tests.py --integration
 python tests/run_tests.py --coverage
 ```
 
+**Live CRM Integration Tests:**
+
+`tests/test_crm_integration.py` exercises every REST action the RedmineUP CRM PRO plugin exposes (24 in total, one test each: contacts, contact project links, contact tags, notes, saved queries, deals, deal product lines, deal statuses and deal categories) through the MCP tool functions against a real server. It runs as part of `--integration` and skips itself when `GET /contacts.json` is not 200, so a plain Redmine still passes; the product line test additionally skips without the Products plugin.
+
+The server it targets needs: CRM PRO (deals) and optionally Products installed; the API user's role holding the contact, deal, note and product permissions; the `contacts`, `deals` and `products` modules enabled on the test project; at least one deal status; and a second project the user is a member of (for the contact project association test). Override the defaults with `REDMINE_TEST_PROJECT` (default `testing-project1`) and `REDMINE_TEST_DEAL_STATUS_ID` (default `1`). Every test creates and deletes its own records.
+
 **Live OAuth Integration Tests (v2.1+):**
 
 The unit suite mocks Doorkeeper at the httpx transport boundary. To exercise real Doorkeeper RFC 7662 introspection against a sandbox Redmine:

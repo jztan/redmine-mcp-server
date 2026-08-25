@@ -30,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (deals and products flags together), and `manage_deal(get,
   include="lines")` returns the deal's product lines. With this every REST
   action the CRM PRO plugin exposes is covered.
+- A live CRM integration suite (`tests/test_crm_integration.py`) with one
+  test per CRM PRO REST action, run under `--integration` and skipped when
+  the plugin is absent. Passes against Redmine 6.1.1 and 7.0.0.
 - MCP tool annotations on every tool, so clients can tell read-only queries
   from writes. Read tools advertise `readOnlyHint`, which lets annotation
   aware clients skip write-operation approval prompts for ordinary Redmine
