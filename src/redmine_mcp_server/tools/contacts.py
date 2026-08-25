@@ -25,6 +25,7 @@ from .._validation import (
     _is_valid_project_id,
     _reject_reserved_query_keys,
 )
+from .._plugin_visibility import plugin_tag
 from ..server import mcp
 
 _CRM_DISABLED_ERROR = {
@@ -647,7 +648,7 @@ async def _manage_contact_dispatch(action: str, **kwargs: Any) -> Any:
     }
 
 
-@mcp.tool()
+@mcp.tool(tags={plugin_tag("crm")})
 async def manage_contact(
     action: Literal[
         "list",
@@ -793,3 +794,43 @@ async def manage_contact(
         fields=fields,
         filters=filters,
     )
+
+
+def _contact_tag_to_dict(tag: Dict[str, Any]) -> Dict[str, Any]:
+    """Serialize one entry of GET /contacts_tags.json (id, name, color)."""
+    if not isinstance(tag, dict):
+        return {}
+    return {"id": tag.get("id"), "name": tag.get("name", ""), "color": tag.get("color")}
+
+
+@offloaded
+def _list_contact_tags_impl() -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    from .. import _client
+
+    try:
+        client = _get_redmine_client()
+        payload = client.engine.request(
+            "get", f"{_client.REDMINE_URL}/contacts_tags.json"
+        )
+        raw = payload.get("tags", []) if isinstance(payload, dict) else []
+        return [_contact_tag_to_dict(t) for t in raw]
+    except Exception as e:
+        return _handle_redmine_error(
+            e, "listing contact tags", {"resource_type": "contact tags"}
+        )
+
+
+@mcp.tool(tags={plugin_tag("crm")})
+async def list_contact_tags() -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    """List the tags in use on RedmineUP CRM contacts.
+
+    Use it to discover valid names for the ``tags`` filter of
+    ``manage_contact(action="list")`` and for ``tag_list`` on create/update.
+    Requires ``REDMINE_CRM_ENABLED=true``.
+
+    Returns:
+        A list of ``{id, name, color}`` ordered by name, or ``{"error": ...}``.
+    """
+    if not _is_crm_enabled():
+        return dict(_CRM_DISABLED_ERROR)
+    return await _list_contact_tags_impl()

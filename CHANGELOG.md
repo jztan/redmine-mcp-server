@@ -8,6 +8,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- Full coverage of the RedmineUP CRM PRO REST API. Every one of the plugin's
+  24 REST actions is now reachable through the six tools below, verified live
+  against CRM PRO 4.4.7 and Products 2.2.9 on Redmine 6.1.1 and 7.0.0, with a
+  committed live suite (`tests/test_crm_integration.py`, one test per action,
+  run under `--integration`, skipped when the plugin is absent). Tracked in
+  [#247](https://github.com/jztan/redmine-mcp-server/issues/247) and [#248](https://github.com/jztan/redmine-mcp-server/pull/248).
+- `list_deal_statuses`: deal statuses (rendered `open`/`won`/`lost`) and a
+  project's deal categories, the lookups `manage_deal(action="create")`
+  needs. The plugin serves statuses to administrators only, so other users
+  get the categories plus a `statuses_error` instead of a failure.
+- `manage_crm_note`: get, create, update and delete notes on contacts and
+  deals (the CRM's activity log). Available with either `REDMINE_CRM_ENABLED`
+  or `REDMINE_DEALS_ENABLED`, gated per call on the flag matching the note's
+  source; advertises `add_notes`, `delete_notes` and `delete_own_notes` as
+  OAuth scopes.
+- `manage_deal_category`: list, create, rename and delete a project's deal
+  categories, with optional reassignment of affected deals on delete;
+  advertises `manage_deals`.
+- `list_contact_tags`: tags in use on contacts, with colors, for the `tags`
+  filter and `tag_list`.
+- `list_crm_queries`: saved contact or deal queries.
+- `add_deal_product`: a catalogue or free-form product line on a deal (deals
+  and products flags together); `manage_deal(get, include="lines")` returns
+  the lines.
 - MCP tool annotations on every tool, so clients can tell read-only queries
   from writes. Read tools advertise `readOnlyHint`, which lets annotation
   aware clients skip write-operation approval prompts for ordinary Redmine
@@ -56,6 +80,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   renders it only for admins and silently omits it otherwise
   ([#236](https://github.com/jztan/redmine-mcp-server/issues/236)).
 
+### Changed
+- Plugin-gated tools are listed on the MCP surface only when their
+  `REDMINE_*_ENABLED` flag is set. A vanilla Redmine now advertises the 45
+  core tools instead of 52, which trims client context and removes tools
+  that could only answer "feature disabled"; with every plugin on, 13 more
+  appear. `get_mcp_server_info.plugin_flags` still reports which families
+  are enabled
+  ([#247](https://github.com/jztan/redmine-mcp-server/issues/247),
+  [#248](https://github.com/jztan/redmine-mcp-server/pull/248)).
+
 ### Fixed
 - The issue tools build their pagination envelope through the shared
   `_pagination_info` helper
@@ -96,6 +130,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the call ([#232](https://github.com/jztan/redmine-mcp-server/issues/232)).
 
 ### Contributors
+- RedmineUP, provided an evaluation copy of the CRM PRO plugin (4.4.7) so
+  the deals, deal category, contact tag and CRM note tools could be verified
+  against a real Pro instance
+  ([#247](https://github.com/jztan/redmine-mcp-server/issues/247),
+  [#248](https://github.com/jztan/redmine-mcp-server/pull/248))
 - @mmahmed, reported and fixed the fabricated custom field metadata
   ([#232](https://github.com/jztan/redmine-mcp-server/issues/232),
   [#233](https://github.com/jztan/redmine-mcp-server/pull/233)), added

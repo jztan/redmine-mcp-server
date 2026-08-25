@@ -121,7 +121,15 @@ TOOL_KINDS: Dict[str, ToolKind] = {
     # Empty scope sets, but all four are mixed read/write dispatchers.
     "manage_product": ToolKind.WRITE_DESTRUCTIVE,
     "manage_contact": ToolKind.WRITE_DESTRUCTIVE,
+    "list_contact_tags": ToolKind.READ,
     "manage_deal": ToolKind.WRITE_DESTRUCTIVE,
+    # First plugin READ tool: a lookup, so readOnlyHint applies even though
+    # the family is feature-gated.
+    "list_deal_statuses": ToolKind.READ,
+    "manage_deal_category": ToolKind.WRITE_DESTRUCTIVE,  # list/create/update/delete
+    "add_deal_product": ToolKind.WRITE_ADDITIVE,
+    "manage_crm_note": ToolKind.WRITE_DESTRUCTIVE,  # get/create/update/delete
+    "list_crm_queries": ToolKind.READ,
     # --- MCP Apps ---
     "show_triage_board": ToolKind.READ,
     "get_triage_board_data": ToolKind.READ,

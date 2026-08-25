@@ -37,6 +37,19 @@ from ._mount import (  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
+from ._plugin_visibility import apply_plugin_visibility  # noqa: E402
+
+# Hide plugin-gated tools whose plugin flag is off. Runs once at import,
+# after every tool module has registered and after load_dotenv (the first
+# tool module imports _client, which loads .env).
+PLUGIN_VISIBILITY = apply_plugin_visibility(mcp)
+_hidden = sorted(f for f, on in PLUGIN_VISIBILITY.items() if not on)
+if _hidden:
+    logger.info(
+        "Plugin tool families hidden from tools/list (flag off): %s",
+        ", ".join(_hidden),
+    )
+
 REDMINE_AUTH_MODE = os.environ.get("REDMINE_AUTH_MODE", "legacy").lower()
 AUTHENTICATED_AUTH_MODES = {"oauth", "oauth-proxy"}
 

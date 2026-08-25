@@ -145,3 +145,39 @@ class TestAuthWiring:
 
         with pytest.raises(RuntimeError, match="REDMINE_INTROSPECT_CLIENT_ID"):
             _select_auth_provider("oauth")
+
+
+def test_main_applies_plugin_visibility_from_flags():
+    """Importing main hides plugin families whose flag is off."""
+    import asyncio
+    import os
+
+    from fastmcp import Client
+
+    from redmine_mcp_server import main as _main
+    from redmine_mcp_server import server as _server
+    from redmine_mcp_server._plugin_visibility import (
+        apply_plugin_visibility,
+        enable_all_plugin_tools,
+    )
+
+    assert isinstance(_main.PLUGIN_VISIBILITY, dict)
+    assert set(_main.PLUGIN_VISIBILITY) >= {
+        "checklists",
+        "crm",
+        "deals",
+        "products",
+        "dmsf",
+    }
+
+    with patch.dict(os.environ, {"REDMINE_DEALS_ENABLED": "false"}):
+        apply_plugin_visibility(_server.mcp)
+
+    async def names():
+        async with Client(_server.mcp) as client:
+            return {t.name for t in await client.list_tools()}
+
+    try:
+        assert "manage_deal" not in asyncio.run(names())
+    finally:
+        enable_all_plugin_tools(_server.mcp)

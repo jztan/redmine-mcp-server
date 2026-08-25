@@ -2483,11 +2483,13 @@ manage_product(action="update", product_id=42, fields={"price": 39.99})
 
 ## Contacts and Deals / CRM (RedmineUP CRM plugin)
 
-These tools require the **RedmineUP CRM** plugin. `manage_contact` needs `REDMINE_CRM_ENABLED=true`; `manage_deal` needs `REDMINE_DEALS_ENABLED=true`.
+These tools require the **RedmineUP CRM** plugin. `manage_contact` and `list_contact_tags` need `REDMINE_CRM_ENABLED=true`; `manage_deal`, `list_deal_statuses` and `manage_deal_category` need `REDMINE_DEALS_ENABLED=true`; `add_deal_product` needs that plus `REDMINE_PRODUCTS_ENABLED=true`.
 
 The two flags are deliberately separate. Contacts and deals are separate Redmine *project modules* (`contacts` and `deals` in the plugin's `init.rb`), each with its own permission set, so a project reachable by `manage_contact` is not necessarily reachable by `manage_deal`. More importantly, the plugin's **Light** edition ships no deals at all — no `project_module :deals`, and therefore none of the `*_deals` permissions. Redmine derives its OAuth scope list from `Redmine::AccessControl.permissions` and applies `enforce_configured_scopes`, so on a Light install a deal scope cannot be held by the OAuth application and a client requesting it fails consent with `invalid_scope`. Advertising deals under `REDMINE_CRM_ENABLED` would therefore break contacts for Light deployments; a separate flag leaves them untouched.
 
 **Security note:** Contact PII (email, phone, address) is returned as-is to the caller but is never logged via this module's logger.
+
+**Acknowledgement:** RedmineUP provided an evaluation copy of the CRM PRO plugin (4.4.7) for verifying `manage_deal`, `list_deal_statuses` and `manage_crm_note` against real Pro instances on Redmine 6.1.1 and 7.0.0.
 
 ### `manage_contact`
 
@@ -2608,7 +2610,7 @@ Requires the **RedmineUP CRM** plugin in its **Pro** edition, `REDMINE_DEALS_ENA
 - `assigned_to_id` (integer, optional): For `list`, filter by assignee user ID
 - `limit` (integer, optional): For `list`, max results per call (default `100`, capped at 100 by Redmine)
 - `deal_id` (integer): Required for `get`, `update`, and `delete`
-- `include` (string, optional): For `get`, comma-separated includes (`notes`)
+- `include` (string, optional): For `get`, comma-separated includes: `notes`, and `lines` (product lines, when the Products plugin is installed)
 - `name` (string): Required for `create`
 - `contact_id` (integer, optional): For `create`, the contact the deal belongs to
 - `assigned_to_id` (integer, optional): For `list`, filter by assignee. For `create`, the user to assign the new deal to
@@ -2661,6 +2663,110 @@ manage_deal(action="delete", deal_id=9)
 - `background` is wrapped in `<insecure-content>` boundary tags so downstream LLMs treat it as untrusted data. `name` and the `id`/`name` refs are short label-shaped fields and are returned verbatim, matching `subject` on issues.
 
 ---
+
+### `list_deal_statuses`
+
+List RedmineUP CRM deal statuses and, for a given project, its deal categories. Call it before `manage_deal(action="create")`, which needs a numeric `status_id`.
+
+Requires `REDMINE_DEALS_ENABLED=true` and the CRM plugin's **Pro** edition. Read-only (`readOnlyHint=true`).
+
+**Parameters:**
+- `project_id` (integer or string, optional): when given, the project's deal categories are included.
+
+**Returns:**
+- `statuses`: list of `{id, name, position, is_default, status_type, status_type_id, color}` ordered by position; `status_type` is `open`, `won` or `lost`.
+- `categories`: list of `{id, name}`; present only when `project_id` was given.
+- `project_id`: echoed back when given.
+
+**Admin-only statuses:** the plugin's `DealStatusesController#index` is restricted to Redmine administrators (`require_admin`), which no permission or OAuth scope can grant. For a non-admin user `statuses` is `null` and `statuses_error` explains why, while `categories` is still returned. Status ids can then be read off existing deals via `manage_deal(action="list", status_id="*")`.
+
+**Example:**
+```json
+{"statuses": [{"id": 1, "name": "New", "position": 1, "is_default": true, "status_type": "open", "status_type_id": 0, "color": "FFFFFF"}],
+ "categories": [{"id": 3, "name": "Enterprise"}],
+ "project_id": "sales"}
+```
+
+### `manage_crm_note`
+
+Get, create, update, or delete RedmineUP CRM notes, the activity log attached to contacts and deals.
+
+Available when `REDMINE_CRM_ENABLED=true` or `REDMINE_DEALS_ENABLED=true`. A note on a deal additionally requires deals enabled; a note on a contact requires CRM enabled. `get`, `update` and `delete` look the note up first and apply the same rule to its actual source, so a bare `note_id` cannot reach a disabled family. There is no list action: read a parent's notes with `manage_deal(action="get", include="notes")`.
+
+**Parameters:**
+- `action` (string, required): `get`, `create`, `update`, `delete`
+- `note_id` (integer): required for `get`, `update`, `delete`
+- `source_type` (string): `create` only, required: `contact` or `deal`
+- `source_id` (integer): `create` only, required
+- `project_id` (integer or string): `create` only, required. The plugin resolves the note's project from it and answers 404 without it
+- `content` (string): required on `create`, optional on `update`
+- `subject` (string, optional)
+- `type_id` (integer, optional): `0` email, `1` call, `2` meeting
+
+**Returns:** `get`/`create` a note dict `{id, source {id, name, type}, subject, content, type_id, note_type, author, created_on, updated_on}` (`content` is wrapped in `<insecure-content>` boundary tags, timestamps are ISO-8601); `update` `{success, note_id, updated_fields}`; `delete` `{success, note_id, message}`.
+
+**Permissions:** the plugin checks `delete_notes` (or `delete_own_notes` for the author) for both editing and deleting. In OAuth mode enabling either CRM flag advertises `add_notes`, `delete_notes` and `delete_own_notes` as scopes.
+
+**Example:**
+```json
+{"action": "create", "source_type": "deal", "source_id": 12, "project_id": "sales", "content": "Called, they want a revised quote by Friday.", "type_id": 1}
+```
+
+### `list_contact_tags`
+
+List the tags in use on RedmineUP CRM contacts, with their colors. Use it to discover valid names for the `tags` filter of `manage_contact(action="list")` and for `tag_list` on create/update.
+
+Requires `REDMINE_CRM_ENABLED=true`. Read-only. No parameters.
+
+**Returns:** a list of `{id, name, color}` ordered by name.
+
+### `manage_deal_category`
+
+List, create, rename, or delete RedmineUP CRM deal categories. Categories are defined per project and referenced by `category_id` on deals.
+
+Requires `REDMINE_DEALS_ENABLED=true`. Writes need the plugin's `manage_deals` permission, which enabling the flag advertises as an OAuth scope.
+
+**Parameters:**
+- `action` (string, required): `list`, `create`, `update`, `delete`
+- `project_id` (integer or string): required for `list` and `create`
+- `category_id` (integer): required for `update` and `delete`
+- `name` (string): required for `create` and `update`; at most 30 characters and unique within the project (the plugin answers 422 otherwise)
+- `reassign_to_id` (integer, optional): `delete` only. Category to move the deleted category's deals to. Without it the plugin leaves those deals uncategorised.
+
+**Returns:** `list` a list of `{id, name}`; `create` `{id, name, project_id}`; `update` `{success, category_id, updated_fields}`; `delete` `{success, category_id, message}`.
+
+**Plugin quirk:** deleting an unknown `category_id` makes the plugin answer 500 rather than 404, which the tool reports as a server error. `list_deal_statuses` also returns a project's categories, so a deal-creation flow needs only that one call.
+
+### `list_crm_queries`
+
+List saved RedmineUP CRM queries (the named filters users build in the contact and deal lists).
+
+Available with `REDMINE_CRM_ENABLED=true` (`object_type=contact`) or `REDMINE_DEALS_ENABLED=true` (`object_type=deal`). Read-only.
+
+**Parameters:**
+- `object_type` (string, required): `contact` or `deal`
+- `limit` (integer, optional): 1 to 100, default 25
+- `offset` (integer, optional): default 0
+
+**Returns:** a list of `{id, name, is_public, project_id}`; `project_id` is `null` for global queries. Only queries visible to the calling user are returned.
+
+### `add_deal_product`
+
+Add a product line to a RedmineUP CRM deal. The plugin recalculates the deal's `price` from its lines after each addition; read them back with `manage_deal(action="get", include="lines")`.
+
+Requires `REDMINE_DEALS_ENABLED=true` **and** `REDMINE_PRODUCTS_ENABLED=true`: the `PUT /deals/:id/add_product.json` endpoint is registered by the CRM plugin only when the RedmineUP Products plugin (2.0.2 or later) is installed. The tool is hidden unless both flags are set. Write-additive (`destructiveHint=false`).
+
+**Parameters:**
+- `deal_id` (integer, required)
+- `product_id` (integer): catalogue product to add; its description and price are used unless overridden. Optional when `description` is given, which creates a free-form line
+- `quantity` (number, optional): positive; the plugin defaults to 1
+- `price` (string or number, optional): unit price, sent as a string like `manage_deal`'s `price`
+- `description` (string, optional): line text; required without `product_id`
+- `tax`, `discount` (number, optional): percentages 0 to 100, checked client-side and by the plugin (422)
+
+**Returns:** `{success, deal_id, line}` with the line as sent, or `{"error": ...}`. An unknown `deal_id` makes the plugin answer 500 rather than 404.
+
+**Line shape** (from `manage_deal(get, include="lines")`): `{id, position, product {id, name} | null, description, quantity, tax, discount, price, total}`; `description` is wrapped in `<insecure-content>` tags.
 
 ## Documents (DMSF plugin)
 
@@ -2773,7 +2879,7 @@ Return the MCP server's version, enabled-feature flags, and the identity of the 
 - `read_only_mode` (boolean): whether `REDMINE_MCP_READ_ONLY` is enabled. When `True`, all write tools refuse with the standard read-only error.
 - `auth_mode` (string): `"oauth"` or `"legacy"`.
 - `current_user` (dict or null): `{id, login, name}` for the authenticated Redmine user behind the configured API key. `null` when the server cannot reach Redmine (check `/health` for connectivity status). Use this to confirm who `assigned_to_id="me"` resolves to, which matters when a shared or robot API key is in use.
-- `plugin_flags` (dict): which plugin-gated tool families are enabled. Keys: `agile`, `checklists`, `products`, `crm`, `dmsf`, `tags`. `True` means the corresponding `manage_*` / `get_*` tools are routable and will reach the underlying plugin endpoints (for `tags`, that `get_redmine_issue` returns a `tags` array); `False` means they will return a "feature disabled" error envelope (or, for `tags`, that the field is omitted).
+- `plugin_flags` (dict): which plugin-gated tool families are enabled. Keys: `agile`, `checklists`, `products`, `crm`, `deals`, `dmsf`, `tags`. `True` means the family's tools are listed and routable and will reach the underlying plugin endpoints (for `tags`, that `get_redmine_issue` returns a `tags` array); `False` means they are hidden from `tools/list` (calling them by name returns "Unknown tool"), except for `agile` and `tags`, which only add fields to core tools and are never hidden (for `tags`, the field is simply omitted).
 
 The response intentionally excludes credentials, internal hostnames, file-system paths, and any other operator config that a caller doesn't need to know to choose its call shape. Only flags that change *call shape* are surfaced.
 

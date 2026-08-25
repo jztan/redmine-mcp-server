@@ -22,7 +22,7 @@ from redmine_mcp_server.tools.deals import (  # noqa: E402
 )
 
 _DEAL_READ_SCOPE = "view_deals"
-_DEAL_WRITE_SCOPES = {"add_deals", "edit_deals", "delete_deals"}
+_DEAL_WRITE_SCOPES = {"add_deals", "edit_deals", "delete_deals", "manage_deals"}
 
 
 def _make_deal(deal_id: int = 1, name: str = "Renewal") -> dict:

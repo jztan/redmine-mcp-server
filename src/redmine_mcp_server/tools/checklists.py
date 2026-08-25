@@ -9,6 +9,7 @@ from .._errors import _READ_ONLY_ERROR, _handle_redmine_error
 from .._offload import offloaded
 from .._serialization import wrap_insecure_content
 from .._validation import _is_positive_int
+from .._plugin_visibility import plugin_tag
 from ..server import mcp
 
 
@@ -79,7 +80,7 @@ def _create_checklist_item_api(issue_id: int, payload: Dict[str, Any]) -> Any:
     )
 
 
-@mcp.tool()
+@mcp.tool(tags={plugin_tag("checklists")})
 @offloaded
 def get_checklist(issue_id: int) -> Dict[str, Any]:
     """Retrieve all checklist items for a Redmine issue.
@@ -122,7 +123,7 @@ def get_checklist(issue_id: int) -> Dict[str, Any]:
         )
 
 
-@mcp.tool()
+@mcp.tool(tags={plugin_tag("checklists")})
 @offloaded
 def update_checklist_item(
     checklist_item_id: int,
@@ -194,7 +195,7 @@ def update_checklist_item(
         )
 
 
-@mcp.tool()
+@mcp.tool(tags={plugin_tag("checklists")})
 @offloaded
 def create_checklist_item(
     issue_id: int,

@@ -159,9 +159,9 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `REDMINE_AGILE_ENABLED` | No | `false` | Enable RedmineUP Agile plugin support: `get_redmine_issue` returns `story_points`, `agile_sprint_id`, `agile_position`; `update_redmine_issue` accepts `story_points` |
 | `REDMINE_CHECKLISTS_ENABLED` | No | `false` | Enable RedmineUP Checklists plugin support: `get_checklist`, `create_checklist_item`, `update_checklist_item` (requires Checklists Pro plugin) |
 | `REDMINE_PRODUCTS_ENABLED` | No | `false` | Enable RedmineUP Products plugin support: `manage_product` (action=list/get/create/update) |
-| `REDMINE_CRM_ENABLED` | No | `false` | Enable RedmineUP CRM plugin support: `manage_contact` (action=list/get/create/update/delete/assign_to_project/remove_from_project). Requires the CRM plugin and the `view_contacts` / `view_private_contacts` permissions on the Redmine server, plus `add_contacts` / `edit_contacts` / `delete_contacts` for the write actions. In OAuth mode these are advertised as scopes only when this flag is set, so the OAuth application must grant them too. |
+| `REDMINE_CRM_ENABLED` | No | `false` | Enable RedmineUP CRM plugin support: `manage_contact` (action=list/get/create/update/delete/assign_to_project/remove_from_project) `list_contact_tags`, `manage_crm_note` (notes on contacts) and `list_crm_queries`. Requires the CRM plugin and the `view_contacts` / `view_private_contacts` permissions on the Redmine server, plus `add_contacts` / `edit_contacts` / `delete_contacts` for the write actions. In OAuth mode these are advertised as scopes only when this flag is set, so the OAuth application must grant them too. |
 | `REDMINE_CRM_EDITION` | No | `light` | Which build of the CRM plugin the Redmine server runs: `light` or `pro`. The two register different contact query filters — the Pro build registers the contact fields, the Light build registers only `tags` — and Redmine ignores an unregistered filter parameter without erroring, answering with the whole collection instead. So `manage_contact` refuses `first_name`, `last_name`, `middle_name`, `company`, `job_title`, `email`, `phone` and `author_id` on `list` unless this is `pro`, rather than returning a silently unfiltered list. The build cannot be detected: Redmine exposes plugin versions only through `admin/plugins`, which is HTML and admin-only. |
-| `REDMINE_DEALS_ENABLED` | No | `false` | Enable RedmineUP CRM **deals** support: `manage_deal` (action=list/get/create/update/delete). Separate from `REDMINE_CRM_ENABLED` because the CRM plugin's Light edition ships no deals and defines none of the deal permissions, so advertising them there would make consent fail. Requires the CRM plugin's **Pro** edition, the `deals` project module enabled on the project, and the `view_deals` permission, plus `add_deals` / `edit_deals` / `delete_deals` for the write actions. |
+| `REDMINE_DEALS_ENABLED` | No | `false` | Enable RedmineUP CRM **deals** support: `manage_deal` (action=list/get/create/update/delete), `list_deal_statuses`, `manage_deal_category`, `manage_crm_note` (notes on deals), `list_crm_queries` and, together with `REDMINE_PRODUCTS_ENABLED`, `add_deal_product`. Separate from `REDMINE_CRM_ENABLED` because the CRM plugin's Light edition ships no deals and defines none of the deal permissions, so advertising them there would make consent fail. Requires the CRM plugin's **Pro** edition, the `deals` project module enabled on the project, and the `view_deals` permission, plus `add_deals` / `edit_deals` / `delete_deals` for the write actions. |
 | `REDMINE_DMSF_ENABLED` | No | `false` | Enable DMSF document-management plugin support: `manage_document` (action=list/get/create/update). Requires `redmine_dmsf` plugin on the Redmine server. |
 | `REDMINE_TAGS_ENABLED` | No | `false` | Enable AlphaNodes additional_tags plugin support: `get_redmine_issue` returns a `tags` array, and `create_redmine_issue`/`update_redmine_issue` accept a `tag_list`. Requires the `additional_tags` plugin and the `view_issue_tags` / `create_issue_tags` / `edit_issue_tags` permissions on the Redmine server. |
 | `REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS` | No | `false` | Enable one retry for issue creation by filling missing required custom fields |
@@ -588,13 +588,15 @@ more, shown as seven rows below because CRM's deals carry their own flag. To
 use one, install it on your Redmine server and set the matching env var.
 Skipping a plugin costs you only that plugin's features.
 
+Plugin tools appear in the client's tool list only when their env var is set; with the flag off they are not registered on the MCP surface at all.
+
 | Plugin | Vendor | Env var | What it adds |
 |---|---|---|---|
 | [Agile](https://www.redmineup.com/pages/plugins/agile) | RedmineUP | `REDMINE_AGILE_ENABLED` | `get_redmine_issue` returns `story_points`, `agile_sprint_id`, `agile_position`; `update_redmine_issue` accepts `story_points` |
 | [Checklists](https://www.redmineup.com/pages/plugins/checklists) | RedmineUP (Pro) | `REDMINE_CHECKLISTS_ENABLED` | 3 tools: `get_checklist`, `create_checklist_item`, `update_checklist_item` |
-| [Products](https://www.redmineup.com/pages/plugins/products) | RedmineUP | `REDMINE_PRODUCTS_ENABLED` | 1 tool: `manage_product` |
-| [CRM](https://www.redmineup.com/pages/plugins/crm) | RedmineUP | `REDMINE_CRM_ENABLED` | 1 tool: `manage_contact` (adds the `*_contacts` scopes to OAuth discovery when enabled) |
-| [CRM deals](https://www.redmineup.com/pages/plugins/crm) | RedmineUP (Pro) | `REDMINE_DEALS_ENABLED` | 1 tool: `manage_deal` (adds the `*_deals` scopes to OAuth discovery when enabled). Same plugin as CRM, but the Light edition has no deals |
+| [Products](https://www.redmineup.com/pages/plugins/products) | RedmineUP | `REDMINE_PRODUCTS_ENABLED` | 1 tool: `manage_product`; with `REDMINE_DEALS_ENABLED` also `add_deal_product` |
+| [CRM](https://www.redmineup.com/pages/plugins/crm) | RedmineUP | `REDMINE_CRM_ENABLED` | 4 tools: `manage_contact`, `list_contact_tags`, `manage_crm_note`, `list_crm_queries` (adds the `*_contacts` and note scopes to OAuth discovery when enabled) |
+| [CRM deals](https://www.redmineup.com/pages/plugins/crm) | RedmineUP (Pro) | `REDMINE_DEALS_ENABLED` | 6 tools: `manage_deal`, `list_deal_statuses`, `manage_deal_category`, `manage_crm_note`, `list_crm_queries` (the last two shared with CRM), `add_deal_product` (with `REDMINE_PRODUCTS_ENABLED`; adds the `*_deals` and note scopes to OAuth discovery when enabled). Same plugin as CRM, but the Light edition has no deals |
 | [DMSF](https://github.com/danmunn/redmine_dmsf) | danmunn (open source) | `REDMINE_DMSF_ENABLED` | 1 tool: `manage_document` |
 | [Additional Tags](https://github.com/alphanodes/additional_tags) | AlphaNodes (open source) | `REDMINE_TAGS_ENABLED` | `get_redmine_issue` returns a `tags` array; `create_redmine_issue` / `update_redmine_issue` accept `tag_list` |
 
@@ -606,7 +608,7 @@ flag. Tags also needs the `view_issue_tags`, `create_issue_tags`, and
 
 ## Available Tools
 
-This MCP server provides 52 tools for interacting with Redmine (plus 1 operator tool exposed by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`, for a maximum of 53). 7 of the 52 are plugin-gated and activate via env vars. For full documentation of every tool, see the [Tool Reference](./docs/tool-reference.md).
+This MCP server provides 45 core tools for interacting with Redmine, plus 13 plugin tools that are listed only when the matching `REDMINE_*_ENABLED` flag is set (58 in total), and 1 operator tool exposed by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true` (maximum of 59). A client connected to a vanilla Redmine sees just the 45 core tools. For full documentation of every tool, see the [Tool Reference](./docs/tool-reference.md).
 
 **Core tools (45, always available):** Project Management (9), Issue Operations (13), Time Tracking (4), Discovery / Enumeration (7), Search & Wiki (2), File Operations (4), Gantt (1), Interactive Apps (4), Meta (1).
 
@@ -685,9 +687,9 @@ These tools require only a Redmine instance and credentials, with no extra plugi
 - **Meta** (1 tool)
   - [`get_mcp_server_info`](docs/tool-reference.md#get_mcp_server_info) - Report server version, auth mode, read-only state, the authenticated user (`current_user`), and which plugin-gated tool families are enabled. Use to detect deployment lag before relying on a recently-shipped fix, or to confirm who `assigned_to_id="me"` resolves to.
 
-### Plugin-gated tools (7, opt in via env var)
+### Plugin-gated tools (13, opt in via env var)
 
-These tools require a corresponding Redmine plugin installed on the server **and** the matching environment variable set to `true` on the MCP server. They appear in `tools/list` either way, but return a feature-disabled error until their flag is set.
+These tools require a corresponding Redmine plugin installed on the server **and** the matching environment variable set to `true` on the MCP server. They are listed in `tools/list` only when their flag is set; with the flag off they are not registered on the MCP surface (and a direct call still returns a feature-disabled error).
 
 - **Checklists** (3 tools): set `REDMINE_CHECKLISTS_ENABLED=true`; requires the [RedmineUP Checklists Pro plugin](https://www.redmineup.com/pages/plugins/checklists)
   - [`get_checklist`](docs/tool-reference.md#get_checklist) - Retrieve all checklist items for an issue
@@ -702,6 +704,12 @@ These tools require a corresponding Redmine plugin installed on the server **and
 
 - **Deals (CRM)** (1 tool): set `REDMINE_DEALS_ENABLED=true`; requires the **Pro** edition of the same CRM plugin, and the `deals` project module enabled on the project. Deals have their own flag because the Light edition defines none of the deal permissions, so advertising them would break consent for Light deployments
   - [`manage_deal`](docs/tool-reference.md#manage_deal) - List, get, create, update, or delete deals
+  - [`list_deal_statuses`](docs/tool-reference.md#list_deal_statuses) - Deal statuses (admin-only on the plugin side) and a project's deal categories, for use before creating a deal.
+  - [`manage_crm_note`](docs/tool-reference.md#manage_crm_note) - Get, create, update, delete CRM notes on contacts and deals (available with either CRM flag).
+  - [`list_contact_tags`](docs/tool-reference.md#list_contact_tags) - Tags in use on contacts, with colors, for the `tags` filter and `tag_list`.
+  - [`manage_deal_category`](docs/tool-reference.md#manage_deal_category) - List, create, rename, or delete a project's deal categories.
+  - [`list_crm_queries`](docs/tool-reference.md#list_crm_queries) - Saved contact or deal queries (available with either CRM flag).
+  - [`add_deal_product`](docs/tool-reference.md#add_deal_product) - Add a product line to a deal (needs the deals and products flags).
 
 - **Documents (DMSF)** (1 tool): set `REDMINE_DMSF_ENABLED=true`; requires the [`redmine_dmsf` plugin](https://github.com/danmunn/redmine_dmsf)
   - [`manage_document`](docs/tool-reference.md#manage_document) - List, get, create (upload), or update (new revision) DMSF documents
@@ -781,6 +789,8 @@ Thank you to everyone who has helped improve this project through code, reviews,
 </a>
 
 Per-release contributor credits are listed in the [Changelog](./CHANGELOG.md).
+
+Thanks also to [RedmineUP](https://www.redmineup.com), who provided an evaluation copy of their CRM PRO plugin so the deals and CRM tools (`manage_deal`, `list_deal_statuses`, `manage_deal_category`, `manage_crm_note`, `list_contact_tags`, `list_crm_queries`, `add_deal_product`) could be verified against a real Pro instance.
 
 ## License
 
