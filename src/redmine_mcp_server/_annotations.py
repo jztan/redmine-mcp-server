@@ -126,6 +126,7 @@ TOOL_KINDS: Dict[str, ToolKind] = {
     # First plugin READ tool: a lookup, so readOnlyHint applies even though
     # the family is feature-gated.
     "list_deal_statuses": ToolKind.READ,
+    "manage_deal_category": ToolKind.WRITE_DESTRUCTIVE,  # list/create/update/delete
     "manage_crm_note": ToolKind.WRITE_DESTRUCTIVE,  # get/create/update/delete
     # --- MCP Apps ---
     "show_triage_board": ToolKind.READ,

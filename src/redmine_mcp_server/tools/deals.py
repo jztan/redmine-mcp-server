@@ -629,3 +629,211 @@ async def list_deal_statuses(
     if not _is_deals_enabled():
         return dict(_DEALS_DISABLED_ERROR)
     return await _list_deal_statuses_impl(project_id)
+
+
+# DealCategory validates_length_of :name, maximum: 30.
+_DEAL_CATEGORY_NAME_MAX = 30
+
+
+def _validate_category_name(name: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(name, str) or not name.strip():
+        return {"error": "name must be a non-empty string."}
+    if len(name) > _DEAL_CATEGORY_NAME_MAX:
+        return {
+            "error": (
+                f"name must be at most {_DEAL_CATEGORY_NAME_MAX} characters "
+                "(the plugin rejects longer names)."
+            )
+        }
+    return None
+
+
+_DEAL_CATEGORY_CTX = {"resource_type": "deal category"}
+
+
+@offloaded
+def _list_deal_categories_action(
+    project_id: Optional[Union[str, int]] = None, **_: Any
+) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    if project_id is None or not _is_valid_project_id(project_id):
+        return {
+            "error": (
+                "project_id is required (deal categories are defined per "
+                "project) and must be a non-empty identifier or positive integer."
+            )
+        }
+    from .. import _client
+
+    try:
+        client = _get_redmine_client()
+        payload = client.engine.request(
+            "get",
+            f"{_client.REDMINE_URL}/projects/{project_id}/deal_categories.json",
+        )
+        raw = payload.get("deal_categories", []) if isinstance(payload, dict) else []
+        return [_deal_category_to_dict(c) for c in raw]
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            "listing deal categories",
+            {"resource_type": "project", "resource_id": project_id},
+        )
+
+
+@offloaded
+def _create_deal_category_action(
+    project_id: Optional[Union[str, int]] = None,
+    name: Optional[str] = None,
+    **_: Any,
+) -> Dict[str, Any]:
+    if project_id is None or not _is_valid_project_id(project_id):
+        return {
+            "error": (
+                "project_id is required and must be a non-empty identifier or "
+                "positive integer."
+            )
+        }
+    bad = _validate_category_name(name)
+    if bad:
+        return bad
+    from .. import _client
+
+    try:
+        client = _get_redmine_client()
+        payload = client.engine.request(
+            "post",
+            f"{_client.REDMINE_URL}/projects/{project_id}/deal_categories.json",
+            data=json.dumps({"category": {"name": name}}),
+            headers={"Content-Type": "application/json"},
+        )
+        cat = payload.get("category", {}) if isinstance(payload, dict) else {}
+        if not cat:
+            return {"error": "Redmine returned no category."}
+        return {**_deal_category_to_dict(cat), "project_id": project_id}
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            "creating deal category",
+            {"resource_type": "project", "resource_id": project_id},
+        )
+
+
+@offloaded
+def _update_deal_category_action(
+    category_id: Optional[int] = None, name: Optional[str] = None, **_: Any
+) -> Dict[str, Any]:
+    if not _is_positive_int(category_id):
+        return {"error": "category_id must be a positive integer."}
+    bad = _validate_category_name(name)
+    if bad:
+        return bad
+    from .. import _client
+
+    try:
+        client = _get_redmine_client()
+        client.engine.request(
+            "put",
+            f"{_client.REDMINE_URL}/deal_categories/{category_id}.json",
+            data=json.dumps({"category": {"name": name}}),
+            headers={"Content-Type": "application/json"},
+        )
+        return {"success": True, "category_id": category_id, "updated_fields": ["name"]}
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"updating deal category {category_id}",
+            {**_DEAL_CATEGORY_CTX, "resource_id": category_id},
+        )
+
+
+@offloaded
+def _delete_deal_category_action(
+    category_id: Optional[int] = None,
+    reassign_to_id: Optional[int] = None,
+    **_: Any,
+) -> Dict[str, Any]:
+    if not _is_positive_int(category_id):
+        return {"error": "category_id must be a positive integer."}
+    if reassign_to_id is not None and not _is_positive_int(reassign_to_id):
+        return {"error": "reassign_to_id must be a positive integer."}
+    from .. import _client
+
+    try:
+        client = _get_redmine_client()
+        url = f"{_client.REDMINE_URL}/deal_categories/{category_id}.json"
+        if reassign_to_id is not None:
+            client.engine.request(
+                "delete", url, params={"reassign_to_id": reassign_to_id}
+            )
+            outcome = f"its deals were reassigned to category {reassign_to_id}"
+        else:
+            client.engine.request("delete", url)
+            outcome = "its deals are now uncategorised"
+        return {
+            "success": True,
+            "category_id": category_id,
+            "message": f"Deal category {category_id} deleted; {outcome}.",
+        }
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"deleting deal category {category_id}",
+            {**_DEAL_CATEGORY_CTX, "resource_id": category_id},
+        )
+
+
+@action_dispatch(
+    {
+        "list": ActionMode.READ,
+        "create": ActionMode.WRITE,
+        "update": ActionMode.WRITE,
+        "delete": ActionMode.WRITE,
+    }
+)
+async def _manage_deal_category_dispatch(action: str, **kwargs: Any) -> Any:
+    return {
+        "list": _list_deal_categories_action,
+        "create": _create_deal_category_action,
+        "update": _update_deal_category_action,
+        "delete": _delete_deal_category_action,
+    }
+
+
+@mcp.tool(tags={plugin_tag("deals")})
+async def manage_deal_category(
+    action: Literal["list", "create", "update", "delete"],
+    project_id: Optional[Union[str, int]] = None,
+    category_id: Optional[int] = None,
+    name: Optional[str] = None,
+    reassign_to_id: Optional[int] = None,
+) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+    """List, create, rename, or delete RedmineUP CRM deal categories.
+
+    Categories are defined per project and referenced by ``category_id`` on
+    deals. Requires ``REDMINE_DEALS_ENABLED=true``; writes need the plugin's
+    ``manage_deals`` permission.
+
+    Args:
+        action: ``list``, ``create``, ``update`` or ``delete``.
+        project_id: Required for ``list`` and ``create``.
+        category_id: Required for ``update`` and ``delete``.
+        name: Required for ``create`` and ``update``; at most 30 characters
+            and unique within the project.
+        reassign_to_id: ``delete`` only. Category to move the deleted
+            category's deals to. Without it the plugin leaves those deals
+            uncategorised.
+
+    Returns:
+        ``list`` a list of ``{id, name}``; ``create`` ``{id, name,
+        project_id}``; ``update`` / ``delete`` a status dict;
+        ``{"error": ...}`` on failure.
+    """
+    if not _is_deals_enabled():
+        return dict(_DEALS_DISABLED_ERROR)
+    return await _manage_deal_category_dispatch(
+        action,
+        project_id=project_id,
+        category_id=category_id,
+        name=name,
+        reassign_to_id=reassign_to_id,
+    )

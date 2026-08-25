@@ -191,6 +191,7 @@ DEALS_WRITE_SCOPES: list[str] = [
     "add_deals",  # manage_deal(action=create): deals#create
     "edit_deals",  # manage_deal(action=update): deals#update
     "delete_deals",  # manage_deal(action=delete): deals#destroy
+    "manage_deals",  # manage_deal_category(action=create|update|delete)
 ]
 
 # RedmineUP CRM note permissions, advertised when contacts or deals are
@@ -435,6 +436,7 @@ TOOL_SCOPES: Dict[str, ToolScopeEntry] = {
     "list_contact_tags": frozenset(),
     "manage_deal": frozenset(),
     "list_deal_statuses": frozenset(),
+    "manage_deal_category": frozenset(),
     "manage_crm_note": frozenset(),
     # --- MCP Apps (read-only issue queries) ---
     "show_triage_board": frozenset({"view_issues"}),

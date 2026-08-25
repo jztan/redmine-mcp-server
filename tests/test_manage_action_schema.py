@@ -51,6 +51,7 @@ EXPECTED_ACTIONS = {
     "manage_document": {"list", "get", "create", "update"},
     "manage_deal": {"list", "get", "create", "update", "delete"},
     "manage_crm_note": {"get", "create", "update", "delete"},
+    "manage_deal_category": {"list", "create", "update", "delete"},
 }
 
 

@@ -19,7 +19,7 @@ from redmine_mcp_server._plugin_visibility import (
 PLUGIN_TOOLS = {
     "checklists": {"get_checklist", "create_checklist_item", "update_checklist_item"},
     "crm": {"manage_contact", "list_contact_tags"},
-    "deals": {"manage_deal", "list_deal_statuses"},
+    "deals": {"manage_deal", "list_deal_statuses", "manage_deal_category"},
     "products": {"manage_product"},
     "dmsf": {"manage_document"},
     "crm-notes": {"manage_crm_note"},
