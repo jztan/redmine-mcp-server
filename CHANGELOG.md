@@ -117,6 +117,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the call ([#232](https://github.com/jztan/redmine-mcp-server/issues/232)).
 
 ### Contributors
+- RedmineUP, provided an evaluation copy of the CRM PRO plugin (4.4.7) so
+  `manage_deal`, `list_deal_statuses` and `manage_crm_note` could be verified
+  against a real Pro instance
+  ([#247](https://github.com/jztan/redmine-mcp-server/issues/247),
+  [#248](https://github.com/jztan/redmine-mcp-server/pull/248))
 - @mmahmed, reported and fixed the fabricated custom field metadata
   ([#232](https://github.com/jztan/redmine-mcp-server/issues/232),
   [#233](https://github.com/jztan/redmine-mcp-server/pull/233)), added

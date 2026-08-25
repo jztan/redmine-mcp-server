@@ -600,8 +600,6 @@ Plugin tools appear in the client's tool list only when their env var is set; wi
 | [DMSF](https://github.com/danmunn/redmine_dmsf) | danmunn (open source) | `REDMINE_DMSF_ENABLED` | 1 tool: `manage_document` |
 | [Additional Tags](https://github.com/alphanodes/additional_tags) | AlphaNodes (open source) | `REDMINE_TAGS_ENABLED` | `get_redmine_issue` returns a `tags` array; `create_redmine_issue` / `update_redmine_issue` accept `tag_list` |
 
-**Acknowledgement:** [RedmineUP](https://www.redmineup.com) provided an evaluation copy of the CRM PRO plugin so that the deals and CRM notes integration (`manage_deal`, `list_deal_statuses`, `manage_crm_note`) could be verified end to end against a real Pro instance. Thank you.
-
 Agile and Additional Tags add fields to tools you already have, so they
 register no new tools. The other five bring their own, which appear in
 `tools/list` either way but return a feature-disabled error until you set the
@@ -787,6 +785,8 @@ Thank you to everyone who has helped improve this project through code, reviews,
 </a>
 
 Per-release contributor credits are listed in the [Changelog](./CHANGELOG.md).
+
+Thanks also to [RedmineUP](https://www.redmineup.com), who provided an evaluation copy of their CRM PRO plugin so the deals and CRM notes tools (`manage_deal`, `list_deal_statuses`, `manage_crm_note`) could be verified against a real Pro instance.
 
 ## License
 
