@@ -310,7 +310,7 @@ async def _manage_crm_note_dispatch(action: str, **kwargs: Any) -> Any:
     }
 
 
-@mcp.tool(tags={plugin_tag("crm-notes")})
+@mcp.tool(tags={plugin_tag("crm-shared")})
 async def manage_crm_note(
     action: Literal["get", "create", "update", "delete"],
     note_id: Optional[int] = None,

@@ -22,7 +22,7 @@ PLUGIN_TOOLS = {
     "deals": {"manage_deal", "list_deal_statuses", "manage_deal_category"},
     "products": {"manage_product"},
     "dmsf": {"manage_document"},
-    "crm-notes": {"manage_crm_note"},
+    "crm-shared": {"manage_crm_note", "list_crm_queries"},
 }
 ALL_PLUGIN_TOOLS = set().union(*PLUGIN_TOOLS.values())
 FLAG_ENV = {
@@ -83,7 +83,7 @@ async def test_single_flag_exposes_exactly_its_tools(family):
     listed = await _listed()
     expected = set(PLUGIN_TOOLS[family])
     if family in ("crm", "deals"):
-        expected |= PLUGIN_TOOLS["crm-notes"]
+        expected |= PLUGIN_TOOLS["crm-shared"]
     assert expected <= listed
     assert not ((ALL_PLUGIN_TOOLS - expected) & listed)
 

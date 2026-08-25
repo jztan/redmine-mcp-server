@@ -2737,6 +2737,19 @@ Requires `REDMINE_DEALS_ENABLED=true`. Writes need the plugin's `manage_deals` p
 
 **Plugin quirk:** deleting an unknown `category_id` makes the plugin answer 500 rather than 404, which the tool reports as a server error. `list_deal_statuses` also returns a project's categories, so a deal-creation flow needs only that one call.
 
+### `list_crm_queries`
+
+List saved RedmineUP CRM queries (the named filters users build in the contact and deal lists).
+
+Available with `REDMINE_CRM_ENABLED=true` (`object_type=contact`) or `REDMINE_DEALS_ENABLED=true` (`object_type=deal`). Read-only.
+
+**Parameters:**
+- `object_type` (string, required): `contact` or `deal`
+- `limit` (integer, optional): 1 to 100, default 25
+- `offset` (integer, optional): default 0
+
+**Returns:** a list of `{id, name, is_public, project_id}`; `project_id` is `null` for global queries. Only queries visible to the calling user are returned.
+
 ## Documents (DMSF plugin)
 
 This section requires the **`redmine_dmsf`** plugin (GPL v2, open-source) installed on the Redmine server, and `REDMINE_DMSF_ENABLED=true`. DMSF *replaces* Redmine's built-in (web-UI-only) Documents module with a full document-management system that exposes a REST API.

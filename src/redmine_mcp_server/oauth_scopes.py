@@ -438,6 +438,7 @@ TOOL_SCOPES: Dict[str, ToolScopeEntry] = {
     "list_deal_statuses": frozenset(),
     "manage_deal_category": frozenset(),
     "manage_crm_note": frozenset(),
+    "list_crm_queries": frozenset(),
     # --- MCP Apps (read-only issue queries) ---
     "show_triage_board": frozenset({"view_issues"}),
     "get_triage_board_data": frozenset({"view_issues"}),
