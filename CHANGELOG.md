@@ -13,8 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   against CRM PRO 4.4.7 and Products 2.2.9 on Redmine 6.1.1 and 7.0.0, with a
   committed live suite (`tests/test_crm_integration.py`, one test per action,
   run under `--integration`, skipped when the plugin is absent). Tracked in
-  [#247](https://github.com/jztan/redmine-mcp-server/issues/247) and
-  [#248](https://github.com/jztan/redmine-mcp-server/pull/248).
+  [#247](https://github.com/jztan/redmine-mcp-server/issues/247) and [#248](https://github.com/jztan/redmine-mcp-server/pull/248).
 - `list_deal_statuses`: deal statuses (rendered `open`/`won`/`lost`) and a
   project's deal categories, the lookups `manage_deal(action="create")`
   needs. The plugin serves statuses to administrators only, so other users
