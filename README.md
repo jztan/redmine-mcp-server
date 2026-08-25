@@ -600,6 +600,8 @@ Plugin tools appear in the client's tool list only when their env var is set; wi
 | [DMSF](https://github.com/danmunn/redmine_dmsf) | danmunn (open source) | `REDMINE_DMSF_ENABLED` | 1 tool: `manage_document` |
 | [Additional Tags](https://github.com/alphanodes/additional_tags) | AlphaNodes (open source) | `REDMINE_TAGS_ENABLED` | `get_redmine_issue` returns a `tags` array; `create_redmine_issue` / `update_redmine_issue` accept `tag_list` |
 
+**Acknowledgement:** [RedmineUP](https://www.redmineup.com) provided an evaluation copy of the CRM PRO plugin so that the deals and CRM notes integration (`manage_deal`, `list_deal_statuses`, `manage_crm_note`) could be verified end to end against a real Pro instance. Thank you.
+
 Agile and Additional Tags add fields to tools you already have, so they
 register no new tools. The other five bring their own, which appear in
 `tools/list` either way but return a feature-disabled error until you set the
@@ -687,9 +689,9 @@ These tools require only a Redmine instance and credentials, with no extra plugi
 - **Meta** (1 tool)
   - [`get_mcp_server_info`](docs/tool-reference.md#get_mcp_server_info) - Report server version, auth mode, read-only state, the authenticated user (`current_user`), and which plugin-gated tool families are enabled. Use to detect deployment lag before relying on a recently-shipped fix, or to confirm who `assigned_to_id="me"` resolves to.
 
-### Plugin-gated tools (7, opt in via env var)
+### Plugin-gated tools (9, opt in via env var)
 
-These tools require a corresponding Redmine plugin installed on the server **and** the matching environment variable set to `true` on the MCP server. They appear in `tools/list` either way, but return a feature-disabled error until their flag is set.
+These tools require a corresponding Redmine plugin installed on the server **and** the matching environment variable set to `true` on the MCP server. They are listed in `tools/list` only when their flag is set; with the flag off they are not registered on the MCP surface (and a direct call still returns a feature-disabled error).
 
 - **Checklists** (3 tools): set `REDMINE_CHECKLISTS_ENABLED=true`; requires the [RedmineUP Checklists Pro plugin](https://www.redmineup.com/pages/plugins/checklists)
   - [`get_checklist`](docs/tool-reference.md#get_checklist) - Retrieve all checklist items for an issue

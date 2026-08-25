@@ -2489,6 +2489,8 @@ The two flags are deliberately separate. Contacts and deals are separate Redmine
 
 **Security note:** Contact PII (email, phone, address) is returned as-is to the caller but is never logged via this module's logger.
 
+**Acknowledgement:** RedmineUP provided an evaluation copy of the CRM PRO plugin (4.4.7) for verifying `manage_deal`, `list_deal_statuses` and `manage_crm_note` against a real Pro instance on Redmine 6.1.
+
 ### `manage_contact`
 
 List, get, create, update, delete, or change project association for RedmineUP CRM contacts. Replaces `list_contacts`, `get_contact`, `create_contact`, `edit_contact`, `delete_contact`, `assign_contact_to_project`, and `remove_contact_from_project`.
