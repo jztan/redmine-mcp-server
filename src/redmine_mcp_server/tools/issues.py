@@ -873,11 +873,17 @@ async def list_redmine_issues(
             account rather than the human operator). Call
             ``get_mcp_server_info`` first to confirm who ``"me"`` resolves
             to when results are unexpectedly empty. Arbitrary strings are
-            rejected at the FastMCP boundary.
+            rejected at the FastMCP boundary, so an operator form such as
+            unassigned goes through ``filters`` instead: see ``filters`` below.
         priority_id: Filter by priority ID.
         fixed_version_id: Filter by target version/milestone ID.
         sort: Sort order (e.g., "updated_on:desc").
         limit: Maximum number of issues to return (default: 25, max: 1000).
+            Above 100 the request is paged in chunks of 100, costing one
+            request per chunk *asked for* rather than per chunk returned:
+            a ten-issue project read at ``limit=1000`` costs ten requests
+            to return ten rows. Ask for a number you want, not a large one
+            meaning "all".
         offset: Number of issues to skip for pagination (default: 0).
         include_pagination_info: Return structured response with pagination
             metadata (default: False).
@@ -899,8 +905,21 @@ async def list_redmine_issues(
             relations include. ``["*"]`` or ``["all"]``, on their own, select
             every field except those two, which need their flag -- naming one
             alongside ``["*"]`` narrows the result to just it.
-        filters: Additional Redmine API filter parameters as a dict. Use this
-            for any filter not listed above (e.g., {"cf_1": "value"}).
+        filters: Redmine query filters, for what this signature does not name
+            -- ``{"cf_42": "value"}`` for a custom field above all -- and for
+            forms the named parameters above cannot express. It is merged
+            *after* them, so a key here overrides the parameter of the same
+            name. An operator rides inside the value as a prefix, and
+            alternatives join with ``|``: ``{"tracker_id": "56|57"}`` is either
+            tracker, ``{"assigned_to_id": "!*"}`` is unassigned, ``"*"`` is
+            assigned to anyone, and ``{"priority_id": "!4"}`` is "not 4". An
+            operator the filter's type does not accept is read as a literal
+            value rather than erroring. A filter Redmine cannot read is not an
+            error either -- it answers 200 with the collection unnarrowed -- so
+            check the result against what was asked for. A ``cf_<id>`` must be
+            an *issue* custom field, visible to the caller, with "Used as a
+            filter" on; without that flag the key is discarded silently and the
+            response is a plausible superset.
 
     Returns:
         List[Dict] (default) or Dict with 'issues' and 'pagination' keys.
