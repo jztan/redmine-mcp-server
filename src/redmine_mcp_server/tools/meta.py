@@ -121,10 +121,10 @@ async def get_mcp_server_info() -> Dict[str, Any]:
           Redmine (check ``/health`` for connectivity status).
         - ``plugin_flags`` (dict[str, bool]): which plugin-gated tool
           families are enabled. Keys: ``agile``, ``checklists``,
-          ``products``, ``crm``, ``dmsf``. ``True`` means the
-          corresponding ``manage_*`` / ``get_*`` tools are routable
-          and will reach the underlying plugin endpoints; ``False``
-          means they will return a "feature disabled" error envelope.
+          ``products``, ``crm``, ``deals``, ``dmsf``, ``tags``. ``True``
+          means the family's tools are listed and routable; ``False``
+          means they are hidden from ``tools/list`` (``agile`` and
+          ``tags`` only add fields to core tools and are never hidden).
 
     The response intentionally excludes credentials, internal
     hostnames, file-system paths, and any other operator-config that

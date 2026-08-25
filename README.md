@@ -588,6 +588,8 @@ more, shown as seven rows below because CRM's deals carry their own flag. To
 use one, install it on your Redmine server and set the matching env var.
 Skipping a plugin costs you only that plugin's features.
 
+Plugin tools appear in the client's tool list only when their env var is set; with the flag off they are not registered on the MCP surface at all.
+
 | Plugin | Vendor | Env var | What it adds |
 |---|---|---|---|
 | [Agile](https://www.redmineup.com/pages/plugins/agile) | RedmineUP | `REDMINE_AGILE_ENABLED` | `get_redmine_issue` returns `story_points`, `agile_sprint_id`, `agile_position`; `update_redmine_issue` accepts `story_points` |
@@ -606,7 +608,7 @@ flag. Tags also needs the `view_issue_tags`, `create_issue_tags`, and
 
 ## Available Tools
 
-This MCP server provides 52 tools for interacting with Redmine (plus 1 operator tool exposed by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`, for a maximum of 53). 7 of the 52 are plugin-gated and activate via env vars. For full documentation of every tool, see the [Tool Reference](./docs/tool-reference.md).
+This MCP server provides 45 core tools for interacting with Redmine, plus 7 plugin tools that are listed only when the matching `REDMINE_*_ENABLED` flag is set (52 in total), and 1 operator tool exposed by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true` (maximum of 53). A client connected to a vanilla Redmine sees just the 45 core tools. For full documentation of every tool, see the [Tool Reference](./docs/tool-reference.md).
 
 **Core tools (45, always available):** Project Management (9), Issue Operations (13), Time Tracking (4), Discovery / Enumeration (7), Search & Wiki (2), File Operations (4), Gantt (1), Interactive Apps (4), Meta (1).
 

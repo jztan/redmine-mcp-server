@@ -56,6 +56,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   renders it only for admins and silently omits it otherwise
   ([#236](https://github.com/jztan/redmine-mcp-server/issues/236)).
 
+### Changed
+- Plugin-gated tools (`get_checklist`, `create_checklist_item`,
+  `update_checklist_item`, `manage_contact`, `manage_deal`, `manage_product`,
+  `manage_document`) are no longer listed on the MCP surface unless their
+  `REDMINE_*_ENABLED` flag is set. A vanilla Redmine now advertises the 45
+  core tools instead of 52, which trims client context and removes tools
+  that could only answer "feature disabled". `get_mcp_server_info.plugin_flags`
+  still reports which families are enabled.
+
 ### Fixed
 - The issue tools build their pagination envelope through the shared
   `_pagination_info` helper
