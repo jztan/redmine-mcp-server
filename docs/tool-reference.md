@@ -2685,6 +2685,31 @@ Requires `REDMINE_DEALS_ENABLED=true` and the CRM plugin's **Pro** edition. Read
  "project_id": "sales"}
 ```
 
+### `manage_crm_note`
+
+Get, create, update, or delete RedmineUP CRM notes, the activity log attached to contacts and deals.
+
+Available when `REDMINE_CRM_ENABLED=true` or `REDMINE_DEALS_ENABLED=true`. A note on a deal additionally requires deals enabled; a note on a contact requires CRM enabled. `get`, `update` and `delete` look the note up first and apply the same rule to its actual source, so a bare `note_id` cannot reach a disabled family. There is no list action: read a parent's notes with `manage_deal(action="get", include="notes")`.
+
+**Parameters:**
+- `action` (string, required): `get`, `create`, `update`, `delete`
+- `note_id` (integer): required for `get`, `update`, `delete`
+- `source_type` (string): `create` only, required: `contact` or `deal`
+- `source_id` (integer): `create` only, required
+- `project_id` (integer or string): `create` only, required. The plugin resolves the note's project from it and answers 404 without it
+- `content` (string): required on `create`, optional on `update`
+- `subject` (string, optional)
+- `type_id` (integer, optional): `0` email, `1` call, `2` meeting
+
+**Returns:** `get`/`create` a note dict `{id, source {id, name, type}, subject, content, type_id, note_type, author, created_on, updated_on}` (`content` is wrapped in `<insecure-content>` boundary tags, timestamps are ISO-8601); `update` `{success, note_id, updated_fields}`; `delete` `{success, note_id, message}`.
+
+**Permissions:** the plugin checks `delete_notes` (or `delete_own_notes` for the author) for both editing and deleting. In OAuth mode enabling either CRM flag advertises `add_notes`, `delete_notes` and `delete_own_notes` as scopes.
+
+**Example:**
+```json
+{"action": "create", "source_type": "deal", "source_id": 12, "project_id": "sales", "content": "Called, they want a revised quote by Friday.", "type_id": 1}
+```
+
 ## Documents (DMSF plugin)
 
 This section requires the **`redmine_dmsf`** plugin (GPL v2, open-source) installed on the Redmine server, and `REDMINE_DMSF_ENABLED=true`. DMSF *replaces* Redmine's built-in (web-UI-only) Documents module with a full document-management system that exposes a REST API.

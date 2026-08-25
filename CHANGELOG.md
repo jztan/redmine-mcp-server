@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   administrators only, so for other users the tool returns the categories
   together with a `statuses_error` instead of failing. Verified against
   CRM PRO 4.4.7 on Redmine 6.1.
+- `manage_crm_note`: get, create, update and delete RedmineUP CRM notes on
+  contacts and deals (the CRM's activity log). Available with either
+  `REDMINE_CRM_ENABLED` or `REDMINE_DEALS_ENABLED`; each call is gated on
+  the flag matching the note's source. Advertises `add_notes`,
+  `delete_notes` and `delete_own_notes` as OAuth scopes when enabled.
+  Verified against CRM PRO 4.4.7 on Redmine 6.1.
 - MCP tool annotations on every tool, so clients can tell read-only queries
   from writes. Read tools advertise `readOnlyHint`, which lets annotation
   aware clients skip write-operation approval prompts for ordinary Redmine
