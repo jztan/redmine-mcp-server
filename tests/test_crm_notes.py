@@ -205,6 +205,9 @@ class TestCreate:
         assert result["id"] == 2
         args = mock_redmine.engine.request.call_args
         assert args.args == ("post", "http://localhost:3000/notes.json")
+        # Without an explicit JSON content type Redmine parses the body as a
+        # single "_json" string and NotesController#find_project 404s.
+        assert args.kwargs["headers"] == {"Content-Type": "application/json"}
         assert _sent_body(mock_redmine) == {
             "note": {
                 "source_type": "deal",
@@ -328,6 +331,7 @@ class TestUpdate:
         assert calls[0].args == ("get", "http://localhost:3000/notes/2.json")
         assert calls[1].args == ("put", "http://localhost:3000/notes/2.json")
         assert json.loads(calls[1].kwargs["data"]) == {"note": {"content": "edited"}}
+        assert calls[1].kwargs["headers"] == {"Content-Type": "application/json"}
 
     @pytest.mark.asyncio
     async def test_update_requires_a_field(self):

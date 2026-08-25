@@ -194,6 +194,7 @@ def _create_note_action(
             "post",
             f"{_client.REDMINE_URL}/notes.json",
             data=json.dumps({"note": body}),
+            headers={"Content-Type": "application/json"},
         )
         note = payload.get("note", {}) if isinstance(payload, dict) else {}
         return _note_to_dict(note) if note else {"error": "Redmine returned no note."}
@@ -249,6 +250,7 @@ def _update_note_action(
             "put",
             f"{_client.REDMINE_URL}/notes/{note_id}.json",
             data=json.dumps({"note": body}),
+            headers={"Content-Type": "application/json"},
         )
         return {"success": True, "note_id": note_id, "updated_fields": list(body)}
     except ForbiddenError:
