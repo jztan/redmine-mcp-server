@@ -172,6 +172,7 @@ When enabled, the following tools return an error instead of executing
 - `manage_issue_note` — all actions
 - `manage_time_entry` — all actions
 - `manage_redmine_version` — all actions (`create`, `update`, `delete`)
+- `add_deal_product` (also requires `REDMINE_DEALS_ENABLED=true` and `REDMINE_PRODUCTS_ENABLED=true`)
 
 **Partially blocked (read actions still work):**
 - `manage_redmine_wiki_page` — `create`, `update`, `delete`, `rename` blocked; `list`, `get` allowed
@@ -180,6 +181,8 @@ When enabled, the following tools return an error instead of executing
 - `manage_product` — `create`, `update` blocked; `list`, `get` allowed (also requires `REDMINE_PRODUCTS_ENABLED=true`)
 - `manage_contact` — `create`, `update`, `delete`, `assign_to_project`, `remove_from_project` blocked; `list`, `get` allowed (also requires `REDMINE_CRM_ENABLED=true`)
 - `manage_deal` — `create`, `update`, `delete` blocked; `list`, `get` allowed (also requires `REDMINE_DEALS_ENABLED=true`)
+- `manage_deal_category`: `create`, `update`, `delete` blocked; `list` allowed (also requires `REDMINE_DEALS_ENABLED=true`)
+- `manage_crm_note`: `create`, `update`, `delete` blocked; `get` allowed (also requires `REDMINE_CRM_ENABLED=true` or `REDMINE_DEALS_ENABLED=true`)
 - `manage_document` — `create`, `update` blocked; `list`, `get` allowed (also requires `REDMINE_DMSF_ENABLED=true`)
 
 All read tools (`get_redmine_issue`, `list_redmine_issues`, `list_redmine_projects`, etc.) continue to work normally. The admin-gated `cleanup_attachment_files` tool (when registered via `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`) is also unaffected — it performs local filesystem cleanup, not Redmine mutations.
@@ -2659,7 +2662,7 @@ manage_deal(action="delete", deal_id=9)
 - **`list` returns only OPEN deals unless you ask for more.** `DealQuery` seeds itself with a `status_id` filter on operator `o`, the same default `/issues.json` applies, so won and lost deals are absent from an unfiltered call. Pass `status_id="*"` for all statuses, `"c"` for won and lost, or a numeric id for one status — `status_id` is a `:list_status` filter, so Redmine accepts those operators alongside a plain id.
 - **All five actions require `view_deals`.** `deals#index` is excluded from `before_action :authorize` but then runs `find_optional_project`, whose Redmine implementation calls `authorize_global`, so it is authorized too — a caller without the permission gets a permission error, not an empty list. `Deal.visible` narrows what a permitted caller sees; it does not substitute for the check.
 - **`price` is sent as a string.** The plugin parses it with `String#gsub!` against the instance's configured thousands and decimal separators, so a JSON number raises `NoMethodError` server-side. Pass an unformatted value such as `"1500.5"`; pre-formatted input is reinterpreted per those settings.
-- **`status_id` and `category_id` are not discoverable through this server.** The plugin's `GET /deal_statuses.json` is `require_admin`, so a non-admin token cannot list statuses; deal categories are per-project. Read the IDs off an existing deal's `status` and `category` refs instead.
+- **`status_id` and `category_id` come from `list_deal_statuses`.** The plugin's `GET /deal_statuses.json` is `require_admin`, so for a non-admin token that tool returns `statuses: null` with a `statuses_error`; read status ids off an existing deal's `status` ref in that case (`manage_deal(action="list", status_id="*")`). Categories are per project and always readable.
 - `background` is wrapped in `<insecure-content>` boundary tags so downstream LLMs treat it as untrusted data. `name` and the `id`/`name` refs are short label-shaped fields and are returned verbatim, matching `subject` on issues.
 
 ---

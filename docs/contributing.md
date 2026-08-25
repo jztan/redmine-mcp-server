@@ -87,8 +87,10 @@ Tools live under `src/redmine_mcp_server/tools/`, one file per Redmine resource;
 | `tools/checklists.py` | RedmineUP Checklists plugin (3 tools, gated) |
 | `tools/gantt.py` | Gantt chart composite read tool (1 tool) |
 | `tools/products.py` | RedmineUP Products plugin (1 tool, gated) |
-| `tools/contacts.py` | RedmineUP CRM plugin (1 tool, gated) |
-| `tools/deals.py` | RedmineUP CRM deals (1 tool, gated) |
+| `tools/contacts.py` | RedmineUP CRM contacts and contact tags (2 tools, gated) |
+| `tools/crm_notes.py` | RedmineUP CRM notes on contacts and deals (1 tool, gated on either CRM flag) |
+| `tools/crm_queries.py` | RedmineUP CRM saved queries (1 tool, gated on either CRM flag) |
+| `tools/deals.py` | RedmineUP CRM deals, deal statuses, deal categories, deal product lines (4 tools, gated) |
 | `tools/documents.py` | DMSF plugin documents (1 tool with list/get/create/update actions, gated) |
 | `tools/meta.py` | Server introspection: `get_mcp_server_info` (1 tool, always available) |
 | `apps/triage_board.py` | Interactive Kanban triage board MCP App (2 tools) |
