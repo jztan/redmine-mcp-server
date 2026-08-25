@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- `list_deal_statuses`: RedmineUP CRM deal statuses (rendered as
+  `open`/`won`/`lost`) and a project's deal categories, the two lookups
+  `manage_deal(action="create")` needs. The plugin serves the status list to
+  administrators only, so for other users the tool returns the categories
+  together with a `statuses_error` instead of failing. Verified against
+  CRM PRO 4.4.7 on Redmine 6.1.
 - MCP tool annotations on every tool, so clients can tell read-only queries
   from writes. Read tools advertise `readOnlyHint`, which lets annotation
   aware clients skip write-operation approval prompts for ordinary Redmine

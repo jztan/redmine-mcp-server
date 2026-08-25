@@ -2483,7 +2483,7 @@ manage_product(action="update", product_id=42, fields={"price": 39.99})
 
 ## Contacts and Deals / CRM (RedmineUP CRM plugin)
 
-These tools require the **RedmineUP CRM** plugin. `manage_contact` needs `REDMINE_CRM_ENABLED=true`; `manage_deal` needs `REDMINE_DEALS_ENABLED=true`.
+These tools require the **RedmineUP CRM** plugin. `manage_contact` needs `REDMINE_CRM_ENABLED=true`; `manage_deal` and `list_deal_statuses` need `REDMINE_DEALS_ENABLED=true`.
 
 The two flags are deliberately separate. Contacts and deals are separate Redmine *project modules* (`contacts` and `deals` in the plugin's `init.rb`), each with its own permission set, so a project reachable by `manage_contact` is not necessarily reachable by `manage_deal`. More importantly, the plugin's **Light** edition ships no deals at all — no `project_module :deals`, and therefore none of the `*_deals` permissions. Redmine derives its OAuth scope list from `Redmine::AccessControl.permissions` and applies `enforce_configured_scopes`, so on a Light install a deal scope cannot be held by the OAuth application and a client requesting it fails consent with `invalid_scope`. Advertising deals under `REDMINE_CRM_ENABLED` would therefore break contacts for Light deployments; a separate flag leaves them untouched.
 
@@ -2661,6 +2661,29 @@ manage_deal(action="delete", deal_id=9)
 - `background` is wrapped in `<insecure-content>` boundary tags so downstream LLMs treat it as untrusted data. `name` and the `id`/`name` refs are short label-shaped fields and are returned verbatim, matching `subject` on issues.
 
 ---
+
+### `list_deal_statuses`
+
+List RedmineUP CRM deal statuses and, for a given project, its deal categories. Call it before `manage_deal(action="create")`, which needs a numeric `status_id`.
+
+Requires `REDMINE_DEALS_ENABLED=true` and the CRM plugin's **Pro** edition. Read-only (`readOnlyHint=true`).
+
+**Parameters:**
+- `project_id` (integer or string, optional): when given, the project's deal categories are included.
+
+**Returns:**
+- `statuses`: list of `{id, name, position, is_default, status_type, status_type_id, color}` ordered by position; `status_type` is `open`, `won` or `lost`.
+- `categories`: list of `{id, name}`; present only when `project_id` was given.
+- `project_id`: echoed back when given.
+
+**Admin-only statuses:** the plugin's `DealStatusesController#index` is restricted to Redmine administrators (`require_admin`), which no permission or OAuth scope can grant. For a non-admin user `statuses` is `null` and `statuses_error` explains why, while `categories` is still returned. Status ids can then be read off existing deals via `manage_deal(action="list", status_id="*")`.
+
+**Example:**
+```json
+{"statuses": [{"id": 1, "name": "New", "position": 1, "is_default": true, "status_type": "open", "status_type_id": 0, "color": "FFFFFF"}],
+ "categories": [{"id": 3, "name": "Enterprise"}],
+ "project_id": "sales"}
+```
 
 ## Documents (DMSF plugin)
 
