@@ -30,6 +30,8 @@ PLUGIN_FLAGS: Dict[str, Callable[[], bool]] = {
     "deals": _is_deals_enabled,
     "products": _is_products_enabled,
     "dmsf": _is_dmsf_enabled,
+    # Notes hang off contacts or deals, so either flag exposes the tool.
+    "crm-notes": lambda: _is_crm_enabled() or _is_deals_enabled(),
 }
 
 

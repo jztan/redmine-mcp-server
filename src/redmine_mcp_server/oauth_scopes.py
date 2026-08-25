@@ -26,7 +26,8 @@ Exclusions:
       cannot function without them, they live in a feature-gated list
       (``AGILE_READ_SCOPES``, ``TAGS_READ_SCOPES``,
       ``TAGS_WRITE_SCOPES``, ``CRM_READ_SCOPES``, ``CRM_WRITE_SCOPES``,
-      ``DEALS_READ_SCOPES``, ``DEALS_WRITE_SCOPES``)
+      ``DEALS_READ_SCOPES``, ``DEALS_WRITE_SCOPES``,
+      ``CRM_NOTES_WRITE_SCOPES``)
       and are advertised only when that feature's env flag is set.
 """
 
@@ -192,6 +193,17 @@ DEALS_WRITE_SCOPES: list[str] = [
     "delete_deals",  # manage_deal(action=delete): deals#destroy
 ]
 
+# RedmineUP CRM note permissions, advertised when contacts or deals are
+# enabled and the server is not read-only. Reads reuse view_contacts /
+# view_deals. notes#create has no authorize filter in the plugin, so
+# add_notes is advertised for least surprise rather than because Redmine
+# will intersect on it; notes#update and #destroy do check delete_notes.
+CRM_NOTES_WRITE_SCOPES: list[str] = [
+    "add_notes",  # manage_crm_note(action=create)
+    "delete_notes",  # manage_crm_note(action=update|delete)
+    "delete_own_notes",  # same, for the note's author
+]
+
 
 def advertised_scopes() -> list[str]:
     """Return the OAuth scopes to advertise in discovery documents.
@@ -234,6 +246,8 @@ def advertised_scopes() -> list[str]:
         scopes += list(DEALS_READ_SCOPES)
         if not _is_read_only_mode():
             scopes += list(DEALS_WRITE_SCOPES)
+    if (_is_crm_enabled() or _is_deals_enabled()) and not _is_read_only_mode():
+        scopes += list(CRM_NOTES_WRITE_SCOPES)
     return scopes
 
 
@@ -419,6 +433,8 @@ TOOL_SCOPES: Dict[str, ToolScopeEntry] = {
     "manage_product": frozenset(),
     "manage_contact": frozenset(),
     "manage_deal": frozenset(),
+    "list_deal_statuses": frozenset(),
+    "manage_crm_note": frozenset(),
     # --- MCP Apps (read-only issue queries) ---
     "show_triage_board": frozenset({"view_issues"}),
     "get_triage_board_data": frozenset({"view_issues"}),

@@ -5,6 +5,7 @@ Importing this package triggers ``@mcp.tool()`` registration for all tools.
 
 from . import checklists  # noqa: F401  -- triggers @mcp.tool() registration
 from . import contacts  # noqa: F401  -- triggers @mcp.tool() registration
+from . import crm_notes  # noqa: F401  -- triggers @mcp.tool() registration
 from . import deals  # noqa: F401  -- triggers @mcp.tool() registration
 from . import documents  # noqa: F401  -- triggers @mcp.tool() registration
 from . import enumeration  # noqa: F401  -- triggers @mcp.tool() registration

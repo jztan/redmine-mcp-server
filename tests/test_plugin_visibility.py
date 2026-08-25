@@ -22,6 +22,7 @@ PLUGIN_TOOLS = {
     "deals": {"manage_deal", "list_deal_statuses"},
     "products": {"manage_product"},
     "dmsf": {"manage_document"},
+    "crm-notes": {"manage_crm_note"},
 }
 ALL_PLUGIN_TOOLS = set().union(*PLUGIN_TOOLS.values())
 FLAG_ENV = {
@@ -73,15 +74,18 @@ async def test_hidden_tool_is_not_callable():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("family", sorted(PLUGIN_TOOLS))
+@pytest.mark.parametrize("family", sorted(FLAG_ENV))
 async def test_single_flag_exposes_exactly_its_tools(family):
     env = dict(ALL_OFF)
     env[FLAG_ENV[family]] = "true"
     with patch.dict(os.environ, env):
         apply_plugin_visibility(_server.mcp)
     listed = await _listed()
-    assert PLUGIN_TOOLS[family] <= listed
-    assert not ((ALL_PLUGIN_TOOLS - PLUGIN_TOOLS[family]) & listed)
+    expected = set(PLUGIN_TOOLS[family])
+    if family in ("crm", "deals"):
+        expected |= PLUGIN_TOOLS["crm-notes"]
+    assert expected <= listed
+    assert not ((ALL_PLUGIN_TOOLS - expected) & listed)
 
 
 @pytest.mark.asyncio
