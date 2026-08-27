@@ -130,7 +130,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the call ([#232](https://github.com/jztan/redmine-mcp-server/issues/232)).
 - `list_redmine_issues` documents the filter forms it can actually express.
   Redmine carries a filter's operator inside the value and joins alternatives
-  with `|`, which the typed parameters cannot represent — so `!*`
+  with `|`, which the typed parameters cannot represent, so `!*`
   (unassigned), `56|57` and `!4` go through `filters`, which is merged after
   the named parameters and overrides them. That route already worked and was
   undiscoverable: the `filters` entry said it was for "any filter not listed
@@ -140,7 +140,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the boundary is what [#116](https://github.com/jztan/redmine-mcp-server/issues/116)
   bought ([#250](https://github.com/jztan/redmine-mcp-server/issues/250)).
 - `list_redmine_issues` states that a filter Redmine cannot read is not an
-  error — it answers 200 with the collection unnarrowed — and that a `cf_<id>`
+  error (it answers 200 with the collection unnarrowed) and that a `cf_<id>`
   needs "Used as a filter" on to be read at all. `list_redmine_projects`
   already carried both; the two tools no longer disagree about a contract they
   share ([#250](https://github.com/jztan/redmine-mcp-server/issues/250)).
@@ -150,7 +150,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rows. The schema advertises 1000 and the reference documented 1000 with
   nothing about the cost, which is an invitation. Not a defect in
   [#241](https://github.com/jztan/redmine-mcp-server/pull/241), which returns
-  the correct rows where the old code returned 100 labelled complete — this is
+  the correct rows where the old code returned 100 labelled complete; this is
   the sentence that trade needs
   ([#250](https://github.com/jztan/redmine-mcp-server/issues/250)).
 - `docs/tool-reference.md` documents `list_redmine_issues`'s `filters`
@@ -170,10 +170,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [#235](https://github.com/jztan/redmine-mcp-server/pull/235)), returned
   the caller's memberships from `get_current_user`
   ([#236](https://github.com/jztan/redmine-mcp-server/issues/236),
-  [#237](https://github.com/jztan/redmine-mcp-server/pull/237)), and gave
+  [#237](https://github.com/jztan/redmine-mcp-server/pull/237)), gave
   `list_redmine_projects` filters, pagination and the six dropped fields
   ([#238](https://github.com/jztan/redmine-mcp-server/issues/238),
-  [#239](https://github.com/jztan/redmine-mcp-server/pull/239))
+  [#239](https://github.com/jztan/redmine-mcp-server/pull/239)), and
+  documented the filter forms `list_redmine_issues` can express
+  ([#250](https://github.com/jztan/redmine-mcp-server/issues/250),
+  [#251](https://github.com/jztan/redmine-mcp-server/pull/251))
 - @aadnehovda, requested MCP tool annotations so clients can distinguish
   read-only tools
   ([#204](https://github.com/jztan/redmine-mcp-server/issues/204))
