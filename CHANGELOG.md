@@ -128,6 +128,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of none, matching the `projects#show` request it makes; a token
   without it was refused by Redmine after this server had already admitted
   the call ([#232](https://github.com/jztan/redmine-mcp-server/issues/232)).
+- `list_redmine_issues` documents the filter forms it can actually express.
+  Redmine carries a filter's operator inside the value and joins alternatives
+  with `|`, which the typed parameters cannot represent — so `!*`
+  (unassigned), `56|57` and `!4` go through `filters`, which is merged after
+  the named parameters and overrides them. That route already worked and was
+  undiscoverable: the `filters` entry said it was for "any filter not listed
+  above", telling a caller it did *not* apply to those keys, while the tool's
+  leading prose offers "find unassigned issues" as a use case. The typed
+  parameters are deliberately left alone, since rejecting arbitrary strings at
+  the boundary is what [#116](https://github.com/jztan/redmine-mcp-server/issues/116)
+  bought ([#250](https://github.com/jztan/redmine-mcp-server/issues/250)).
+- `list_redmine_issues` states that a filter Redmine cannot read is not an
+  error — it answers 200 with the collection unnarrowed — and that a `cf_<id>`
+  needs "Used as a filter" on to be read at all. `list_redmine_projects`
+  already carried both; the two tools no longer disagree about a contract they
+  share ([#250](https://github.com/jztan/redmine-mcp-server/issues/250)).
+- `list_redmine_issues` states what a large `limit` costs: above 100 the
+  request is paged in chunks of 100, one request per chunk *asked for*, so a
+  ten-issue project read at `limit=1000` costs ten requests to return ten
+  rows. The schema advertises 1000 and the reference documented 1000 with
+  nothing about the cost, which is an invitation. Not a defect in
+  [#241](https://github.com/jztan/redmine-mcp-server/pull/241), which returns
+  the correct rows where the old code returned 100 labelled complete — this is
+  the sentence that trade needs
+  ([#250](https://github.com/jztan/redmine-mcp-server/issues/250)).
+- `docs/tool-reference.md` documents `list_redmine_issues`'s `filters`
+  parameter, which it had never listed, and the paging cost of `limit`.
 
 ### Contributors
 - RedmineUP, provided an evaluation copy of the CRM PRO plugin (4.4.7) so
