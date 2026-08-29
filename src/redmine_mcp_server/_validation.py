@@ -65,16 +65,52 @@ _FILTER_VALUE_TYPES = (str, int, float, date, datetime)
 # `add_available_filter` is ever handed a dotted name for.
 _CUSTOM_FIELD_FILTER_PATTERN = re.compile(r"^cf_\d+(?:\.(?:cf_\d+|due_date|status))?$")
 
+# A query can also register a custom field filter on an *association*, under
+# `<association>.cf_<id>`. `add_associations_custom_fields_filters`
+# (`app/models/query.rb` on 6.1) is handed `:project, :author, :assigned_to,
+# :fixed_version` by `IssueQuery` and `:author, :assigned_to` by the CRM
+# plugin's `ContactQuery`, so which prefixes exist is a property of the
+# resource and is passed in rather than assumed here. `ProjectQuery` makes no
+# such call, which is why the default is empty and the project list's
+# behaviour is unchanged.
+_ASSOCIATION_CUSTOM_FIELD_PATTERN = re.compile(r"^cf_\d+$")
+
+
+def _is_custom_field_filter(key: str, associations: "frozenset[str]") -> bool:
+    """True when ``key`` is a custom field filter in a spelling Redmine registers."""
+    if _CUSTOM_FIELD_FILTER_PATTERN.match(key):
+        return True
+    prefix, _, rest = key.partition(".")
+    return bool(
+        rest
+        and prefix in associations
+        and _ASSOCIATION_CUSTOM_FIELD_PATTERN.match(rest)
+    )
+
+
+def _association_clause(associations: "frozenset[str]") -> str:
+    """The fragment naming the association custom field forms, or nothing."""
+    if not associations:
+        return ""
+    names = ", ".join(f"{name}.cf_<id>" for name in sorted(associations))
+    return f", and {names}"
+
 
 def _reject_unregistered_filter_keys(
-    filters: Any, registered: "frozenset[str]"
+    filters: Any,
+    registered: "frozenset[str]",
+    associations: "frozenset[str]" = frozenset(),
 ) -> Optional[str]:
     """Return an error message if ``filters`` carries a non-filter key.
 
     ``registered`` is the resource's own set of filter names, as its ``Query``
     subclass hands them to ``add_available_filter``. ``cf_<id>`` and its
     chained spellings are accepted on top of that set, since those are
-    registered per custom field and so cannot be enumerated from here.
+    registered per custom field and so cannot be enumerated from here, as is
+    ``<association>.cf_<id>`` for each name in ``associations``. Refusing a
+    spelling the resource does register would be worse than not checking at
+    all, so a resource that registers association custom field filters must
+    pass its association names.
 
     An allowlist rather than another denylist entry, because the two are not
     symmetric. Redmine builds its query from the filter parameters it
@@ -95,7 +131,7 @@ def _reject_unregistered_filter_keys(
         for key in filters
         if not (
             isinstance(key, str)
-            and (key in registered or _CUSTOM_FIELD_FILTER_PATTERN.match(key))
+            and (key in registered or _is_custom_field_filter(key, associations))
         )
     )
     if not unknown:
@@ -104,7 +140,8 @@ def _reject_unregistered_filter_keys(
         f"filters may not contain {', '.join(unknown)}: the accepted keys are "
         f"{', '.join(sorted(registered))}, plus cf_<id> for a custom field -- "
         "optionally chained as cf_<id>.cf_<id>, cf_<id>.due_date or "
-        "cf_<id>.status. Redmine builds its query from the filter parameters "
+        f"cf_<id>.status{_association_clause(associations)}. Redmine builds "
+        "its query from the filter parameters "
         "it registers and ignores the rest, answering 200 with the unnarrowed "
         "collection, so a key it would not read as a filter is refused here "
         "rather than sent."

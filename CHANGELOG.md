@@ -156,6 +156,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `docs/tool-reference.md` documents `list_redmine_issues`'s `filters`
   parameter, which it had never listed, and the paging cost of `limit`.
 
+### Security
+- `list_redmine_issues` and `manage_contact` now validate a caller-supplied
+  `filters` dict before forwarding it, the way `list_redmine_projects` has
+  since [#239](https://github.com/jztan/redmine-mcp-server/pull/239): keys
+  must be filters the resource's `Query` registers (plus `cf_<id>` and its
+  chained and association spellings) and values must be scalars. Two
+  consequences of forwarding it unchecked are closed. On
+  `list_redmine_issues` the dict reached python-redmine's `Issue.bulk_decode`,
+  whose `decode` treats an `uploads` key as a list of local file paths to read
+  and upload before the list request is issued: a write, and a local file
+  read, from a tool that neither the `REDMINE_MCP_READ_ONLY` gate nor the
+  `uploads` scope check covers, because the gate fires only for write actions
+  and the scope check reads the write tools' own named parameter. On both
+  tools a `key` in the dict reached the query string, where Redmine's
+  `api_key_from_request` prefers it over the `X-Redmine-API-Key` header the
+  client sets, substituting the identity the request was authenticated with.
+  A `limit` or `offset` inside `filters` is still accepted, since some clients
+  wrap every parameter that way, but is now bounded like the named parameter
+  rather than overriding it (GHSA-xp4v-6gr8-jvwh).
+
 ### Contributors
 - RedmineUP, provided an evaluation copy of the CRM PRO plugin (4.4.7) so
   the deals, deal category, contact tag and CRM note tools could be verified
@@ -176,7 +196,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [#239](https://github.com/jztan/redmine-mcp-server/pull/239)), and
   documented the filter forms `list_redmine_issues` can express
   ([#250](https://github.com/jztan/redmine-mcp-server/issues/250),
-  [#251](https://github.com/jztan/redmine-mcp-server/pull/251))
+  [#251](https://github.com/jztan/redmine-mcp-server/pull/251)), and
+  reported and fixed the unvalidated `filters` forwarding on
+  `list_redmine_issues` and `manage_contact`
+  ([GHSA-xp4v-6gr8-jvwh](https://github.com/jztan/redmine-mcp-server/security/advisories/GHSA-xp4v-6gr8-jvwh))
 - @aadnehovda, requested MCP tool annotations so clients can distinguish
   read-only tools
   ([#204](https://github.com/jztan/redmine-mcp-server/issues/204))

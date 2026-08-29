@@ -23,7 +23,9 @@ from .._serialization import (
 from .._validation import (
     _is_positive_int,
     _is_valid_project_id,
+    _reject_non_scalar_filter_values,
     _reject_reserved_query_keys,
+    _reject_unregistered_filter_keys,
 )
 from .._plugin_visibility import plugin_tag
 from ..server import mcp
@@ -67,6 +69,54 @@ _CONTACT_OWNED_QUERY_KEYS = frozenset(
         "include_pagination_info",
     }
 )
+
+# Every filter the CRM plugin's `ContactQuery#initialize_available_filters`
+# registers, read from the installed `redmine_contacts` 4.4.5 PRO source (the
+# set is unchanged on 4.4.7) rather
+# than guessed: 22 `add_available_filter` calls, plus `author_id` and
+# `assigned_to_id` from `initialize_author_filter` and
+# `initialize_assignee_filter` (`app/models/crm_query.rb`), plus `cf_<id>` from
+# `add_custom_fields_filters`.
+#
+# The Light build registers only `tags`, and this set is deliberately the Pro
+# one: a name Light does not register is dropped by Redmine exactly as it is
+# today, so a superset refuses nothing a caller could have used, while the
+# attributes worth an explicit error already get one from the edition gate
+# above. Three of these are registered only `unless users_values.empty?`, which
+# is the same one-directional safety.
+_CONTACT_QUERY_FILTER_NAMES = frozenset(
+    {
+        "assigned_to_id",
+        "author_id",
+        "city",
+        "company",
+        "country",
+        "created_on",
+        "email",
+        "first_name",
+        "full_address",
+        "has_deals",
+        "has_open_issues",
+        "ids",
+        "is_company",
+        "job_title",
+        "last_name",
+        "last_note",
+        "middle_name",
+        "phone",
+        "postcode",
+        "region",
+        "street1",
+        "street2",
+        "tags",
+        "updated_on",
+    }
+)
+
+# `ContactQuery` ends with `add_associations_custom_fields_filters :author,
+# :assigned_to`, so `author.cf_<id>` and `assigned_to.cf_<id>` are registered
+# filters and must not be refused.
+_CONTACT_QUERY_ASSOCIATIONS = frozenset({"author", "assigned_to"})
 
 _CONTACT_WRITABLE_FIELDS = {
     "first_name",
@@ -368,6 +418,21 @@ def _list_contacts_action(
                     "the named parameter instead, so it is validated."
                 )
             }
+        # `key` is neither reserved nor owned, and Redmine's
+        # `api_key_from_request` prefers `params[:key]` over the
+        # `X-Redmine-API-Key` header python-redmine sets
+        # (`app/controllers/application_controller.rb:728-734` on 6.1.1), so
+        # until this allowlist a caller could read the instance as whoever owns
+        # the key they supplied. That matters most in `oauth` mode, where
+        # identity is meant to be bound to the request's bearer token.
+        unregistered_error = _reject_unregistered_filter_keys(
+            filters, _CONTACT_QUERY_FILTER_NAMES, _CONTACT_QUERY_ASSOCIATIONS
+        )
+        if unregistered_error:
+            return {"error": unregistered_error}
+        value_error = _reject_non_scalar_filter_values(filters)
+        if value_error:
+            return {"error": value_error}
         params.update(filters)
     from .. import _client
 
@@ -756,11 +821,16 @@ async def manage_contact(
             cannot promise any key works: confirm a narrow filter actually
             narrowed. A contact custom field needs its "Used as a filter"
             setting on, and on the Light edition no contact custom field is
-            ever a registered filter. Keys this signature already names are
-            rejected -- pass them as the named parameter so they are validated
-            -- as are ``fields``, ``f`` and ``query_id``, which Redmine reads
-            as the query's own definition and which discard every filter built
-            from the rest of the request.
+            ever a registered filter. Accepted keys are the filters
+            ``ContactQuery`` registers, plus ``cf_<id>``, ``author.cf_<id>``
+            and ``assigned_to.cf_<id>``; any other key is refused, with an
+            error naming what it objected to. Keys this signature already names
+            are rejected too -- pass them as the named parameter so they are
+            validated -- as are ``fields``, ``f`` and ``query_id``, which
+            Redmine reads as the query's own definition and which discard every
+            filter built from the rest of the request. Each value is one scalar
+            -- a string, number, date or datetime, never a list, a dict,
+            ``None`` or a ``bool`` (write a yes/no filter as ``"1"``).
 
     Returns:
         ``list`` a list of contact dicts -- or, with

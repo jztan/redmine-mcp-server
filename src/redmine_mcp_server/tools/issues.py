@@ -45,7 +45,12 @@ from .._serialization import (
     _safe_isoformat,
     wrap_insecure_content,
 )
-from .._validation import _is_positive_int
+from .._validation import (
+    _is_positive_int,
+    _reject_non_scalar_filter_values,
+    _reject_reserved_query_keys,
+    _reject_unregistered_filter_keys,
+)
 from ..server import mcp
 from .files import _build_upload_descriptors
 
@@ -220,6 +225,135 @@ def _issue_tags_to_list(issue: Any) -> List[Dict[str, Any]]:
 # Fields that Redmine's /search.json endpoint actually populates.
 # Anything beyond these requires a follow-up /issues.json fetch.
 _SEARCH_API_NATIVE_FIELDS = frozenset({"id", "description"})
+
+# Every filter `IssueQuery#initialize_available_filters` registers, read from
+# Redmine 6.1.1 (`app/models/issue_query.rb:152-300`) rather than from a
+# branch, and including the nine `IssueRelation::TYPES` names that loop
+# registers. Redmine drops an unregistered filter parameter silently and
+# answers 200 with the collection unnarrowed, so an allowlist costs a caller
+# nothing it could have used; a key that is *not* a filter, on the other hand,
+# can still mean something to another layer of the same request, which is what
+# `_reject_unregistered_filter_keys` exists to stop.
+#
+# Three of these are registered conditionally and some are removed by
+# `Tracker.disabled_core_fields`, which is safe in this direction: a superset
+# refuses nothing Redmine would have read, and a name it does not register this
+# time is dropped exactly as it is today.
+_ISSUE_QUERY_FILTER_NAMES = frozenset(
+    {
+        "any_searchable",
+        "assigned_to_id",
+        "assigned_to_role",
+        "attachment",
+        "attachment_description",
+        "author.group",
+        "author.role",
+        "author_id",
+        "category_id",
+        "child_id",
+        "closed_on",
+        "created_on",
+        "description",
+        "done_ratio",
+        "due_date",
+        "estimated_hours",
+        "fixed_version.due_date",
+        "fixed_version.status",
+        "fixed_version_id",
+        "is_private",
+        "issue_id",
+        "last_updated_by",
+        "member_of_group",
+        "notes",
+        "parent_id",
+        "priority_id",
+        "project.status",
+        "project_id",
+        "spent_time",
+        "start_date",
+        "status_id",
+        "subject",
+        "subproject_id",
+        "tracker_id",
+        "updated_by",
+        "updated_on",
+        "watcher_id",
+        # IssueRelation::TYPES, registered by the loop at :283-288.
+        "blocked",
+        "blocks",
+        "copied_from",
+        "copied_to",
+        "duplicated",
+        "duplicates",
+        "follows",
+        "precedes",
+        "relates",
+    }
+)
+
+# `IssueQuery` calls `add_associations_custom_fields_filters :project, :author,
+# :assigned_to, :fixed_version` (`issue_query.rb:282`), so `<name>.cf_<id>` is
+# a registered filter for each of these.
+_ISSUE_QUERY_ASSOCIATIONS = frozenset(
+    {"project", "author", "assigned_to", "fixed_version"}
+)
+
+# Keys `filters` may carry that shape the request rather than filter the
+# collection, and so are not in `IssueQuery`'s registered set. `include` is read
+# back out of the dict and normalised when relations are wanted, deliberately
+# accepting a list, so the scalar rule must not reach it. `sort` is an ordering
+# parameter this tool also names. `limit` and `offset` are here because some
+# MCP clients wrap every parameter into `filters`, which
+# `test_mcp_parameter_unwrapping` pins as supported -- they are moved onto the
+# named parameters before the merge rather than refused, so that the bounds
+# applied to those parameters apply to these too. Before that they rode the
+# merged dict, which is spread last, and beat both the `le=1000` bound and the
+# cap in the body; python-redmine issues one request per 100 rows *asked for*,
+# so an unbounded limit multiplies the request count rather than the rows.
+# `query_id` runs a saved query and is a documented route here
+# (`list_redmine_queries` points callers at it): it is an integer selector, not
+# a `decode` branch or a credential, so it is exempt from the reserved-key rule
+# on this tool while `fields` and `f` stay refused. The scalar rule still
+# applies to it, so a list or dict `query_id` is refused.
+_ISSUE_REQUEST_PARAM_KEYS = frozenset(
+    {"include", "sort", "limit", "offset", "query_id"}
+)
+_ISSUE_WINDOW_KEYS = ("limit", "offset")
+
+
+def _reject_issue_filters(filters: Any) -> Optional[str]:
+    """Return an error message if ``filters`` is not safe to forward.
+
+    `list_redmine_issues` hands its dict to `issue.filter(**filters)`, which
+    runs it through python-redmine's `Issue.bulk_decode`. That is a stronger
+    reason to validate than the project list had: the dict does not merely
+    become a query string, it reaches `decode`, whose `uploads` branch reads
+    each named `path` off the local filesystem and uploads it before the
+    request being asked for is issued.
+    """
+    if filters is None:
+        return None
+    if not isinstance(filters, dict):
+        return "filters must be a dict of Redmine query parameters."
+    # `query_id` is a reserved key on the project list but a documented filter
+    # here, so it is excused from the reserved-key rule while `fields` and `f`
+    # stay refused. It still faces the scalar rule below.
+    reserved = _reject_reserved_query_keys(
+        {k: v for k, v in filters.items() if k != "query_id"}
+    )
+    if reserved:
+        return reserved
+    unregistered = _reject_unregistered_filter_keys(
+        {k: v for k, v in filters.items() if k not in _ISSUE_REQUEST_PARAM_KEYS},
+        _ISSUE_QUERY_FILTER_NAMES,
+        _ISSUE_QUERY_ASSOCIATIONS,
+    )
+    if unregistered:
+        return unregistered
+    return _reject_non_scalar_filter_values(
+        {k: v for k, v in filters.items() if k != "include"}
+    )
+
 
 # Batch size for /issues.json hydration. The Redmine `issue_id=` filter
 # accepts a comma-separated list; we cap each request to avoid URL-length
@@ -920,6 +1054,16 @@ async def list_redmine_issues(
             an *issue* custom field, visible to the caller, with "Used as a
             filter" on; without that flag the key is discarded silently and the
             response is a plausible superset.
+            Accepted keys are the filters ``IssueQuery`` registers, plus those
+            ``cf_<id>`` spellings and ``query_id`` (a saved query's id, from
+            ``list_redmine_queries``); any other key is refused, naming what it
+            objected to. Each value is one scalar -- a string, number, date or
+            datetime, never a list, a dict, ``None`` or a ``bool`` (write a
+            yes/no filter as ``"1"``); ``include`` is the exception, taking a
+            list. ``limit`` and ``offset`` may be passed here too -- some
+            clients wrap every parameter into ``filters`` -- and are moved onto
+            the named parameters so their bounds apply, rather than overriding
+            them.
 
     Returns:
         List[Dict] (default) or Dict with 'issues' and 'pagination' keys.
@@ -959,12 +1103,32 @@ async def list_redmine_issues(
         - Time efficient: Typically <500ms for limit=25
     """
 
+    # Before anything else, and before the cleanup task: a refused call should
+    # cost nothing, and `filters` reaches python-redmine's decode branches, so
+    # this is the gate rather than a tidiness check.
+    filters_error = _reject_issue_filters(filters)
+    if filters_error:
+        return {"error": filters_error}
+
     # Ensure cleanup task is started (lazy initialization)
     await _ensure_cleanup_started()
 
     def _run():
         nonlocal filters, limit, offset
         try:
+            # A client that wraps every parameter into `filters` puts the
+            # window there. Move it onto the named parameters before the merge,
+            # so the validation below applies to it: the merged dict is spread
+            # last, so a `limit` left in it would win over the capped value.
+            if isinstance(filters, dict):
+                for _key in _ISSUE_WINDOW_KEYS:
+                    if _key not in filters:
+                        continue
+                    if _key == "limit":
+                        limit = filters.pop(_key)
+                    else:
+                        offset = filters.pop(_key)
+
             # Build Redmine API filter dict from explicit parameters
             redmine_api_filters: Dict[str, Any] = {}
             if project_id is not None:
