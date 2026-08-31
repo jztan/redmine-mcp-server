@@ -732,6 +732,87 @@ class TestGetRedmineAttachment:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.redmine")
     @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    async def test_public_port_443_derives_https_and_omits_port(
+        self, mock_cleanup, mock_redmine, tmp_path, monkeypatch
+    ):
+        # TLS-terminating proxy (#252): port 443 implies https, and the
+        # default port must not be appended.
+        monkeypatch.setenv("ATTACHMENTS_DIR", str(tmp_path))
+        monkeypatch.setenv("PUBLIC_HOST", "mcp.example.com")
+        monkeypatch.setenv("PUBLIC_PORT", "443")
+        monkeypatch.delenv("PUBLIC_SCHEME", raising=False)
+
+        mock_redmine.attachment.get.return_value = _mock_attachment()
+        mock_redmine.download.return_value = _mock_stream()
+
+        result = await get_redmine_attachment(1)
+
+        assert "error" not in result
+        assert result["uri"].startswith("https://mcp.example.com/files/")
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    async def test_public_port_80_omits_port(
+        self, mock_cleanup, mock_redmine, tmp_path, monkeypatch
+    ):
+        monkeypatch.setenv("ATTACHMENTS_DIR", str(tmp_path))
+        monkeypatch.setenv("PUBLIC_HOST", "mcp.example.com")
+        monkeypatch.setenv("PUBLIC_PORT", "80")
+        monkeypatch.delenv("PUBLIC_SCHEME", raising=False)
+
+        mock_redmine.attachment.get.return_value = _mock_attachment()
+        mock_redmine.download.return_value = _mock_stream()
+
+        result = await get_redmine_attachment(1)
+
+        assert "error" not in result
+        assert result["uri"].startswith("http://mcp.example.com/files/")
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    async def test_public_scheme_https_with_nonstandard_port(
+        self, mock_cleanup, mock_redmine, tmp_path, monkeypatch
+    ):
+        # TLS on a port the 443 heuristic cannot detect.
+        monkeypatch.setenv("ATTACHMENTS_DIR", str(tmp_path))
+        monkeypatch.setenv("PUBLIC_HOST", "mcp.example.com")
+        monkeypatch.setenv("PUBLIC_PORT", "8443")
+        monkeypatch.setenv("PUBLIC_SCHEME", "https")
+
+        mock_redmine.attachment.get.return_value = _mock_attachment()
+        mock_redmine.download.return_value = _mock_stream()
+
+        result = await get_redmine_attachment(1)
+
+        assert "error" not in result
+        assert result["uri"].startswith("https://mcp.example.com:8443/files/")
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    async def test_public_scheme_http_overrides_443_heuristic(
+        self, mock_cleanup, mock_redmine, tmp_path, monkeypatch
+    ):
+        # An explicit PUBLIC_SCHEME wins over the port-based heuristic,
+        # and 443 is not the default port for http so it is kept.
+        monkeypatch.setenv("ATTACHMENTS_DIR", str(tmp_path))
+        monkeypatch.setenv("PUBLIC_HOST", "mcp.example.com")
+        monkeypatch.setenv("PUBLIC_PORT", "443")
+        monkeypatch.setenv("PUBLIC_SCHEME", "http")
+
+        mock_redmine.attachment.get.return_value = _mock_attachment()
+        mock_redmine.download.return_value = _mock_stream()
+
+        result = await get_redmine_attachment(1)
+
+        assert "error" not in result
+        assert result["uri"].startswith("http://mcp.example.com:443/files/")
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_server_host_fallback_promotes_to_http_mode(
         self, mock_cleanup, mock_redmine, tmp_path, monkeypatch
     ):

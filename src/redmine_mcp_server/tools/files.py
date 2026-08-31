@@ -451,6 +451,19 @@ async def get_redmine_attachment(
 
             public_port = os.getenv("PUBLIC_PORT", os.getenv("SERVER_PORT", "8000"))
 
+            # Scheme: explicit PUBLIC_SCHEME wins; otherwise port 443 implies
+            # a TLS-terminating proxy upstream (#252). Default ports are
+            # omitted so the URL survives that proxy.
+            public_scheme = os.getenv("PUBLIC_SCHEME") or (
+                "https" if public_port == "443" else "http"
+            )
+            default_port = {"http": "80", "https": "443"}.get(public_scheme)
+            netloc = (
+                public_host
+                if public_port == default_port
+                else f"{public_host}:{public_port}"
+            )
+
             expires_str = expires_at.isoformat()
             # filename is structured metadata (used for paths, URLs,
             # identifiers); not wrapped per #109. Path-traversal sanitization
@@ -469,7 +482,7 @@ async def get_redmine_attachment(
                 }
 
             return {
-                "uri": f"http://{public_host}:{public_port}/files/{file_id}",
+                "uri": f"{public_scheme}://{netloc}/files/{file_id}",
                 "uri_type": "http",
                 "filename": safe_filename,
                 "content_type": content_type,

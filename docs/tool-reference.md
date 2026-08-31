@@ -2220,6 +2220,7 @@ Callers distinguish the two shapes via `uri_type`: `"http"` or `"file"`. Per the
 - Otherwise, `SERVER_HOST` is consulted; non-loopback values promote to HTTP mode. Loopback values (`localhost`, `127.0.0.1`, `0.0.0.0`) keep stdio mode because `SERVER_HOST` is the bind address and `0.0.0.0` is not a reachable URL host.
 - Otherwise stdio mode is used and `file_path` is returned.
 - Port is resolved via `PUBLIC_PORT` → `SERVER_PORT` → `8000`.
+- Scheme (#252): `PUBLIC_SCHEME` when set; otherwise `https` is derived from `PUBLIC_PORT=443`, else `http`. The port is omitted from the URL when it is the scheme's default (80 for http, 443 for https), so TLS-terminating reverse proxies get `https://host/files/...` instead of the unusable `http://host:443/files/...`.
 
 **Note (#110):** this tool returns its own MCP-proxy URL (HTTP mode) or local file path (stdio), so it is NOT affected by `REDMINE_PUBLIC_URL`. That env var rewrites `content_url` values returned by other tools (`get_redmine_issue.attachments[*].content_url`, `list_files`, etc.) from the internal Redmine origin to the configured public origin — see [`get_redmine_issue`](#get_redmine_issue).
 
