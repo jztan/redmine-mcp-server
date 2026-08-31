@@ -7,6 +7,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Fixed
+- `get_redmine_attachment` no longer hardcodes `http://` in the download
+  `uri` and no longer appends default ports. The scheme now honors a new
+  `PUBLIC_SCHEME` env var, or is derived (`https` when `PUBLIC_PORT=443`),
+  and ports 80/443 are omitted when they match the scheme's default, so
+  deployments behind a TLS-terminating reverse proxy get a usable URL
+  without config changes.
+  ([#252](https://github.com/jztan/redmine-mcp-server/issues/252))
+
+### Contributors
+- @andilem reported the TLS download URI bug with a precise diagnosis and
+  fix proposal ([#252](https://github.com/jztan/redmine-mcp-server/issues/252))
 
 ## [2.13.0] - 2026-08-29
 ### Added
