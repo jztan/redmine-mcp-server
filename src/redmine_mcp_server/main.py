@@ -38,6 +38,7 @@ from ._mount import (  # noqa: E402
 logger = logging.getLogger(__name__)
 
 from ._plugin_visibility import apply_plugin_visibility  # noqa: E402
+from ._tool_allow_list import apply_tool_allow_list  # noqa: E402
 
 # Hide plugin-gated tools whose plugin flag is off. Runs once at import,
 # after every tool module has registered and after load_dotenv (the first
@@ -48,6 +49,17 @@ if _hidden:
     logger.info(
         "Plugin tool families hidden from tools/list (flag off): %s",
         ", ".join(_hidden),
+    )
+
+# Narrow the surface to REDMINE_MCP_ALLOW_TOOLS, if configured. Runs after
+# plugin visibility and only ever disables, so a listed tool whose plugin
+# flag is off stays hidden.
+TOOL_ALLOW_LIST = apply_tool_allow_list(mcp)
+if TOOL_ALLOW_LIST is not None:
+    logger.info(
+        "Tool allow list active: %d tool(s) exposed (%s)",
+        len(TOOL_ALLOW_LIST),
+        ", ".join(sorted(TOOL_ALLOW_LIST)),
     )
 
 REDMINE_AUTH_MODE = os.environ.get("REDMINE_AUTH_MODE", "legacy").lower()

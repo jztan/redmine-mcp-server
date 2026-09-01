@@ -127,6 +127,36 @@ def _admin_tools_enabled() -> bool:
     return _is_true_env("REDMINE_MCP_EXPOSE_ADMIN_TOOLS", "false")
 
 
+def get_allowed_tools() -> set[str] | None:
+    """Tool names an operator allow-lists, or ``None`` when unrestricted.
+
+    Reads ``REDMINE_MCP_ALLOW_TOOLS`` (comma-separated). When that is unset,
+    falls back to ``REDMINE_MCP_ALLOW_TOOLS_FILE`` (one name per line, ``#``
+    starts a comment) -- the same env-var-wins-over-file precedence as
+    :func:`get_secret`.
+
+    Returns ``None`` when neither is set, so callers can distinguish "no
+    allow list configured" from "configured but empty". A configured but
+    empty list comes back as an empty set for the caller to reject.
+    """
+    raw = os.getenv("REDMINE_MCP_ALLOW_TOOLS")
+    if raw is None:
+        file_name = os.getenv("REDMINE_MCP_ALLOW_TOOLS_FILE")
+        if not file_name:
+            return None
+        try:
+            raw_lines = Path(file_name).read_text(encoding="utf-8").splitlines()
+        except OSError as exc:
+            raise RuntimeError(
+                "Could not read tool allow list from "
+                f"REDMINE_MCP_ALLOW_TOOLS_FILE ({file_name}): {exc}"
+            ) from exc
+        entries = [line.split("#", 1)[0] for line in raw_lines]
+    else:
+        entries = raw.split(",")
+    return {entry.strip() for entry in entries if entry.strip()}
+
+
 def _get_int_env(var_name: str, default: int) -> int:
     """Parse an integer environment variable, falling back to default."""
     try:

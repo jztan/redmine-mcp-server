@@ -187,6 +187,46 @@ When enabled, the following tools return an error instead of executing
 
 All read tools (`get_redmine_issue`, `list_redmine_issues`, `list_redmine_projects`, etc.) continue to work normally. The admin-gated `cleanup_attachment_files` tool (when registered via `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`) is also unaffected — it performs local filesystem cleanup, not Redmine mutations.
 
+### Tool Allow List
+
+Expose only the tools a deployment actually needs by naming them in
+`REDMINE_MCP_ALLOW_TOOLS`:
+
+```bash
+# In .env file
+REDMINE_MCP_ALLOW_TOOLS=get_redmine_issue,list_redmine_issues,search_redmine_issues,list_subtasks,get_private_notes,get_current_user
+```
+
+Or, for longer lists, one name per line in a file (`#` starts a comment):
+
+```bash
+REDMINE_MCP_ALLOW_TOOLS_FILE=/etc/redmine-mcp/allowed-tools.txt
+```
+
+`REDMINE_MCP_ALLOW_TOOLS` takes precedence when both are set. Leaving both
+unset exposes every tool, as before.
+
+Tools outside the list disappear from `tools/list` and `call_tool` rejects
+them, the same mechanism the plugin flags use. Three properties are worth
+knowing:
+
+- **It only narrows.** The pass runs after plugin visibility and never
+  enables anything, so a tool that is on the allow list but hidden by its
+  plugin flag stays hidden. Listing `manage_deal` does not substitute for
+  `REDMINE_DEALS_ENABLED=true`.
+- **Granularity is whole tools.** A `manage_X(action=...)` tool is allowed or
+  denied as a unit. To allow its read actions while blocking its writes, use
+  `REDMINE_MCP_READ_ONLY` (see [Read-Only Mode](#read-only-mode)) — the two
+  compose, and an allow list that includes write tools with read-only off is
+  how selective write access is expressed.
+- **Unknown names are ignored, loudly.** A name that matches no registered
+  tool produces a startup warning naming it, so a typo does not quietly fail
+  to expose a tool. A list whose names are *all* unknown is still honoured
+  and exposes nothing.
+
+Because this is enforced by the server rather than the client, it holds for
+every user of a shared deployment.
+
 ### Prompt Injection Protection
 
 All user-controlled content returned from Redmine (issue descriptions, journal notes, wiki page text, search excerpts, version descriptions) is automatically wrapped in unique boundary tags:

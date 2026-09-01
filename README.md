@@ -154,6 +154,8 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `REDMINE_SSL_CLIENT_CERT` | No | – | Path to client certificate for mutual TLS |
 | `REDMINE_TIMEOUT` | No | `30` | Whole seconds to wait for a Redmine HTTP response before failing the call. Applied as a connect timeout of at most 10s plus a read timeout of the full value. Set to `0` to wait indefinitely, which restores the previous behavior and can hang the request. |
 | `REDMINE_MCP_READ_ONLY` | No | `false` | Block all write operations (create/update/delete) when set to `true` |
+| `REDMINE_MCP_ALLOW_TOOLS` | No | – | Expose only these tools (comma-separated names). Unset exposes all. Narrows the surface only: a listed tool whose plugin flag is off stays hidden. Whole tools, so per-action control on `manage_X` remains `REDMINE_MCP_READ_ONLY`'s job. Unknown names are ignored with a startup warning ([details](docs/tool-reference.md#tool-allow-list)) |
+| `REDMINE_MCP_ALLOW_TOOLS_FILE` | No | – | Path to a file with one allowed tool name per line (`#` starts a comment). Used only when `REDMINE_MCP_ALLOW_TOOLS` is unset |
 | `REDMINE_OAUTH_SCOPE_ENFORCEMENT` | No | `on` | OAuth modes only: deny tool calls whose access token lacks the tool's Redmine permission scopes, and filter `tools/list` accordingly. Set to `off` temporarily while re-consenting older tokens ([details](docs/oauth-setup.md#scope-enforcement)) |
 | `REDMINE_OAUTH_DISCOVERY_AS` | No | `redmine` | OAuth modes only: which authorization server discovery advertises. `redmine` names your Redmine; `self` advertises this server (issuer = `REDMINE_MCP_BASE_URL`) and serves RFC 8414 metadata at its own canonical well-known location, which clients that probe there need, Cursor among them ([details](docs/oauth-setup.md#cursor-and-self-as-discovery)) |
 | `REDMINE_MCP_SCOPES` | No | – | OAuth modes only: advertise a subset of scopes in discovery, matching the permissions your Redmine OAuth Application actually enables. Avoids `invalid_scope` at consent when a client requests the full advertised list |
@@ -608,6 +610,8 @@ flag. Tags also needs the `view_issue_tags`, `create_issue_tags`, and
 `edit_issue_tags` permissions on the Redmine server.
 
 ## Available Tools
+
+A deployment can expose a subset of these with `REDMINE_MCP_ALLOW_TOOLS`; everything else disappears from `tools/list`.
 
 This MCP server provides 45 core tools for interacting with Redmine, plus 13 plugin tools that are listed only when the matching `REDMINE_*_ENABLED` flag is set (58 in total), and 1 operator tool exposed by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true` (maximum of 59). A client connected to a vanilla Redmine sees just the 45 core tools. For full documentation of every tool, see the [Tool Reference](./docs/tool-reference.md).
 
