@@ -19,7 +19,8 @@ def _write_changelog(tmp_path: Path, version: str, body: str) -> Path:
     changelog = tmp_path / "CHANGELOG.md"
     changelog.write_text(
         f"# Changelog\n\n## [{version}] - 2026-05-16\n{body}\n\n"
-        f"## [0.0.1] - 2025-01-01\n### Added\n- seed\n"
+        f"## [0.0.1] - 2025-01-01\n### Added\n- seed\n",
+        encoding="utf-8",
     )
     return changelog
 
@@ -127,8 +128,8 @@ Thanks:
 
 
 def _write_contributor_fixtures(tmp_path: Path) -> None:
-    (tmp_path / "CHANGELOG.md").write_text(CHANGELOG_WITH_CREDITS)
-    (tmp_path / "README.md").write_text(README_WITH_MARKERS)
+    (tmp_path / "CHANGELOG.md").write_text(CHANGELOG_WITH_CREDITS, encoding="utf-8")
+    (tmp_path / "README.md").write_text(README_WITH_MARKERS, encoding="utf-8")
 
 
 def test_readme_contributors_lists_every_changelog_credit(tmp_path):
@@ -139,7 +140,7 @@ def test_readme_contributors_lists_every_changelog_credit(tmp_path):
 
     release_script.update_readme_contributors(tmp_path, dry_run=False)
 
-    readme = (tmp_path / "README.md").read_text()
+    readme = (tmp_path / "README.md").read_text(encoding="utf-8")
     assert "[@first](https://github.com/first)" in readme
     # Both credit punctuations in this changelog are recognised: "@x —" and "@x,".
     assert "[@second](https://github.com/second)" in readme
@@ -171,14 +172,16 @@ def test_readme_contributors_dry_run_writes_nothing(tmp_path):
 
     release_script.update_readme_contributors(tmp_path, dry_run=True)
 
-    assert (tmp_path / "README.md").read_text() == README_WITH_MARKERS
+    assert (tmp_path / "README.md").read_text(encoding="utf-8") == README_WITH_MARKERS
 
 
 def test_readme_contributors_fails_loudly_when_markers_go_missing(tmp_path):
     """If the section is reformatted away, the release must raise rather than
     silently stop crediting people."""
-    (tmp_path / "CHANGELOG.md").write_text(CHANGELOG_WITH_CREDITS)
-    (tmp_path / "README.md").write_text("# Project\n\n## Contributors\n")
+    (tmp_path / "CHANGELOG.md").write_text(CHANGELOG_WITH_CREDITS, encoding="utf-8")
+    (tmp_path / "README.md").write_text(
+        "# Project\n\n## Contributors\n", encoding="utf-8"
+    )
 
     with pytest.raises(RuntimeError, match="contributors:start"):
         release_script.update_readme_contributors(tmp_path, dry_run=False)
@@ -199,10 +202,10 @@ def test_committed_readme_contributors_match_the_changelog():
     repo = Path(__file__).resolve().parent.parent
     expected = release_script.render_contributors_line(
         release_script.collect_changelog_contributors(
-            (repo / "CHANGELOG.md").read_text()
+            (repo / "CHANGELOG.md").read_text(encoding="utf-8")
         )
     )
-    assert expected in (repo / "README.md").read_text(), (
+    assert expected in (repo / "README.md").read_text(encoding="utf-8"), (
         "README Contributors list is stale. Run:\n"
         "    python scripts/release.py --sync-contributors"
     )

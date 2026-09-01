@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Fixed
+- Text files are now read and written with an explicit `encoding="utf-8"` in
+  `scripts/release.py` and in the attachment metadata I/O. Without it Python
+  picks the locale codec, so on a Windows machine with a cp1252 locale
+  `scripts/release.py --sync-contributors` died on `README.md`: the emoji
+  variation selector `U+FE0F` encodes as `EF B8 8F`, and `0x8F` is unmapped
+  in cp1252. Two `test_release_script.py` cases failed for the same reason.
 - `get_redmine_attachment` no longer hardcodes `http://` in the download
   `uri` and no longer appends default ports. The scheme now honors a new
   `PUBLIC_SCHEME` env var, or is derived (`https` when `PUBLIC_PORT=443`),
