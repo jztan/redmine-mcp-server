@@ -9,13 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - `REDMINE_MCP_ALLOW_TOOLS` (and `REDMINE_MCP_ALLOW_TOOLS_FILE`) expose only
-  the named tools; everything else is hidden from `tools/list` and rejected
-  by `call_tool`. The pass runs after plugin visibility and only ever
-  disables, so a listed tool whose plugin flag is off stays hidden. Unknown
-  names are ignored with a startup warning. Granularity is whole tools --
-  per-action control on `manage_X` tools remains `REDMINE_MCP_READ_ONLY`'s
-  job, and the two compose, so an allow list containing write tools with
-  read-only off is how selective write access is expressed.
+  the named tools; everything else is hidden from `tools/list` and refused by
+  `call_tool` with a `TOOL_NOT_ALLOWED` envelope. Enforced by middleware, so
+  the restriction reads no server internals and cannot fail open. It runs
+  alongside plugin visibility and only ever narrows, so a listed tool whose
+  plugin flag is off stays hidden. A variable that is set but names no tool
+  refuses to start; names matching no tool are warned about at startup.
+  Granularity is whole tools -- per-action control on `manage_X` tools
+  remains `REDMINE_MCP_READ_ONLY`'s job, and the two compose, so an allow
+  list containing write tools with read-only off is how selective write
+  access is expressed.
   ([#255](https://github.com/jztan/redmine-mcp-server/issues/255))
 
 ### Fixed
