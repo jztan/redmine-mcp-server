@@ -562,6 +562,17 @@ async def test_function_error():
 
 ## Pull Request Process
 
+### Start with an Issue (for features and non-trivial changes)
+
+For new features, behavior changes, or any non-trivial work, please open a
+GitHub issue (or discussion) first and wait for maintainer feedback before
+writing code. This avoids wasted effort on changes that may not fit the
+project's scope or direction, and gives the PR a place to link back to
+(`Fixes #N`).
+
+Small bug fixes, documentation typos, and other obviously-correct changes can
+go straight to a PR without an issue.
+
 ### Before Submitting:
 
 1. ✅ All tests pass locally
