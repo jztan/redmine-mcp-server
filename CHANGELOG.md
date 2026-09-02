@@ -29,6 +29,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deployments behind a TLS-terminating reverse proxy get a usable URL
   without config changes.
   ([#252](https://github.com/jztan/redmine-mcp-server/issues/252))
+- `test_cert_path_symlink_resolution` now skips instead of erroring where
+  symlinks cannot be created. Creating one on Windows needs
+  `SeCreateSymbolicLinkPrivilege`, which an ordinary account does not hold
+  outside Developer Mode or an elevated shell, so the test failed in its
+  setup for every Windows contributor running the suite locally. Guarded the
+  same way as `test_resolve_local_file_rejects_symlink_escape`, the suite's
+  other symlink test.
 
 ### Contributors
 - @andilem reported the TLS download URI bug with a precise diagnosis and

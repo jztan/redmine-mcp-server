@@ -118,9 +118,14 @@ class TestCertificateFileValidation:
         actual_cert = tmp_path / "actual_ca.crt"
         actual_cert.write_text("-----BEGIN CERTIFICATE-----\nFAKE\n")
 
-        # Create symlink to certificate
+        # Create symlink to certificate. Windows needs
+        # SeCreateSymbolicLinkPrivilege for this, which an ordinary account
+        # does not hold outside Developer Mode or an elevated shell.
         symlink_cert = tmp_path / "ca.crt"
-        symlink_cert.symlink_to(actual_cert)
+        try:
+            symlink_cert.symlink_to(actual_cert)
+        except (OSError, NotImplementedError):
+            pytest.skip("symlinks not supported on this platform")
 
         # Resolve the symlink
         cert_path = Path(symlink_cert).resolve()
