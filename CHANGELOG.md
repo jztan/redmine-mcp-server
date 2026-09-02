@@ -42,8 +42,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   setup for every Windows contributor running the suite locally. Guarded the
   same way as `test_resolve_local_file_rejects_symlink_escape`, the suite's
   other symlink test.
+- The two MCP Apps UI resources (`ui://redmine/triage-board.html`,
+  `ui://redmine/project-dashboard.html`) now declare their Content Security
+  Policy in `_meta.ui` on both `resources/list` and `resources/read`, with
+  explicit empty `connectDomains` and `resourceDomains` since the views load
+  nothing external. Hosts read the CSP from the resource, not the tool, so
+  ChatGPT's inspector reported "Widget CSP is not set" for both templates.
+  The tool-side metadata now carries the same explicit lists. `domain` is
+  deliberately left unset: its format is host-specific (Claude and ChatGPT
+  differ), and the MCP Apps spec falls back to the host's own sandbox origin
+  when it is omitted.
+  ([#249](https://github.com/jztan/redmine-mcp-server/issues/249))
 
 ### Contributors
+- @aadnehovda reported the missing widget CSP metadata with the ChatGPT
+  inspector screenshot ([#204](https://github.com/jztan/redmine-mcp-server/issues/204))
 - @andilem reported the TLS download URI bug with a precise diagnosis and
   fix proposal ([#252](https://github.com/jztan/redmine-mcp-server/issues/252))
 - @andilem proposed and implemented the tool allow list

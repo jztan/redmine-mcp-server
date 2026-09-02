@@ -29,6 +29,18 @@ _TRIAGE_BOARD_HTML = (
 )
 
 
+def _app_config(**extra: Any) -> AppConfig:
+    """AppConfig shared by the UI resource and its tool (#249).
+
+    The view is self-contained, so the CSP declares no external origins;
+    the lists are explicit (not omitted) so hosts that check for a
+    declared CSP, such as ChatGPT's inspector, see one. ``domain`` is left
+    unset on purpose: its format is host-specific and the host falls back
+    to its own sandbox origin.
+    """
+    return AppConfig(csp=ResourceCSP(connect_domains=[], resource_domains=[]), **extra)
+
+
 def _name(value: Any) -> Optional[str]:
     """Return the ``name`` of a nested Redmine object dict, or None."""
     if isinstance(value, dict):
@@ -98,19 +110,15 @@ async def _build_board_payload(
     }
 
 
-@mcp.resource(_UI_RESOURCE_URI, mime_type="text/html;profile=mcp-app")
+@mcp.resource(
+    _UI_RESOURCE_URI, mime_type="text/html;profile=mcp-app", app=_app_config()
+)
 def triage_board_ui() -> str:
     """Serve the self-contained triage-board HTML view."""
     return _TRIAGE_BOARD_HTML
 
 
-@mcp.tool(
-    app=AppConfig(
-        resource_uri=_UI_RESOURCE_URI,
-        visibility=["model"],
-        csp=ResourceCSP(),
-    )
-)
+@mcp.tool(app=_app_config(resource_uri=_UI_RESOURCE_URI, visibility=["model"]))
 async def show_triage_board(
     project_id: Union[int, str],
     filters: Optional[Dict[str, Any]] = None,
