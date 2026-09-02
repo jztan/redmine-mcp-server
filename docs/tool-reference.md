@@ -1520,6 +1520,14 @@ manage_issue_category(action="delete", category_id=3, reassign_to_id=7)
 
 ## MCP Apps (Interactive Tools)
 
+Both views are self-contained HTML, so their `ui://` resources declare an
+empty Content Security Policy (`connectDomains: []`, `resourceDomains: []`)
+in `_meta.ui`. No widget `domain` is declared: its format is host-specific
+(Claude and ChatGPT use different schemes) and hosts fall back to their own
+sandbox origin when it is omitted. ChatGPT's plugin inspector therefore still
+shows a "Widget domain is not set" notice; that only matters for a ChatGPT
+app directory submission and does not affect rendering.
+
 ### `show_triage_board`
 
 Render an interactive Kanban board of a project's issues (MCP Apps). Columns
