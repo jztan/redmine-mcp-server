@@ -10,7 +10,7 @@ _PERMS_FIXTURE = Path(__file__).parent / "fixtures" / "redmine_6_permissions.txt
 def _load_redmine_permissions() -> set[str]:
     return {
         line.strip()
-        for line in _PERMS_FIXTURE.read_text().splitlines()
+        for line in _PERMS_FIXTURE.read_text(encoding="utf-8").splitlines()
         if line.strip() and not line.startswith("#")
     }
 

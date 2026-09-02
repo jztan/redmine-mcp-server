@@ -254,7 +254,7 @@ async def serve_attachment(request):
 
     try:
         # Read metadata
-        with open(metadata_file, "r") as f:
+        with open(metadata_file, "r", encoding="utf-8") as f:
             metadata = json.load(f)
 
         # Check expiry with proper timezone-aware datetime comparison

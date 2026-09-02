@@ -416,7 +416,7 @@ async def get_redmine_attachment(
             metadata_file = uuid_dir / "metadata.json"
             temp_metadata = uuid_dir / "metadata.json.tmp"
             try:
-                with open(temp_metadata, "w") as fh:
+                with open(temp_metadata, "w", encoding="utf-8") as fh:
                     json.dump(metadata, fh, indent=2)
                 os.rename(str(temp_metadata), str(metadata_file))
             except (OSError, IOError, ValueError) as exc:

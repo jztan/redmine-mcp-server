@@ -79,7 +79,7 @@ def run_command(
 def get_current_version(project_root: Path) -> str:
     """Read current version from pyproject.toml."""
     pyproject = project_root / "pyproject.toml"
-    content = pyproject.read_text()
+    content = pyproject.read_text(encoding="utf-8")
     match = re.search(r'^version\s*=\s*"([^"]+)"', content, re.MULTILINE)
     if not match:
         print("Error: Could not find version in pyproject.toml")
@@ -212,7 +212,7 @@ def preflight_checks(config: ReleaseConfig) -> None:
         print(export_result.stdout)
         print(export_result.stderr)
         sys.exit(1)
-    Path(requirements_path).write_text(export_result.stdout)
+    Path(requirements_path).write_text(export_result.stdout, encoding="utf-8")
     result = run_command(
         ["bash", str(audit_script), "-r", requirements_path, "--strict"],
         check=False,
@@ -267,7 +267,7 @@ def preflight_checks(config: ReleaseConfig) -> None:
 def update_pyproject_toml(project_root: Path, new_version: str, dry_run: bool) -> None:
     """Update version in pyproject.toml."""
     pyproject = project_root / "pyproject.toml"
-    content = pyproject.read_text()
+    content = pyproject.read_text(encoding="utf-8")
     new_content = re.sub(
         r'^(version\s*=\s*)"[^"]+"',
         f'\\1"{new_version}"',
@@ -278,14 +278,14 @@ def update_pyproject_toml(project_root: Path, new_version: str, dry_run: bool) -
     if dry_run:
         print(f"  [DRY-RUN] Would update pyproject.toml version to {new_version}")
     else:
-        pyproject.write_text(new_content)
+        pyproject.write_text(new_content, encoding="utf-8")
         print("  ✓ Updated pyproject.toml")
 
 
 def update_server_json(project_root: Path, new_version: str, dry_run: bool) -> None:
     """Update version in server.json (both occurrences)."""
     server_json = project_root / "server.json"
-    content = json.loads(server_json.read_text())
+    content = json.loads(server_json.read_text(encoding="utf-8"))
 
     content["version"] = new_version
     if "packages" in content and len(content["packages"]) > 0:
@@ -294,7 +294,7 @@ def update_server_json(project_root: Path, new_version: str, dry_run: bool) -> N
     if dry_run:
         print(f"  [DRY-RUN] Would update server.json version to {new_version}")
     else:
-        server_json.write_text(json.dumps(content, indent=2) + "\n")
+        server_json.write_text(json.dumps(content, indent=2) + "\n", encoding="utf-8")
         print("  ✓ Updated server.json")
 
 
@@ -337,9 +337,11 @@ def update_readme_contributors(project_root: Path, dry_run: bool) -> None:
     three of them merged-PR authors.
     """
     readme = project_root / "README.md"
-    content = readme.read_text()
+    content = readme.read_text(encoding="utf-8")
     line = render_contributors_line(
-        collect_changelog_contributors((project_root / "CHANGELOG.md").read_text())
+        collect_changelog_contributors(
+            (project_root / "CHANGELOG.md").read_text(encoding="utf-8")
+        )
     )
 
     new_content, count = re.subn(
@@ -361,7 +363,7 @@ def update_readme_contributors(project_root: Path, dry_run: bool) -> None:
     elif new_content == content:
         print("  ✓ README.md Contributors list already current")
     else:
-        readme.write_text(new_content)
+        readme.write_text(new_content, encoding="utf-8")
         print("  ✓ Updated README.md Contributors list")
 
 
@@ -373,7 +375,7 @@ def update_changelog(project_root: Path, new_version: str, dry_run: bool) -> Non
     loud instead so the user fills it in before the release goes out.
     """
     changelog = project_root / "CHANGELOG.md"
-    content = changelog.read_text()
+    content = changelog.read_text(encoding="utf-8")
     today = date.today().strftime("%Y-%m-%d")
 
     # Require an [Unreleased] section that exists and has real content.
@@ -429,7 +431,7 @@ def update_changelog(project_root: Path, new_version: str, dry_run: bool) -> Non
     if dry_run:
         print(f"  [DRY-RUN] Would update CHANGELOG.md with version {new_version}")
     else:
-        changelog.write_text(new_content)
+        changelog.write_text(new_content, encoding="utf-8")
         print("  ✓ Updated CHANGELOG.md")
 
 
@@ -508,7 +510,7 @@ def extract_changelog_section(project_root: Path, version: str) -> tuple[str, st
     Returns (main_body, acknowledgements). See _split_contributors.
     """
     changelog = project_root / "CHANGELOG.md"
-    content = changelog.read_text()
+    content = changelog.read_text(encoding="utf-8")
 
     pattern = rf"## \[{re.escape(version)}\][^\n]*\n(.*?)(?=\n## \[|\Z)"
     match = re.search(pattern, content, re.DOTALL)
@@ -525,7 +527,7 @@ def extract_unreleased_section(project_root: Path) -> tuple[str, str]:
     Returns (main_body, acknowledgements). Used before the version bump
     has rewritten [Unreleased] into a numbered section.
     """
-    content = (project_root / "CHANGELOG.md").read_text()
+    content = (project_root / "CHANGELOG.md").read_text(encoding="utf-8")
     match = re.search(
         r"## \[Unreleased\]\s*\n(.*?)(?=^## \[|\Z)",
         content,
@@ -791,12 +793,12 @@ def generate_release_notes(
 
 def write_notes_file(path: Path, title: str, body: str) -> None:
     """Persist approved notes; first line is an invisible title comment."""
-    path.write_text(f"<!-- title: {title} -->\n{body.strip()}\n")
+    path.write_text(f"<!-- title: {title} -->\n{body.strip()}\n", encoding="utf-8")
 
 
 def read_notes_file(path: Path) -> tuple[str | None, str]:
     """Read persisted notes back. Returns (title or None, body)."""
-    content = path.read_text()
+    content = path.read_text(encoding="utf-8")
     match = re.match(r"<!-- title: (.*?) -->\n", content)
     if match:
         return match.group(1), content[match.end() :].strip()

@@ -31,7 +31,7 @@ class AttachmentFileManager:
                 continue
 
             try:
-                with open(metadata_file, "r") as f:
+                with open(metadata_file, "r", encoding="utf-8") as f:
                     metadata = json.load(f)
 
                 # Parse expiry timestamp (timezone-aware)
