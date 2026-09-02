@@ -62,7 +62,7 @@ async def test_manage_tool_action_is_json_schema_enum(tool_name, expected):
         listed = {t.name: t for t in await client.list_tools()}
     assert tool_name in listed, f"Tool {tool_name} not registered"
 
-    schema = listed[tool_name].inputSchema or {}
+    schema = listed[tool_name].input_schema or {}
     action_prop = schema.get("properties", {}).get("action", {})
 
     # Pydantic renders Literal["x", "y"] as `enum: [...]` but a

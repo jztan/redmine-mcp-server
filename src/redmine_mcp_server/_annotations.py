@@ -11,6 +11,8 @@ the OAuth scope middleware and by ``REDMINE_MCP_READ_ONLY``.
 
 Only non-default values are emitted. The MCP schema defaults are
 ``readOnlyHint=false``, ``destructiveHint=true``, ``idempotentHint=false``.
+The pydantic fields are snake_case (MCP SDK v2); the camelCase names above
+are what appears on the wire.
 
 Maintenance:
     1. When adding a new MCP tool, add it here with the kind that matches
@@ -43,11 +45,13 @@ class ToolKind(enum.Enum):
 # guard against a naive client that reads destructiveHint without first
 # checking readOnlyHint.
 _BY_KIND: Dict[ToolKind, ToolAnnotations] = {
-    ToolKind.READ: ToolAnnotations(readOnlyHint=True, destructiveHint=False),
-    ToolKind.WRITE_ADDITIVE: ToolAnnotations(readOnlyHint=False, destructiveHint=False),
-    ToolKind.WRITE_DESTRUCTIVE: ToolAnnotations(readOnlyHint=False),
+    ToolKind.READ: ToolAnnotations(read_only_hint=True, destructive_hint=False),
+    ToolKind.WRITE_ADDITIVE: ToolAnnotations(
+        read_only_hint=False, destructive_hint=False
+    ),
+    ToolKind.WRITE_DESTRUCTIVE: ToolAnnotations(read_only_hint=False),
     ToolKind.WRITE_DESTRUCTIVE_IDEMPOTENT: ToolAnnotations(
-        readOnlyHint=False, idempotentHint=True
+        read_only_hint=False, idempotent_hint=True
     ),
 }
 

@@ -39,7 +39,7 @@ async def test_returns_no_arg_schema():
         listed = {t.name: t for t in await client.list_tools()}
 
     assert "get_mcp_server_info" in listed
-    schema = listed["get_mcp_server_info"].inputSchema or {}
+    schema = listed["get_mcp_server_info"].input_schema or {}
     assert schema.get("properties", {}) == {}
     assert not schema.get("required")
 

@@ -33,7 +33,7 @@ classifiers = [
 dependencies = [
     "python-dotenv>=1.0.0,<2",
     "httpx>=0.27.0,<1",
-    "fastmcp>=3.0.0,<4",
+    "fastmcp>=4.0.1,<5",
     "python-redmine>=2.5.0,<3",
     "requests>=2.31.0,<3",
     "starlette>=1.3.1,<2",
@@ -77,8 +77,7 @@ dev = [
 # Security floors for transitive dependencies (not imported directly). Drop each
 # entry once an upstream dependency raises its own floor past these versions.
 #   click < 8.3.3  -> PYSEC-2026-2132 (via uvicorn / rich-click stack)
-#   mcp   < 1.28.1 -> CVE-2026-52870, CVE-2026-52869, CVE-2026-59950 (via fastmcp-slim)
-constraint-dependencies = ["click>=8.3.3", "mcp>=1.28.1"]
+constraint-dependencies = ["click>=8.3.3"]
 
 [build-system]
 requires = ["hatchling"]

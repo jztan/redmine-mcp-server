@@ -69,7 +69,7 @@ async def test_limit_offset_carry_explicit_bounds(
         listed = {t.name: t for t in await client.list_tools()}
 
     assert tool_name in listed, f"Tool {tool_name} not registered"
-    schema = listed[tool_name].inputSchema or {}
+    schema = listed[tool_name].input_schema or {}
     prop = schema.get("properties", {}).get(param)
     assert prop is not None, (
         f"{tool_name}.{param} is missing from the input schema. "
@@ -106,7 +106,7 @@ async def test_project_list_limit_is_bounded_optional_int():
     async with Client(_server.mcp) as client:
         listed = {t.name: t for t in await client.list_tools()}
 
-    schema = listed["list_redmine_projects"].inputSchema
+    schema = listed["list_redmine_projects"].input_schema
     prop = schema["properties"]["limit"]
 
     any_of = prop.get("anyOf")
@@ -129,7 +129,7 @@ async def test_journal_limit_is_bounded_optional_int():
     async with Client(_server.mcp) as client:
         listed = {t.name: t for t in await client.list_tools()}
 
-    schema = listed["get_redmine_issue"].inputSchema
+    schema = listed["get_redmine_issue"].input_schema
     prop = schema["properties"]["journal_limit"]
 
     # Pydantic emits Optional[int] as anyOf with the int branch first.
