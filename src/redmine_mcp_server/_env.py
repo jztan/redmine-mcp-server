@@ -127,6 +127,40 @@ def _admin_tools_enabled() -> bool:
     return _is_true_env("REDMINE_MCP_EXPOSE_ADMIN_TOOLS", "false")
 
 
+def get_allowed_tools() -> set[str] | None:
+    """Tool names an operator allow-lists, or ``None`` when unrestricted.
+
+    Reads ``REDMINE_MCP_ALLOW_TOOLS`` (comma-separated), falling back to
+    ``REDMINE_MCP_ALLOW_TOOLS_FILE`` (one name per line, ``#`` starts a
+    comment) -- the same env-var-wins-over-file precedence as
+    :func:`get_secret`, and branching on truthiness for the same reason.
+    ``docker-compose`` renders an unset ``${VAR}`` as the empty string, so an
+    empty variable has to mean "not set" or it would shadow a perfectly good
+    file.
+
+    Returns ``None`` when neither carries anything, so callers can tell "no
+    allow list configured" from "configured but empty". A variable holding
+    only separators comes back as an empty set: that is not an unset value but
+    a garbled one, and the caller rejects it rather than guessing.
+    """
+    raw = os.getenv("REDMINE_MCP_ALLOW_TOOLS")
+    if raw:
+        return {entry.strip() for entry in raw.split(",") if entry.strip()}
+
+    file_name = os.getenv("REDMINE_MCP_ALLOW_TOOLS_FILE")
+    if not file_name:
+        return None
+    try:
+        raw_lines = Path(file_name).read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        raise RuntimeError(
+            "Could not read tool allow list from "
+            f"REDMINE_MCP_ALLOW_TOOLS_FILE ({file_name}): {exc}"
+        ) from exc
+    entries = [line.split("#", 1)[0] for line in raw_lines]
+    return {entry.strip() for entry in entries if entry.strip()}
+
+
 def _get_int_env(var_name: str, default: int) -> int:
     """Parse an integer environment variable, falling back to default."""
     try:

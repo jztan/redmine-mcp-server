@@ -7,6 +7,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `REDMINE_MCP_ALLOW_TOOLS` (and `REDMINE_MCP_ALLOW_TOOLS_FILE`) expose only
+  the named tools; everything else is hidden from `tools/list` and refused by
+  `call_tool` with a `TOOL_NOT_ALLOWED` envelope. Enforced by middleware, so
+  the restriction reads no server internals and cannot fail open. It runs
+  alongside plugin visibility and only ever narrows, so a listed tool whose
+  plugin flag is off stays hidden. A variable that is set but names no tool
+  refuses to start; names matching no tool are warned about at startup.
+  Granularity is whole tools -- per-action control on `manage_X` tools
+  remains `REDMINE_MCP_READ_ONLY`'s job, and the two compose, so an allow
+  list containing write tools with read-only off is how selective write
+  access is expressed.
+  ([#255](https://github.com/jztan/redmine-mcp-server/issues/255))
+
 ### Fixed
 - `get_redmine_attachment` no longer hardcodes `http://` in the download
   `uri` and no longer appends default ports. The scheme now honors a new
@@ -19,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Contributors
 - @andilem reported the TLS download URI bug with a precise diagnosis and
   fix proposal ([#252](https://github.com/jztan/redmine-mcp-server/issues/252))
+- @andilem proposed and implemented the tool allow list
+  ([#255](https://github.com/jztan/redmine-mcp-server/issues/255))
 
 ## [2.13.0] - 2026-08-29
 ### Added

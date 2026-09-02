@@ -187,6 +187,60 @@ When enabled, the following tools return an error instead of executing
 
 All read tools (`get_redmine_issue`, `list_redmine_issues`, `list_redmine_projects`, etc.) continue to work normally. The admin-gated `cleanup_attachment_files` tool (when registered via `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`) is also unaffected — it performs local filesystem cleanup, not Redmine mutations.
 
+### Tool Allow List
+
+Expose only the tools a deployment actually needs by naming them in
+`REDMINE_MCP_ALLOW_TOOLS`:
+
+```bash
+# In .env file
+REDMINE_MCP_ALLOW_TOOLS=get_redmine_issue,list_redmine_issues,search_redmine_issues,list_subtasks,get_private_notes,get_current_user
+```
+
+Or, for longer lists, one name per line in a file (`#` starts a comment):
+
+```bash
+REDMINE_MCP_ALLOW_TOOLS_FILE=/etc/redmine-mcp/allowed-tools.txt
+```
+
+`REDMINE_MCP_ALLOW_TOOLS` takes precedence when it names at least one tool.
+Leaving both unset exposes every tool, as before; setting the variable to a
+value that names no tool at all (`""`, `","`) is a misconfiguration the
+server refuses to start on rather than guess about. An empty variable with
+`REDMINE_MCP_ALLOW_TOOLS_FILE` set falls through to the file, so a
+`docker-compose.yml` that renders an unset `${REDMINE_MCP_ALLOW_TOOLS}` as
+the empty string does not shadow it.
+
+Tools outside the list disappear from `tools/list` and `call_tool` refuses
+them with a `TOOL_NOT_ALLOWED` envelope. Enforcement is middleware, in the
+shape of the OAuth scope check: `on_list_tools` filters the list the
+framework hands it and `on_call_tool` checks the name it is given. Both work
+on data passed in, so there is no registry to read and nothing that widens
+the surface if FastMCP moves its internals — an allow list that fails open is
+worse than none, because the operator believes a restriction is in force
+while it is not.
+
+Three properties are worth knowing:
+
+- **It only narrows.** The middleware runs alongside plugin visibility rather
+  than replacing it and never enables anything, so a tool that is on the
+  allow list but hidden by its plugin flag stays hidden. Listing
+  `manage_deal` does not substitute for `REDMINE_DEALS_ENABLED=true`.
+- **Granularity is whole tools.** A `manage_X(action=...)` tool is allowed or
+  denied as a unit. To allow its read actions while blocking its writes, use
+  `REDMINE_MCP_READ_ONLY` (see [Read-Only Mode](#read-only-mode)) — the two
+  compose, and an allow list that includes write tools with read-only off is
+  how selective write access is expressed.
+- **A name matching no tool is warned about, not honoured.** Startup logs a
+  warning naming it, so a typo does not quietly fail to expose a tool. The
+  warning is best-effort — it reads a private FastMCP registry to tell a
+  misspelling from a real name and stays quiet if that ever moves — and it
+  never decides what is exposed. A list whose names are all misspelled
+  exposes nothing.
+
+Because this is enforced by the server rather than the client, it holds for
+every user of a shared deployment.
+
 ### Prompt Injection Protection
 
 All user-controlled content returned from Redmine (issue descriptions, journal notes, wiki page text, search excerpts, version descriptions) is automatically wrapped in unique boundary tags:
