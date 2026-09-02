@@ -191,7 +191,7 @@ def test_no_blocking_client_call_runs_on_the_event_loop():
 
     offenders = []
     for path in sorted(package.rglob("*.py")):
-        source = path.read_text()
+        source = path.read_text(encoding="utf-8")
         tree = ast.parse(source)
         for lineno, line in enumerate(source.splitlines(), 1):
             stripped = line.strip()
