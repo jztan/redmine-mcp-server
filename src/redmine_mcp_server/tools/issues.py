@@ -427,7 +427,7 @@ def _hydrate_search_results(search_results: List[Any]) -> List[Any]:
 # Top-level keys of an issue payload that `_issue_to_dict` either serializes
 # itself or hands to a dedicated helper (`custom_fields`, `relations`, the
 # `include=` collections, plugin arrays with their own serializer). Anything
-# else Redmine sends at the top level is passed through under `extra_fields`.
+# else Redmine sends at the top level is passed through under `unmapped_fields`.
 _ISSUE_SERIALIZED_KEYS = frozenset(
     {
         "id",
@@ -468,7 +468,7 @@ _ISSUE_SERIALIZED_KEYS = frozenset(
 )
 
 
-def _issue_extra_fields(issue: Any) -> Dict[str, Any]:
+def _issue_unmapped_fields(issue: Any) -> Dict[str, Any]:
     """Collect top-level issue fields this serializer does not otherwise emit.
 
     Redmine distributions and plugins add their own top-level keys to the
@@ -510,7 +510,7 @@ def _issue_to_dict(
     """Convert a python-redmine Issue object to a serializable dict.
 
     Top-level keys the standard Redmine API does not define (added by a
-    distribution or plugin) are passed through under ``extra_fields``; the key
+    distribution or plugin) are passed through under ``unmapped_fields``; the key
     is present only when there is at least one such field.
     """
     # Use getattr for all potentially missing attributes (search API may not return all)
@@ -579,9 +579,9 @@ def _issue_to_dict(
     if include_relations:
         issue_dict["relations"] = _issue_relations_to_list(issue)
 
-    extra_fields = _issue_extra_fields(issue)
-    if extra_fields:
-        issue_dict["extra_fields"] = extra_fields
+    unmapped = _issue_unmapped_fields(issue)
+    if unmapped:
+        issue_dict["unmapped_fields"] = unmapped
 
     return issue_dict
 
@@ -632,7 +632,7 @@ def _issue_to_dict_selective(
         - relations: Issue relations (list of
           {id, issue_id, issue_to_id, relation_type, delay}); needs
           ``include=relations`` on the request that fetched the issue
-        - extra_fields: Top-level keys the standard Redmine API does not
+        - unmapped_fields: Top-level keys the standard Redmine API does not
           define (added by a distribution or plugin, e.g. Easy Redmine's
           ``easy_sprint``), as Redmine sent them. Omitted when there are
           none, also from the "all fields" result.
@@ -741,10 +741,10 @@ def _issue_to_dict_selective(
         # this serializer and never requests it, so honouring the name alone
         # there would return a permanently empty key.
         all_fields["relations"] = _issue_relations_to_list(issue)
-    if "extra_fields" in keys:
-        extra_fields = _issue_extra_fields(issue)
-        if extra_fields:
-            all_fields["extra_fields"] = extra_fields
+    if "unmapped_fields" in keys:
+        unmapped = _issue_unmapped_fields(issue)
+        if unmapped:
+            all_fields["unmapped_fields"] = unmapped
 
     # Return only requested fields (silently skip invalid field names)
     return {key: all_fields[key] for key in keys if key in all_fields}

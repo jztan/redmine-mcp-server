@@ -2,7 +2,7 @@
 
 Redmine distributions and plugins add their own top-level keys to the issue
 JSON (Easy Redmine sends ``easy_sprint`` and ``easy_story_points``). The
-serializers expose them under ``extra_fields`` instead of dropping them.
+serializers expose them under ``unmapped_fields`` instead of dropping them.
 """
 
 from unittest.mock import Mock
@@ -11,7 +11,7 @@ import pytest
 
 from redmine_mcp_server.tools.issues import (
     _ISSUE_SERIALIZED_KEYS,
-    _issue_extra_fields,
+    _issue_unmapped_fields,
     _issue_to_dict,
     _issue_to_dict_selective,
 )
@@ -78,16 +78,16 @@ def _issue_with_raw(payload):
 class TestIssueExtraFields:
     def test_unknown_top_level_keys_are_collected(self):
         issue = _issue_with_raw(EASY_PAYLOAD)
-        assert _issue_extra_fields(issue) == EXPECTED_EXTRA
+        assert _issue_unmapped_fields(issue) == EXPECTED_EXTRA
 
     def test_serialized_and_include_keys_are_excluded(self):
         issue = _issue_with_raw(EASY_PAYLOAD)
-        extra = _issue_extra_fields(issue)
+        extra = _issue_unmapped_fields(issue)
         assert not set(extra) & _ISSUE_SERIALIZED_KEYS
 
     def test_standard_payload_yields_nothing(self):
         payload = {k: v for k, v in EASY_PAYLOAD.items() if k not in EXPECTED_EXTRA}
-        assert _issue_extra_fields(_issue_with_raw(payload)) == {}
+        assert _issue_unmapped_fields(_issue_with_raw(payload)) == {}
 
     @pytest.mark.parametrize(
         "issue",
@@ -99,32 +99,32 @@ class TestIssueExtraFields:
         ids=["raw-not-dict", "no-raw", "raw-raises"],
     )
     def test_objects_without_a_dict_payload_yield_nothing(self, issue):
-        assert _issue_extra_fields(issue) == {}
+        assert _issue_unmapped_fields(issue) == {}
 
     def test_values_are_passed_through_untouched(self):
         payload = dict(EASY_PAYLOAD, easy_sprint=None, plugin_list=[1, "a", None])
-        extra = _issue_extra_fields(_issue_with_raw(payload))
+        extra = _issue_unmapped_fields(_issue_with_raw(payload))
         assert extra["easy_sprint"] is None
         assert extra["plugin_list"] == [1, "a", None]
 
 
 class TestIssueToDictExtraFields:
-    def test_extra_fields_present_when_payload_has_them(self):
+    def test_unmapped_fields_present_when_payload_has_them(self):
         result = _issue_to_dict(_issue_with_raw(EASY_PAYLOAD))
-        assert result["extra_fields"] == EXPECTED_EXTRA
+        assert result["unmapped_fields"] == EXPECTED_EXTRA
         # Nothing leaks to the top level.
         assert "easy_sprint" not in result
 
-    def test_key_absent_without_extra_fields(self):
+    def test_key_absent_without_unmapped_fields(self):
         payload = {k: v for k, v in EASY_PAYLOAD.items() if k not in EXPECTED_EXTRA}
         result = _issue_to_dict(_issue_with_raw(payload))
-        assert "extra_fields" not in result
+        assert "unmapped_fields" not in result
 
     def test_key_absent_for_plain_mock(self):
         issue = Mock()
         issue.journals = []
         issue.attachments = []
-        assert "extra_fields" not in _issue_to_dict(issue)
+        assert "unmapped_fields" not in _issue_to_dict(issue)
 
     def test_flags_still_honoured(self):
         result = _issue_to_dict(
@@ -132,20 +132,20 @@ class TestIssueToDictExtraFields:
             include_custom_fields=True,
         )
         assert "custom_fields" in result
-        assert result["extra_fields"] == EXPECTED_EXTRA
+        assert result["unmapped_fields"] == EXPECTED_EXTRA
 
 
 class TestIssueToDictSelectiveExtraFields:
     def test_all_fields_delegates(self):
         for fields in (None, ["*"], ["all"]):
             result = _issue_to_dict_selective(_issue_with_raw(EASY_PAYLOAD), fields)
-            assert result["extra_fields"] == EXPECTED_EXTRA
+            assert result["unmapped_fields"] == EXPECTED_EXTRA
 
     def test_selectable_by_name(self):
         result = _issue_to_dict_selective(
-            _issue_with_raw(EASY_PAYLOAD), ["id", "extra_fields"]
+            _issue_with_raw(EASY_PAYLOAD), ["id", "unmapped_fields"]
         )
-        assert result == {"id": 16849, "extra_fields": EXPECTED_EXTRA}
+        assert result == {"id": 16849, "unmapped_fields": EXPECTED_EXTRA}
 
     def test_not_included_unless_named(self):
         result = _issue_to_dict_selective(_issue_with_raw(EASY_PAYLOAD), ["id"])
@@ -154,6 +154,6 @@ class TestIssueToDictSelectiveExtraFields:
     def test_named_but_empty_is_skipped(self):
         payload = {k: v for k, v in EASY_PAYLOAD.items() if k not in EXPECTED_EXTRA}
         result = _issue_to_dict_selective(
-            _issue_with_raw(payload), ["id", "extra_fields"]
+            _issue_with_raw(payload), ["id", "unmapped_fields"]
         )
         assert result == {"id": 16849}
