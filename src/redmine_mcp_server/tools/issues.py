@@ -424,12 +424,95 @@ def _hydrate_search_results(search_results: List[Any]) -> List[Any]:
     ]
 
 
+# Top-level keys of an issue payload that `_issue_to_dict` either serializes
+# itself or hands to a dedicated helper (`custom_fields`, `relations`, the
+# `include=` collections, plugin arrays with their own serializer). Anything
+# else Redmine sends at the top level is passed through under `extra_fields`.
+_ISSUE_SERIALIZED_KEYS = frozenset(
+    {
+        "id",
+        "subject",
+        "description",
+        "project",
+        "status",
+        "priority",
+        "tracker",
+        "author",
+        "assigned_to",
+        "category",
+        "fixed_version",
+        "parent",
+        "start_date",
+        "due_date",
+        "done_ratio",
+        "estimated_hours",
+        "spent_hours",
+        "is_private",
+        "closed_on",
+        "created_on",
+        "updated_on",
+        "custom_fields",
+        "relations",
+        # `include=` collections: python-redmine seeds these keys to None and
+        # each has its own serializer or is fetched separately.
+        "attachments",
+        "changesets",
+        "children",
+        "journals",
+        "watchers",
+        "allowed_statuses",
+        "time_entries",
+        # additional_tags array, serialized by _issue_tags_to_list.
+        "tags",
+    }
+)
+
+
+def _issue_extra_fields(issue: Any) -> Dict[str, Any]:
+    """Collect top-level issue fields this serializer does not otherwise emit.
+
+    Redmine distributions and plugins add their own top-level keys to the
+    issue JSON (Easy Redmine sends ``easy_sprint`` and ``easy_story_points``,
+    for example). python-redmine keeps them in the decoded payload, but a
+    serializer built from a fixed key set drops them. This reads the payload
+    through ``raw()`` -- never ``getattr`` -- so an unknown key can neither
+    trigger a lazy fetch nor be mangled by resource encoding.
+
+    Args:
+        issue: The python-redmine Issue object (or any object exposing
+            ``raw()`` as a dict; anything else yields an empty dict).
+
+    Returns:
+        Dict of the top-level keys absent from ``_ISSUE_SERIALIZED_KEYS``,
+        with their values as Redmine sent them. Empty when there are none.
+    """
+    raw = getattr(issue, "raw", None)
+    if not callable(raw):
+        return {}
+    try:
+        payload = raw()
+    except Exception:
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    return {
+        key: value
+        for key, value in payload.items()
+        if isinstance(key, str) and key not in _ISSUE_SERIALIZED_KEYS
+    }
+
+
 def _issue_to_dict(
     issue: Any,
     include_custom_fields: bool = False,
     include_relations: bool = False,
 ) -> Dict[str, Any]:
-    """Convert a python-redmine Issue object to a serializable dict."""
+    """Convert a python-redmine Issue object to a serializable dict.
+
+    Top-level keys the standard Redmine API does not define (added by a
+    distribution or plugin) are passed through under ``extra_fields``; the key
+    is present only when there is at least one such field.
+    """
     # Use getattr for all potentially missing attributes (search API may not return all)
     assigned = getattr(issue, "assigned_to", None)
     project = getattr(issue, "project", None)
@@ -496,6 +579,10 @@ def _issue_to_dict(
     if include_relations:
         issue_dict["relations"] = _issue_relations_to_list(issue)
 
+    extra_fields = _issue_extra_fields(issue)
+    if extra_fields:
+        issue_dict["extra_fields"] = extra_fields
+
     return issue_dict
 
 
@@ -545,6 +632,10 @@ def _issue_to_dict_selective(
         - relations: Issue relations (list of
           {id, issue_id, issue_to_id, relation_type, delay}); needs
           ``include=relations`` on the request that fetched the issue
+        - extra_fields: Top-level keys the standard Redmine API does not
+          define (added by a distribution or plugin, e.g. Easy Redmine's
+          ``easy_sprint``), as Redmine sent them. Omitted when there are
+          none, also from the "all fields" result.
 
     Returns:
         Dictionary containing only the requested fields.
@@ -650,6 +741,10 @@ def _issue_to_dict_selective(
         # this serializer and never requests it, so honouring the name alone
         # there would return a permanently empty key.
         all_fields["relations"] = _issue_relations_to_list(issue)
+    if "extra_fields" in keys:
+        extra_fields = _issue_extra_fields(issue)
+        if extra_fields:
+            all_fields["extra_fields"] = extra_fields
 
     # Return only requested fields (silently skip invalid field names)
     return {key: all_fields[key] for key in keys if key in all_fields}

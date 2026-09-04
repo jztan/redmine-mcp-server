@@ -53,6 +53,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.14.0] - 2026-09-05
 ### Added
+- Issue serializers pass through top-level keys the standard Redmine API does
+  not define, under `extra_fields`. Distributions and plugins add their own
+  keys to the issue JSON (Easy Redmine sends `easy_sprint` and
+  `easy_story_points`, for example); a serializer built from a fixed key set
+  dropped them. The values are read from python-redmine's decoded payload and
+  returned as Redmine sent them, without a lazy fetch. `get_redmine_issue`,
+  `list_redmine_issues` (also via `fields=["extra_fields"]`), and
+  `search_redmine_issues` expose the key; it is omitted when there is nothing
+  to report, so payloads from a stock Redmine are unchanged.
 - `REDMINE_MCP_ALLOW_TOOLS` (and `REDMINE_MCP_ALLOW_TOOLS_FILE`) expose only
   the named tools; everything else is hidden from `tools/list` and refused by
   `call_tool` with a `TOOL_NOT_ALLOWED` envelope. Enforced by middleware, so
