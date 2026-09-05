@@ -2,6 +2,36 @@
 
 Complete documentation for all available Redmine MCP Server tools.
 
+## Compatibility and Verification
+
+What the tools below have been run against, and what they have not.
+
+Core tools are verified against Redmine 6.1.1 and 7.0.0. Both are tested because 7.0
+adds fields that 6.x omits, and a serializer can pass on one version while failing on
+the other.
+
+Plugin-gated tools are verified against a live install of the plugin at the version
+listed:
+
+| Env flag | Plugin | Verified against |
+|---|---|---|
+| `REDMINE_AGILE_ENABLED` | RedmineUP Agile (Light) | 1.6.13 |
+| `REDMINE_CRM_ENABLED`, `REDMINE_DEALS_ENABLED` | RedmineUP CRM PRO | 4.4.7 |
+| `REDMINE_PRODUCTS_ENABLED` | RedmineUP Products | 2.2.9 |
+| `REDMINE_TAGS_ENABLED` | AlphaNodes additional_tags | 4.4.0 |
+| (wiki macro) | redmine_drawio | 1.5.5 |
+
+Two flags are missing from that table. `REDMINE_CHECKLISTS_ENABLED` (RedmineUP
+Checklists Pro) and `REDMINE_DMSF_ENABLED` (DMSF) are written against the plugin's
+API and covered by unit tests, but have never run against a real install. If you use
+either, a bug report with the raw JSON from the plugin endpoint is worth more than a
+description of what went wrong.
+
+Redmine distributions and forks such as Easy Redmine and Easy8 are not tested at all.
+They add and remove top-level fields relative to stock Redmine, so a tool may return
+less than your instance actually holds. Open an issue with a redacted raw response
+and I will take a look.
+
 ## Security Best Practices
 
 ### SSL/TLS Configuration
