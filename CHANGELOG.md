@@ -7,6 +7,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Fixed
+- Contributor credits are no longer dropped from generated GitHub release
+  notes. `_split_contributors` in `scripts/release.py` removed the
+  `### Contributors` section from the body and then rebuilt it from a regex
+  that required a separator right after the handle, so the current prose style
+  (`- @andilem proposed and implemented ...`) matched nothing and the credits
+  were deleted rather than merely skipped. v2.14.0 shipped with no Contributors
+  block at all for that reason. Two related losses are fixed with it: a
+  contributor credited by name rather than by `@handle` no longer disappears
+  (v2.13.0 dropped RedmineUP), and wrapped entries keep their continuation
+  lines, so credits stop being truncated at the first line and losing the PR
+  links the format requires. A `### Contributors` section that parses to
+  nothing now fails the release instead of publishing without credit, since
+  this class of bug has now shipped three times.
 
 ## [2.14.0] - 2026-09-05
 ### Added
