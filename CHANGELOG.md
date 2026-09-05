@@ -57,10 +57,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Contributors
 - @aadnehovda reported the missing widget CSP metadata with the ChatGPT
   inspector screenshot ([#204](https://github.com/jztan/redmine-mcp-server/issues/204))
-- @andilem reported the TLS download URI bug with a precise diagnosis and
-  fix proposal ([#252](https://github.com/jztan/redmine-mcp-server/issues/252))
 - @andilem proposed and implemented the tool allow list
-  ([#255](https://github.com/jztan/redmine-mcp-server/issues/255))
+  ([#255](https://github.com/jztan/redmine-mcp-server/issues/255)), fixed the
+  locale-codec text I/O that broke `scripts/release.py --sync-contributors` on
+  a cp1252 Windows machine
+  ([#257](https://github.com/jztan/redmine-mcp-server/pull/257)), made the cert
+  symlink test skip where creating a symlink needs a privilege
+  ([#260](https://github.com/jztan/redmine-mcp-server/pull/260)), and reported
+  the TLS download URI bug with a precise diagnosis and fix proposal
+  ([#252](https://github.com/jztan/redmine-mcp-server/issues/252))
 
 ## [2.13.0] - 2026-08-29
 ### Added
