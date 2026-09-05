@@ -16,7 +16,7 @@ import json
 from typing import Any, Dict
 
 from fastmcp.server.middleware import Middleware
-from fastmcp.tools.tool import ToolResult
+from fastmcp.tools import ToolResult
 from mcp.types import TextContent
 from pydantic import ValidationError
 

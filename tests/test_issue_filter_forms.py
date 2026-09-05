@@ -121,7 +121,7 @@ async def _described(param: str) -> str:
     """
     async with Client(_server.mcp) as client:
         listed = {t.name: t for t in await client.list_tools()}
-    schema = listed["list_redmine_issues"].inputSchema or {}
+    schema = listed["list_redmine_issues"].input_schema or {}
     prop = schema.get("properties", {}).get(param) or {}
     return " ".join(prop.get("description", "").split())
 

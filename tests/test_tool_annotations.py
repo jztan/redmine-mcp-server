@@ -27,26 +27,26 @@ def _full_surface(all_plugin_tools_visible):
 class TestAnnotationsTable:
     def test_read_tool_is_read_only(self):
         ann = annotations_for("list_redmine_projects")
-        assert ann.readOnlyHint is True
-        assert ann.destructiveHint is False
+        assert ann.read_only_hint is True
+        assert ann.destructive_hint is False
 
     def test_additive_write_is_not_destructive(self):
         ann = annotations_for("create_redmine_issue")
-        assert ann.readOnlyHint is False
-        assert ann.destructiveHint is False
+        assert ann.read_only_hint is False
+        assert ann.destructive_hint is False
 
     def test_destructive_write_omits_spec_defaults(self):
         # destructiveHint defaults to true and idempotentHint to false in the
         # MCP schema, so a destructive tool only needs readOnlyHint.
         ann = annotations_for("manage_redmine_wiki_page")
-        assert ann.readOnlyHint is False
-        assert ann.destructiveHint is None
-        assert ann.idempotentHint is None
+        assert ann.read_only_hint is False
+        assert ann.destructive_hint is None
+        assert ann.idempotent_hint is None
 
     def test_idempotent_destructive_write(self):
         ann = annotations_for("delete_redmine_issue")
-        assert ann.readOnlyHint is False
-        assert ann.idempotentHint is True
+        assert ann.read_only_hint is False
+        assert ann.idempotent_hint is True
 
     def test_unknown_tool_returns_none(self):
         assert annotations_for("no_such_tool_exists") is None
@@ -55,8 +55,8 @@ class TestAnnotationsTable:
         # ToolAnnotations is a mutable pydantic model. Handing the same
         # instance to 31 tools would let one mutation leak across all of them.
         first = annotations_for("list_redmine_projects")
-        first.readOnlyHint = False
-        assert annotations_for("list_redmine_projects").readOnlyHint is True
+        first.read_only_hint = False
+        assert annotations_for("list_redmine_projects").read_only_hint is True
 
     def test_table_size_and_kind_counts(self):
         assert len(TOOL_KINDS) == 59
@@ -114,10 +114,10 @@ class TestRegisteredToolAnnotations:
     @pytest.mark.asyncio
     async def test_read_tools_are_advertised_read_only(self):
         by_name = {tool.name: tool for tool in await _registered_tools()}
-        assert by_name["list_redmine_projects"].annotations.readOnlyHint is True
-        assert by_name["get_redmine_issue"].annotations.readOnlyHint is True
-        assert by_name["search_entire_redmine"].annotations.readOnlyHint is True
-        assert by_name["delete_redmine_issue"].annotations.readOnlyHint is False
+        assert by_name["list_redmine_projects"].annotations.read_only_hint is True
+        assert by_name["get_redmine_issue"].annotations.read_only_hint is True
+        assert by_name["search_entire_redmine"].annotations.read_only_hint is True
+        assert by_name["delete_redmine_issue"].annotations.read_only_hint is False
 
 
 # The 12 tools whose TOOL_SCOPES entry is empty. Scope membership cannot
@@ -258,8 +258,8 @@ class TestAnnotationInteractions:
 
         registered = {t.name: t for t in await probe.list_tools()}
         annotations = registered["create_redmine_issue"].annotations
-        assert annotations.readOnlyHint is False
-        assert annotations.destructiveHint is False
+        assert annotations.read_only_hint is False
+        assert annotations.destructive_hint is False
 
     @pytest.mark.asyncio
     async def test_explicit_annotations_none_is_honored_not_raised(self):
@@ -301,8 +301,8 @@ class TestAnnotationInteractions:
         # No access token in context: the middleware returns tools untouched.
         result = await middleware.on_list_tools(None, call_next)
         by_name = {tool.name: tool for tool in result}
-        assert by_name["list_redmine_projects"].annotations.readOnlyHint is True
-        assert by_name["delete_redmine_issue"].annotations.readOnlyHint is False
+        assert by_name["list_redmine_projects"].annotations.read_only_hint is True
+        assert by_name["delete_redmine_issue"].annotations.read_only_hint is False
 
     @pytest.mark.asyncio
     async def test_scope_middleware_filters_and_preserves_annotations(
@@ -342,7 +342,7 @@ class TestAnnotationInteractions:
 
         # The survivor kept its correct annotations, unmodified.
         assert "list_redmine_projects" in by_name
-        assert by_name["list_redmine_projects"].annotations.readOnlyHint is True
+        assert by_name["list_redmine_projects"].annotations.read_only_hint is True
         expected = annotations_for("list_redmine_projects")
         assert by_name["list_redmine_projects"].annotations.model_dump(
             exclude_none=True

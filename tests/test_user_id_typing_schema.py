@@ -30,7 +30,7 @@ async def test_user_id_param_has_me_literal_in_schema(tool_name, param):
     async with Client(_server.mcp) as client:
         listed = {t.name: t for t in await client.list_tools()}
 
-    schema = listed[tool_name].inputSchema or {}
+    schema = listed[tool_name].input_schema or {}
     prop = schema.get("properties", {}).get(param)
     assert prop is not None, f"{tool_name}.{param} missing from schema"
 

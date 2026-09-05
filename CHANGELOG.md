@@ -7,6 +7,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- Upgraded to FastMCP 4 and the MCP Python SDK v2: `fastmcp>=4.0.1,<5` (locked
+  on 4.0.3) pulls in `mcp` 2.1.1 and the new `mcp-types` package
+  ([#258](https://github.com/jztan/redmine-mcp-server/issues/258)). The
+  migration is mechanical: `ToolAnnotations` are built with the snake_case
+  field names the SDK now uses (`read_only_hint`, `destructive_hint`,
+  `idempotent_hint`; the camelCase wire format is unchanged) and `ToolResult`
+  is imported from its public `fastmcp.tools` path. The `mcp>=1.28.1`
+  constraint added for CVE-2026-52870, CVE-2026-52869 and CVE-2026-59950 is
+  removed because FastMCP 4 already requires `mcp>=2.0.0`, past every
+  affected range. Verified on both sandbox Redmine versions (6.1.1 and 7.0.0)
+  and with live `oauth`, `oauth-proxy`, `legacy` runs plus a docker-compose
+  build; no behaviour change for users.
+
 ### Fixed
 - Contributor credits are no longer dropped from generated GitHub release
   notes. `_split_contributors` in `scripts/release.py` removed the

@@ -1,4 +1,4 @@
-"""FastMCP v3 native auth provider factory for the Redmine MCP server.
+"""FastMCP native auth provider factory for the Redmine MCP server.
 
 Builds a RemoteAuthProvider that:
   - Validates opaque OAuth tokens via Doorkeeper RFC 7662 introspection
