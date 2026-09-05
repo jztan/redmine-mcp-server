@@ -450,6 +450,48 @@ def update_uv_lock(project_root: Path, dry_run: bool) -> None:
         print("  ✓ Updated uv.lock")
 
 
+def _contributor_entries(contrib_text: str) -> list[str]:
+    """Split a ``### Contributors`` block into one string per credit.
+
+    Entries wrap across lines in the CHANGELOG, and the continuation lines
+    carry the PR links the credit format requires. Reading line by line and
+    keeping only those starting with ``- `` truncated every entry at its first
+    line, which is how the published v2.13.0 notes ended mid-sentence with no
+    links at all.
+    """
+    entries: list[str] = []
+    for line in contrib_text.split("\n"):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("- "):
+            entries.append(stripped[2:].strip())
+        elif entries:
+            entries[-1] = f"{entries[-1]} {stripped}"
+    return entries
+
+
+def _parse_contributor_entry(entry: str) -> tuple[str, str] | None:
+    """Parse one credit into ``(name, description)``.
+
+    Handles the styles the CHANGELOG has actually used:
+    ``@user: did a thing``, ``@user, did a thing``, ``@user did a thing``
+    (no separator, the current prose style), and ``RedmineUP, provided ...``
+    for an organisation credited by name rather than by handle. The separator
+    set keeps the em and en dashes so older entries still parse, even though
+    the writing rules no longer produce them.
+    """
+    handle = re.match(r"(@\S+?)[\s—–:,-]+(.+)", entry, re.DOTALL)
+    if handle:
+        return handle.group(1), handle.group(2).strip()
+
+    named = re.match(r"([A-Za-z][\w.\-]*)\s*[—–:,]\s*(.+)", entry, re.DOTALL)
+    if named:
+        return named.group(1), named.group(2).strip()
+
+    return None
+
+
 def _split_contributors(section: str) -> tuple[str, str]:
     """Split a changelog section into (main_body, acknowledgements).
 
@@ -477,22 +519,25 @@ def _split_contributors(section: str) -> tuple[str, str]:
     # Build acknowledgements: group contributions by author
     contrib_text = contrib_match.group(1).strip()
     authors: dict[str, list[str]] = {}
-    for line in contrib_text.split("\n"):
-        line = line.strip()
-        if not line.startswith("- "):
-            continue
-        # Format: "- @username: description ([#PR](url))"
-        # Accept colon and comma (current styles, per the no-em-dash writing
-        # rule), as well as em dash / en dash / hyphen for older CHANGELOG
-        # entries.
-        author_match = re.match(r"-\s+(@\S+)\s*[—–\-:,]\s*(.*)", line)
-        if author_match:
-            author = author_match.group(1)
-            desc = author_match.group(2).strip()
+    for entry in _contributor_entries(contrib_text):
+        parsed = _parse_contributor_entry(entry)
+        if parsed:
+            author, desc = parsed
             authors.setdefault(author, []).append(desc)
 
     if not authors:
-        return body, ""
+        # Never return an empty block for a section that exists: stripping it
+        # from the body above has already removed the credits, so returning ""
+        # publishes a release with the contributors silently deleted. That has
+        # shipped three times now (v2.0.0 on the colon separator, v2.13.0 on a
+        # name with no @handle, v2.14.0 on a handle with no separator), so this
+        # fails the release instead.
+        raise ValueError(
+            "CHANGELOG has a '### Contributors' section but no entry could be "
+            "parsed, so the release would publish without credit. Entries must "
+            "be list items starting with '- '. Section content:\n"
+            f"{contrib_text}"
+        )
 
     ack_lines = []
     for author, contribs in authors.items():

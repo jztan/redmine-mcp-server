@@ -237,3 +237,63 @@ def test_sync_contributors_refuses_to_ride_along_with_a_release():
 
     assert result.returncode != 0
     assert "cannot be combined with a release run" in result.stderr
+
+
+def test_no_separator_after_handle_is_credited(tmp_path):
+    """Regression: v2.14.0 shipped with no Contributors block at all because
+    the prose style writes the handle with no separator following it."""
+    body = (
+        "### Added\n- thing\n\n"
+        "### Contributors\n"
+        "- @andilem proposed and implemented the tool allow list ([#255](url))\n"
+    )
+    _write_changelog(tmp_path, "2.14.0", body)
+
+    _, ack = release_script.extract_changelog_section(tmp_path, "2.14.0")
+
+    assert "@andilem" in ack
+    assert "proposed and implemented the tool allow list" in ack
+
+
+def test_contributor_without_at_handle_is_credited(tmp_path):
+    """An organisation credited by name has no @handle; v2.13.0 dropped
+    RedmineUP for that reason."""
+    body = (
+        "### Added\n- thing\n\n"
+        "### Contributors\n"
+        "- RedmineUP, provided an evaluation copy of the CRM PRO plugin\n"
+    )
+    _write_changelog(tmp_path, "2.13.0", body)
+
+    _, ack = release_script.extract_changelog_section(tmp_path, "2.13.0")
+
+    assert "RedmineUP" in ack
+    assert "evaluation copy" in ack
+
+
+def test_wrapped_entry_keeps_its_continuation_lines(tmp_path):
+    """Every shipped release truncated entries at the first line, losing the
+    PR links the credit format requires."""
+    body = (
+        "### Added\n- thing\n\n"
+        "### Contributors\n"
+        "- @alice: requested MCP tool annotations so clients can distinguish\n"
+        "  read-only calls from writes\n"
+        "  ([#221](https://example.invalid/221))\n"
+    )
+    _write_changelog(tmp_path, "1.0.0", body)
+
+    _, ack = release_script.extract_changelog_section(tmp_path, "1.0.0")
+
+    assert "read-only calls from writes" in ack
+    assert "[#221](https://example.invalid/221)" in ack
+
+
+def test_unparsable_contributors_section_raises(tmp_path):
+    """Credits must never be dropped silently. If the section exists but no
+    entry parses, the release stops instead of publishing without credit."""
+    body = "### Added\n- thing\n\n### Contributors\nnot a list item at all\n"
+    _write_changelog(tmp_path, "1.0.0", body)
+
+    with pytest.raises(ValueError, match="Contributors"):
+        release_script.extract_changelog_section(tmp_path, "1.0.0")
