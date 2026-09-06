@@ -137,3 +137,74 @@ async def test_authenticated_app_derives_mount_prefix_from_base_url(
         "/.well-known/oauth-protected-resource/api/mcp"
         in mcp_post.headers["www-authenticate"]
     )
+
+
+class TestStorePathLogging:
+    """The resolved OAuthProxy store path is discoverable from the log.
+
+    Regression cover for #266: the store defaults into the container
+    filesystem when FASTMCP_HOME is unset, and the only symptom is that
+    users reauthorize after a rebuild. Logging the resolved path once at
+    startup makes that answerable from the log.
+    """
+
+    def test_store_path_resolves_below_fastmcp_home(self, monkeypatch, tmp_path):
+        from redmine_mcp_server._oauth_proxy import oauth_proxy_store_path
+
+        monkeypatch.setattr(settings, "home", tmp_path)
+
+        assert oauth_proxy_store_path() == tmp_path / "oauth-proxy"
+
+    def test_store_path_follows_fastmcp_home_changes(self, monkeypatch, tmp_path):
+        """Resolved at call time, not import time, so the env var wins."""
+        from redmine_mcp_server._oauth_proxy import oauth_proxy_store_path
+
+        monkeypatch.setattr(settings, "home", tmp_path / "first")
+        assert oauth_proxy_store_path().parent == tmp_path / "first"
+
+        monkeypatch.setattr(settings, "home", tmp_path / "second")
+        assert oauth_proxy_store_path().parent == tmp_path / "second"
+
+    def test_logs_store_path_in_oauth_proxy_mode(self, monkeypatch, tmp_path, caplog):
+        from redmine_mcp_server._oauth_proxy import log_oauth_proxy_store_path
+
+        monkeypatch.setattr(settings, "home", tmp_path)
+
+        with caplog.at_level("INFO"):
+            log_oauth_proxy_store_path("oauth-proxy")
+
+        assert str(tmp_path / "oauth-proxy") in caplog.text
+
+    def test_warns_when_fastmcp_home_is_unset(self, monkeypatch, tmp_path, caplog):
+        """An unset FASTMCP_HOME is the rebuild-loses-state case."""
+        from redmine_mcp_server._oauth_proxy import log_oauth_proxy_store_path
+
+        monkeypatch.delenv("FASTMCP_HOME", raising=False)
+        monkeypatch.setattr(settings, "home", tmp_path)
+
+        with caplog.at_level("INFO"):
+            log_oauth_proxy_store_path("oauth-proxy")
+
+        assert "FASTMCP_HOME" in caplog.text
+
+    def test_no_warning_when_fastmcp_home_is_set(self, monkeypatch, tmp_path, caplog):
+        from redmine_mcp_server._oauth_proxy import log_oauth_proxy_store_path
+
+        monkeypatch.setenv("FASTMCP_HOME", str(tmp_path))
+        monkeypatch.setattr(settings, "home", tmp_path)
+
+        with caplog.at_level("INFO"):
+            log_oauth_proxy_store_path("oauth-proxy")
+
+        assert not [r for r in caplog.records if r.levelname == "WARNING"]
+
+    def test_silent_in_other_auth_modes(self, monkeypatch, tmp_path, caplog):
+        from redmine_mcp_server._oauth_proxy import log_oauth_proxy_store_path
+
+        monkeypatch.setattr(settings, "home", tmp_path)
+
+        with caplog.at_level("INFO"):
+            log_oauth_proxy_store_path("legacy")
+            log_oauth_proxy_store_path("oauth")
+
+        assert caplog.text == ""

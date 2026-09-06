@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 import os
+from pathlib import Path
 
+from fastmcp import settings
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from fastmcp.server.auth.providers.introspection import IntrospectionTokenVerifier
 from pydantic import AnyHttpUrl
@@ -16,11 +19,49 @@ from ._env import (
 )
 from .oauth_scopes import advertised_scopes
 
+logger = logging.getLogger(__name__)
+
 INTROSPECTION_GUIDANCE = (
     "Register a confidential OAuth client in Redmine and configure "
     "Doorkeeper's allow_token_introspection block to accept it "
     "(see docs/oauth-setup.md Step 2 for the walkthrough)."
 )
+
+
+def oauth_proxy_store_path() -> Path:
+    """Return the directory holding OAuthProxy's encrypted state.
+
+    FastMCP writes client registrations, in-flight authorization
+    transactions, and upstream-token mappings below
+    ``settings.home / "oauth-proxy" / <signing-key fingerprint>``. This
+    returns the stable parent, which is the directory an operator has to
+    keep on a persistent volume.
+
+    Resolved on each call rather than at import so that a test (or a late
+    ``FASTMCP_HOME``) is reflected instead of frozen.
+    """
+    return settings.home / "oauth-proxy"
+
+
+def log_oauth_proxy_store_path(auth_mode: str) -> None:
+    """Log where OAuthProxy state lives, and warn if it is not durable.
+
+    With ``FASTMCP_HOME`` unset, the store resolves into the running
+    user's data directory, which in a container is thrown away on every
+    rebuild. Nothing errors; every client simply has to reauthorize. That
+    is hard to trace back to a deploy, so the path is stated up front.
+    """
+    if auth_mode != "oauth-proxy":
+        return
+
+    logger.info("OAuthProxy state directory: %s", oauth_proxy_store_path())
+    if not os.environ.get("FASTMCP_HOME"):
+        logger.warning(
+            "FASTMCP_HOME is not set, so the directory above is whatever "
+            "FastMCP resolved on its own. In a container that is discarded "
+            "on rebuild and every client must reauthorize. Set FASTMCP_HOME "
+            "to a persistent volume (see docs/oauth-setup.md)."
+        )
 
 
 def _redmine_endpoint(redmine_url: str, path: str) -> AnyHttpUrl:

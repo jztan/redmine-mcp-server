@@ -34,6 +34,10 @@ docker/test-*/
 
 # Runtime data
 attachments/
+# Mounted by docker-compose as /app/data. Holds the encrypted oauth-proxy
+# store (client registrations, upstream tokens), which must never be committed.
+data/
+logs/
 .worktrees/
 
 # Local build/preview artifacts (demo page screenshots, etc.)

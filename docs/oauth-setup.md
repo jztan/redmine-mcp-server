@@ -97,8 +97,10 @@ REDMINE_AUTH_MODE=oauth-proxy
 REDMINE_MCP_JWT_SIGNING_KEY=<stable-random-secret>
 # Or: REDMINE_MCP_JWT_SIGNING_KEY_FILE=/run/secrets/redmine_mcp_jwt_signing_key
 
-# Optional: mount this directory to persistent storage in container deployments.
-# OAuthProxy stores encrypted state below FASTMCP_HOME/oauth-proxy/.
+# Where OAuthProxy keeps its encrypted state (below FASTMCP_HOME/oauth-proxy/).
+# The Docker image already sets this to /app/data/fastmcp, which docker-compose
+# mounts as a volume. Set it yourself only for a non-compose deployment, and use
+# a host path for a local run, since /app exists only inside the image.
 # FASTMCP_HOME=/app/data/fastmcp
 
 # Optional: restrict which client redirect URIs are accepted (see note below).
@@ -119,6 +121,13 @@ Set these in `.env` (local) or `.env.docker` (Docker). Legacy credentials are no
 **Upstream OAuth client:** When `REDMINE_OAUTH_CLIENT_ID` / `REDMINE_OAUTH_CLIENT_SECRET` are unset, the introspection client (Step 2) is reused as the upstream authorization client. That client therefore needs more than introspection rights: it must have the **authorization code** grant enabled and `${REDMINE_MCP_BASE_URL}/auth/callback` registered as a redirect URI, otherwise `/authorize` fails upstream. This is already true if the introspection client is the Step 1 user-flow app; if you registered a separate introspection-only app, either enable the authorization code grant and redirect URI on it or set `REDMINE_OAUTH_CLIENT_ID` / `REDMINE_OAUTH_CLIENT_SECRET` to a dedicated upstream app.
 
 **Storage and scaling:** OAuthProxy keeps client registrations, in-flight authorization transactions, and upstream-token mappings in an encrypted file store under `FASTMCP_HOME/oauth-proxy/`. This store is **node-local**, so a request that registers on one instance and continues on another will fail. Run `oauth-proxy` mode as a single replica, or with sticky sessions, unless you provide a shared `OAuthProxy` `client_storage` backend. Mounting `FASTMCP_HOME` to a persistent volume addresses durability across restarts but not cross-replica consistency.
+
+**Persisting the store across rebuilds:** the store has to sit on a volume, or every `docker compose up -d --build` discards it and each client has to reauthorize. Nothing errors when this is wrong, so the server logs the resolved directory at startup (`OAuthProxy state directory: ...`) and warns when `FASTMCP_HOME` is unset. Check that line first when sessions disappear after a deploy.
+
+- The image sets `FASTMCP_HOME=/app/data/fastmcp` and `docker-compose.yml` mounts `./data:/app/data`, so the default compose deployment is already durable.
+- A `docker run` without an env file inherits the same default, but still needs `-v` on `/app/data` to keep anything.
+- The container runs as uid 1000 (`appuser`). An empty named volume inherits ownership from the image directory it covers, so it works as-is. A **bind mount** does not inherit: on Linux the host directory's owner applies, so `./data` must be writable by uid 1000. A volume that already holds root-owned content stays root-owned and the write fails; remove the volume rather than trying to repair it.
+- The store directory is keyed by a fingerprint of `REDMINE_MCP_JWT_SIGNING_KEY`. Changing that key orphans the existing state just as effectively as losing the volume, which is why the key has to be stable and set explicitly rather than generated per deploy.
 
 **Startup behavior:** When `REDMINE_AUTH_MODE=oauth` is set, the server fails fast at startup if `REDMINE_INTROSPECT_CLIENT_ID` or `REDMINE_INTROSPECT_CLIENT_SECRET` is missing — better to surface the misconfiguration immediately than to return 401 on every request.
 
