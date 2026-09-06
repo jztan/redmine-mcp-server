@@ -22,6 +22,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   build; no behaviour change for users.
 
 ### Fixed
+- `oauth-proxy` state now survives a container rebuild. `FASTMCP_HOME` was
+  unset by default, so FastMCP resolved its store to the running user's
+  platform data directory, which in the image is inside the container
+  filesystem: every `docker compose up -d --build` discarded the client
+  registrations and upstream token mappings, and every MCP client had to
+  reauthorize. Nothing errored, which made it hard to trace back to the
+  deploy. The image now sets `FASTMCP_HOME=/app/data/fastmcp`, the directory
+  compose already mounts, so a bare `docker run` inherits the right default
+  too. In `oauth-proxy` mode the server also logs the resolved state
+  directory at startup and warns when `FASTMCP_HOME` is unset, and
+  [`docs/oauth-setup.md`](docs/oauth-setup.md) documents the volume
+  requirement, the uid 1000 ownership rules for bind mounts and named
+  volumes, and that changing `REDMINE_MCP_JWT_SIGNING_KEY` orphans the store
+  just as losing the volume does.
+  ([#266](https://github.com/jztan/redmine-mcp-server/issues/266))
 - Contributor credits are no longer dropped from generated GitHub release
   notes. `_split_contributors` in `scripts/release.py` removed the
   `### Contributors` section from the body and then rebuilt it from a regex

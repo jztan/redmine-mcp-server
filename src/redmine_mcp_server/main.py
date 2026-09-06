@@ -121,6 +121,13 @@ app = build_app()
 logger.info("Redmine MCP Server v%s", get_version())
 logger.info("Auth mode: %s", REDMINE_AUTH_MODE)
 
+# Imported lazily, matching server.py: legacy deployments should not pull in
+# the OAuthProxy machinery just to skip logging about it.
+if REDMINE_AUTH_MODE == "oauth-proxy":
+    from ._oauth_proxy import log_oauth_proxy_store_path
+
+    log_oauth_proxy_store_path(REDMINE_AUTH_MODE)
+
 
 def main():
     """Main entry point for the console script."""
