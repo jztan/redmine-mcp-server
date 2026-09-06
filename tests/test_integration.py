@@ -6,6 +6,7 @@ to Redmine and the overall functionality of the MCP server.
 """
 
 import base64
+import json
 import os
 import re
 import sys
@@ -2355,6 +2356,61 @@ async def test_drawio_macro_renders_uploaded_diagram():
         await manage_redmine_wiki_page(
             action="delete", project_id=project_id, wiki_page_title=title
         )
+
+
+class TestUnmappedFieldsIntegration:
+    """Integration test for the `unmapped_fields` pass-through.
+
+    Any Redmine that runs a plugin adding a top-level issue key exercises
+    this. The AlphaNodes additional_tags plugin is the easiest one to get:
+    with `REDMINE_TAGS_ENABLED` off, its `tags` array has no serializer of
+    its own and so arrives under `unmapped_fields`. On a stock Redmine with
+    no such plugin the key is absent, which is the other half of the
+    contract, so both outcomes are asserted rather than skipped.
+    """
+
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_unmapped_fields_shape_on_a_live_issue(self):
+        redmine = _get_redmine_or_none()
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        try:
+            issues = list(redmine.issue.filter(status_id="*", limit=1))
+        except Exception as exc:
+            pytest.skip(f"Could not list issues: {exc}")
+        if not issues:
+            pytest.skip("No issues available to probe")
+
+        from redmine_mcp_server.tools.issues import (
+            _ISSUE_PAYLOAD_SKIP_KEYS,
+            _UNMAPPED_VALUE_MAX_CHARS,
+            get_redmine_issue,
+        )
+
+        result = await get_redmine_issue(issues[0].id)
+        assert "error" not in result, f"get_redmine_issue failed: {result}"
+
+        # Stock Redmine 3.x+ sends both, so they are mapped, not passed through.
+        assert "total_estimated_hours" in result
+        assert "total_spent_hours" in result
+
+        if "unmapped_fields" not in result:
+            # A Redmine with no plugin keys on the issue: the key must be
+            # omitted rather than emitted empty.
+            return
+
+        unmapped = result["unmapped_fields"]
+        assert isinstance(unmapped, dict) and unmapped, "empty key should be omitted"
+        assert not set(unmapped) & set(_ISSUE_PAYLOAD_SKIP_KEYS)
+        for key, value in unmapped.items():
+            assert value is not None, f"{key} is null and should have been dropped"
+            assert len(json.dumps(value, default=str)) <= _UNMAPPED_VALUE_MAX_CHARS
+        for value in unmapped.values():
+            if isinstance(value, str):
+                assert _INSECURE_CONTENT_PATTERN.match(value), "string not wrapped"
 
 
 if __name__ == "__main__":

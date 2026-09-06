@@ -13,6 +13,7 @@ from redminelib.exceptions import (
     ResourceNotFoundError,
     ValidationError,
 )
+from redminelib.resources import Issue
 
 from .._cleanup import _ensure_cleanup_started
 from .._client import _get_redmine_client, logger
@@ -424,11 +425,10 @@ def _hydrate_search_results(search_results: List[Any]) -> List[Any]:
     ]
 
 
-# Top-level keys of an issue payload that `_issue_to_dict` either serializes
-# itself or hands to a dedicated helper (`custom_fields`, `relations`, the
-# `include=` collections, plugin arrays with their own serializer). Anything
-# else Redmine sends at the top level is passed through under `unmapped_fields`.
-_ISSUE_SERIALIZED_KEYS = frozenset(
+# Top-level keys of an issue payload that `_issue_to_dict` serializes itself.
+# Anything else Redmine sends at the top level is passed through under
+# `unmapped_fields`.
+_ISSUE_MAPPED_KEYS = frozenset(
     {
         "id",
         "subject",
@@ -447,25 +447,55 @@ _ISSUE_SERIALIZED_KEYS = frozenset(
         "done_ratio",
         "estimated_hours",
         "spent_hours",
+        "total_estimated_hours",
+        "total_spent_hours",
         "is_private",
         "closed_on",
         "created_on",
         "updated_on",
         "custom_fields",
-        "relations",
-        # `include=` collections: python-redmine seeds these keys to None and
-        # each has its own serializer or is fetched separately.
-        "attachments",
-        "changesets",
-        "children",
-        "journals",
-        "watchers",
-        "allowed_statuses",
-        "time_entries",
-        # additional_tags array, serialized by _issue_tags_to_list.
-        "tags",
     }
 )
+
+# python-redmine pre-seeds every include and relation name to None on the
+# resource, so they sit in `raw()` on a stock Redmine whether or not they were
+# requested. Read off the class rather than hand-written, so the list cannot
+# drift: it also keeps a whole `include=journals` payload out of
+# `unmapped_fields`, where it would sidestep the journal pagination in
+# `get_redmine_issue`.
+_ISSUE_PAYLOAD_SKIP_KEYS = frozenset(
+    _ISSUE_MAPPED_KEYS | set(Issue._includes) | set(Issue._relations)
+)
+
+# Cap on the serialized length of a single passed-through value. Plugins hang
+# rendering junk off the issue (Easy Redmine's `css_classes`, for one) that is
+# long and of no use to a model. Size is the honest filter here; a per-plugin
+# name list only covers the plugins we happen to have seen.
+_UNMAPPED_VALUE_MAX_CHARS = 1000
+
+
+def _serialized_length(value: Any) -> int:
+    """Length of a value once serialized, used for the pass-through cap."""
+    try:
+        return len(json.dumps(value, default=str))
+    except Exception:
+        return len(str(value))
+
+
+def _wrap_nested_insecure_content(value: Any) -> Any:
+    """Wrap every string inside a passed-through value, nested ones included.
+
+    Plugin free text is user-authored the same way `description` and journal
+    notes are, so it gets the same boundary tags. Dict keys are field names,
+    not content, and are left alone.
+    """
+    if isinstance(value, str):
+        return wrap_insecure_content(value)
+    if isinstance(value, dict):
+        return {key: _wrap_nested_insecure_content(val) for key, val in value.items()}
+    if isinstance(value, list):
+        return [_wrap_nested_insecure_content(item) for item in value]
+    return value
 
 
 def _issue_unmapped_fields(issue: Any) -> Dict[str, Any]:
@@ -478,13 +508,17 @@ def _issue_unmapped_fields(issue: Any) -> Dict[str, Any]:
     through ``raw()`` -- never ``getattr`` -- so an unknown key can neither
     trigger a lazy fetch nor be mangled by resource encoding.
 
+    ``None`` values are dropped: on a stock Redmine every include and relation
+    name is present and null, and a null says nothing a caller can use.
+
     Args:
         issue: The python-redmine Issue object (or any object exposing
             ``raw()`` as a dict; anything else yields an empty dict).
 
     Returns:
-        Dict of the top-level keys absent from ``_ISSUE_SERIALIZED_KEYS``,
-        with their values as Redmine sent them. Empty when there are none.
+        Dict of the top-level keys absent from ``_ISSUE_PAYLOAD_SKIP_KEYS``,
+        with their strings wrapped against prompt injection and any
+        oversized value dropped. Empty when there are none.
     """
     raw = getattr(issue, "raw", None)
     if not callable(raw):
@@ -495,11 +529,24 @@ def _issue_unmapped_fields(issue: Any) -> Dict[str, Any]:
         return {}
     if not isinstance(payload, dict):
         return {}
-    return {
-        key: value
-        for key, value in payload.items()
-        if isinstance(key, str) and key not in _ISSUE_SERIALIZED_KEYS
-    }
+
+    skip = _ISSUE_PAYLOAD_SKIP_KEYS
+    if _is_tags_enabled():
+        # With the plugin enabled `tags` has its own serializer
+        # (`_issue_tags_to_list`); with it disabled the key is just another
+        # unmapped plugin field.
+        skip = skip | {"tags"}
+
+    unmapped: Dict[str, Any] = {}
+    for key, value in payload.items():
+        if not isinstance(key, str) or key in skip:
+            continue
+        if value is None:
+            continue
+        if _serialized_length(value) > _UNMAPPED_VALUE_MAX_CHARS:
+            continue
+        unmapped[key] = _wrap_nested_insecure_content(value)
+    return unmapped
 
 
 def _issue_to_dict(
@@ -568,6 +615,10 @@ def _issue_to_dict(
         "done_ratio": getattr(issue, "done_ratio", None),
         "estimated_hours": getattr(issue, "estimated_hours", None),
         "spent_hours": getattr(issue, "spent_hours", None),
+        # Stock Redmine 3.x+ sends both on the issue; they carry the subtask
+        # rollup the two fields above leave out.
+        "total_estimated_hours": getattr(issue, "total_estimated_hours", None),
+        "total_spent_hours": getattr(issue, "total_spent_hours", None),
         "is_private": getattr(issue, "is_private", None),
         "closed_on": _safe_isoformat(getattr(issue, "closed_on", None)),
         "created_on": _safe_isoformat(getattr(issue, "created_on", None)),
@@ -624,6 +675,9 @@ def _issue_to_dict_selective(
         - done_ratio: Completion percentage (int, or None)
         - estimated_hours: Estimated effort in hours (float, or None)
         - spent_hours: Logged effort in hours (float, or None)
+        - total_estimated_hours: Estimated effort including subtasks (float,
+          or None)
+        - total_spent_hours: Logged effort including subtasks (float, or None)
         - is_private: Whether the issue is private (bool, or None)
         - closed_on: Closure timestamp (ISO format, or None)
         - created_on: Creation timestamp (ISO format)
@@ -716,6 +770,10 @@ def _issue_to_dict_selective(
         "done_ratio": getattr(issue, "done_ratio", None),
         "estimated_hours": getattr(issue, "estimated_hours", None),
         "spent_hours": getattr(issue, "spent_hours", None),
+        # Stock Redmine 3.x+ sends both on the issue; they carry the subtask
+        # rollup the two fields above leave out.
+        "total_estimated_hours": getattr(issue, "total_estimated_hours", None),
+        "total_spent_hours": getattr(issue, "total_spent_hours", None),
         "is_private": getattr(issue, "is_private", None),
         "closed_on": _safe_isoformat(getattr(issue, "closed_on", None)),
         "created_on": _safe_isoformat(getattr(issue, "created_on", None)),
@@ -962,7 +1020,8 @@ async def get_redmine_issue(
         A dictionary containing issue details, including the standard fields
         ``category``, ``fixed_version`` (target version), ``parent``,
         ``start_date``, ``due_date``, ``done_ratio``, ``estimated_hours``,
-        ``spent_hours``, ``is_private`` and ``closed_on`` (each ``None`` when
+        ``spent_hours``, ``total_estimated_hours``, ``total_spent_hours``,
+        ``is_private`` and ``closed_on`` (each ``None`` when
         not set on the issue). If ``include_journals`` is ``True``
         and the issue has journals, they will be returned under the ``"journals"``
         key. If ``include_attachments`` is ``True`` and attachments exist they
@@ -1128,8 +1187,9 @@ async def list_redmine_issues(
             Available: id, subject, description, project, status, priority,
             tracker, author, assigned_to, category, fixed_version, parent,
             start_date, due_date, done_ratio, estimated_hours, spent_hours,
-            is_private, closed_on, created_on, updated_on, custom_fields,
-            relations. Naming ``custom_fields`` or ``relations`` here has the
+            total_estimated_hours, total_spent_hours, is_private, closed_on,
+            created_on, updated_on, custom_fields, relations,
+            unmapped_fields. Naming ``custom_fields`` or ``relations`` here has the
             same effect as the matching flag, including asking Redmine for the
             relations include. ``["*"]`` or ``["all"]``, on their own, select
             every field except those two, which need their flag -- naming one
