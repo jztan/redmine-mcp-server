@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- News tools: `list_redmine_news`, `get_redmine_news`,
+  `manage_redmine_news` (create, update) and `delete_redmine_news`. News was
+  the last core Redmine resource with no coverage, and there was no
+  workaround either -- `search_entire_redmine` could not reach it. Reading
+  works on any Redmine; writing needs 5.1, where the REST API gained it.
+  Deleting is a separate tool, like `delete_redmine_issue` and `delete_file`,
+  so a deployment restricting its tools can offer announcements without
+  offering their destruction. Comments come back read-only, because Redmine
+  has no endpoint for adding one.
+  Three failure shapes get names instead of being passed on: a create whose
+  204-with-no-body read-back does not match the title that was sent reports
+  `CREATE_UNCONFIRMED` rather than a neighbour's record; a 403 on a write
+  reports `NEWS_MODULE_DISABLED`, since Redmine checks the news module before
+  any permission and refuses an administrator too; and a 404 on create where
+  the project still reads back reports `NEWS_WRITE_UNSUPPORTED`, because
+  `News.redmine_version` is `(1, 1, 0)` for the whole resource and
+  python-redmine raises no version error of its own.
+  ([#269](https://github.com/jztan/redmine-mcp-server/issues/269))
+- `search_entire_redmine` now searches news alongside issues and wiki pages,
+  which the module docstring already claimed.
 - Issue serializers pass through top-level keys the standard Redmine API does
   not define, under `unmapped_fields`. Distributions and plugins add their own
   keys to the issue JSON (Easy Redmine sends `easy_sprint` and

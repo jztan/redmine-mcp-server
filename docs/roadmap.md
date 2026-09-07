@@ -5,7 +5,7 @@
 - **Current Version:** v2.9.0 (released 2026-08-01)
 - **MCP Registry Status:** Published
 - **Test Suite:** 2200 unit tests + 111 integration tests. Integration tests gate on environment: a sandbox Redmine, plugin flags (`REDMINE_AGILE_ENABLED` etc.), and the destructive OAuth test behind `RUN_DESTRUCTIVE_TESTS=1`. Tests that can't run in the current environment skip cleanly with a clear reason. Run them locally with `python tests/run_tests.py --all` or `--integration`.
-- **Tools:** 45 core + 13 plugin-gated + 1 admin-gated (maximum 59 with all flags enabled). The core count includes the two `triage-board` tools (`show_triage_board`, plus the app-only `get_triage_board_data` which is registered but hidden from the model's tool list) and the two `project-dashboard` tools (`show_project_dashboard`, plus the app-only `get_project_dashboard_data`). Plugin tools are registered with a family tag and hidden from `tools/list` unless their `REDMINE_*_ENABLED` flag is set (their call-time guard also stays); the admin tool is registered only when `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`.
+- **Tools:** 49 core + 13 plugin-gated + 1 admin-gated (maximum 63 with all flags enabled). The core count includes the two `triage-board` tools (`show_triage_board`, plus the app-only `get_triage_board_data` which is registered but hidden from the model's tool list) and the two `project-dashboard` tools (`show_project_dashboard`, plus the app-only `get_project_dashboard_data`). Plugin tools are registered with a family tag and hidden from `tools/list` unless their `REDMINE_*_ENABLED` flag is set (their call-time guard also stays); the admin tool is registered only when `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`.
 
 ---
 

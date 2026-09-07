@@ -25,7 +25,7 @@ A Model Context Protocol (MCP) server that connects AI assistants to Redmine. It
 
 ## Features
 
-- **45 MCP tools on a stock Redmine, 58 with the RedmineUP and DMSF plugins** (plus 1 operator tool gated by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`): Issues, projects, time tracking, wiki, Gantt, file operations, membership management, products, contacts and deals (CRM), DMSF documents, and more
+- **49 MCP tools on a stock Redmine, 62 with the RedmineUP and DMSF plugins** (plus 1 operator tool gated by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`): Issues, projects, news, time tracking, wiki, Gantt, file operations, membership management, products, contacts and deals (CRM), DMSF documents, and more
 - **Interactive Kanban Board**: `show_triage_board` renders a live, drag-and-drop issue board right in the chat via the MCP Apps extension
 - **Flexible Authentication**: API key, username/password, or OAuth2 per-user tokens
 - **Prompt Injection Protection**: User-controlled content wrapped in boundary tags for safe LLM consumption
@@ -613,9 +613,9 @@ flag. Tags also needs the `view_issue_tags`, `create_issue_tags`, and
 
 A deployment can expose a subset of these with `REDMINE_MCP_ALLOW_TOOLS`; everything else disappears from `tools/list` and is refused by `call_tool`.
 
-This MCP server provides 45 core tools for interacting with Redmine, plus 13 plugin tools that are listed only when the matching `REDMINE_*_ENABLED` flag is set (58 in total), and 1 operator tool exposed by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true` (maximum of 59). A client connected to a vanilla Redmine sees just the 45 core tools. For full documentation of every tool, see the [Tool Reference](./docs/tool-reference.md).
+This MCP server provides 49 core tools for interacting with Redmine, plus 13 plugin tools that are listed only when the matching `REDMINE_*_ENABLED` flag is set (62 in total), and 1 operator tool exposed by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true` (maximum of 63). A client connected to a vanilla Redmine sees just the 49 core tools. For full documentation of every tool, see the [Tool Reference](./docs/tool-reference.md).
 
-**Core tools (45, always available):** Project Management (9), Issue Operations (13), Time Tracking (4), Discovery / Enumeration (7), Search & Wiki (2), File Operations (4), Gantt (1), Interactive Apps (4), Meta (1).
+**Core tools (49, always available):** Project Management (9), Issue Operations (13), Time Tracking (4), Discovery / Enumeration (7), Search & Wiki (2), News (4), File Operations (4), Gantt (1), Interactive Apps (4), Meta (1).
 
 **Plugin-gated tools (13, listed only when their flag is set):** Checklists (3), Products (1), Contacts / CRM (2), Deals / CRM (3), shared CRM notes and saved queries (2, either CRM flag), deal product lines (1, deals plus products), Documents / DMSF (1). Each requires the matching Redmine plugin installed **and** its env flag set; with the flag off the tools are not registered on the MCP surface.
 
@@ -624,7 +624,7 @@ This MCP server provides 45 core tools for interacting with Redmine, plus 13 plu
 <details>
 <summary><strong>Full tool list with descriptions</strong></summary>
 
-### Core tools (45, always available)
+### Core tools (49, always available)
 
 These tools require only a Redmine instance and credentials, with no extra plugins or feature flags.
 
@@ -673,6 +673,12 @@ These tools require only a Redmine instance and credentials, with no extra plugi
 - **Search & Wiki** (2 tools)
   - [`search_entire_redmine`](docs/tool-reference.md#search_entire_redmine) - Global search across issues and wiki pages (Redmine 3.3.0+)
   - [`manage_redmine_wiki_page`](docs/tool-reference.md#manage_redmine_wiki_page) - List, get, create, update, delete, or rename wiki pages
+
+- **News** (4 tools): project announcements -- release notes, maintenance windows
+  - [`list_redmine_news`](docs/tool-reference.md#list_redmine_news) - List news, optionally for one project
+  - [`get_redmine_news`](docs/tool-reference.md#get_redmine_news) - Read one news item with its comments and attachments
+  - [`manage_redmine_news`](docs/tool-reference.md#manage_redmine_news) - Create or update a news item (Redmine 5.1+)
+  - [`delete_redmine_news`](docs/tool-reference.md#delete_redmine_news) - Delete a news item, with confirmation (Redmine 5.1+)
 
 - **File Operations** (4 tools)
   - [`list_files`](docs/tool-reference.md#list_files) - List files uploaded to a project's Files section
