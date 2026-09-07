@@ -97,7 +97,7 @@ class TestSearchFieldSelection:
         # Should return all fields
         assert isinstance(result, list)
         assert len(result) == 1
-        assert len(result[0]) == 21
+        assert len(result[0]) == 23
         assert "id" in result[0]
         assert "subject" in result[0]
         assert "description" in result[0]
@@ -170,7 +170,7 @@ class TestSearchFieldSelection:
         # Minimal should have fewer keys per issue
         assert len(result_minimal[0]) < len(result_all[0])
         assert len(result_minimal[0]) == 2  # Only id and subject
-        assert len(result_all[0]) == 21  # All fields
+        assert len(result_all[0]) == 23  # All fields
 
     @pytest.mark.asyncio
     async def test_fields_asterisk_returns_all(self, mock_redmine):
@@ -180,7 +180,7 @@ class TestSearchFieldSelection:
 
         result = await search_redmine_issues("bug", fields=["*"])
 
-        assert len(result[0]) == 21  # All fields
+        assert len(result[0]) == 23  # All fields
 
     @pytest.mark.asyncio
     async def test_fields_all_keyword(self, mock_redmine):
@@ -190,7 +190,7 @@ class TestSearchFieldSelection:
 
         result = await search_redmine_issues("bug", fields=["all"])
 
-        assert len(result[0]) == 21  # All fields
+        assert len(result[0]) == 23  # All fields
 
     @pytest.mark.asyncio
     async def test_fields_invalid_ignored(self, mock_redmine):
@@ -280,7 +280,7 @@ class TestSearchFieldSelection:
         result = await search_redmine_issues("bug", limit=25)
 
         # Should return all fields (backward compatible)
-        assert len(result[0]) == 21
+        assert len(result[0]) == 23
 
     @pytest.mark.asyncio
     async def test_fields_with_explicit_params(self, mock_redmine):

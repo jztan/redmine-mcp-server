@@ -154,7 +154,7 @@ class TestIssueToDictSelective:
         expected = _issue_to_dict(mock_issue)
 
         assert set(result.keys()) == set(expected.keys())
-        assert len(result) == 21  # All fields
+        assert len(result) == 23  # All fields
         assert "id" in result
         assert "subject" in result
         assert "description" in result
@@ -165,7 +165,7 @@ class TestIssueToDictSelective:
         expected = _issue_to_dict(mock_issue)
 
         assert set(result.keys()) == set(expected.keys())
-        assert len(result) == 21
+        assert len(result) == 23
 
     def test_all_keyword_returns_all_fields(self, mock_issue):
         """Test that fields=["all"] returns all fields."""
@@ -173,7 +173,7 @@ class TestIssueToDictSelective:
         expected = _issue_to_dict(mock_issue)
 
         assert set(result.keys()) == set(expected.keys())
-        assert len(result) == 21
+        assert len(result) == 23
 
     def test_single_field_id(self, mock_issue):
         """Test selecting only the id field."""
@@ -284,6 +284,8 @@ class TestIssueToDictSelective:
             "done_ratio",
             "estimated_hours",
             "spent_hours",
+            "total_estimated_hours",
+            "total_spent_hours",
             "is_private",
             "closed_on",
             "created_on",
@@ -293,7 +295,7 @@ class TestIssueToDictSelective:
         expected = _issue_to_dict(mock_issue)
 
         assert set(result.keys()) == set(expected.keys())
-        assert len(result) == 21
+        assert len(result) == 23
 
     def test_standard_fields_populated(self, mock_issue):
         """Standard fields from issue #174 are serialized when present."""
@@ -437,7 +439,7 @@ class TestIssueToDictSelective:
         # Minimal should have fewer keys
         assert len(minimal_fields_result) < len(all_fields_result)
         assert len(minimal_fields_result) == 2
-        assert len(all_fields_result) == 21
+        assert len(all_fields_result) == 23
 
     def test_case_sensitive_field_names(self, mock_issue):
         """Test that field names are case-sensitive."""

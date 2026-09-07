@@ -7,6 +7,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Issue serializers pass through top-level keys the standard Redmine API does
+  not define, under `unmapped_fields`. Distributions and plugins add their own
+  keys to the issue JSON (Easy Redmine sends `easy_sprint` and
+  `easy_story_points`, for example); a serializer built from a fixed key set
+  dropped them. The values are read from python-redmine's decoded payload,
+  without a lazy fetch. Nulls are dropped, strings are wrapped against prompt
+  injection like any other user-authored text, and a value over 1000 characters
+  once wrapped and serialized is skipped -- the cap is measured after wrapping
+  because that is what reaches the client. `get_redmine_issue`,
+  `list_redmine_issues` and `search_redmine_issues` expose the key; it is
+  omitted when there is nothing to report, so payloads from a stock Redmine are
+  unchanged.
+- `total_estimated_hours` and `total_spent_hours` on the issue serializers.
+  Both are stock Redmine fields carrying the subtask rollup that
+  `estimated_hours` and `spent_hours` leave out.
+
 ### Changed
 - Upgraded to FastMCP 4 and the MCP Python SDK v2: `fastmcp>=4.0.1,<5` (locked
   on 4.0.3) pulls in `mcp` 2.1.1 and the new `mcp-types` package
