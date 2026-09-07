@@ -13,6 +13,8 @@ import pytest
 from redmine_mcp_server.tools.issues import (
     _ISSUE_PAYLOAD_SKIP_KEYS,
     _UNMAPPED_VALUE_MAX_CHARS,
+    _serialized_length,
+    _wrap_nested_insecure_content,
     _issue_unmapped_fields,
     _issue_to_dict,
     _issue_to_dict_selective,
@@ -110,6 +112,19 @@ class TestIssueUnmappedFields:
         extra = _issue_unmapped_fields(issue)
         assert not set(extra) & _ISSUE_PAYLOAD_SKIP_KEYS
 
+    def test_search_result_keys_are_excluded(self):
+        # `_hydrate_search_results` returns the sparse search rows unchanged
+        # when the hydrating fetch fails; their raw() carries these three
+        # stock fields, which are not plugin additions.
+        payload = dict(
+            EASY_PAYLOAD,
+            title="Issue #16849: Print summary register",
+            url="https://redmine.example.com/issues/16849",
+            datetime="2025-01-23T18:03:01Z",
+        )
+        extra = _issue_unmapped_fields(_issue_with_raw(payload))
+        assert _unwrap(extra) == EXPECTED_EXTRA
+
     def test_include_names_come_from_the_resource_class(self):
         # Read off python-redmine rather than hand-written, so a payload
         # fetched with include=journals cannot bypass journal pagination.
@@ -134,10 +149,29 @@ class TestIssueUnmappedFields:
         assert "css_classes" not in extra
         assert _unwrap(extra) == EXPECTED_EXTRA
 
+    def test_the_cap_is_measured_after_wrapping(self):
+        # Boundary tags cost ~75 characters per string, so a value of many
+        # short strings fits the cap raw and blows past it once wrapped. The
+        # cap bounds what reaches the client, so it is the wrapped size that
+        # counts.
+        value = {f"k{i}": "short" for i in range(38)}
+        assert _serialized_length(value) <= _UNMAPPED_VALUE_MAX_CHARS
+        wrapped_length = _serialized_length(_wrap_nested_insecure_content(value))
+        assert wrapped_length > _UNMAPPED_VALUE_MAX_CHARS
+
+        payload = dict(EASY_PAYLOAD, plugin_blob=value)
+        extra = _issue_unmapped_fields(_issue_with_raw(payload))
+        assert "plugin_blob" not in extra
+        assert _unwrap(extra) == EXPECTED_EXTRA
+
     def test_values_at_the_cap_are_kept(self):
-        # The JSON serialization carries the two quotes, so the string itself
-        # is two characters shorter than the cap.
-        value = "x" * (_UNMAPPED_VALUE_MAX_CHARS - 2)
+        # Sized against the wrapped serialization, since that is what the cap
+        # now measures.
+        value = "x" * 800
+        assert (
+            _serialized_length(_wrap_nested_insecure_content(value))
+            <= _UNMAPPED_VALUE_MAX_CHARS
+        )
         payload = dict(EASY_PAYLOAD, easy_note=value)
         extra = _issue_unmapped_fields(_issue_with_raw(payload))
         assert _unwrap(extra["easy_note"]) == value

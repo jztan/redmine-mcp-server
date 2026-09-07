@@ -463,14 +463,26 @@ _ISSUE_MAPPED_KEYS = frozenset(
 # drift: it also keeps a whole `include=journals` payload out of
 # `unmapped_fields`, where it would sidestep the journal pagination in
 # `get_redmine_issue`.
+# Keys the search endpoint puts on its own result rows. `_hydrate_search_results`
+# returns those sparse rows unchanged when the hydrating fetch fails, and their
+# `raw()` still carries these three -- stock Redmine fields that would otherwise
+# be reported as plugin additions.
+_SEARCH_RESULT_KEYS = frozenset({"title", "url", "datetime"})
+
 _ISSUE_PAYLOAD_SKIP_KEYS = frozenset(
-    _ISSUE_MAPPED_KEYS | set(Issue._includes) | set(Issue._relations)
+    _ISSUE_MAPPED_KEYS
+    | _SEARCH_RESULT_KEYS
+    | set(Issue._includes)
+    | set(Issue._relations)
 )
 
-# Cap on the serialized length of a single passed-through value. Plugins hang
-# rendering junk off the issue (Easy Redmine's `css_classes`, for one) that is
-# long and of no use to a model. Size is the honest filter here; a per-plugin
-# name list only covers the plugins we happen to have seen.
+# Cap on the serialized length of a single passed-through value, measured
+# *after* the boundary tags are added, since that is what reaches the client:
+# every string wrapped costs another ~75 characters, so a value that fits the
+# cap raw can be several times the cap once nested leaves are wrapped. Plugins
+# hang rendering junk off the issue (Easy Redmine's `css_classes`, for one)
+# that is long and of no use to a model. Size is the honest filter here; a
+# per-plugin name list only covers the plugins we happen to have seen.
 _UNMAPPED_VALUE_MAX_CHARS = 1000
 
 
@@ -517,8 +529,8 @@ def _issue_unmapped_fields(issue: Any) -> Dict[str, Any]:
 
     Returns:
         Dict of the top-level keys absent from ``_ISSUE_PAYLOAD_SKIP_KEYS``,
-        with their strings wrapped against prompt injection and any
-        oversized value dropped. Empty when there are none.
+        with their strings wrapped against prompt injection and any value
+        dropped that is oversized once wrapped. Empty when there are none.
     """
     raw = getattr(issue, "raw", None)
     if not callable(raw):
@@ -543,9 +555,10 @@ def _issue_unmapped_fields(issue: Any) -> Dict[str, Any]:
             continue
         if value is None:
             continue
-        if _serialized_length(value) > _UNMAPPED_VALUE_MAX_CHARS:
+        wrapped = _wrap_nested_insecure_content(value)
+        if _serialized_length(wrapped) > _UNMAPPED_VALUE_MAX_CHARS:
             continue
-        unmapped[key] = _wrap_nested_insecure_content(value)
+        unmapped[key] = wrapped
     return unmapped
 
 
