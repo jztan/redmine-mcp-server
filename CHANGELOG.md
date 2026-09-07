@@ -68,6 +68,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nothing now fails the release instead of publishing without credit, since
   this class of bug has now shipped three times.
 
+### Contributors
+- @gino8080 reported that the issue serializers drop the top-level keys
+  distributions and plugins add
+  ([#263](https://github.com/jztan/redmine-mcp-server/issues/263)) and
+  implemented the `unmapped_fields` pass-through with the `total_estimated_hours`
+  and `total_spent_hours` mappings, verified against Easy Redmine 11plus.5.1
+  ([#268](https://github.com/jztan/redmine-mcp-server/pull/268))
+
 ## [2.14.0] - 2026-09-05
 ### Added
 - `REDMINE_MCP_ALLOW_TOOLS` (and `REDMINE_MCP_ALLOW_TOOLS_FILE`) expose only
