@@ -470,6 +470,120 @@ class TestRedmineIntegration:
     @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
     @pytest.mark.integration
     @pytest.mark.asyncio
+    async def test_wiki_page_hierarchy_integration(self):
+        """Live round trip for the wiki page parent (issue #270).
+
+        Creates a parent and a child, reparents, and clears the parent
+        back to the wiki root, asserting what Redmine actually reports
+        at each step rather than what was sent.
+        """
+        redmine = _get_redmine_or_none()
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
+
+        projects = list(redmine.project.all())
+        if not projects:
+            pytest.skip("No projects available for testing")
+
+        project_id = projects[0].identifier
+        parent_title = "Integration_Test_Wiki_Parent"
+        other_parent_title = "Integration_Test_Wiki_Parent_Two"
+        child_title = "Integration_Test_Wiki_Child"
+
+        async def _delete(title):
+            try:
+                await manage_redmine_wiki_page(
+                    action="delete", project_id=project_id, wiki_page_title=title
+                )
+            except Exception:
+                pass  # Best effort cleanup
+
+        try:
+            for title in (parent_title, other_parent_title):
+                created = await manage_redmine_wiki_page(
+                    action="create",
+                    project_id=project_id,
+                    wiki_page_title=title,
+                    text="Parent page for the hierarchy integration test.",
+                )
+                if "error" in created:
+                    if any(
+                        word in created["error"].lower()
+                        for word in ("denied", "permission", "forbidden")
+                    ):
+                        pytest.skip(f"Wiki editing not permitted: {created['error']}")
+                    pytest.fail(f"Failed to create parent: {created['error']}")
+                # A page at the root must not claim a parent.
+                assert "parent_title" not in created
+
+            # 1. Create a child underneath the first parent.
+            child = await manage_redmine_wiki_page(
+                action="create",
+                project_id=project_id,
+                wiki_page_title=child_title,
+                text="Child page.",
+                parent_title=parent_title,
+            )
+            if "error" in child:
+                pytest.fail(f"Failed to create child page: {child['error']}")
+            assert child["parent_title"] == parent_title
+
+            # 2. A get reports the parent too, not just the create echo.
+            fetched = await manage_redmine_wiki_page(
+                action="get", project_id=project_id, wiki_page_title=child_title
+            )
+            assert fetched["parent_title"] == parent_title
+
+            # 3. A text-only update must leave the parent alone.
+            untouched = await manage_redmine_wiki_page(
+                action="update",
+                project_id=project_id,
+                wiki_page_title=child_title,
+                text="Child page, edited without naming a parent.",
+            )
+            assert untouched["parent_title"] == parent_title
+
+            # 4. Reparent to the second parent.
+            moved = await manage_redmine_wiki_page(
+                action="update",
+                project_id=project_id,
+                wiki_page_title=child_title,
+                text="Child page, moved.",
+                parent_title=other_parent_title,
+            )
+            assert moved["parent_title"] == other_parent_title
+
+            # 5. An empty parent_title returns the page to the wiki root.
+            rooted = await manage_redmine_wiki_page(
+                action="update",
+                project_id=project_id,
+                wiki_page_title=child_title,
+                text="Child page, back at the root.",
+                parent_title="",
+            )
+            assert "parent_title" not in rooted
+
+            # 6. An unknown parent fails with an explanation, not a blank.
+            orphaned = await manage_redmine_wiki_page(
+                action="update",
+                project_id=project_id,
+                wiki_page_title=child_title,
+                text="Child page.",
+                parent_title="Integration_Test_No_Such_Parent",
+            )
+            assert "error" in orphaned
+            assert "Integration_Test_No_Such_Parent" in orphaned["error"]
+
+        finally:
+            # Children first: Redmine refuses to leave pages stranded.
+            for title in (child_title, parent_title, other_parent_title):
+                await _delete(title)
+
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.integration
+    @pytest.mark.asyncio
     async def test_wiki_page_lifecycle_integration(self):
         """Integration test for creating, updating, and deleting a wiki page."""
         redmine = _get_redmine_or_none()

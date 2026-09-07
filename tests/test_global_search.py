@@ -407,6 +407,53 @@ class TestManageRedmineWikiPageGet:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.redmine")
     @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    async def test_wiki_page_reports_parent_title(
+        self, mock_cleanup, mock_redmine, mock_wiki_page
+    ):
+        """A child page reports its parent so hierarchy survives a get.
+
+        python-redmine wraps the parent as a WikiPage resource carrying
+        only ``title``; its ``id`` answers 0 and its ``name`` answers
+        "", so _named_ref would mint a fabricated {"id": 0, "name": ""}
+        here instead of failing. Read the title directly. See #270.
+        """
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
+
+        parent = Mock()
+        parent.title = "Handbook"
+        parent.id = 0
+        parent.name = ""
+        mock_wiki_page.parent = parent
+        mock_redmine.wiki_page.get.return_value = mock_wiki_page
+
+        result = await manage_redmine_wiki_page(
+            action="get", project_id="my-project", wiki_page_title="Installation Guide"
+        )
+
+        assert result["parent_title"] == "Handbook"
+        assert "parent" not in result
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    async def test_wiki_page_omits_parent_title_at_root(
+        self, mock_cleanup, mock_redmine, mock_wiki_page
+    ):
+        """A top-level page carries no parent_title key at all."""
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
+
+        mock_wiki_page.parent = None
+        mock_redmine.wiki_page.get.return_value = mock_wiki_page
+
+        result = await manage_redmine_wiki_page(
+            action="get", project_id="my-project", wiki_page_title="Installation Guide"
+        )
+
+        assert "parent_title" not in result
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_wiki_page_not_found(self, mock_cleanup, mock_redmine):
         """Test handling of non-existent wiki page."""
         from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
