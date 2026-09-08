@@ -417,15 +417,43 @@ async def test_deleting_something_absent_says_so():
     assert result["code"] == "NOT_FOUND"
 
 
-# --- the two named write failures ---------------------------------------
+# --- the named failures ------------------------------------------------
+
+
+def _client_with_project(modules, **managers):
+    """A client whose project read reports ``modules`` as enabled."""
+    project = SimpleNamespace(id=1093, name="ZEUS", enabled_modules=list(modules))
+    return SimpleNamespace(
+        news=SimpleNamespace(**managers),
+        project=SimpleNamespace(get=lambda pid, **kw: project),
+    )
 
 
 @pytest.mark.asyncio
-async def test_a_forbidden_create_names_the_module_gate():
-    """403 on a news write means the project has the module switched off.
+async def test_a_403_with_the_module_off_names_the_module():
+    from redminelib.exceptions import ForbiddenError
 
-    Redmine checks the module before any permission, so this refuses an
-    administrator too -- which reads like a missing right when it is not one.
+    def _create(**kw):
+        raise ForbiddenError
+
+    with patch.object(
+        news_mod,
+        "_get_redmine_client",
+        return_value=_client_with_project(["issue_tracking"], create=_create),
+    ):
+        result = await news_mod.manage_redmine_news(
+            action="create", project_id=1093, title="t", description="d"
+        )
+    assert result["code"] == "NEWS_MODULE_DISABLED"
+    assert result["upstream_status"] == 403
+
+
+@pytest.mark.asyncio
+async def test_a_403_with_the_module_on_is_a_permission_denial():
+    """The module is enabled, so the role is what is missing.
+
+    Claiming a disabled module here would send the operator to switch on
+    something that is already on.
     """
     from redminelib.exceptions import ForbiddenError
 
@@ -433,14 +461,97 @@ async def test_a_forbidden_create_names_the_module_gate():
         raise ForbiddenError
 
     with patch.object(
-        news_mod, "_get_redmine_client", return_value=_client(create=_create)
+        news_mod,
+        "_get_redmine_client",
+        return_value=_client_with_project(["issue_tracking", "news"], create=_create),
     ):
         result = await news_mod.manage_redmine_news(
-            action="create", project_id=1212, title="t", description="d"
+            action="create", project_id=1093, title="t", description="d"
+        )
+    assert result.get("code") != "NEWS_MODULE_DISABLED"
+    assert "error" in result
+
+
+@pytest.mark.asyncio
+async def test_an_unreadable_module_list_claims_nothing():
+    from redminelib.exceptions import ForbiddenError
+
+    def _create(**kw):
+        raise ForbiddenError
+
+    def _project_get(pid, **kw):
+        raise Exception("no access to the project either")
+
+    client = SimpleNamespace(
+        news=SimpleNamespace(create=_create),
+        project=SimpleNamespace(get=_project_get),
+    )
+    with patch.object(news_mod, "_get_redmine_client", return_value=client):
+        result = await news_mod.manage_redmine_news(
+            action="create", project_id=1093, title="t", description="d"
+        )
+    assert result.get("code") != "NEWS_MODULE_DISABLED"
+
+
+@pytest.mark.asyncio
+async def test_a_read_names_the_module_when_the_project_is_known():
+    """A 403 on a read is the same module gate, not a write-only concern."""
+    from redminelib.exceptions import ForbiddenError
+
+    def _filter(**kw):
+        raise ForbiddenError
+
+    with patch.object(
+        news_mod,
+        "_get_redmine_client",
+        return_value=_client_with_project(["issue_tracking"], filter=_filter),
+    ):
+        result = await list_redmine_news(project_id=1093)
+    assert result["code"] == "NEWS_MODULE_DISABLED"
+
+
+@pytest.mark.asyncio
+async def test_a_single_read_refused_outright_claims_nothing():
+    """Without a readable item there is no project to check the module on.
+
+    ``get_redmine_news`` knows only the news id, so when reading the item is
+    itself refused the module state is unknowable -- and an unknowable state
+    is not claimed. In practice Redmine answers 404 rather than 403 here,
+    because a news item in a module-less project is simply not visible.
+    """
+    from redminelib.exceptions import ForbiddenError
+
+    def _get(news_id, **kw):
+        raise ForbiddenError
+
+    with patch.object(
+        news_mod,
+        "_get_redmine_client",
+        return_value=_client_with_project(["issue_tracking"], get=_get),
+    ):
+        result = await get_redmine_news(7)
+    assert result.get("code") != "NEWS_MODULE_DISABLED"
+    assert "error" in result
+
+
+@pytest.mark.asyncio
+async def test_a_single_read_names_the_module_when_the_item_still_reads():
+    """The update path is the realistic case: read allowed, write refused."""
+    from redminelib.exceptions import ForbiddenError
+
+    def _update(news_id, **kw):
+        raise ForbiddenError
+
+    project = SimpleNamespace(id=1093, name="ZEUS", enabled_modules=["issue_tracking"])
+    client = SimpleNamespace(
+        news=SimpleNamespace(get=lambda n, **kw: _news(), update=_update),
+        project=SimpleNamespace(get=lambda pid, **kw: project),
+    )
+    with patch.object(news_mod, "_get_redmine_client", return_value=client):
+        result = await news_mod.manage_redmine_news(
+            action="update", news_id=7, title="neu"
         )
     assert result["code"] == "NEWS_MODULE_DISABLED"
-    assert result["upstream_status"] == 403
-    assert "news module" in result["error"]
 
 
 @pytest.mark.asyncio
@@ -455,11 +566,11 @@ async def test_a_404_on_create_with_a_readable_project_names_the_version():
     def _create(**kw):
         raise ResourceNotFoundError
 
-    client = SimpleNamespace(
-        news=SimpleNamespace(create=_create),
-        project=SimpleNamespace(get=lambda pid: SimpleNamespace(id=pid, name="da")),
-    )
-    with patch.object(news_mod, "_get_redmine_client", return_value=client):
+    with patch.object(
+        news_mod,
+        "_get_redmine_client",
+        return_value=_client_with_project(["news"], create=_create),
+    ):
         result = await news_mod.manage_redmine_news(
             action="create", project_id=1093, title="t", description="d"
         )
@@ -472,7 +583,7 @@ async def test_a_404_with_an_unreadable_project_is_not_blamed_on_the_version():
     def _create(**kw):
         raise ResourceNotFoundError
 
-    def _project_get(pid):
+    def _project_get(pid, **kw):
         raise ResourceNotFoundError
 
     client = SimpleNamespace(
@@ -487,13 +598,33 @@ async def test_a_404_with_an_unreadable_project_is_not_blamed_on_the_version():
 
 
 @pytest.mark.asyncio
-async def test_a_forbidden_delete_names_the_module_gate_too():
+async def test_a_404_on_a_read_is_never_blamed_on_the_version():
+    """Reading news works on every Redmine, so that branch is write-only."""
+
+    def _get(news_id, **kw):
+        raise ResourceNotFoundError
+
+    with patch.object(
+        news_mod,
+        "_get_redmine_client",
+        return_value=_client_with_project(["news"], get=_get),
+    ):
+        result = await get_redmine_news(7)
+    assert result["code"] == "NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_a_forbidden_delete_names_the_module_from_the_item_it_read():
     from redminelib.exceptions import ForbiddenError
 
     def _delete(news_id):
         raise ForbiddenError
 
-    client = _client(get=lambda n, **kw: _news(), delete=_delete)
+    project = SimpleNamespace(id=1093, name="ZEUS", enabled_modules=["issue_tracking"])
+    client = SimpleNamespace(
+        news=SimpleNamespace(get=lambda n, **kw: _news(), delete=_delete),
+        project=SimpleNamespace(get=lambda pid, **kw: project),
+    )
     with patch.object(news_mod, "_get_redmine_client", return_value=client):
         result = await delete_redmine_news(news_id=7, confirm_delete=True)
     assert result["code"] == "NEWS_MODULE_DISABLED"

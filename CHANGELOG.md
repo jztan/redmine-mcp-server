@@ -28,12 +28,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   has no endpoint for adding one.
   Three failure shapes get names instead of being passed on: a create whose
   204-with-no-body read-back does not match the title that was sent reports
-  `CREATE_UNCONFIRMED` rather than a neighbour's record; a 403 on a write
-  reports `NEWS_MODULE_DISABLED`, since Redmine checks the news module before
-  any permission and refuses an administrator too; and a 404 on create where
-  the project still reads back reports `NEWS_WRITE_UNSUPPORTED`, because
-  `News.redmine_version` is `(1, 1, 0)` for the whole resource and
-  python-redmine raises no version error of its own.
+  `CREATE_UNCONFIRMED` rather than a neighbour's record; a 403 reports
+  `NEWS_MODULE_DISABLED` when reading the project's modules back shows the
+  news module really is off -- Redmine checks it before any permission and
+  refuses an administrator too -- while an ordinary permission denial keeps
+  the plain error; and a 404 on create where the project still reads back
+  reports `NEWS_WRITE_UNSUPPORTED`, because `News.redmine_version` is
+  `(1, 1, 0)` for the whole resource and python-redmine raises no version
+  error of its own.
   ([#269](https://github.com/jztan/redmine-mcp-server/issues/269))
 - `search_entire_redmine` now searches news alongside issues and wiki pages,
   which the module docstring already claimed.
@@ -98,6 +100,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   this class of bug has now shipped three times.
 
 ### Contributors
+- @andilem proposed and implemented the news tools
+  ([#269](https://github.com/jztan/redmine-mcp-server/issues/269))
 - @gino8080 reported that the issue serializers drop the top-level keys
   distributions and plugins add
   ([#263](https://github.com/jztan/redmine-mcp-server/issues/263)) and

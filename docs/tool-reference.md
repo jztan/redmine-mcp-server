@@ -2201,11 +2201,16 @@ where a call can look successful, or fail for the wrong stated reason:
   sent; when it cannot be confirmed the tool returns `confirmed: false` with
   a `CREATE_UNCONFIRMED` code and the values it sent, instead of a
   neighbour's record with a plausible id.
-- **A 403 on a write means the news module is off for that project.**
-  Redmine checks the module before it checks any permission, so this refuses
-  an administrator too and reads like a missing right when it is not one.
-  The tools return `NEWS_MODULE_DISABLED` and point at
-  `get_project_modules`.
+- **A 403 can mean the news module is off, or just a missing permission.**
+  Redmine checks the module before it checks any permission, so a module-less
+  project refuses an administrator too and reads like a missing right. The two
+  look identical on the wire, so the tools read the project's modules back and
+  return `NEWS_MODULE_DISABLED` only when the module really is off, pointing
+  at `get_project_modules`; an ordinary denial keeps the plain permission
+  error. This applies to the reads as well -- `list_redmine_news` with a
+  `project_id` hits the same gate. Where the project cannot be determined,
+  as on a `get_redmine_news` whose item is itself refused, nothing is
+  claimed.
 - **A 404 on create can mean the endpoint is missing, not the project.**
   Writing news is Redmine 5.1 and newer, and `News.redmine_version` is
   `(1, 1, 0)` for the whole resource, so python-redmine raises no version

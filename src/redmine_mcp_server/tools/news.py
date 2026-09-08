@@ -17,12 +17,17 @@ passed on to the caller:
   a create whose result cannot be confirmed says so instead of returning a
   neighbour's record.
 - **Two failures arrive as plain HTTP codes** that mean something specific
-  here. ``News.redmine_version`` is ``(1, 1, 0)`` for the whole resource,
-  so python-redmine raises no version error on a pre-5.1 server: the POST
-  simply 404s, which a caller would read as a missing project. And with the
-  news module disabled on a project, Redmine answers 403 before it checks
-  any permission -- an administrator is refused too. Both get their own
-  code, ``NEWS_WRITE_UNSUPPORTED`` and ``NEWS_MODULE_DISABLED``.
+  here, and both are ambiguous until something is read back.
+  ``News.redmine_version`` is ``(1, 1, 0)`` for the whole resource, so
+  python-redmine raises no version error on a pre-5.1 server: the POST
+  simply 404s, which a caller would read as a missing project. And a 403 is
+  either the project's news module being off -- Redmine checks the module
+  before any permission, so an administrator is refused too -- or an
+  ordinary permission denial. The module is read back and only claimed when
+  it really is off, because telling an operator to switch on something that
+  is already on sends them looking in the wrong place. The codes are
+  ``NEWS_WRITE_UNSUPPORTED`` and ``NEWS_MODULE_DISABLED``, and they apply to
+  reads as much as writes.
 
 The list endpoint takes ``project_id`` as a query parameter rather than in
 the path, because python-redmine's ``News.query_filter`` is ``/news.json``
@@ -42,6 +47,7 @@ from .._errors import _READ_ONLY_ERROR, _handle_redmine_error
 from .._offload import offloaded
 from .._serialization import (
     _attachment_to_dict,
+    _enabled_module_names,
     _included_list,
     _named_ref,
     _safe_isoformat,
@@ -95,21 +101,54 @@ def _news_to_dict(news: Any) -> Dict[str, Any]:
     return result
 
 
-def _classify_write_failure(
-    exc: Exception, project_id: Optional[Union[str, int]]
+def _project_ref_of(news: Any) -> Optional[Union[str, int]]:
+    """The project id on an already-fetched news item."""
+    return getattr(getattr(news, "project", None), "id", None)
+
+
+def _news_module_enabled(project_id: Union[str, int]) -> Optional[bool]:
+    """Whether the project has the news module on, or ``None`` if unknowable."""
+    try:
+        project = _get_redmine_client().project.get(
+            project_id, include="enabled_modules"
+        )
+    except Exception:
+        return None
+    return "news" in _enabled_module_names(project)
+
+
+def _project_of_news(news_id: int) -> Optional[Union[str, int]]:
+    """The project a news item belongs to, or ``None`` if it cannot be read."""
+    try:
+        news = _get_redmine_client().news.get(news_id)
+    except Exception:
+        return None
+    project = getattr(news, "project", None)
+    return getattr(project, "id", None)
+
+
+def _classify_news_failure(
+    exc: Exception,
+    *,
+    project_id: Optional[Union[str, int]] = None,
+    news_id: Optional[int] = None,
+    write: bool = False,
 ) -> Optional[Dict[str, Any]]:
-    """Name the two write failures that arrive as bare HTTP codes.
+    """Name the failures that arrive as bare HTTP codes and mislead.
 
-    A 403 on a news write means the project has the news module switched
-    off: Redmine checks the module before any permission, so this refuses an
-    administrator too, and reads like a missing right when it is not one.
+    A 403 has two causes that call for opposite fixes: the project has the
+    news module switched off, or the role simply lacks the permission. Both
+    look identical on the wire, so the module is read back and only claimed
+    when it really is off -- telling an operator to enable something that is
+    already on sends them looking in the wrong place. When the module cannot
+    be read, nothing is claimed.
 
-    A 404 is ambiguous on ``POST /projects/{id}/news.json`` -- either the
+    A 404 is ambiguous on a write to ``/projects/{id}/news.json``: either the
     project is gone, or the route is (writing news is Redmine 5.1 and newer,
     and ``News.redmine_version`` is ``(1, 1, 0)`` for the whole resource, so
-    python-redmine raises no version error of its own). One extra request on
-    the error path tells them apart: if the project reads back fine, the
-    route is what is missing.
+    python-redmine raises no version error of its own). If the project still
+    reads back, the route is what is missing. Reads are unaffected -- they
+    work on every version -- so that branch is for writes only.
 
     Returns ``None`` when the failure is neither, leaving it to the shared
     error handler.
@@ -117,10 +156,17 @@ def _classify_write_failure(
     from redminelib.exceptions import ForbiddenError
 
     if isinstance(exc, ForbiddenError):
+        target = project_id
+        if target is None and news_id is not None:
+            target = _project_of_news(news_id)
+        if target is None or _news_module_enabled(target) is not False:
+            # Either unknowable, or the module is on and this is an ordinary
+            # permission denial. Both are the shared handler's business.
+            return None
         return {
             "error": (
-                "Redmine refused the news write. The project most likely has "
-                "the news module switched off."
+                "Redmine refused the request because the project has the "
+                "news module switched off."
             ),
             "hint": (
                 "Enable it under Project settings > Modules > News. Redmine "
@@ -130,10 +176,10 @@ def _classify_write_failure(
             ),
             "code": "NEWS_MODULE_DISABLED",
             "upstream_status": 403,
-            "project_id": project_id,
+            "project_id": target,
         }
 
-    if isinstance(exc, ResourceNotFoundError) and project_id is not None:
+    if write and isinstance(exc, ResourceNotFoundError) and project_id is not None:
         try:
             _get_redmine_client().project.get(project_id)
         except Exception:
@@ -203,6 +249,9 @@ def list_redmine_news(
             "project_id": project_id,
         }
     except Exception as e:
+        named = _classify_news_failure(e, project_id=project_id)
+        if named is not None:
+            return named
         context = (
             {"resource_type": "project", "resource_id": project_id}
             if project_id is not None
@@ -255,6 +304,9 @@ def get_redmine_news(
             "news_id": news_id,
         }
     except Exception as e:
+        named = _classify_news_failure(e, news_id=news_id)
+        if named is not None:
+            return named
         return _handle_redmine_error(
             e,
             f"getting news {news_id}",
@@ -311,7 +363,7 @@ def _create_news_action(
         )
         return unconfirmed
     except Exception as e:
-        named = _classify_write_failure(e, project_id)
+        named = _classify_news_failure(e, project_id=project_id, write=True)
         if named is not None:
             return named
         return _handle_redmine_error(
@@ -367,7 +419,7 @@ def _update_news_action(
             "news_id": news_id,
         }
     except Exception as e:
-        named = _classify_write_failure(e, None)
+        named = _classify_news_failure(e, news_id=news_id, write=True)
         if named is not None:
             return named
         return _handle_redmine_error(
@@ -528,7 +580,9 @@ def delete_redmine_news(
             "news_id": news_id,
         }
     except Exception as e:
-        named = _classify_write_failure(e, None)
+        named = _classify_news_failure(
+            e, project_id=_project_ref_of(news), news_id=news_id, write=True
+        )
         if named is not None:
             return named
         return _handle_redmine_error(

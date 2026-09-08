@@ -372,6 +372,32 @@ def _attachment_to_dict(attachment: Any) -> Dict[str, Any]:
     }
 
 
+def _enabled_module_names(project: Any) -> List[str]:
+    """Module names enabled on a project, from an ``include=enabled_modules`` read.
+
+    python-redmine's ``Project.encode()`` turns them into a plain list of
+    strings, but older versions and raw HTTP responses hand back dicts or
+    resource-like objects, so all three shapes are read.
+    """
+    raw = getattr(project, "enabled_modules", None) or []
+    try:
+        iterator = iter(raw)
+    except TypeError:
+        return []
+
+    names: List[str] = []
+    for mod in iterator:
+        if isinstance(mod, str):
+            name = mod
+        elif isinstance(mod, dict):
+            name = mod.get("name")
+        else:
+            name = getattr(mod, "name", None)
+        if name:
+            names.append(str(name))
+    return names
+
+
 def _named_ref(obj: Any) -> Optional[Dict[str, Any]]:
     """Serialize a Redmine object with `id` + `name` to a dict.
 
