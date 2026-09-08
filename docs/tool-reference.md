@@ -1057,7 +1057,7 @@ Creates a new issue in the specified project. Blocked when `REDMINE_MCP_READ_ONL
   - Exactly ONE source key:
     - `content_base64` (string): Raw file bytes encoded as base64. `filename` is required when using this source.
     - `source_url` (string): HTTP(S) URL the server fetches. Filename is derived from the URL or `Content-Disposition` if omitted.
-    - `file_path` (string): Absolute path to a file already on the server. Must be inside `ATTACHMENTS_DIR` or a directory listed in `REDMINE_MCP_UPLOAD_FILE_ROOTS`. Filename is derived from the path if omitted.
+    - `file_path` (string): Absolute path to a file already on the server. Must be inside `ATTACHMENTS_DIR` or a directory listed in `REDMINE_MCP_UPLOAD_FILE_ROOTS`. Filename is derived from the path if omitted. The path is resolved on the server's own filesystem, so it is no use for a file on the caller's machine — over HTTP the two are different hosts, and no value of `REDMINE_MCP_UPLOAD_FILE_ROOTS` can bridge that. Send such a file as `content_base64` or `source_url`, neither of which needs roots configured.
   - `filename` (string, optional): Name the attachment will have in Redmine. Required for `content_base64`; derived for other sources when omitted.
   - `content_type` (string, optional): MIME type override (e.g. `"application/pdf"`).
   - `description` (string, optional): Human-readable description for the attachment.
@@ -1152,7 +1152,7 @@ Updates an existing issue with the provided fields. Blocked when `REDMINE_MCP_RE
   - Exactly ONE source key:
     - `content_base64` (string): Raw file bytes encoded as base64. `filename` is required when using this source.
     - `source_url` (string): HTTP(S) URL the server fetches. Filename is derived from the URL or `Content-Disposition` if omitted.
-    - `file_path` (string): Absolute path to a file already on the server. Must be inside `ATTACHMENTS_DIR` or a directory listed in `REDMINE_MCP_UPLOAD_FILE_ROOTS`. Filename is derived from the path if omitted.
+    - `file_path` (string): Absolute path to a file already on the server. Must be inside `ATTACHMENTS_DIR` or a directory listed in `REDMINE_MCP_UPLOAD_FILE_ROOTS`. Filename is derived from the path if omitted. The path is resolved on the server's own filesystem, so it is no use for a file on the caller's machine — over HTTP the two are different hosts, and no value of `REDMINE_MCP_UPLOAD_FILE_ROOTS` can bridge that. Send such a file as `content_base64` or `source_url`, neither of which needs roots configured.
   - `filename` (string, optional): Name the attachment will have in Redmine. Required for `content_base64`; derived for other sources when omitted.
   - `content_type` (string, optional): MIME type override (e.g. `"application/pdf"`).
   - `description` (string, optional): Human-readable description for the attachment.
@@ -2061,7 +2061,7 @@ List, get, create, update, delete, or rename a Redmine wiki page. Replaces `list
 - `redirect_existing_links` (boolean, optional): When `true` (default), `rename` creates a `WikiRedirect` from the old title to the new title
 - `uploads` (list, optional): Files to attach to the page on `create` and `update`. Requires the `edit_wiki_pages` permission on the project. Maximum 10 items. Each item is an object with:
   - Exactly ONE source key:
-    - `file_path` (string): Absolute path to a file already on the server. Must be inside `ATTACHMENTS_DIR` or a directory listed in `REDMINE_MCP_UPLOAD_FILE_ROOTS`. Filename is derived from the path if omitted.
+    - `file_path` (string): Absolute path to a file already on the server. Must be inside `ATTACHMENTS_DIR` or a directory listed in `REDMINE_MCP_UPLOAD_FILE_ROOTS`. Filename is derived from the path if omitted. The path is resolved on the server's own filesystem, so it is no use for a file on the caller's machine — over HTTP the two are different hosts, and no value of `REDMINE_MCP_UPLOAD_FILE_ROOTS` can bridge that. Send such a file as `content_base64` or `source_url`, neither of which needs roots configured.
     - `source_url` (string): HTTP(S) URL the server fetches. Filename is derived from the URL or `Content-Disposition` if omitted.
     - `content_base64` (string): Raw file bytes encoded as base64. `filename` is required when using this source. Prefer `file_path` or `source_url` where possible: base64 sends the entire file through the model, while a path or URL costs a few tokens regardless of file size.
   - `filename` (string, optional): Name the attachment will have in Redmine. Required for `content_base64`; derived for other sources when omitted.

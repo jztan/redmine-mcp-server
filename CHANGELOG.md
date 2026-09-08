@@ -34,6 +34,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `estimated_hours` and `spent_hours` leave out.
 
 ### Changed
+- `create_redmine_issue` and `update_redmine_issue` document `uploads` in their
+  docstrings, so the parameter reaches the tool schema with the three content
+  sources named rather than as a bare array of objects. `docs/tool-reference.md`
+  described them all along, but a client reads the schema, not the repository:
+  an agent holding a file could not discover that `content_base64` is accepted
+  there, found the documented `file_path` on `upload_file` instead, and hit a
+  wall no configuration can open, because that path is read on the server's
+  filesystem rather than the caller's. The upload-roots error now says so and
+  names `content_base64` and `source_url` as the sources that need no roots at
+  all; `manage_redmine_wiki_page` already documented its own `uploads` this way.
 - Upgraded to FastMCP 4 and the MCP Python SDK v2: `fastmcp>=4.0.1,<5` (locked
   on 4.0.3) pulls in `mcp` 2.1.1 and the new `mcp-types` package
   ([#258](https://github.com/jztan/redmine-mcp-server/issues/258)). The

@@ -73,9 +73,15 @@ def _resolve_local_file(
             None,
             {
                 "error": (
-                    "file_path is outside the allowed upload roots. Allowed "
-                    "roots default to ATTACHMENTS_DIR; widen them with the "
-                    "REDMINE_MCP_UPLOAD_FILE_ROOTS environment variable."
+                    "file_path is outside the allowed upload roots. It is "
+                    "read on the MCP server's own filesystem, not on the "
+                    "caller's: if the file is yours rather than the "
+                    "server's, send it as content_base64, or as a "
+                    "source_url the server can fetch, and no roots have to "
+                    "be configured at all. For a file that really does live "
+                    "on the server, the roots default to ATTACHMENTS_DIR "
+                    "and widen with the REDMINE_MCP_UPLOAD_FILE_ROOTS "
+                    "environment variable."
                 )
             },
         )

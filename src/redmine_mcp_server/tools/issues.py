@@ -1706,6 +1706,33 @@ async def create_redmine_issue(
       additional_tags tags on the new issue. Requires the
       ``create_issue_tags``/``edit_issue_tags`` permission; silently ignored
       when the feature is disabled (default).
+
+    Args:
+        project_id: Project the issue belongs to (numeric ID).
+        subject: The issue's title.
+        description: The issue's description. Optional.
+        fields: Standard and custom fields, as an object or a JSON object
+            string. Attachments do not go here -- see ``uploads``.
+        extra_fields: Further fields, merged into ``fields``. Object or JSON
+            object string.
+        uploads: Files to attach to the new issue, one object per file, at
+            most 10. Each names the file and carries exactly one content
+            source:
+
+            - ``filename`` (required): the name the attachment gets.
+            - ``content_base64``: the file's bytes, base64-encoded. **Use
+              this when you hold the file** -- it needs no configuration and
+              is the only source that works when this server runs somewhere
+              other than the caller. Capped at 50 MiB decoded.
+            - ``source_url``: an HTTP(S) URL this server downloads from.
+              Cheaper than ``content_base64`` when the file is already
+              reachable at a URL, since the bytes never pass through the
+              caller.
+            - ``file_path``: a path **on this server's filesystem**,
+              restricted to ``REDMINE_MCP_UPLOAD_FILE_ROOTS``. Only for a
+              file that is already there -- a path on the caller's machine
+              cannot be read here, whatever the roots are set to.
+            - ``content_type`` and ``description``: optional, per file.
     """
 
     if _is_read_only_mode():
@@ -1916,6 +1943,31 @@ async def update_redmine_issue(
     Non-standard keys in ``fields`` are treated as candidate custom-field names.
     When a matching project custom field is found, it is translated into
     ``custom_fields`` entries for Redmine update payloads.
+
+    Args:
+        issue_id: The issue to update.
+        fields: The fields to change, including ``notes`` for a comment.
+            Attachments do not go here -- see ``uploads``.
+        uploads: Files to attach to the issue, one object per file, at most
+            10. Each names the file and carries exactly one content source:
+
+            - ``filename`` (required): the name the attachment gets.
+            - ``content_base64``: the file's bytes, base64-encoded. **Use
+              this when you hold the file** -- it needs no configuration and
+              is the only source that works when this server runs somewhere
+              other than the caller. Capped at 50 MiB decoded.
+            - ``source_url``: an HTTP(S) URL this server downloads from.
+              Cheaper than ``content_base64`` when the file is already
+              reachable at a URL, since the bytes never pass through the
+              caller.
+            - ``file_path``: a path **on this server's filesystem**,
+              restricted to ``REDMINE_MCP_UPLOAD_FILE_ROOTS``. Only for a
+              file that is already there -- a path on the caller's machine
+              cannot be read here, whatever the roots are set to.
+            - ``content_type`` and ``description``: optional, per file.
+
+            An attachment referenced from the description or a note as
+            ``attachment:"name.png"`` is rendered inline by Redmine.
     """
 
     if _is_read_only_mode():
