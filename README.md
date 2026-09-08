@@ -677,8 +677,8 @@ These tools require only a Redmine instance and credentials, with no extra plugi
 - **News** (4 tools): project announcements -- release notes, maintenance windows
   - [`list_redmine_news`](docs/tool-reference.md#list_redmine_news) - List news, optionally for one project
   - [`get_redmine_news`](docs/tool-reference.md#get_redmine_news) - Read one news item with its comments and attachments
-  - [`manage_redmine_news`](docs/tool-reference.md#manage_redmine_news) - Create or update a news item (Redmine 5.1+)
-  - [`delete_redmine_news`](docs/tool-reference.md#delete_redmine_news) - Delete a news item, with confirmation (Redmine 5.1+)
+  - [`manage_redmine_news`](docs/tool-reference.md#manage_redmine_news) - Create or update a news item (Redmine 4.1+)
+  - [`delete_redmine_news`](docs/tool-reference.md#delete_redmine_news) - Delete a news item, with confirmation (Redmine 4.1+)
 
 - **File Operations** (4 tools)
   - [`list_files`](docs/tool-reference.md#list_files) - List files uploaded to a project's Files section

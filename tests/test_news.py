@@ -4,8 +4,9 @@ Every news write answers 204 with no body, so python-redmine reconstructs
 the result of a create by re-reading, scoped to the project that was
 posted to. And two failures arrive as bare HTTP codes that mean something
 specific here: 403 for a project with the news module off, 404 on create
-for a Redmine older than 5.1. All three are places where a tool can look
-successful, or fail for the wrong stated reason, so all three are pinned.
+for a Redmine without the write endpoint. All three are places where a tool
+can look successful, or fail for the wrong stated reason, so all three are
+pinned.
 """
 
 from types import SimpleNamespace
@@ -555,12 +556,12 @@ async def test_a_single_read_names_the_module_when_the_item_still_reads():
 
 
 @pytest.mark.asyncio
-async def test_a_404_on_create_with_a_readable_project_names_the_version():
+async def test_a_404_on_create_with_a_readable_project_names_the_endpoint():
     """python-redmine raises no version error, so the 404 has to be read.
 
     ``News.redmine_version`` is (1, 1, 0) for the whole resource, so a
-    pre-5.1 server just 404s the POST. If the project reads back fine, the
-    route is what is missing -- not the project.
+    server without the write endpoint just 404s the POST. If the project
+    reads back fine, the endpoint is what is missing -- not the project.
     """
 
     def _create(**kw):
@@ -575,11 +576,15 @@ async def test_a_404_on_create_with_a_readable_project_names_the_version():
             action="create", project_id=1093, title="t", description="d"
         )
     assert result["code"] == "NEWS_WRITE_UNSUPPORTED"
-    assert "5.1" in result["error"]
+    assert "endpoint" in result["error"]
+    # The floor belongs in the hint, not in the diagnosis: a 404 here says
+    # the endpoint is absent, which no core version explains on its own.
+    assert "4.1" in result["hint"]
+    assert "4.1" not in result["error"]
 
 
 @pytest.mark.asyncio
-async def test_a_404_with_an_unreadable_project_is_not_blamed_on_the_version():
+async def test_a_404_with_an_unreadable_project_is_not_blamed_on_the_endpoint():
     def _create(**kw):
         raise ResourceNotFoundError
 

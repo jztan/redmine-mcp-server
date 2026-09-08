@@ -15,13 +15,13 @@ from .._decorators import ActionMode, action_dispatch
 from .._errors import _handle_redmine_error
 from .._offload import in_thread, offloaded
 from .._serialization import (
+    _custom_fields_to_list,
     _enabled_module_names,
     _named_ref,
     _pagination_info,
     _payload_attr,
     _safe_isoformat,
     wrap_insecure_content,
-    _custom_fields_to_list,
 )
 from .._validation import (
     _is_positive_int,

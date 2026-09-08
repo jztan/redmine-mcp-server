@@ -2,7 +2,7 @@
 
 Redmine news are project-level announcements -- a title, a one-line summary,
 a body, and optionally comments and attachments. Reading has been in the
-REST API since Redmine 1.1; writing arrived in 5.1.
+REST API since Redmine 1.1; writing arrived in 4.1.
 
 Two shapes of this API need care, and both are handled here rather than
 passed on to the caller:
@@ -19,10 +19,13 @@ passed on to the caller:
 - **Two failures arrive as plain HTTP codes** that mean something specific
   here, and both are ambiguous until something is read back.
   ``News.redmine_version`` is ``(1, 1, 0)`` for the whole resource, so
-  python-redmine raises no version error on a pre-5.1 server: the POST
-  simply 404s, which a caller would read as a missing project. And a 403 is
-  either the project's news module being off -- Redmine checks the module
-  before any permission, so an administrator is refused too -- or an
+  python-redmine raises no version error where the write endpoint is
+  absent: the POST simply 404s, which a caller would read as a missing
+  project. Core Redmine has exposed create, update and delete since 4.1,
+  but distributions vary, so the message names the endpoint rather than a
+  core version. And a 403 is either the project's news module being off --
+  Redmine checks the module before any permission, so an administrator is
+  refused too -- or an
   ordinary permission denial. The module is read back and only claimed when
   it really is off, because telling an operator to switch on something that
   is already on sends them looking in the wrong place. The codes are
@@ -144,11 +147,13 @@ def _classify_news_failure(
     be read, nothing is claimed.
 
     A 404 is ambiguous on a write to ``/projects/{id}/news.json``: either the
-    project is gone, or the route is (writing news is Redmine 5.1 and newer,
-    and ``News.redmine_version`` is ``(1, 1, 0)`` for the whole resource, so
-    python-redmine raises no version error of its own). If the project still
-    reads back, the route is what is missing. Reads are unaffected -- they
-    work on every version -- so that branch is for writes only.
+    project is gone, or the endpoint is (``News.redmine_version`` is
+    ``(1, 1, 0)`` for the whole resource, so python-redmine raises no version
+    error of its own). If the project still reads back, the endpoint is what
+    is missing. Core Redmine has exposed it since 4.1 and distributions vary,
+    so the message names the endpoint rather than a version. Reads are
+    unaffected -- they work on every version -- so that branch is for writes
+    only.
 
     Returns ``None`` when the failure is neither, leaving it to the shared
     error handler.
@@ -186,13 +191,14 @@ def _classify_news_failure(
             return None  # The project is what is missing; let NOT_FOUND stand.
         return {
             "error": (
-                "This Redmine does not offer news writing over the REST API. "
-                "It arrived in Redmine 5.1."
+                "This Redmine does not expose the news write endpoint over "
+                "the REST API."
             ),
             "hint": (
                 "The project exists and is readable, so the missing piece is "
-                "the endpoint. Reading news works on any version; create and "
-                "update need 5.1 or newer."
+                "the endpoint, not the project. Core Redmine has exposed it "
+                "since 4.1, but distributions vary. Reading news is "
+                "unaffected."
             ),
             "code": "NEWS_WRITE_UNSUPPORTED",
             "upstream_status": 404,
@@ -460,9 +466,9 @@ async def manage_redmine_news(
 ) -> Dict[str, Any]:
     """Create or update a Redmine news item (project announcement).
 
-    Needs Redmine 5.1 or newer: writing news over the REST API did not
-    exist before that, and an older server answers with an error rather
-    than silently doing nothing.
+    Needs a Redmine that exposes the news write endpoint -- core Redmine
+    has since 4.1. A server without it answers with an error rather than
+    silently doing nothing.
 
     Deleting is a separate tool, ``delete_redmine_news``, so a deployment
     can offer announcements without offering their destruction.
@@ -507,7 +513,8 @@ def delete_redmine_news(
     refuses unless ``confirm_delete=True``, and the refusal carries a
     preview of what would be lost.
 
-    Needs Redmine 5.1 or newer. For the other operations use
+    Needs a Redmine that exposes the news write endpoints, as core
+    Redmine has since 4.1. For the other operations use
     ``manage_redmine_news`` (create, update), ``get_redmine_news`` or
     ``list_redmine_news``.
 

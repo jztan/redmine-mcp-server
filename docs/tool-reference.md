@@ -2186,8 +2186,8 @@ manage_redmine_wiki_page(
 
 Project announcements: release notes, maintenance windows, rollout notices.
 Reading has been in the REST API since Redmine 1.1; creating, updating and
-deleting arrived in 5.1, so `manage_redmine_news` and `delete_redmine_news`
-answer with an error on an older server rather than appearing to work.
+deleting arrived in 4.1, so `manage_redmine_news` and `delete_redmine_news`
+answer with an error on a server without them rather than appearing to work.
 
 Three properties of this API are worth knowing, because each is a place
 where a call can look successful, or fail for the wrong stated reason:
@@ -2212,11 +2212,13 @@ where a call can look successful, or fail for the wrong stated reason:
   as on a `get_redmine_news` whose item is itself refused, nothing is
   claimed.
 - **A 404 on create can mean the endpoint is missing, not the project.**
-  Writing news is Redmine 5.1 and newer, and `News.redmine_version` is
-  `(1, 1, 0)` for the whole resource, so python-redmine raises no version
-  error of its own. When the create 404s but the project still reads back,
-  the tools return `NEWS_WRITE_UNSUPPORTED` rather than letting the caller
-  hunt for a project that is right there.
+  `News.redmine_version` is `(1, 1, 0)` for the whole resource, so
+  python-redmine raises no version error of its own. When the create 404s but
+  the project still reads back, the tools return `NEWS_WRITE_UNSUPPORTED`
+  rather than letting the caller hunt for a project that is right there. The
+  message names the endpoint, not a version: core Redmine has routed create,
+  update and delete since 4.0 and accepted API auth on them since 4.1, so a
+  404 here says something about the distribution.
 
 The list endpoint takes `project_id` as a query parameter rather than in the
 path, because python-redmine's `News.query_filter` is `/news.json` with no
@@ -2258,7 +2260,8 @@ Requires the `view_news` permission.
 
 ### manage_redmine_news
 
-Creates or updates a news item. Needs Redmine 5.1 or newer.
+Creates or updates a news item. Needs a Redmine that exposes the news
+write endpoint, as core Redmine has since 4.1.
 
 | Parameter | Type | Description |
 |---|---|---|
