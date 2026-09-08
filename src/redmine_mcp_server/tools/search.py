@@ -1,4 +1,4 @@
-"""Global search tool spanning issues, projects, wiki pages, news, etc."""
+"""Global search tool spanning issues, wiki pages and news."""
 
 from typing import Annotated, Any, Dict, List, Optional
 
@@ -100,12 +100,12 @@ async def search_entire_redmine(
     offset: Annotated[int, Field(ge=0)] = 0,
 ) -> Dict[str, Any]:
     """
-    Search for issues and wiki pages across the Redmine instance.
+    Search for issues, wiki pages and news across the Redmine instance.
 
     Args:
         query: Text to search for. Case sensitivity controlled by server DB config.
-        resources: Filter by resource types. Allowed: ['issues', 'wiki_pages']
-                   Default: None (searches both issues and wiki_pages)
+        resources: Filter by resource types. Allowed: ['issues',
+                   'wiki_pages', 'news']. Default: None (searches all three)
         limit: Maximum number of results to return (max 100)
         offset: Pagination offset for server-side pagination
 
@@ -114,7 +114,8 @@ async def search_entire_redmine(
         On error, returns {"error": "message"}.
 
     Note:
-        v1.4 Scope Limitation: Only 'issues' and 'wiki_pages' are supported.
+        Only 'issues', 'wiki_pages' and 'news' are supported; Redmine
+        searches more resource types than these.
         Requires Redmine 3.3.0 or higher for search API support.
     """
 
@@ -124,7 +125,7 @@ async def search_entire_redmine(
         nonlocal limit, resources
         try:
             # Validate and enforce scope limitation (v1.4)
-            allowed_types = ["issues", "wiki_pages"]
+            allowed_types = ["issues", "wiki_pages", "news"]
             if resources:
                 resources = [r for r in resources if r in allowed_types]
                 if not resources:

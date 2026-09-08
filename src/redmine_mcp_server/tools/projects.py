@@ -16,6 +16,7 @@ from .._errors import _handle_redmine_error
 from .._offload import in_thread, offloaded
 from .._serialization import (
     _custom_fields_to_list,
+    _enabled_module_names,
     _named_ref,
     _pagination_info,
     _payload_attr,
@@ -1071,26 +1072,7 @@ def get_project_modules(
         project = _get_redmine_client().project.get(
             project_id, include="enabled_modules"
         )
-        raw_modules = getattr(project, "enabled_modules", None) or []
-
-        module_names: List[str] = []
-        try:
-            iterator = iter(raw_modules)
-        except TypeError:
-            iterator = iter(())
-
-        for mod in iterator:
-            # python-redmine's Project.encode() converts enabled_modules
-            # to a plain list of strings. Older versions / raw HTTP
-            # responses may return dicts or resource-like objects.
-            if isinstance(mod, str):
-                name = mod
-            elif isinstance(mod, dict):
-                name = mod.get("name")
-            else:
-                name = getattr(mod, "name", None)
-            if name:
-                module_names.append(str(name))
+        module_names = _enabled_module_names(project)
 
         return {
             "project_id": getattr(project, "id", None),

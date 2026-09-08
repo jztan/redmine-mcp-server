@@ -59,6 +59,7 @@ READ_SCOPES: list[str] = [
     "view_documents",  # manage_document(action=list|get)
     "view_files",  # get_redmine_attachment, list_files
     "view_wiki_pages",  # manage_redmine_wiki_page(action=get|list)
+    "view_news",  # list_redmine_news, get_redmine_news
     "view_time_entries",  # list_time_entries, list_time_entry_activities
     "view_private_notes",  # get_private_notes
     "view_issue_watchers",  # get_redmine_issue(include_watchers=True)
@@ -88,6 +89,8 @@ WRITE_SCOPES: list[str] = [
     "edit_documents",  # manage_document(action=update)
     "delete_documents",  # advertised for parity; manage_document has no
     # delete action yet
+    "manage_news",  # manage_redmine_news, delete_redmine_news -- Redmine has
+    # no separate create/edit/delete split for news
     "manage_files",  # upload_file, delete_file
     "manage_members",  # manage_project_member
 ]
@@ -418,6 +421,17 @@ TOOL_SCOPES: Dict[str, ToolScopeEntry] = {
         "create": frozenset({"log_time"}),
         "update": frozenset({"edit_time_entries"}),
     },
+    # --- news ---
+    "list_redmine_news": frozenset({"view_news"}),
+    "get_redmine_news": frozenset({"view_news"}),
+    # Redmine gates every news mutation behind the single manage_news
+    # permission, so the per-action split carries the same scope twice
+    # rather than pretending there is a finer one.
+    "manage_redmine_news": {
+        "create": frozenset({"manage_news"}),
+        "update": frozenset({"manage_news"}),
+    },
+    "delete_redmine_news": frozenset({"manage_news"}),
     # --- checklists (RedmineUP plugin; vendor scopes are not advertised,
     # so gate on the host-issue permissions; the plugin's own
     # view_checklists/edit_checklists checks remain with Redmine) ---

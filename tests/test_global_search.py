@@ -217,13 +217,13 @@ class TestSearchEntireRedmine:
 
         # Only valid types should be passed
         call_kwargs = mock_redmine.search.call_args[1]
-        assert set(call_kwargs.get("resources", [])) == {"issues", "wiki_pages"}
+        assert set(call_kwargs.get("resources", [])) == {"issues", "wiki_pages", "news"}
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.redmine")
     @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_search_default_resources(self, mock_cleanup, mock_redmine):
-        """Test that default search includes both issues and wiki_pages."""
+        """Test that default search includes issues, wiki_pages and news."""
         from redmine_mcp_server.tools.search import search_entire_redmine
 
         mock_redmine.search.return_value = {}
@@ -231,7 +231,7 @@ class TestSearchEntireRedmine:
         await search_entire_redmine(query="test")
 
         call_kwargs = mock_redmine.search.call_args[1]
-        assert set(call_kwargs.get("resources", [])) == {"issues", "wiki_pages"}
+        assert set(call_kwargs.get("resources", [])) == {"issues", "wiki_pages", "news"}
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.redmine")
