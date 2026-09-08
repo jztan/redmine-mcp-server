@@ -2,6 +2,8 @@
 
 from typing import Any, Dict, List, Literal, Optional, Union
 
+from redminelib.exceptions import ValidationError
+
 from .._client import _get_redmine_client
 from .._decorators import ActionMode, action_dispatch
 from .._errors import _handle_redmine_error
@@ -54,6 +56,15 @@ def _wiki_page_to_dict(
     if hasattr(wiki_page, "author"):
         result["author"] = _named_ref(wiki_page.author)
 
+    # Add the parent page. python-redmine wraps it as a WikiPage
+    # resource exposing only `title`: its `id` answers 0 and its `name`
+    # answers "", so _named_ref would mint a fabricated
+    # {"id": 0, "name": ""} rather than fail. Read the title directly
+    # and use the same `parent_title` key the list action returns.
+    parent = getattr(wiki_page, "parent", None)
+    if parent is not None:
+        result["parent_title"] = getattr(parent, "title", None)
+
     # Add project info. Only Redmine 7.0+ returns this field (Redmine
     # #43569); on older versions the hasattr guard omits the key. It
     # arrives as a plain dict rather than a resource -- see _named_ref.
@@ -70,6 +81,34 @@ def _wiki_page_to_dict(
         ]
 
     return result
+
+
+def _blank_validation_parent_hint(
+    exc: Exception, parent_title: Optional[str]
+) -> Optional[Dict[str, str]]:
+    """Explain a reasonless 422 when a parent page was requested.
+
+    Redmine rejects an unknown ``parent_title`` with 422 and an empty
+    ``errors`` array (verified on 6.1.1 and 7.0.0), which python-redmine
+    raises as ``ValidationError("")``. That reaches the caller as
+    "Validation failed: " with nothing after it. Naming the most likely
+    cause is a guess, so the message says so rather than asserting it.
+
+    Returns ``None`` when the error does not fit that shape, leaving
+    normal error handling in charge.
+    """
+    if not parent_title:
+        return None
+    if not isinstance(exc, ValidationError) or str(exc).strip():
+        return None
+    return {
+        "error": (
+            "Redmine rejected the wiki page and returned no reason. The "
+            f"most likely cause is parent_title '{parent_title}': it must "
+            "name a wiki page that already exists in this project. Create "
+            "the parent first, or omit parent_title."
+        )
+    }
 
 
 def _require_wiki_page_title(action: str, wiki_page_title: Any) -> Optional[str]:
@@ -145,6 +184,7 @@ async def _create_wiki_page_action(
     wiki_page_title: Optional[str] = None,
     text: Optional[str] = None,
     comments: Optional[str] = None,
+    parent_title: Optional[str] = None,
     uploads: Optional[List[Dict[str, Any]]] = None,
     **_: Any,
 ) -> Dict[str, Any]:
@@ -166,6 +206,11 @@ async def _create_wiki_page_action(
         "text": text,
         "comments": comments if comments else None,
     }
+    # Only send parent_title when the caller named one. Omitting the key
+    # leaves an existing parent untouched; "" moves the page to the wiki
+    # root. Both verified against Redmine 6.1 and 7.0.
+    if parent_title is not None:
+        create_kwargs["parent_title"] = parent_title
     if upload_descriptors:
         create_kwargs["uploads"] = upload_descriptors
 
@@ -174,6 +219,9 @@ async def _create_wiki_page_action(
             wiki_page = _get_redmine_client().wiki_page.create(**create_kwargs)
             return _wiki_page_to_dict(wiki_page)
         except Exception as e:
+            hint = _blank_validation_parent_hint(e, parent_title)
+            if hint is not None:
+                return hint
             return _handle_redmine_error(
                 e,
                 f"creating wiki page '{wiki_page_title}' in project {project_id}",
@@ -188,6 +236,7 @@ async def _update_wiki_page_action(
     wiki_page_title: Optional[str] = None,
     text: Optional[str] = None,
     comments: Optional[str] = None,
+    parent_title: Optional[str] = None,
     uploads: Optional[List[Dict[str, Any]]] = None,
     **_: Any,
 ) -> Dict[str, Any]:
@@ -240,6 +289,11 @@ async def _update_wiki_page_action(
         "project_id": project_id,
         "comments": comments if comments else None,
     }
+    # Absent means "leave the hierarchy alone": Redmine keeps the current
+    # parent when the key is not sent, so a text-only or attachment-only
+    # update can never orphan a child page. "" moves it to the root.
+    if parent_title is not None:
+        update_kwargs["parent_title"] = parent_title
     if upload_descriptors:
         update_kwargs["uploads"] = upload_descriptors
 
@@ -258,6 +312,9 @@ async def _update_wiki_page_action(
             wiki_page = client.wiki_page.get(wiki_page_title, project_id=project_id)
             return _wiki_page_to_dict(wiki_page)
         except Exception as e:
+            hint = _blank_validation_parent_hint(e, parent_title)
+            if hint is not None:
+                return hint
             return _handle_redmine_error(
                 e,
                 f"updating wiki page '{wiki_page_title}' in project {project_id}",
@@ -372,6 +429,7 @@ async def manage_redmine_wiki_page(
     include_attachments: bool = True,
     text: Optional[str] = None,
     comments: Optional[str] = None,
+    parent_title: Optional[str] = None,
     new_title: Optional[str] = None,
     redirect_existing_links: bool = True,
     uploads: Optional[List[Dict[str, Any]]] = None,
@@ -393,6 +451,13 @@ async def manage_redmine_wiki_page(
             update does not have to resend the body.
         comments: Change log comment. Optional for ``create`` and
             ``update``.
+        parent_title: Title of the page this page sits under, for
+            ``create`` and ``update``. Omit it to leave an existing
+            parent untouched; pass a title to file the page under it;
+            pass ``""`` to move the page back to the wiki root. Must
+            name a page that already exists in the same project. A
+            ``rename`` keeps the current parent on its own, so reparent
+            with ``update`` instead.
         new_title: New title for the page (required for ``rename``).
         redirect_existing_links: When ``True`` (default), the rename
             creates a redirect from ``wiki_page_title`` to ``new_title``.
@@ -411,7 +476,9 @@ async def manage_redmine_wiki_page(
 
     Returns:
         ``list``: list of page metadata dicts (no body text).
-        ``get`` / ``create`` / ``update``: wiki page dict.
+        ``get`` / ``create`` / ``update``: wiki page dict, carrying
+        ``parent_title`` when the page has a parent and omitting the
+        key when it sits at the wiki root.
         ``delete``: ``{"success": True, "title": ..., "message": ...}``.
         ``rename``: ``{"success": True, ...}`` with the renamed page's
         metadata to confirm the title change actually applied.

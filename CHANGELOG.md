@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- `manage_redmine_wiki_page` exposes the wiki page hierarchy. `get`, `create`
+  and `update` now report `parent_title` (the same key `list` already
+  returned), and `create` and `update` accept it, so pages can be filed under
+  a parent and moved between parents. Omitting the parameter leaves an
+  existing parent untouched and `""` moves a page back to the wiki root, so no
+  existing caller can orphan a page. An unknown parent makes Redmine answer
+  422 with an empty error list on both 6.1 and 7.0; that reasonless failure is
+  replaced with a message naming `parent_title` as the likely cause
+  ([#270](https://github.com/jztan/redmine-mcp-server/issues/270)).
 - News tools: `list_redmine_news`, `get_redmine_news`,
   `manage_redmine_news` (create, update) and `delete_redmine_news`. News was
   the last core Redmine resource with no coverage, and there was no
