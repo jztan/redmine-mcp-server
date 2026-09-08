@@ -100,6 +100,49 @@ class TestManageRedmineWikiPageCreate:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.redmine")
     @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    async def test_create_wiki_page_under_parent(
+        self, mock_cleanup, mock_redmine, mock_wiki_page
+    ):
+        """parent_title files the new page under an existing page (#270)."""
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
+
+        mock_redmine.wiki_page.create.return_value = mock_wiki_page
+
+        await manage_redmine_wiki_page(
+            action="create",
+            project_id="my-project",
+            wiki_page_title="New Page",
+            text="Content",
+            parent_title="Handbook",
+        )
+
+        kwargs = mock_redmine.wiki_page.create.call_args.kwargs
+        assert kwargs["parent_title"] == "Handbook"
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    async def test_create_wiki_page_omits_parent_title_when_not_given(
+        self, mock_cleanup, mock_redmine, mock_wiki_page
+    ):
+        """No parent_title argument means the key is never sent."""
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
+
+        mock_redmine.wiki_page.create.return_value = mock_wiki_page
+
+        await manage_redmine_wiki_page(
+            action="create",
+            project_id="my-project",
+            wiki_page_title="New Page",
+            text="Content",
+        )
+
+        kwargs = mock_redmine.wiki_page.create.call_args.kwargs
+        assert "parent_title" not in kwargs
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_create_wiki_page_forbidden(self, mock_cleanup, mock_redmine):
         """Test handling of permission denied error."""
         from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
@@ -138,6 +181,54 @@ class TestManageRedmineWikiPageCreate:
         )
 
         assert "error" in result
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    async def test_create_with_unknown_parent_explains_itself(
+        self, mock_cleanup, mock_redmine
+    ):
+        """A bad parent_title yields a 422 carrying no reason at all.
+
+        Redmine 6.1 and 7.0 both answer {"errors": []}, which reaches us
+        as ValidationError(""). Left alone the tool would report a blank
+        error, so name the likely cause. See #270.
+        """
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
+
+        mock_redmine.wiki_page.create.side_effect = ValidationError("")
+
+        result = await manage_redmine_wiki_page(
+            action="create",
+            project_id="my-project",
+            wiki_page_title="New Page",
+            text="Content",
+            parent_title="NoSuchPage",
+        )
+
+        assert "NoSuchPage" in result["error"]
+        assert "parent_title" in result["error"]
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    async def test_blank_validation_error_unchanged_without_parent_title(
+        self, mock_cleanup, mock_redmine
+    ):
+        """The parent hint is only offered when a parent was requested."""
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
+
+        mock_redmine.wiki_page.create.side_effect = ValidationError("")
+
+        result = await manage_redmine_wiki_page(
+            action="create",
+            project_id="my-project",
+            wiki_page_title="New Page",
+            text="Content",
+        )
+
+        assert "error" in result
+        assert "parent_title" not in result["error"]
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.redmine")
@@ -241,6 +332,75 @@ class TestManageRedmineWikiPageUpdate:
         )
 
         assert "error" not in result
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    async def test_update_wiki_page_reparents(
+        self, mock_cleanup, mock_redmine, mock_wiki_page
+    ):
+        """parent_title moves an existing page under another page (#270)."""
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
+
+        mock_redmine.wiki_page.get.return_value = mock_wiki_page
+
+        await manage_redmine_wiki_page(
+            action="update",
+            project_id="my-project",
+            wiki_page_title="Existing Page",
+            text="Content",
+            parent_title="Handbook",
+        )
+
+        kwargs = mock_redmine.wiki_page.update.call_args.kwargs
+        assert kwargs["parent_title"] == "Handbook"
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    async def test_update_wiki_page_clears_parent_with_empty_string(
+        self, mock_cleanup, mock_redmine, mock_wiki_page
+    ):
+        """An empty parent_title moves the page back to the wiki root."""
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
+
+        mock_redmine.wiki_page.get.return_value = mock_wiki_page
+
+        await manage_redmine_wiki_page(
+            action="update",
+            project_id="my-project",
+            wiki_page_title="Existing Page",
+            text="Content",
+            parent_title="",
+        )
+
+        kwargs = mock_redmine.wiki_page.update.call_args.kwargs
+        assert kwargs["parent_title"] == ""
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    async def test_update_wiki_page_leaves_parent_untouched(
+        self, mock_cleanup, mock_redmine, mock_wiki_page
+    ):
+        """A text-only update must not orphan a page that has a parent.
+
+        Redmine preserves the parent when the key is absent, so the key
+        must not be sent at all rather than sent as None.
+        """
+        from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page
+
+        mock_redmine.wiki_page.get.return_value = mock_wiki_page
+
+        await manage_redmine_wiki_page(
+            action="update",
+            project_id="my-project",
+            wiki_page_title="Existing Page",
+            text="Content",
+        )
+
+        kwargs = mock_redmine.wiki_page.update.call_args.kwargs
+        assert "parent_title" not in kwargs
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.redmine")

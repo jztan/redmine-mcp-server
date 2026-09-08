@@ -106,6 +106,27 @@ class TestManageRedmineWikiPageRename:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.redmine")
+    async def test_rename_keeps_the_page_under_its_parent(self, mock_redmine):
+        """Renaming a child page must not move it to the wiki root.
+
+        Redmine leaves the parent alone when a wiki PUT omits
+        parent_title, verified against 6.1.1 and 7.0.0. The rename path
+        relies on that, so pin it: sending the key here (even as None)
+        would silently reparent every renamed page. See #270.
+        """
+        existing = _make_wiki_page("Old", parent_title="Handbook", text="Body")
+        renamed = _make_wiki_page("New", parent_title="Handbook", text="Body")
+        mock_redmine.wiki_page.get.side_effect = [existing, renamed]
+
+        result = await manage_redmine_wiki_page(
+            action="rename", project_id="proj", wiki_page_title="Old", new_title="New"
+        )
+
+        assert "parent_title" not in mock_redmine.wiki_page.update.call_args.kwargs
+        assert result["parent_title"] == "Handbook"
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
     async def test_rename_without_redirect(self, mock_redmine):
         existing = _make_wiki_page("Old", text="Body")
         renamed = _make_wiki_page("New", text="Body")
