@@ -549,8 +549,8 @@ async def manage_deal(
         contact_id: ``create`` only. The contact the deal belongs to.
         price: ``create`` only. Send an unformatted string such as
             ``"1500.5"``.
-        currency, due_date: ``create`` only. The deal's currency code, and
-            its due date as ``YYYY-MM-DD``.
+        currency: ``create`` only. The deal's currency code, e.g. ``"USD"``.
+        due_date: ``create`` only. The deal's due date as ``YYYY-MM-DD``.
         fields: ``create`` and ``update`` only. Deal attributes to write.
             On ``update`` it is the only way to change a deal, so it is
             required and must be non-empty.
@@ -987,7 +987,8 @@ async def add_deal_product(
         quantity: Positive number (default 1 on the plugin side).
         price: Unit price, as a string such as ``"100.0"`` or a number.
         description: Line text; required when no ``product_id``.
-        tax, discount: Percentages, 0 to 100.
+        tax: Tax rate on the line, as a percentage from 0 to 100.
+        discount: Discount on the line, as a percentage from 0 to 100.
 
     Returns:
         ``{"success": true, "deal_id", "line"}`` with the line as sent, or

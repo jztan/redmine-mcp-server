@@ -71,6 +71,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   build; no behaviour change for users.
 
 ### Fixed
+- `manage_product` reaches `tools/list` with its parameters described. All 13
+  of them arrived as bare types behind a three-line tool description, so the
+  split that matters most was invisible: `create` reads the flat parameters
+  and `update` reads only `fields`, which makes the natural call from the
+  schema alone (`action="update", product_id=42, price=9.99`) fail with
+  `fields must be a non-empty dict`. The docstring now says which actions each
+  parameter belongs to, that `status_id` is 1 or 2 and nothing else, that
+  `limit` is clamped at 100, and which keys `fields` accepts and silently
+  drops. `manage_deal` and `add_deal_product` had already described their
+  parameters but paired two of them per line (`currency, due_date` and
+  `tax, discount`), which the docstring parser does not split, so those four
+  reached the schema empty as well; they are now one entry each
+  ([#277](https://github.com/jztan/redmine-mcp-server/issues/277)).
 - `uploads` is documented where a client can read it. `create_redmine_issue`
   and `update_redmine_issue` now describe the parameter in their docstrings,
   so it reaches `tools/list` with its three content sources named instead of
