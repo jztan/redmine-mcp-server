@@ -281,9 +281,49 @@ async def manage_product(
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """RedmineUP Products plugin tool. Combined CRUD-by-action.
 
-    Actions: ``list``, ``get``, ``create``, ``update``.
-    Requires ``REDMINE_PRODUCTS_ENABLED=true`` and the RedmineUP Products
-    plugin.
+    Actions: ``list``, ``get``, ``create``, ``update``. The plugin exposes no
+    delete endpoint, so there is no ``delete`` action. Requires
+    ``REDMINE_PRODUCTS_ENABLED=true`` and the RedmineUP Products plugin.
+
+    One flat signature serves every action, so most parameters apply to some
+    actions and are ignored by the rest. The two write actions do not take
+    their payload the same way: ``create`` reads the flat parameters below,
+    while ``update`` reads ``fields`` and ignores every flat one.
+
+    Args:
+        action: Which operation to run.
+        project_id: On ``list``, restrict to products in this project; omit
+            for every product the caller can see. On ``create``, the project
+            to file the new product under (optional). Name or numeric id.
+        limit: ``list`` only. Products per call, capped at 100 by Redmine;
+            a larger value is clamped, not rejected.
+        product_id: The product to act on. Required by ``get`` and
+            ``update``, ignored by the rest.
+        name: ``create`` only -- the new product's name (required).
+        status_id: ``create`` only. ``1`` (Active, the default) or ``2``
+            (Inactive); any other value is rejected. To change the status of
+            an existing product, pass ``status_id`` inside ``fields`` on
+            ``update``.
+        description: ``create`` only. Free text.
+        price: ``create`` only. Unit price as a number, e.g. ``49.99``.
+        currency: ``create`` only. Currency code, e.g. ``"USD"``.
+        code: ``create`` only. The product's catalogue code / SKU.
+        category_id: ``create`` only. Product category, as a positive
+            integer id.
+        tag_list: ``create`` only. Comma-separated tag names.
+        custom_fields: ``create`` only. List of ``{"id": N, "value": ...}``
+            dicts.
+        fields: ``update`` only, and the only way to change a product, so it
+            is required there and must be non-empty. Allowed keys: ``name``,
+            ``description``, ``price``, ``currency``, ``status_id``,
+            ``code``, ``project_id``, ``category_id``, ``tag_list``,
+            ``custom_fields``. Any other key is dropped without an error, so
+            check ``updated_fields`` in the response for what was written.
+
+    Returns:
+        ``list`` a list of product dicts, ``get`` / ``create`` one product
+        dict, ``update`` ``{"success": true, "product_id", "updated_fields"}``,
+        and ``{"error": ...}`` on failure.
     """
     if not _is_products_enabled():
         return dict(_PRODUCTS_DISABLED_ERROR)
