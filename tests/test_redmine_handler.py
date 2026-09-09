@@ -1690,8 +1690,8 @@ class TestSearchEntireRedmineValidation:
         # Should have called search with default allowed types
         mock_redmine.search.assert_called_once()
         call_args = mock_redmine.search.call_args
-        # Resources should be the defaults: ["issues", "wiki_pages"]
-        assert set(call_args[1]["resources"]) == {"issues", "wiki_pages"}
+        # Resources should be the defaults
+        assert set(call_args[1]["resources"]) == {"issues", "wiki_pages", "news"}
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.redmine")
@@ -1729,19 +1729,19 @@ class TestSearchEntireRedmineValidation:
             search_entire_redmine,
         )  # Return results with an unknown type that's not in allowed_types
 
-        mock_news = Mock()
-        mock_news.id = 1
-        mock_news.title = "News Item"
+        mock_project = Mock()
+        mock_project.id = 1
+        mock_project.name = "Some Project"
 
         mock_redmine.search.return_value = {
-            "news": [mock_news],  # Not in allowed_types
+            # Redmine searches projects; this server does not offer them.
+            "projects": [mock_project],
             "issues": [],
         }
 
         result = await search_entire_redmine("test query")
 
-        # "news" should not be in results_by_type
-        assert "news" not in result["results_by_type"]
+        assert "projects" not in result["results_by_type"]
         assert result["total_count"] == 0
 
 

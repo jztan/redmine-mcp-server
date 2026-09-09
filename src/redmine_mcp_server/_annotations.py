@@ -98,6 +98,13 @@ TOOL_KINDS: Dict[str, ToolKind] = {
     "list_time_entries": ToolKind.READ,
     "list_time_entry_activities": ToolKind.READ,
     "manage_time_entry": ToolKind.WRITE_DESTRUCTIVE,
+    # --- news ---
+    "list_redmine_news": ToolKind.READ,
+    "get_redmine_news": ToolKind.READ,
+    # create/update: update overwrites what is there, the same reason
+    # manage_time_entry is not additive.
+    "manage_redmine_news": ToolKind.WRITE_DESTRUCTIVE,
+    "delete_redmine_news": ToolKind.WRITE_DESTRUCTIVE_IDEMPOTENT,
     "import_time_entries": ToolKind.WRITE_ADDITIVE,
     # --- files and attachments ---
     # READ: does not touch Redmine state. It writes an ephemeral file into

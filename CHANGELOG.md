@@ -17,6 +17,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   422 with an empty error list on both 6.1 and 7.0; that reasonless failure is
   replaced with a message naming `parent_title` as the likely cause
   ([#270](https://github.com/jztan/redmine-mcp-server/issues/270)).
+- News tools: `list_redmine_news`, `get_redmine_news`,
+  `manage_redmine_news` (create, update) and `delete_redmine_news`. News was
+  the last core Redmine resource with no coverage, and there was no
+  workaround either -- `search_entire_redmine` could not reach it. Reading
+  works on any Redmine; writing needs 4.1, where the REST API gained it.
+  Deleting is a separate tool, like `delete_redmine_issue` and `delete_file`,
+  so a deployment restricting its tools can offer announcements without
+  offering their destruction. Comments come back read-only, because Redmine
+  has no endpoint for adding one.
+  Three failure shapes get names instead of being passed on: a create whose
+  204-with-no-body read-back does not match the title that was sent reports
+  `CREATE_UNCONFIRMED` rather than a neighbour's record; a 403 reports
+  `NEWS_MODULE_DISABLED` when reading the project's modules back shows the
+  news module really is off -- Redmine checks it before any permission and
+  refuses an administrator too -- while an ordinary permission denial keeps
+  the plain error; and a 404 on create where the project still reads back
+  reports `NEWS_WRITE_UNSUPPORTED`, because `News.redmine_version` is
+  `(1, 1, 0)` for the whole resource and python-redmine raises no version
+  error of its own. That message names the endpoint rather than a core
+  version, since distributions vary in what they expose.
+  ([#269](https://github.com/jztan/redmine-mcp-server/issues/269))
+- `search_entire_redmine` now searches news alongside issues and wiki pages,
+  which the module docstring already claimed.
 - Issue serializers pass through top-level keys the standard Redmine API does
   not define, under `unmapped_fields`. Distributions and plugins add their own
   keys to the issue JSON (Easy Redmine sends `easy_sprint` and
@@ -92,8 +115,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   this class of bug has now shipped three times.
 
 ### Contributors
-- @andilem reported that `uploads` never reaches the tool schema, so an agent
-  attaching a file follows `file_path` into a wall no configuration can open
+- @andilem proposed and implemented the news tools
+  ([#269](https://github.com/jztan/redmine-mcp-server/issues/269)), reported that
+  `uploads` never reaches the tool schema, so an agent attaching a file follows
+  `file_path` into a wall no configuration can open
   ([#275](https://github.com/jztan/redmine-mcp-server/issues/275)), and
   documented the parameter on the issue tools, the wiki tool and the
   upload-roots error, verified against a Docker deployment behind HTTP

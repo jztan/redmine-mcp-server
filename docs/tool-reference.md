@@ -2182,6 +2182,128 @@ manage_redmine_wiki_page(
 
 ---
 
+## News
+
+Project announcements: release notes, maintenance windows, rollout notices.
+Reading has been in the REST API since Redmine 1.1; creating, updating and
+deleting arrived in 4.1, so `manage_redmine_news` and `delete_redmine_news`
+answer with an error on a server without them rather than appearing to work.
+
+Three properties of this API are worth knowing, because each is a place
+where a call can look successful, or fail for the wrong stated reason:
+
+- **Every write comes back without a body.** Redmine answers create, update
+  and delete with 204. python-redmine compensates on create by re-reading
+  `news.filter(**self.params)[0]`; those params carry the posted
+  `project_id`, so the read-back is scoped to that project and the remaining
+  race is someone else posting to the *same* project in the same instant.
+  Narrow, but real, so the read-back is verified against the title that was
+  sent; when it cannot be confirmed the tool returns `confirmed: false` with
+  a `CREATE_UNCONFIRMED` code and the values it sent, instead of a
+  neighbour's record with a plausible id.
+- **A 403 can mean the news module is off, or just a missing permission.**
+  Redmine checks the module before it checks any permission, so a module-less
+  project refuses an administrator too and reads like a missing right. The two
+  look identical on the wire, so the tools read the project's modules back and
+  return `NEWS_MODULE_DISABLED` only when the module really is off, pointing
+  at `get_project_modules`; an ordinary denial keeps the plain permission
+  error. This applies to the reads as well -- `list_redmine_news` with a
+  `project_id` hits the same gate. Where the project cannot be determined,
+  as on a `get_redmine_news` whose item is itself refused, nothing is
+  claimed.
+- **A 404 on create can mean the endpoint is missing, not the project.**
+  `News.redmine_version` is `(1, 1, 0)` for the whole resource, so
+  python-redmine raises no version error of its own. When the create 404s but
+  the project still reads back, the tools return `NEWS_WRITE_UNSUPPORTED`
+  rather than letting the caller hunt for a project that is right there. The
+  message names the endpoint, not a version: core Redmine has routed create,
+  update and delete since 4.0 and accepted API auth on them since 4.1, so a
+  404 here says something about the distribution.
+
+The list endpoint takes `project_id` as a query parameter rather than in the
+path, because python-redmine's `News.query_filter` is `/news.json` with no
+placeholder. Redmine narrows on it either way, and answers 404 for a project
+that does not exist -- which `list_redmine_news` reports as `NOT_FOUND`.
+
+### list_redmine_news
+
+Lists news, newest first, across every visible project or narrowed to one.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `project_id` | int \| str \| null | `null` | Restrict to one project (numeric id or identifier) |
+| `limit` | int | `25` | Maximum items, 1-100 |
+| `offset` | int | `0` | Items to skip |
+
+Returns a list of `{id, project, author, title, summary, description,
+created_on}`. Comments and attachments are not included -- the list endpoint
+does not serve them; use `get_redmine_news` for one item's full context.
+
+Requires the `view_news` permission.
+
+### get_redmine_news
+
+Reads one news item together with its discussion.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `news_id` | int | required | The news item |
+| `include_comments` | bool | `true` | Include the comment thread |
+| `include_attachments` | bool | `true` | Include attachment metadata |
+
+Both includes default to on: a news item without its comments is usually
+just three fields, and the discussion is where the follow-up lives. `comments`
+and `attachments` appear only when requested *and* non-empty. An unknown id
+returns `code: NOT_FOUND`.
+
+Requires the `view_news` permission.
+
+### manage_redmine_news
+
+Creates or updates a news item. Needs a Redmine that exposes the news
+write endpoint, as core Redmine has since 4.1.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `action` | `"create"` \| `"update"` | required |
+| `project_id` | int \| str | Required for `create`; news cannot move between projects, so `update` ignores it |
+| `news_id` | int | Required for `update` |
+| `title` | str | Required for `create`, optional for `update` (cannot be blank) |
+| `summary` | str | One-line teaser. Optional; an empty string clears it on `update` |
+| `description` | str | The body. Required for `create`, optional for `update` (cannot be blank) |
+
+Redmine validates the presence of both `title` and `description`, so a
+create missing either is refused here with the field named, rather than
+passed on for a 422.
+
+Requires the `manage_news` permission -- Redmine has no finer split for
+news, so create and update carry the same one. Blocked in read-only mode.
+
+### delete_redmine_news
+
+Hard-deletes a news item, and its comments and attachments with it.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `news_id` | int | required | The news item |
+| `confirm_delete` | bool | `false` | Must be `true` to actually delete |
+
+Without `confirm_delete` the tool refuses and returns
+`code: CONFIRMATION_REQUIRED` with an `impact` preview naming the title and
+counting the comments and attachments that would go with it. This mirrors
+`delete_redmine_issue` and `delete_file`.
+
+Redmine has no endpoint for adding a comment to a news item, so the comments
+in `get_redmine_news` are read-only.
+
+Being its own tool rather than an action of `manage_redmine_news` is
+deliberate: a deployment restricting the exposed tools (see
+[Tool Allow List](#tool-allow-list)) can then offer announcements without
+offering their destruction, which the actions inside a `manage_X` tool
+cannot express.
+
+Requires the `manage_news` permission. Blocked in read-only mode.
+
 ## File Operations
 
 ### `list_files`
