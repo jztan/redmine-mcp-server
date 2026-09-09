@@ -34,16 +34,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `estimated_hours` and `spent_hours` leave out.
 
 ### Changed
-- `create_redmine_issue` and `update_redmine_issue` document `uploads` in their
-  docstrings, so the parameter reaches the tool schema with the three content
-  sources named rather than as a bare array of objects. `docs/tool-reference.md`
-  described them all along, but a client reads the schema, not the repository:
-  an agent holding a file could not discover that `content_base64` is accepted
-  there, found the documented `file_path` on `upload_file` instead, and hit a
-  wall no configuration can open, because that path is read on the server's
-  filesystem rather than the caller's. The upload-roots error now says so and
-  names `content_base64` and `source_url` as the sources that need no roots at
-  all; `manage_redmine_wiki_page` already documented its own `uploads` this way.
 - Upgraded to FastMCP 4 and the MCP Python SDK v2: `fastmcp>=4.0.1,<5` (locked
   on 4.0.3) pulls in `mcp` 2.1.1 and the new `mcp-types` package
   ([#258](https://github.com/jztan/redmine-mcp-server/issues/258)). The
@@ -58,6 +48,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   build; no behaviour change for users.
 
 ### Fixed
+- `uploads` is documented where a client can read it. `create_redmine_issue`
+  and `update_redmine_issue` now describe the parameter in their docstrings,
+  so it reaches `tools/list` with its three content sources named instead of
+  as a bare array of objects. `docs/tool-reference.md` had described them all
+  along, but a client reads the schema, not the repository: an agent holding a
+  file could not discover `content_base64` there, followed the one documented
+  route it could find — `file_path` on `upload_file` — and hit a wall no
+  configuration can open, since that path is read where the server runs rather
+  than where the caller does. The upload-roots error now says which filesystem
+  it means and names the two sources that need no roots at all, `upload_file`
+  points at the issue tools for attaching to a ticket, and
+  `manage_redmine_wiki_page` carries the same caveat
+  ([#275](https://github.com/jztan/redmine-mcp-server/issues/275),
+  [#276](https://github.com/jztan/redmine-mcp-server/pull/276)).
 - `oauth-proxy` state now survives a container rebuild. `FASTMCP_HOME` was
   unset by default, so FastMCP resolved its store to the running user's
   platform data directory, which in the image is inside the container
@@ -88,6 +92,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   this class of bug has now shipped three times.
 
 ### Contributors
+- @andilem reported that `uploads` never reaches the tool schema, so an agent
+  attaching a file follows `file_path` into a wall no configuration can open
+  ([#275](https://github.com/jztan/redmine-mcp-server/issues/275)), and
+  documented the parameter on the issue tools, the wiki tool and the
+  upload-roots error, verified against a Docker deployment behind HTTP
+  ([#276](https://github.com/jztan/redmine-mcp-server/pull/276))
 - @gino8080 reported that the issue serializers drop the top-level keys
   distributions and plugins add
   ([#263](https://github.com/jztan/redmine-mcp-server/issues/263)) and

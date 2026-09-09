@@ -1715,24 +1715,29 @@ async def create_redmine_issue(
             string. Attachments do not go here -- see ``uploads``.
         extra_fields: Further fields, merged into ``fields``. Object or JSON
             object string.
-        uploads: Files to attach to the new issue, one object per file, at
-            most 10. Each names the file and carries exactly one content
-            source:
+        uploads: Files to attach to the new issue. Maximum 10 items, 50 MiB
+            each. Every item carries exactly one content source:
 
-            - ``filename`` (required): the name the attachment gets.
-            - ``content_base64``: the file's bytes, base64-encoded. **Use
-              this when you hold the file** -- it needs no configuration and
-              is the only source that works when this server runs somewhere
-              other than the caller. Capped at 50 MiB decoded.
+            - ``file_path``: a path on **this server's** filesystem, inside
+              ``ATTACHMENTS_DIR`` or a directory listed in
+              ``REDMINE_MCP_UPLOAD_FILE_ROOTS``. The bytes never pass
+              through the caller, so prefer it for a file that is already
+              there -- which, when the server runs on the caller's own
+              machine, includes the caller's own files. Where the server is
+              a different host, a caller-side path cannot be read here,
+              whatever the roots are set to.
             - ``source_url``: an HTTP(S) URL this server downloads from.
-              Cheaper than ``content_base64`` when the file is already
-              reachable at a URL, since the bytes never pass through the
-              caller.
-            - ``file_path``: a path **on this server's filesystem**,
-              restricted to ``REDMINE_MCP_UPLOAD_FILE_ROOTS``. Only for a
-              file that is already there -- a path on the caller's machine
-              cannot be read here, whatever the roots are set to.
-            - ``content_type`` and ``description``: optional, per file.
+              Also spares the caller the bytes, so prefer it whenever the
+              file is reachable at a URL.
+            - ``content_base64``: the file's bytes, base64-encoded. The way
+              to send a file the caller holds and the server cannot reach;
+              it needs no configuration, at the price of moving the file
+              through the conversation.
+            - ``filename``: the name the attachment gets. Required with
+              ``content_base64``; derived from the URL or
+              ``Content-Disposition`` for ``source_url`` and from the
+              basename for ``file_path``.
+            - ``content_type`` and ``description``: optional, per item.
     """
 
     if _is_read_only_mode():
@@ -1948,23 +1953,29 @@ async def update_redmine_issue(
         issue_id: The issue to update.
         fields: The fields to change, including ``notes`` for a comment.
             Attachments do not go here -- see ``uploads``.
-        uploads: Files to attach to the issue, one object per file, at most
-            10. Each names the file and carries exactly one content source:
+        uploads: Files to attach to the issue. Maximum 10 items, 50 MiB
+            each. Every item carries exactly one content source:
 
-            - ``filename`` (required): the name the attachment gets.
-            - ``content_base64``: the file's bytes, base64-encoded. **Use
-              this when you hold the file** -- it needs no configuration and
-              is the only source that works when this server runs somewhere
-              other than the caller. Capped at 50 MiB decoded.
+            - ``file_path``: a path on **this server's** filesystem, inside
+              ``ATTACHMENTS_DIR`` or a directory listed in
+              ``REDMINE_MCP_UPLOAD_FILE_ROOTS``. The bytes never pass
+              through the caller, so prefer it for a file that is already
+              there -- which, when the server runs on the caller's own
+              machine, includes the caller's own files. Where the server is
+              a different host, a caller-side path cannot be read here,
+              whatever the roots are set to.
             - ``source_url``: an HTTP(S) URL this server downloads from.
-              Cheaper than ``content_base64`` when the file is already
-              reachable at a URL, since the bytes never pass through the
-              caller.
-            - ``file_path``: a path **on this server's filesystem**,
-              restricted to ``REDMINE_MCP_UPLOAD_FILE_ROOTS``. Only for a
-              file that is already there -- a path on the caller's machine
-              cannot be read here, whatever the roots are set to.
-            - ``content_type`` and ``description``: optional, per file.
+              Also spares the caller the bytes, so prefer it whenever the
+              file is reachable at a URL.
+            - ``content_base64``: the file's bytes, base64-encoded. The way
+              to send a file the caller holds and the server cannot reach;
+              it needs no configuration, at the price of moving the file
+              through the conversation.
+            - ``filename``: the name the attachment gets. Required with
+              ``content_base64``; derived from the URL or
+              ``Content-Disposition`` for ``source_url`` and from the
+              basename for ``file_path``.
+            - ``content_type`` and ``description``: optional, per item.
 
             An attachment referenced from the description or a note as
             ``attachment:"name.png"`` is rendered inline by Redmine.
