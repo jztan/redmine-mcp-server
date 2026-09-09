@@ -91,6 +91,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tax, discount`), which the docstring parser does not split, so those four
   reached the schema empty as well; they are now one entry each
   ([#277](https://github.com/jztan/redmine-mcp-server/issues/277)).
+- Every tool parameter now reaches `tools/list` with a description, and a test
+  keeps it that way. `manage_contact`'s `action` was the last one missing one:
+  the docstring documented the other 27 parameters and skipped it. The new
+  check in `tests/test_tool_annotations.py` walks every registered tool with
+  all plugin families visible and fails on any parameter whose schema
+  description is empty. It carries no allowlist, since an exemption list is
+  where the next undocumented parameter would hide
+  ([#278](https://github.com/jztan/redmine-mcp-server/issues/278)).
 - `uploads` is documented where a client can read it. `create_redmine_issue`
   and `update_redmine_issue` now describe the parameter in their docstrings,
   so it reaches `tools/list` with its three content sources named instead of

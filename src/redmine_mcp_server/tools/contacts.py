@@ -767,6 +767,9 @@ async def manage_contact(
     Which parameter belongs to which action:
 
     Args:
+        action: Which operation to run. One of ``list``, ``get``, ``create``,
+            ``update``, ``delete``, ``assign_to_project``,
+            ``remove_from_project``.
         contact_id: The contact to act on. Required by every action except
             ``list`` and ``create``.
         project_id: On ``list``, restrict to contacts in this project. On
