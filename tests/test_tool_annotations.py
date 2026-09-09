@@ -347,3 +347,46 @@ class TestAnnotationInteractions:
         assert by_name["list_redmine_projects"].annotations.model_dump(
             exclude_none=True
         ) == expected.model_dump(exclude_none=True)
+
+
+class TestParameterDescriptions:
+    """Anti-drift for #278: the schema is what a client actually reads.
+
+    A parameter documented only in ``docs/tool-reference.md`` reaches an
+    agent as a bare name and a type, which is how #275 and #277 shipped.
+    There is deliberately no allowlist here: an exemption list is exactly
+    where the next undocumented parameter would hide.
+    """
+
+    @pytest.mark.asyncio
+    async def test_every_parameter_has_a_description(self):
+        undocumented = []
+        for tool in await _registered_tools():
+            properties = (tool.parameters or {}).get("properties", {})
+            for name, schema in properties.items():
+                if not str(schema.get("description") or "").strip():
+                    undocumented.append(f"{tool.name}.{name}")
+        assert not undocumented, (
+            "parameters reach tools/list with no description "
+            "(document them in the tool's Args: docstring section, not only "
+            f"in docs/tool-reference.md): {sorted(undocumented)}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_the_check_covers_the_whole_surface(self):
+        """Guard the guard: prove it walks tools that carry parameters.
+
+        Without the ``all_plugin_tools_visible`` fixture the check above
+        would pass while skipping every plugin-gated tool, which is where
+        both known defects were. ``cleanup_attachment_files`` is the one
+        registered tool this cannot reach (admin-gated), and it takes no
+        parameters, so nothing is missed.
+        """
+        tools = await _registered_tools()
+        by_name = {tool.name: tool for tool in tools}
+        for plugin_tool in ("manage_product", "manage_contact", "manage_deal"):
+            assert plugin_tool in by_name, f"{plugin_tool} not enumerated"
+        counted = sum(
+            len((tool.parameters or {}).get("properties", {})) for tool in tools
+        )
+        assert counted > 250, f"only {counted} parameters inspected"
