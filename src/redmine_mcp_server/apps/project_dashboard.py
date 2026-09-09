@@ -295,6 +295,14 @@ async def get_project_dashboard_data(
     """Backend data source for the project dashboard's Refresh button.
 
     Returns the same payload as ``show_project_dashboard`` without a UI
-    resource; the dashboard's iframe calls this over ``tools/call``.
+    resource; the dashboard's iframe calls this over ``tools/call``. Pass
+    the same arguments the dashboard was opened with, so a refresh redraws
+    the same view. Read-only.
+
+    Args:
+        project_id: The project whose dashboard is being refreshed, as a
+            numeric ID or string identifier (e.g. ``1`` or ``"web"``).
+        filters: Optional extra Redmine filter dict, the same shape
+            ``list_redmine_issues`` accepts (e.g. ``{"tracker_id": 1}``).
     """
     return await _build_dashboard_payload(project_id, filters)

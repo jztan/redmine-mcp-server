@@ -158,6 +158,16 @@ async def get_triage_board_data(
     """Backend data source for the triage board's Refresh button.
 
     Returns the same payload as ``show_triage_board`` without a UI
-    resource; the board's iframe calls this over ``tools/call``.
+    resource; the board's iframe calls this over ``tools/call``. Pass the
+    same arguments the board was opened with, so a refresh redraws the same
+    view. Read-only.
+
+    Args:
+        project_id: The project whose board is being refreshed, as a
+            numeric ID or string identifier (e.g. ``1`` or
+            ``"testing-project1"``).
+        filters: Optional extra Redmine filter dict, the same shape
+            ``list_redmine_issues`` accepts (e.g. ``{"assigned_to_id":
+            "me"}`` or ``{"tracker_id": 1}``).
     """
     return await _build_board_payload(project_id, filters)
