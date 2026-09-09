@@ -72,6 +72,10 @@ def test_resolve_local_file_rejects_outside_root(tmp_path, monkeypatch):
     content, name, err = _resolve_local_file(str(outside))
     assert err is not None
     assert "REDMINE_MCP_UPLOAD_FILE_ROOTS" in err["error"]
+    # A caller whose file sits on their own machine cannot be helped by any
+    # value of that variable, so the message has to name what does work.
+    assert "content_base64" in err["error"]
+    assert "source_url" in err["error"]
 
 
 def test_resolve_local_file_rejects_traversal(tmp_path, monkeypatch):

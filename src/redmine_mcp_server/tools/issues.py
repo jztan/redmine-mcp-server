@@ -1706,6 +1706,38 @@ async def create_redmine_issue(
       additional_tags tags on the new issue. Requires the
       ``create_issue_tags``/``edit_issue_tags`` permission; silently ignored
       when the feature is disabled (default).
+
+    Args:
+        project_id: Project the issue belongs to (numeric ID).
+        subject: The issue's title.
+        description: The issue's description. Optional.
+        fields: Standard and custom fields, as an object or a JSON object
+            string. Attachments do not go here -- see ``uploads``.
+        extra_fields: Further fields, merged into ``fields``. Object or JSON
+            object string.
+        uploads: Files to attach to the new issue. Maximum 10 items, 50 MiB
+            each. Every item carries exactly one content source:
+
+            - ``file_path``: a path on **this server's** filesystem, inside
+              ``ATTACHMENTS_DIR`` or a directory listed in
+              ``REDMINE_MCP_UPLOAD_FILE_ROOTS``. The bytes never pass
+              through the caller, so prefer it for a file that is already
+              there -- which, when the server runs on the caller's own
+              machine, includes the caller's own files. Where the server is
+              a different host, a caller-side path cannot be read here,
+              whatever the roots are set to.
+            - ``source_url``: an HTTP(S) URL this server downloads from.
+              Also spares the caller the bytes, so prefer it whenever the
+              file is reachable at a URL.
+            - ``content_base64``: the file's bytes, base64-encoded. The way
+              to send a file the caller holds and the server cannot reach;
+              it needs no configuration, at the price of moving the file
+              through the conversation.
+            - ``filename``: the name the attachment gets. Required with
+              ``content_base64``; derived from the URL or
+              ``Content-Disposition`` for ``source_url`` and from the
+              basename for ``file_path``.
+            - ``content_type`` and ``description``: optional, per item.
     """
 
     if _is_read_only_mode():
@@ -1916,6 +1948,37 @@ async def update_redmine_issue(
     Non-standard keys in ``fields`` are treated as candidate custom-field names.
     When a matching project custom field is found, it is translated into
     ``custom_fields`` entries for Redmine update payloads.
+
+    Args:
+        issue_id: The issue to update.
+        fields: The fields to change, including ``notes`` for a comment.
+            Attachments do not go here -- see ``uploads``.
+        uploads: Files to attach to the issue. Maximum 10 items, 50 MiB
+            each. Every item carries exactly one content source:
+
+            - ``file_path``: a path on **this server's** filesystem, inside
+              ``ATTACHMENTS_DIR`` or a directory listed in
+              ``REDMINE_MCP_UPLOAD_FILE_ROOTS``. The bytes never pass
+              through the caller, so prefer it for a file that is already
+              there -- which, when the server runs on the caller's own
+              machine, includes the caller's own files. Where the server is
+              a different host, a caller-side path cannot be read here,
+              whatever the roots are set to.
+            - ``source_url``: an HTTP(S) URL this server downloads from.
+              Also spares the caller the bytes, so prefer it whenever the
+              file is reachable at a URL.
+            - ``content_base64``: the file's bytes, base64-encoded. The way
+              to send a file the caller holds and the server cannot reach;
+              it needs no configuration, at the price of moving the file
+              through the conversation.
+            - ``filename``: the name the attachment gets. Required with
+              ``content_base64``; derived from the URL or
+              ``Content-Disposition`` for ``source_url`` and from the
+              basename for ``file_path``.
+            - ``content_type`` and ``description``: optional, per item.
+
+            An attachment referenced from the description or a note as
+            ``attachment:"name.png"`` is rendered inline by Redmine.
     """
 
     if _is_read_only_mode():

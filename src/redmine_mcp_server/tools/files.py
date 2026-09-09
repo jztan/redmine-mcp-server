@@ -39,9 +39,10 @@ from ..server import mcp
 # Module-level limits.
 # ---------------------------------------------------------------------------
 
-# Cap a single base64 file upload at ~50 MiB decoded to protect the server
-# from resource exhaustion. For larger or already-on-disk files, use the
-# file_path source (gated by REDMINE_MCP_UPLOAD_FILE_ROOTS).
+# Cap a single file upload at ~50 MiB to protect the server from resource
+# exhaustion. Every source is measured against it: base64 after decoding,
+# file_path after reading, source_url from the declared length and again
+# while streaming.
 _FILE_UPLOAD_MAX_SIZE_BYTES = 50 * 1024 * 1024
 
 # Cap the number of attachments accepted in a single issue create/update call.
@@ -73,9 +74,15 @@ def _resolve_local_file(
             None,
             {
                 "error": (
-                    "file_path is outside the allowed upload roots. Allowed "
-                    "roots default to ATTACHMENTS_DIR; widen them with the "
-                    "REDMINE_MCP_UPLOAD_FILE_ROOTS environment variable."
+                    "file_path is outside the allowed upload roots. It is "
+                    "read on the MCP server's own filesystem, not on the "
+                    "caller's: if the file is yours rather than the "
+                    "server's, send it as content_base64, or as a "
+                    "source_url the server can fetch, and no roots have to "
+                    "be configured at all. For a file that really does live "
+                    "on the server, the roots default to ATTACHMENTS_DIR "
+                    "and widen with the REDMINE_MCP_UPLOAD_FILE_ROOTS "
+                    "environment variable."
                 )
             },
         )
@@ -578,6 +585,12 @@ async def upload_file(
 ) -> Dict[str, Any]:
     """Upload a file to a Redmine project's Files section.
 
+    This is the project's document store, not an attachment on something.
+    To attach a file to an issue, pass ``uploads`` to
+    ``create_redmine_issue`` or ``update_redmine_issue``; to a wiki page,
+    to ``manage_redmine_wiki_page``. All three take the same content
+    sources as this tool.
+
     **Content sources — provide exactly ONE of:**
 
     - ``source_url``: an HTTP(S) URL the server will download from.
@@ -589,8 +602,11 @@ async def upload_file(
       URL is available — no need to download-then-re-encode.
     - ``content_base64``: raw file bytes encoded as base64. Use this
       only when the caller already has the file content in memory.
-    - ``file_path``: path to a file on the server, restricted to the
-      configured upload roots.
+    - ``file_path``: a path on **this server's** filesystem, inside
+      ``ATTACHMENTS_DIR`` or a directory listed in
+      ``REDMINE_MCP_UPLOAD_FILE_ROOTS``. Where the server runs on a
+      different host than the caller, a caller-side path cannot be read
+      here, whatever the roots are set to.
 
     Under the hood this performs Redmine's standard two-step upload:
     ``POST /uploads.json`` to get a token, then
@@ -606,8 +622,8 @@ async def upload_file(
             exclusive with ``source_url`` and ``file_path``.
         source_url: HTTP(S) URL to download the file from. Mutually
             exclusive with ``content_base64`` and ``file_path``.
-        file_path: Path to a file on the server, restricted to the
-            configured upload roots (``REDMINE_MCP_UPLOAD_FILE_ROOTS``).
+        file_path: Path to a file on this server, inside ``ATTACHMENTS_DIR``
+            or a directory listed in ``REDMINE_MCP_UPLOAD_FILE_ROOTS``.
             Mutually exclusive with ``content_base64`` and ``source_url``.
         description: Optional human-readable description.
         version_id: Optional version/release ID to attach the file to

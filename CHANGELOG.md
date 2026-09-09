@@ -71,6 +71,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   build; no behaviour change for users.
 
 ### Fixed
+- `uploads` is documented where a client can read it. `create_redmine_issue`
+  and `update_redmine_issue` now describe the parameter in their docstrings,
+  so it reaches `tools/list` with its three content sources named instead of
+  as a bare array of objects. `docs/tool-reference.md` had described them all
+  along, but a client reads the schema, not the repository: an agent holding a
+  file could not discover `content_base64` there, followed the one documented
+  route it could find — `file_path` on `upload_file` — and hit a wall no
+  configuration can open, since that path is read where the server runs rather
+  than where the caller does. The upload-roots error now says which filesystem
+  it means and names the two sources that need no roots at all, `upload_file`
+  points at the issue tools for attaching to a ticket, and
+  `manage_redmine_wiki_page` carries the same caveat
+  ([#275](https://github.com/jztan/redmine-mcp-server/issues/275),
+  [#276](https://github.com/jztan/redmine-mcp-server/pull/276)).
 - `oauth-proxy` state now survives a container rebuild. `FASTMCP_HOME` was
   unset by default, so FastMCP resolved its store to the running user's
   platform data directory, which in the image is inside the container
@@ -102,7 +116,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Contributors
 - @andilem proposed and implemented the news tools
-  ([#269](https://github.com/jztan/redmine-mcp-server/issues/269))
+  ([#269](https://github.com/jztan/redmine-mcp-server/issues/269)), reported that
+  `uploads` never reaches the tool schema, so an agent attaching a file follows
+  `file_path` into a wall no configuration can open
+  ([#275](https://github.com/jztan/redmine-mcp-server/issues/275)), and
+  documented the parameter on the issue tools, the wiki tool and the
+  upload-roots error, verified against a Docker deployment behind HTTP
+  ([#276](https://github.com/jztan/redmine-mcp-server/pull/276))
 - @gino8080 reported that the issue serializers drop the top-level keys
   distributions and plugins add
   ([#263](https://github.com/jztan/redmine-mcp-server/issues/263)) and
