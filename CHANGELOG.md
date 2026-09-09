@@ -71,6 +71,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   build; no behaviour change for users.
 
 ### Fixed
+- The two MCP Apps backend tools, `get_triage_board_data` and
+  `get_project_dashboard_data`, describe their `project_id` and `filters`
+  parameters. They are called by the board and dashboard iframes rather than
+  by a model, so the gap was not costing anyone a failed call, but it left the
+  four last undescribed parameters in the server: with every plugin flag on,
+  all 62 listed tools now describe every parameter they expose
+  ([#281](https://github.com/jztan/redmine-mcp-server/issues/281)).
 - `manage_product` reaches `tools/list` with its parameters described. All 13
   of them arrived as bare types behind a three-line tool description, so the
   split that matters most was invisible: `create` reads the flat parameters
