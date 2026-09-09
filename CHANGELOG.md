@@ -37,9 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `(1, 1, 0)` for the whole resource and python-redmine raises no version
   error of its own. That message names the endpoint rather than a core
   version, since distributions vary in what they expose.
-  ([#269](https://github.com/jztan/redmine-mcp-server/issues/269))
-- `search_entire_redmine` now searches news alongside issues and wiki pages,
-  which the module docstring already claimed.
+  `search_entire_redmine` searches news alongside issues and wiki pages, which
+  the module docstring already claimed
+  ([#269](https://github.com/jztan/redmine-mcp-server/issues/269)).
 - Issue serializers pass through top-level keys the standard Redmine API does
   not define, under `unmapped_fields`. Distributions and plugins add their own
   keys to the issue JSON (Easy Redmine sends `easy_sprint` and
@@ -51,10 +51,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   because that is what reaches the client. `get_redmine_issue`,
   `list_redmine_issues` and `search_redmine_issues` expose the key; it is
   omitted when there is nothing to report, so payloads from a stock Redmine are
-  unchanged.
-- `total_estimated_hours` and `total_spent_hours` on the issue serializers.
-  Both are stock Redmine fields carrying the subtask rollup that
-  `estimated_hours` and `spent_hours` leave out.
+  unchanged. The same serializers gain `total_estimated_hours` and
+  `total_spent_hours`, stock Redmine fields carrying the subtask rollup that
+  `estimated_hours` and `spent_hours` leave out
+  ([#263](https://github.com/jztan/redmine-mcp-server/issues/263),
+  [#268](https://github.com/jztan/redmine-mcp-server/pull/268)).
 
 ### Changed
 - Upgraded to FastMCP 4 and the MCP Python SDK v2: `fastmcp>=4.0.1,<5` (locked
@@ -71,48 +72,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   build; no behaviour change for users.
 
 ### Fixed
-- The two MCP Apps backend tools, `get_triage_board_data` and
-  `get_project_dashboard_data`, describe their `project_id` and `filters`
-  parameters. They are called by the board and dashboard iframes rather than
-  by a model, so the gap was not costing anyone a failed call, but it left the
-  four last undescribed parameters in the server: with every plugin flag on,
-  all 62 listed tools now describe every parameter they expose
-  ([#281](https://github.com/jztan/redmine-mcp-server/issues/281)).
-- `manage_product` reaches `tools/list` with its parameters described. All 13
-  of them arrived as bare types behind a three-line tool description, so the
-  split that matters most was invisible: `create` reads the flat parameters
-  and `update` reads only `fields`, which makes the natural call from the
-  schema alone (`action="update", product_id=42, price=9.99`) fail with
-  `fields must be a non-empty dict`. The docstring now says which actions each
-  parameter belongs to, that `status_id` is 1 or 2 and nothing else, that
-  `limit` is clamped at 100, and which keys `fields` accepts and silently
-  drops. `manage_deal` and `add_deal_product` had already described their
-  parameters but paired two of them per line (`currency, due_date` and
-  `tax, discount`), which the docstring parser does not split, so those four
-  reached the schema empty as well; they are now one entry each
-  ([#277](https://github.com/jztan/redmine-mcp-server/issues/277)).
 - Every tool parameter now reaches `tools/list` with a description, and a test
-  keeps it that way. `manage_contact`'s `action` was the last one missing one:
-  the docstring documented the other 27 parameters and skipped it. The new
-  check in `tests/test_tool_annotations.py` walks every registered tool with
-  all plugin families visible and fails on any parameter whose schema
-  description is empty. It carries no allowlist, since an exemption list is
-  where the next undocumented parameter would hide
-  ([#278](https://github.com/jztan/redmine-mcp-server/issues/278)).
+  keeps it that way. `manage_product` was the worst of it: all 13 of its
+  parameters arrived as bare types behind a three-line tool description, which
+  hid the split that matters most, since `create` reads the flat parameters and
+  `update` reads only `fields`, so the natural call from the schema alone
+  (`action="update", product_id=42, price=9.99`) failed with `fields must be a
+  non-empty dict`. Its docstring now says which actions each parameter belongs
+  to, that `status_id` is 1 or 2 and nothing else, that `limit` is clamped at
+  100, and which keys `fields` accepts and silently drops. `manage_deal` and
+  `add_deal_product` had described their parameters but paired two of them per
+  line (`currency, due_date` and `tax, discount`), which the docstring parser
+  does not split, so those four reached the schema empty as well; they are now
+  one entry each. The remaining gaps were `manage_contact`'s `action`, the one
+  parameter its docstring skipped out of 28, and the `project_id` and `filters`
+  of the two MCP Apps backend tools, `get_triage_board_data` and
+  `get_project_dashboard_data`, which are called by the board and dashboard
+  iframes rather than by a model, so that pair was not costing anyone a failed
+  call. With every plugin flag on, all 62 listed tools now describe every
+  parameter they expose. The new check in `tests/test_tool_annotations.py`
+  walks every registered tool with all plugin families visible and fails on any
+  parameter whose schema description is empty; it carries no allowlist, since
+  an exemption list is where the next undocumented parameter would hide
+  ([#277](https://github.com/jztan/redmine-mcp-server/issues/277),
+  [#278](https://github.com/jztan/redmine-mcp-server/issues/278),
+  [#281](https://github.com/jztan/redmine-mcp-server/issues/281)).
 - `uploads` is documented where a client can read it. `create_redmine_issue`
   and `update_redmine_issue` now describe the parameter in their docstrings,
   so it reaches `tools/list` with its three content sources named instead of
   as a bare array of objects. `docs/tool-reference.md` had described them all
   along, but a client reads the schema, not the repository: an agent holding a
   file could not discover `content_base64` there, followed the one documented
-  route it could find — `file_path` on `upload_file` — and hit a wall no
+  route it could find (`file_path` on `upload_file`) and hit a wall no
   configuration can open, since that path is read where the server runs rather
   than where the caller does. The upload-roots error now says which filesystem
-  it means and names the two sources that need no roots at all, `upload_file`
-  points at the issue tools for attaching to a ticket, and
-  `manage_redmine_wiki_page` carries the same caveat
+  it means and names the two sources that need no roots at all, and
+  `manage_redmine_wiki_page` carries the same caveat. `upload_file` says which
+  machine it means in its docstring and in both places its reference section
+  describes `file_path`, in place of "already on the server", wording that
+  reads as a fact about the file rather than about the host and sent the
+  reporter looking for a configuration fix; both now also point at the issue
+  and wiki tools for attaching to a ticket or a page
   ([#275](https://github.com/jztan/redmine-mcp-server/issues/275),
-  [#276](https://github.com/jztan/redmine-mcp-server/pull/276)).
+  [#276](https://github.com/jztan/redmine-mcp-server/pull/276),
+  [#279](https://github.com/jztan/redmine-mcp-server/issues/279)).
 - `oauth-proxy` state now survives a container rebuild. `FASTMCP_HOME` was
   unset by default, so FastMCP resolved its store to the running user's
   platform data directory, which in the image is inside the container

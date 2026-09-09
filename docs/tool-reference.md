@@ -2343,10 +2343,12 @@ List all files uploaded to a Redmine project's **Files** section (not issue atta
 
 Upload a file to a Redmine project's Files section. Uses Redmine's standard two-step upload (`POST /uploads.json` for the token, then `POST /projects/{id}/files.json`).
 
+This is the project's document store, not an attachment on something. To attach a file to an issue, pass `uploads` to `create_redmine_issue` or `update_redmine_issue`; to a wiki page, pass `uploads` to `manage_redmine_wiki_page`. All three take the same content sources as this tool.
+
 **Provide exactly ONE of `source_url`, `content_base64`, or `file_path`:**
 - `source_url` (string) — the server downloads from an HTTP(S) URL. Use this when chaining from another MCP tool that returns a download URL (e.g., Google Drive MCP's `get_drive_file_download_url`), or when the file is served by a local MCP on `localhost`. **Preferred when a URL is available** — no need for the caller to download and re-encode.
 - `content_base64` (string) — raw file bytes encoded as base64. Use this only when the caller already has the bytes in memory.
-- `file_path` (string): absolute path to a file already on the server. The path must be inside `ATTACHMENTS_DIR` or a directory listed in `REDMINE_MCP_UPLOAD_FILE_ROOTS`. Filename is derived from the path if `filename` is omitted.
+- `file_path` (string): a path on **this server's** filesystem, inside `ATTACHMENTS_DIR` or a directory listed in `REDMINE_MCP_UPLOAD_FILE_ROOTS`. Filename is derived from the path if `filename` is omitted. Where the server runs on the caller's machine that includes the caller's own files, and this source costs no tokens; over HTTP the two are different hosts, and no value of `REDMINE_MCP_UPLOAD_FILE_ROOTS` can bridge the gap, so such a file travels as `content_base64` or `source_url`, neither of which needs roots configured.
 
 **Parameters:**
 - `project_id` (integer or string, required): Project identifier.
@@ -2355,7 +2357,7 @@ Upload a file to a Redmine project's Files section. Uses Redmine's standard two-
   - Optional with `source_url` or `file_path`, inferred from the URL path, `Content-Disposition` header, or file path if omitted, but always prefer passing an explicit filename.
 - `source_url` (string, conditional): HTTP(S) URL to download from.
 - `content_base64` (string, conditional): File content as base64.
-- `file_path` (string, conditional): Absolute path to a file on the server. Restricted to `ATTACHMENTS_DIR` and directories in `REDMINE_MCP_UPLOAD_FILE_ROOTS`.
+- `file_path` (string, conditional): Path to a file on **this server's** filesystem, restricted to `ATTACHMENTS_DIR` and directories in `REDMINE_MCP_UPLOAD_FILE_ROOTS`. A caller-side path is unreachable when the server runs on a different host, whatever the roots are set to.
 - `description` (string, optional): Human-readable description.
 - `version_id` (integer, optional): Version/release ID to attach the file to (use `list_redmine_versions` to discover valid IDs).
 
