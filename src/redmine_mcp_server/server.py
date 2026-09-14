@@ -65,6 +65,16 @@ def _register_middlewares(mcp_instance, auth_provider) -> None:
         from ._scope_middleware import ScopeEnforcementMiddleware
 
         mcp_instance.add_middleware(ScopeEnforcementMiddleware())
+
+    # After the scope check, so a call denied for scope never looks like a
+    # rejected Redmine key and never costs anyone their session. Imported
+    # inside the branch, matching _select_auth_provider: the other OAuth modes
+    # should not pull this module in either.
+    if REDMINE_AUTH_MODE == "api-key-login":
+        from ._api_key_login import ApiKeyLoginProvider, BindingRevocationMiddleware
+
+        if isinstance(auth_provider, ApiKeyLoginProvider):
+            mcp_instance.add_middleware(BindingRevocationMiddleware(auth_provider))
     else:
         logger.warning(
             "OAuth scope enforcement is DISABLED "

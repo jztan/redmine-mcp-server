@@ -71,6 +71,7 @@ from mcp.server.auth.provider import (
     AuthorizationParams,
     RefreshToken,
 )
+from fastmcp.server.middleware import Middleware
 from mcp.server.auth.settings import ClientRegistrationOptions, RevocationOptions
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
@@ -415,6 +416,17 @@ class ApiKeyLoginProvider(OAuthProvider):
             collection=COLLECTION_TRANSACTIONS,
             ttl=remaining,
         )
+
+    async def charge_failed_attempt(
+        self, txn_id: str, transaction: dict[str, Any]
+    ) -> None:
+        """Charge one attempt for a failure the route caught itself.
+
+        The malformed-key check lives in the route, so it never reaches
+        ``complete_login``; without this a scripted flood against one
+        transaction would never run out of budget.
+        """
+        await self._count_attempt(txn_id, transaction)
 
     async def complete_login(
         self,
@@ -909,3 +921,62 @@ def build_api_key_login() -> ApiKeyLoginProvider:
         "node-local, so a second replica will not see these sessions."
     )
     return provider
+
+
+# --- revocation middleware ---------------------------------------------
+
+
+class BindingRevocationMiddleware(Middleware):
+    """Drop a binding whose Redmine key has stopped working.
+
+    A user who resets their API key in Redmine should find every session dead
+    on the next call, not in thirty days. Redmine answers 401 for that, which
+    ``_handle_redmine_error`` turns into an ``AUTH_FAILED`` envelope.
+
+    This cannot live in that handler: it is synchronous and runs inside the
+    ``asyncio.to_thread`` worker the tools offload to, while ``revoke_binding``
+    is a coroutine on an async store. anyio's from-thread bridge refuses inside
+    an asyncio worker, and ``run_coroutine_threadsafe`` would put a blocking
+    cross-thread wait in an error path. Here the work is already on the event
+    loop, after ``call_next`` has produced the result.
+
+    The result is returned untouched; the client gets its error and re-runs the
+    OAuth flow on the next call. Only 401 reaches this: 403 is a
+    ``ForbiddenError`` and stays an ordinary permission error.
+    """
+
+    def __init__(self, provider: "ApiKeyLoginProvider") -> None:
+        self._provider = provider
+
+    @staticmethod
+    def _envelope(result: Any) -> Optional[dict]:
+        """The error envelope from a tool result, unwrapped if need be."""
+        structured = getattr(result, "structured_content", None)
+        if not isinstance(structured, dict):
+            return None
+        # Tools whose return type is not a plain dict carry the payload under
+        # "result"; see build_error_tool_result.
+        inner = structured.get("result")
+        if isinstance(inner, dict) and "code" in inner:
+            return inner
+        return structured
+
+    async def on_call_tool(self, context, call_next):
+        result = await call_next(context)
+        envelope = self._envelope(result)
+        if not envelope or envelope.get("code") != "AUTH_FAILED":
+            return result
+
+        from fastmcp.server.dependencies import get_access_token
+
+        token = get_access_token()
+        claims = getattr(token, "claims", None) if token is not None else None
+        binding_id = claims.get("binding_id") if isinstance(claims, dict) else None
+        if isinstance(binding_id, str) and binding_id:
+            logger.info(
+                "Redmine rejected the bound key; revoking the session for "
+                "Redmine user %s.",
+                claims.get("redmine_user_id"),
+            )
+            await self._provider.revoke_binding(binding_id)
+        return result

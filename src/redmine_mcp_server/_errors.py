@@ -69,7 +69,32 @@ def _scrub_error_message(message: str) -> str:
     redmine_api_key = _client.REDMINE_API_KEY
     if redmine_api_key and redmine_api_key in scrubbed:
         scrubbed = scrubbed.replace(redmine_api_key, "[redacted]")
+
+    # In api-key-login mode the key that matters is not in the environment but
+    # bound to this request's token, so the check above would miss it.
+    for bound_key in _bound_api_keys():
+        if bound_key in scrubbed:
+            scrubbed = scrubbed.replace(bound_key, "[redacted]")
     return scrubbed
+
+
+def _bound_api_keys() -> list:
+    """The current request's bound Redmine key, if there is one.
+
+    Reads a contextvar, which ``asyncio.to_thread`` copies into the worker, so
+    this resolves on the offloaded path where tool errors are actually built.
+    Any failure is swallowed: scrubbing must never be the reason a tool
+    raises.
+    """
+    try:
+        from fastmcp.server.dependencies import get_access_token
+
+        token = get_access_token()
+        claims = getattr(token, "claims", None) if token is not None else None
+        key = claims.get("redmine_api_key") if isinstance(claims, dict) else None
+        return [key] if isinstance(key, str) and key else []
+    except Exception:
+        return []
 
 
 def _timeout_budget_hint() -> str:
@@ -169,12 +194,26 @@ def _handle_redmine_error(
     # HTTP-level errors (from redminelib)
     if isinstance(e, AuthError):
         logger.error(f"Authentication failed during {operation}")
+        # The code is what BindingRevocationMiddleware matches on to drop a
+        # binding whose key Redmine no longer accepts. python-redmine raises
+        # AuthError only for HTTP 401; 403 is ForbiddenError, so a permission
+        # problem never reaches here and never costs anyone their session.
+        if _client.REDMINE_AUTH_MODE == "api-key-login":
+            return {
+                "error": (
+                    "Redmine rejected the API key bound to this session. It was "
+                    "most likely reset or revoked in Redmine. Reconnect to sign "
+                    "in again."
+                ),
+                "code": "AUTH_FAILED",
+            }
         return {
             "error": (
                 "Authentication failed. Please check your credentials: "
                 "1) REDMINE_API_KEY is valid, or "
                 "2) REDMINE_USERNAME and REDMINE_PASSWORD are correct"
-            )
+            ),
+            "code": "AUTH_FAILED",
         }
 
     if isinstance(e, ForbiddenError):

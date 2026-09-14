@@ -115,6 +115,12 @@ def build_app():
 
 
 # Export the Starlette app for testing and external use
+# Must run before build_app(): custom_route registers on the FastMCP instance,
+# and http_app() snapshots those routes. Imported only in this mode so legacy
+# deployments never pull in the OAuth machinery, matching server.py.
+if REDMINE_AUTH_MODE == "api-key-login":
+    from . import _api_key_login_routes  # noqa: E402,F401  -- registers /login
+
 app = build_app()
 
 # Log version at module load time so it appears regardless of how the server is started

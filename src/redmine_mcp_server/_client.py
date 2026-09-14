@@ -404,6 +404,24 @@ def _get_redmine_client() -> Redmine:
     if g["redmine"] is not None:
         return g["redmine"]
 
+    # api-key-login: the caller's own Redmine key rides on the verified
+    # token's claims. This must be checked BEFORE the bearer branch below,
+    # which fires on the mere presence of an access token without comparing
+    # the mode -- in this mode one is always present, so the bearer would be
+    # forwarded to Redmine, which knows nothing about it.
+    if g["REDMINE_AUTH_MODE"] == "api-key-login":
+        from ._per_user import PerUserAuthError
+
+        token = get_access_token()
+        claims = getattr(token, "claims", None) if token is not None else None
+        key = claims.get("redmine_api_key") if isinstance(claims, dict) else None
+        if not isinstance(key, str) or not key:
+            raise PerUserAuthError(
+                "api-key-login: no Redmine API key is bound to this request. "
+                "Reconnect to sign in again."
+            )
+        return _new_client(key=key)
+
     # OAuth mode: per-request bearer token from FastMCP's native auth.
     # get_access_token() returns None outside an authenticated request
     # (e.g., legacy mode, or background tasks).
