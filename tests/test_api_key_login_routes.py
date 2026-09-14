@@ -527,3 +527,113 @@ def test_json_envelope_shape_matches_what_the_middleware_expects():
         == "AUTH_FAILED"
     )
     json.dumps(payload)
+
+
+# --- the wired-up OAuth surface -------------------------------------------
+
+
+async def _oauth_app(provider):
+    """The provider mounted on a real FastMCP app, as main.py does."""
+    from fastmcp import FastMCP
+
+    app = FastMCP("api-key-login-test", auth=provider).http_app(stateless_http=True)
+    return AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://localhost:8000"
+    )
+
+
+async def _full_flow(provider, http):
+    """register -> authorize -> login -> token, over HTTP."""
+    import base64
+    import hashlib
+    import re
+    import secrets
+
+    def b64(raw):
+        return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+    registration = await http.post(
+        "/register",
+        json={
+            "client_name": "probe",
+            "redirect_uris": [REDIRECT],
+            "grant_types": ["authorization_code", "refresh_token"],
+            "response_types": ["code"],
+            "token_endpoint_auth_method": "none",
+        },
+    )
+    client_id = registration.json()["client_id"]
+    verifier = b64(secrets.token_bytes(32))
+    authorize = await http.get(
+        "/authorize",
+        params={
+            "response_type": "code",
+            "client_id": client_id,
+            "redirect_uri": REDIRECT,
+            "code_challenge": b64(hashlib.sha256(verifier.encode()).digest()),
+            "code_challenge_method": "S256",
+            "state": "s",
+        },
+    )
+    txn = authorize.headers["location"].split("txn=", 1)[1]
+    transaction = await provider.get_transaction(txn)
+    with patch.object(
+        provider_mod, "fetch_redmine_identity", AsyncMock(return_value=_identity())
+    ):
+        redirect = await provider.complete_login(
+            txn,
+            transaction["csrf"],
+            KEY,
+            browser_nonce=transaction["browser_nonce"],
+        )
+    code = re.search(r"[?&]code=([^&]+)", redirect).group(1)
+    token = await http.post(
+        "/token",
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": REDIRECT,
+            "client_id": client_id,
+            "code_verifier": verifier,
+        },
+    )
+    return client_id, token
+
+
+async def test_a_public_client_completes_the_flow_without_a_secret():
+    provider = _provider(allowed_client_redirect_uris=["http://localhost:*"])
+    async with await _oauth_app(provider) as http:
+        client_id, token = await _full_flow(provider, http)
+
+    assert token.status_code == 200
+    payload = token.json()
+    assert payload["token_type"] == "Bearer"
+    assert payload["refresh_token"]
+    bound = await provider.load_access_token(payload["access_token"])
+    assert bound.claims["redmine_api_key"] == KEY
+
+
+async def test_revoking_the_refresh_token_over_http_ends_the_session():
+    provider = _provider(allowed_client_redirect_uris=["http://localhost:*"])
+    async with await _oauth_app(provider) as http:
+        client_id, token = await _full_flow(provider, http)
+        payload = token.json()
+
+        revoked = await http.post(
+            "/revoke",
+            data={
+                "token": payload["refresh_token"],
+                "token_type_hint": "refresh_token",
+                "client_id": client_id,
+                # The MCP SDK's RevocationRequest declares client_secret as
+                # `str | None` with no default, so the field must be *present*
+                # even for a public client that was never issued one --
+                # omitting it is a 400 before authentication runs, unlike
+                # TokenRequest which defaults it to None. Sending an empty
+                # value is the client-side way through.
+                "client_secret": "",
+            },
+        )
+
+    assert revoked.status_code == 200
+    assert await provider.load_access_token(payload["access_token"]) is None
