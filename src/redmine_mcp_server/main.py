@@ -65,7 +65,7 @@ if TOOL_ALLOW_LIST is not None:
     )
 
 REDMINE_AUTH_MODE = os.environ.get("REDMINE_AUTH_MODE", "legacy").lower()
-AUTHENTICATED_AUTH_MODES = {"oauth", "oauth-proxy"}
+AUTHENTICATED_AUTH_MODES = {"oauth", "oauth-proxy", "api-key-login"}
 
 
 def get_version() -> str:
@@ -127,6 +127,11 @@ if REDMINE_AUTH_MODE == "oauth-proxy":
     from ._oauth_proxy import log_oauth_proxy_store_path
 
     log_oauth_proxy_store_path(REDMINE_AUTH_MODE)
+
+if REDMINE_AUTH_MODE == "api-key-login":
+    from ._api_key_login import log_api_key_login_store_path
+
+    log_api_key_login_store_path(REDMINE_AUTH_MODE)
 
 
 def main():

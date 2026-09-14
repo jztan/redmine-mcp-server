@@ -44,6 +44,10 @@ def _select_auth_provider(auth_mode: str):
         from ._oauth_proxy import build_oauth_proxy
 
         return build_oauth_proxy()
+    if auth_mode == "api-key-login":
+        from ._api_key_login import build_api_key_login
+
+        return build_api_key_login()
     return None
 
 

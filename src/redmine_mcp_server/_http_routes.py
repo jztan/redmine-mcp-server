@@ -209,7 +209,7 @@ async def health_check(request):
         response["checks"] = checks
         if probe_status != "ok":
             response["status"] = "degraded"
-    elif REDMINE_AUTH_MODE == "legacy-per-user":
+    elif REDMINE_AUTH_MODE in {"legacy-per-user", "api-key-login"}:
         probe_status, detail = await _probe_redmine_reachable()
         checks: dict = {"redmine": probe_status}
         if detail:

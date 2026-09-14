@@ -277,9 +277,12 @@ if not REDMINE_URL:
         "REDMINE_URL not set. "
         "Please create a .env file in your working directory with REDMINE_URL defined."
     )
-elif REDMINE_AUTH_MODE not in {"oauth", "oauth-proxy", "legacy-per-user"} and not (
-    REDMINE_API_KEY or (REDMINE_USERNAME and REDMINE_PASSWORD)
-):
+elif REDMINE_AUTH_MODE not in {
+    "oauth",
+    "oauth-proxy",
+    "legacy-per-user",
+    "api-key-login",
+} and not (REDMINE_API_KEY or (REDMINE_USERNAME and REDMINE_PASSWORD)):
     logger.warning(
         "No Redmine authentication configured. "
         "Please set REDMINE_API_KEY or REDMINE_USERNAME/REDMINE_PASSWORD "
@@ -290,6 +293,11 @@ if REDMINE_AUTH_MODE == "legacy-per-user" and REDMINE_API_KEY:
     logger.info(
         "legacy-per-user mode: ignoring REDMINE_API_KEY from env; per-request "
         "X-Redmine-API-Key headers are used instead."
+    )
+if REDMINE_AUTH_MODE == "api-key-login" and REDMINE_API_KEY:
+    logger.info(
+        "api-key-login mode: ignoring REDMINE_API_KEY from env; each caller "
+        "brings their own key through the browser login."
     )
 
 
