@@ -151,7 +151,7 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `ATTACHMENT_MAX_DOWNLOAD_BYTES` | No | `209715200` (200 MB) | Cap applied to every `get_redmine_attachment` download regardless of content type. Exceeding the cap aborts the download mid-stream and deletes the partial file. |
 | `REDMINE_MCP_UPLOAD_FILE_ROOTS` | No | – | Extra directories allowed as `file_path` upload sources (OS path separator-separated). `ATTACHMENTS_DIR` is always allowed. Unset restricts uploads to `ATTACHMENTS_DIR` only. |
 | `AUTO_CLEANUP_ENABLED` | No | `true` | Toggle automatic cleanup of expired attachments |
-| `CLEANUP_INTERVAL_MINUTES` | No | `10` | Interval for cleanup task |
+| `CLEANUP_INTERVAL_MINUTES` | No | `10` | Interval for cleanup task (also deletes expired OAuth state in `oauth-proxy` and `api-key-login` modes) |
 | `ATTACHMENT_EXPIRES_MINUTES` | No | `60` | Expiry window for generated download URLs |
 | `REDMINE_MCP_EXPOSE_ADMIN_TOOLS` | No | `false` | Expose operator/admin tools on the MCP surface. Currently gates `cleanup_attachment_files`. The background cleanup task runs regardless of this flag. |
 | `REDMINE_SSL_VERIFY` | No | `true` | Enable/disable SSL certificate verification |

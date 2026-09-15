@@ -28,9 +28,9 @@ transaction id or authorization code -- so a directory listing yields nothing
 usable to a reader who has the volume but not the secret.
 
 Every write passes the record's remaining lifetime as the store TTL, so an
-expired record is never served. It is *not* deleted: ``FileTreeStore`` drops
-the value on read, but the file stays until something overwrites it. Cleaning
-those up is a separate matter (the same gap ``oauth-proxy`` has).
+expired record is never served. ``FileTreeStore`` does not delete it, though;
+the cleanup task does (``_cleanup.sweep_expired_auth_state``, the same sweep
+``oauth-proxy`` gets).
 
 Two properties are load-bearing and easy to break:
 

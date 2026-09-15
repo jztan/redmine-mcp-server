@@ -131,6 +131,8 @@ Set these in `.env` (local) or `.env.docker` (Docker). Legacy credentials are no
 - The container runs as uid 1000 (`appuser`). An empty named volume inherits ownership from the image directory it covers, so it works as-is. A **bind mount** does not inherit: on Linux the host directory's owner applies, so `./data` must be writable by uid 1000. A volume that already holds root-owned content stays root-owned and the write fails; remove the volume rather than trying to repair it.
 - The store directory is keyed by a fingerprint of `REDMINE_MCP_JWT_SIGNING_KEY`. Changing that key orphans the existing state just as effectively as losing the volume, which is why the key has to be stable and set explicitly rather than generated per deploy.
 
+**Expired records:** FastMCP's file store stops serving a record when its TTL passes but never deletes the file. The server deletes expired files below `FASTMCP_HOME/oauth-proxy/` itself, every `CLEANUP_INTERVAL_MINUTES` (default 10) from boot, whatever `AUTO_CLEANUP_ENABLED` says. Client registrations carry no TTL in FastMCP, so they are kept; on a public deployment, rate-limit `POST /register` at the reverse proxy to bound them.
+
 **Startup behavior:** When `REDMINE_AUTH_MODE=oauth` is set, the server fails fast at startup if `REDMINE_INTROSPECT_CLIENT_ID` or `REDMINE_INTROSPECT_CLIENT_SECRET` is missing — better to surface the misconfiguration immediately than to return 401 on every request.
 
 ## Step 4: Start and Verify
