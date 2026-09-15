@@ -93,7 +93,7 @@
       "name": "How does it handle a whole team rather than one user?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Three ways. A single shared API key is the simple default. OAuth2 gives every user their own token, so the agent acts as that person with that person's permissions, and each tool call is checked against the scopes their token actually carries. OAuthProxy covers hosted deployments where clients register themselves. On Redmine older than 6.1, where OAuth is unavailable, legacy-per-user mode takes an X-Redmine-API-Key header per request and gets you the same per-user identity."
+        "text": "Several ways. A single shared API key is the simple default. OAuth2 gives every user their own token, so the agent acts as that person with that person's permissions, and each tool call is checked against the scopes their token actually carries. OAuthProxy covers hosted deployments where clients register themselves. On Easy Redmine or Redmine older than 6.1, where OAuth is unavailable, api-key-login mode has each user paste their own API key into a login page once, and legacy-per-user mode takes an X-Redmine-API-Key header per request. Both give the same per-user identity."
       }
     },
     {
@@ -1196,8 +1196,8 @@ redmine-mcp-server</pre>
     <details class="qa">
       <summary>How does it handle a whole team rather than one user?</summary>
       <div class="qa-body">
-        <p>Three ways. A single shared API key is the simple default. OAuth2 gives every user their own token, so the agent acts as that person with that person's permissions, and each tool call is checked against the scopes their token actually carries. OAuthProxy covers hosted deployments where clients register themselves.</p>
-        <p>On Redmine older than 6.1, where OAuth is unavailable, legacy-per-user mode takes an <code>X-Redmine-API-Key</code> header per request and gets you the same per-user identity.</p>
+        <p>Several ways. A single shared API key is the simple default. OAuth2 gives every user their own token, so the agent acts as that person with that person's permissions, and each tool call is checked against the scopes their token actually carries. OAuthProxy covers hosted deployments where clients register themselves.</p>
+        <p>On Easy Redmine or Redmine older than 6.1, where OAuth is unavailable, api-key-login mode has each user paste their own API key into a login page once, and legacy-per-user mode takes an <code>X-Redmine-API-Key</code> header per request. Both give the same per-user identity.</p>
       </div>
     </details>
 

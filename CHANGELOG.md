@@ -7,6 +7,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `REDMINE_AUTH_MODE=api-key-login` gives every user their own Redmine identity
+  on a Redmine without OAuth, such as Easy Redmine or any Redmine older than 6.1.
+  The server acts as its own OAuth authorization server, so MCP clients connect
+  with nothing but its URL (discovery, dynamic client registration, PKCE, refresh
+  tokens). On first use the user pastes their personal Redmine API key into a
+  login page this server serves; the key is checked with Redmine, stored
+  encrypted below `FASTMCP_HOME/api-key-login/` under a key derived from
+  `REDMINE_MCP_JWT_SIGNING_KEY`, and every tool call then runs as that user.
+  Passwords are never accepted. Administrator keys are refused unless
+  `REDMINE_API_KEY_LOGIN_ALLOW_ADMIN=true`, a login works only in the browser
+  that started it, and a key reset in Redmine ends the user's sessions at the
+  next 401 or token refresh, within an hour. OAuth scopes in this mode are a
+  narrowing the client asks for, not Redmine permissions. Setup, security model
+  and session rules: [docs/api-key-login-auth.md](docs/api-key-login-auth.md)
+  ([#261](https://github.com/jztan/redmine-mcp-server/issues/261),
+  [#286](https://github.com/jztan/redmine-mcp-server/pull/286),
+  [#287](https://github.com/jztan/redmine-mcp-server/pull/287)).
+
 ### Fixed
 - `legacy-per-user` mode no longer runs a wrong or reset
   `X-Redmine-API-Key` as the anonymous user. Redmine serves an unknown key as
@@ -20,6 +39,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   request through instead of blaming the key. Redmine's "Authentication
   required" setting removes the anonymous fallback entirely
   ([#290](https://github.com/jztan/redmine-mcp-server/issues/290)).
+
+### Contributors
+- @andilem proposed the `api-key-login` mode and proved it against a production
+  Easy Redmine with a working spike
+  ([#261](https://github.com/jztan/redmine-mcp-server/issues/261)), reviewed its
+  design ([#265](https://github.com/jztan/redmine-mcp-server/discussions/265)),
+  and implemented it
+  ([#286](https://github.com/jztan/redmine-mcp-server/pull/286),
+  [#287](https://github.com/jztan/redmine-mcp-server/pull/287)).
 
 ## [2.15.0] - 2026-09-12
 ### Added
