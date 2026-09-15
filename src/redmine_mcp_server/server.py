@@ -44,6 +44,10 @@ def _select_auth_provider(auth_mode: str):
         from ._oauth_proxy import build_oauth_proxy
 
         return build_oauth_proxy()
+    if auth_mode == "api-key-login":
+        from ._api_key_login import build_api_key_login
+
+        return build_api_key_login()
     return None
 
 
@@ -68,6 +72,16 @@ def _register_middlewares(mcp_instance, auth_provider) -> None:
             "call any tool. Re-enable after tokens are re-consented with "
             "the required scopes."
         )
+
+    # After the scope check, so a call denied for scope never looks like a
+    # rejected Redmine key and never costs anyone their session. Imported
+    # inside the branch, matching _select_auth_provider: the other OAuth modes
+    # should not pull this module in either.
+    if REDMINE_AUTH_MODE == "api-key-login":
+        from ._api_key_login import ApiKeyLoginProvider, BindingRevocationMiddleware
+
+        if isinstance(auth_provider, ApiKeyLoginProvider):
+            mcp_instance.add_middleware(BindingRevocationMiddleware(auth_provider))
 
 
 AUTH_PROVIDER = _select_auth_provider(REDMINE_AUTH_MODE)

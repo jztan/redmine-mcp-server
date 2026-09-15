@@ -65,7 +65,7 @@ if TOOL_ALLOW_LIST is not None:
     )
 
 REDMINE_AUTH_MODE = os.environ.get("REDMINE_AUTH_MODE", "legacy").lower()
-AUTHENTICATED_AUTH_MODES = {"oauth", "oauth-proxy"}
+AUTHENTICATED_AUTH_MODES = {"oauth", "oauth-proxy", "api-key-login"}
 
 
 def get_version() -> str:
@@ -115,6 +115,12 @@ def build_app():
 
 
 # Export the Starlette app for testing and external use
+# Must run before build_app(): custom_route registers on the FastMCP instance,
+# and http_app() snapshots those routes. Imported only in this mode so legacy
+# deployments never pull in the OAuth machinery, matching server.py.
+if REDMINE_AUTH_MODE == "api-key-login":
+    from . import _api_key_login_routes  # noqa: E402,F401  -- registers /login
+
 app = build_app()
 
 # Log version at module load time so it appears regardless of how the server is started
@@ -127,6 +133,11 @@ if REDMINE_AUTH_MODE == "oauth-proxy":
     from ._oauth_proxy import log_oauth_proxy_store_path
 
     log_oauth_proxy_store_path(REDMINE_AUTH_MODE)
+
+if REDMINE_AUTH_MODE == "api-key-login":
+    from ._api_key_login import log_api_key_login_store_path
+
+    log_api_key_login_store_path(REDMINE_AUTH_MODE)
 
 
 def main():
