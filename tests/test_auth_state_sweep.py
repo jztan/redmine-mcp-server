@@ -125,21 +125,35 @@ class TestSweepExpiredAuthState:
     ):
         # The sweep reads an expired record, then a writer renames a fresh one
         # over it before the unlink. The fresh one must survive.
+        #
+        # The rename lands after the sweep has closed its handle, just before
+        # the inode check. Renaming over a file that is still open fails on
+        # Windows (#300), and a real writer can hit this window on any
+        # platform.
         await api_key_login_store.put(
             key="txn", value={"a": 1}, collection="transactions", ttl=60
         )
         (path,) = (home / "api-key-login").glob("*/transactions/*.json")
         fresh = path.read_text().replace('"expires_at": "', '"expires_at": "9')
         real_load = _cleanup.json.load
+        real_stat = os.stat
+        read = []
 
-        def load_then_rewrite(handle):
+        def load_and_note(handle):
             record = real_load(handle)
-            replacement = path.with_suffix(".new")
-            replacement.write_text(fresh)
-            os.replace(replacement, path)
+            read.append(True)
             return record
 
-        monkeypatch.setattr(_cleanup.json, "load", load_then_rewrite)
+        def rewrite_then_stat(target, *args, **kwargs):
+            if read and Path(target) == path:
+                replacement = path.with_suffix(".new")
+                replacement.write_text(fresh)
+                os.replace(replacement, path)
+                read.clear()
+            return real_stat(target, *args, **kwargs)
+
+        monkeypatch.setattr(_cleanup.json, "load", load_and_note)
+        monkeypatch.setattr(_cleanup.os, "stat", rewrite_then_stat)
 
         assert sweep_expired_auth_state(home, now=LATER) == 0
 
