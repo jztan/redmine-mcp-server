@@ -274,7 +274,7 @@ def _identity(user_id: int = 7, login: str = "tester", admin: bool = False):
     return {"id": user_id, "login": login, "admin": admin}
 
 
-async def _session(provider, api_key=KEY):
+async def _session(provider, api_key=KEY, return_code=False):
     """Register, log in and exchange the code: returns (client, token)."""
     client = _client()
     await provider.register_client(client)
@@ -287,7 +287,10 @@ async def _session(provider, api_key=KEY):
         )
     code = redirect.split("code=", 1)[1].split("&", 1)[0]
     auth_code = await provider.load_authorization_code(client, code)
-    return client, await provider.exchange_authorization_code(client, auth_code)
+    issued = await provider.exchange_authorization_code(client, auth_code)
+    if return_code:
+        return client, issued, code
+    return client, issued
 
 
 async def _refresh(provider, client, token, identity=None):
@@ -315,17 +318,47 @@ async def test_nothing_the_store_ever_held_contains_the_key():
     """The guarantee. A stolen volume plus the operator secret yields this dump."""
     store = _Recording()
     provider = _provider(store)
-    client, token = await _session(provider)
+    client, token, code = await _session(provider, return_code=True)
     rotated = await _refresh(provider, client, token)
     await _refresh(provider, client, rotated)
 
     dump = store.dump()
     assert KEY not in dump
     assert "tester" not in dump
-    # Not the tokens either: they are stored by hash, and the hash is what
-    # makes the wrapped data key unopenable from the dump alone.
-    for value in (token.access_token, token.refresh_token, rotated.access_token):
+    # Not the capabilities either: each is stored by hash, and that is what
+    # makes the data key wrapped under it unopenable from the dump alone. The
+    # authorization code belongs in this list -- it used to be written into
+    # its own record in the clear, next to the data key wrapped under it.
+    for value in (code, token.access_token, token.refresh_token, rotated.access_token):
         assert value not in dump
+
+
+async def test_a_record_never_carries_the_secret_that_opens_it():
+    """The general form of the bug the code field was.
+
+    Any record holding a wrapped data key must not also hold the value that
+    derives its key-encryption key. Rather than naming the fields, this tries
+    every string in every record against the wrap and insists none of them
+    works.
+    """
+    store = _Recording()
+    provider = _provider(store)
+    client, token = await _session(provider)
+    await _refresh(provider, client, token)
+
+    protection = m.TokenDerivedBindingProtection()
+    checked = 0
+    for collection, _key, record in store.writes:
+        if "wrapped_key" not in record:
+            continue
+        checked += 1
+        for field, value in record.items():
+            if not isinstance(value, str):
+                continue
+            assert (
+                protection.unwrap(record, value) is None
+            ), f"{collection}.{field} opens its own wrapped data key"
+    assert checked >= 3, checked
 
 
 async def test_the_data_key_is_never_written_in_the_clear():
@@ -562,34 +595,22 @@ def test_a_scheme_that_states_no_guarantee_cannot_be_built():
 # --- the root-access simulation -----------------------------------------
 
 
-async def test_the_operator_secret_does_not_open_a_real_store_on_disk(
-    tmp_path, monkeypatch
-):
-    """The requirement, against the real file store rather than a fake.
+async def _login_only(provider):
+    """Log in and stop at the redirect, leaving an unexchanged code on disk."""
+    client = _client()
+    await provider.register_client(client)
+    url = await provider.authorize(client, _params())
+    txn_id = url.split("txn=", 1)[1]
+    txn = await provider.get_transaction(txn_id)
+    with patch.object(m, "fetch_redmine_identity", AsyncMock(return_value=_identity())):
+        redirect = await provider.complete_login(
+            txn_id, txn["csrf"], KEY, browser_nonce=txn["browser_nonce"]
+        )
+    return client, redirect.split("code=", 1)[1].split("&", 1)[0]
 
-    Plays the attacker who has the volume *and* REDMINE_MCP_JWT_SIGNING_KEY:
-    peels the store's own Fernet layer off every file with the operator secret,
-    exactly as the server would, and then looks for the key. Under
-    ``server-secret`` this is where the key appears, which is the point of the
-    contrast at the end.
-    """
-    secret = "the-operator-secret"
-    monkeypatch.setattr(m.settings, "home", tmp_path)
 
-    provider = _provider(m.build_store(secret))
-    _, token = await _session(provider)
-    assert (await provider.load_access_token(token.access_token)).claims[
-        "redmine_api_key"
-    ] == KEY
-
-    files = [f for f in tmp_path.rglob("*.json") if f.is_file()]
-    assert files, "the store wrote nothing"
-
-    # 1. The raw files, as a `strings` over the stolen volume would see them.
-    assert not any(KEY.encode() in f.read_bytes() for f in files)
-
-    # 2. The same files with the operator secret applied, which is the part
-    #    that separates this scheme from the default.
+async def _attacker_walk(home, secret):
+    """Everything the store holds, opened the way the operator secret opens it."""
     reader = m.FernetEncryptionWrapper(
         key_value=m.FileTreeStore(data_directory=m.api_key_login_store_path(secret)),
         fernet=m.Fernet(key=m._storage_encryption_key(secret)),
@@ -598,37 +619,97 @@ async def test_the_operator_secret_does_not_open_a_real_store_on_disk(
     opened = []
     for collection in (
         m.COLLECTION_BINDINGS,
+        m.COLLECTION_CODES,
         m.COLLECTION_ACCESS_TOKENS,
         m.COLLECTION_REFRESH_TOKENS,
-        m.COLLECTION_CODES,
+        m.COLLECTION_ROTATED_REFRESH,
+        m.COLLECTION_TRANSACTIONS,
     ):
-        for path in (tmp_path / m.STORE_SUBDIR).glob(f"*/{collection}/*.json"):
+        for path in (home / m.STORE_SUBDIR).glob(f"*/{collection}/*.json"):
+            if path.name.endswith("-info.json"):
+                continue
             record = await reader.get(path.stem, collection=collection)
             if record is not None:
                 opened.append(record)
+    return opened
 
-    assert opened, "the operator secret opened nothing, so this proves nothing"
-    assert KEY not in json.dumps(opened, default=str)
 
-    # 3. The contrast: the same walk under the default scheme hands the key
-    #    over, which is what the docs say and what this scheme removes.
+def _key_recovered_from(opened):
+    """Try to reach the API key using only what the walk turned up.
+
+    Every string in every record is tried as the secret for every wrapped data
+    key, and every data key so recovered against every sealed binding. This is
+    the exploit rather than a field-name check: the ``code`` field passed a
+    ``"api_key" not in dump`` assertion while handing the key over.
+    """
+    protection = m.TokenDerivedBindingProtection()
+    strings = [v for r in opened for v in r.values() if isinstance(v, str)]
+    data_keys = [
+        key
+        for record in opened
+        if "wrapped_key" in record
+        for secret in strings
+        if (key := protection.unwrap(record, secret)) is not None
+    ]
+    for record in opened:
+        for data_key in data_keys:
+            payload = protection.unseal(record, data_key)
+            if payload and payload.get("api_key"):
+                return payload["api_key"]
+    return None
+
+
+async def test_the_operator_secret_does_not_open_a_real_store_on_disk(
+    tmp_path, monkeypatch
+):
+    """The requirement, against the real file store rather than a fake.
+
+    Plays the attacker who has the volume *and* REDMINE_MCP_JWT_SIGNING_KEY:
+    peels the store's own Fernet layer off every file with the operator secret,
+    exactly as the server would, and then tries to reach the key with what is
+    there. Taken twice -- once while an unexchanged authorization code is still
+    on disk, which is the window the plaintext ``code`` field used to open, and
+    once after the exchange. Under ``server-secret`` this is where the key
+    appears, which is the point of the contrast at the end.
+    """
+    secret = "the-operator-secret"
+    monkeypatch.setattr(m.settings, "home", tmp_path)
+    provider = _provider(m.build_store(secret))
+
+    # --- snapshot 1: logged in, code minted, not yet exchanged ---
+    client, code = await _login_only(provider)
+    before = await _attacker_walk(tmp_path, secret)
+    assert any(
+        "wrapped_key" in r for r in before
+    ), "no code record on disk, so this snapshot proves nothing"
+    assert KEY not in json.dumps(before, default=str)
+    assert code not in json.dumps(before, default=str)
+    assert _key_recovered_from(before) is None
+
+    # --- snapshot 2: after the exchange, with a live session ---
+    auth_code = await provider.load_authorization_code(client, code)
+    assert auth_code is not None and auth_code.code == code
+    token = await provider.exchange_authorization_code(client, auth_code)
+    assert (await provider.load_access_token(token.access_token)).claims[
+        "redmine_api_key"
+    ] == KEY
+
+    files = [f for f in tmp_path.rglob("*.json") if f.is_file()]
+    assert files, "the store wrote nothing"
+    # The raw bytes, as a `strings` over the stolen volume would see them.
+    assert not any(KEY.encode() in f.read_bytes() for f in files)
+
+    after = await _attacker_walk(tmp_path, secret)
+    assert after, "the operator secret opened nothing, so this proves nothing"
+    assert KEY not in json.dumps(after, default=str)
+    assert _key_recovered_from(after) is None
+
+    # --- the contrast: the same walk under the default scheme hands it over ---
     monkeypatch.setattr(m.settings, "home", tmp_path / "default-scheme")
     default_secret = "another-operator-secret"
     default = _provider(
         m.build_store(default_secret), protection=m.ServerSecretBindingProtection()
     )
     await _session(default)
-    default_reader = m.FernetEncryptionWrapper(
-        key_value=m.FileTreeStore(
-            data_directory=m.api_key_login_store_path(default_secret)
-        ),
-        fernet=m.Fernet(key=m._storage_encryption_key(default_secret)),
-        raise_on_decryption_error=False,
-    )
-    bindings = [
-        await default_reader.get(path.stem, collection=m.COLLECTION_BINDINGS)
-        for path in (tmp_path / "default-scheme" / m.STORE_SUBDIR).glob(
-            f"*/{m.COLLECTION_BINDINGS}/*.json"
-        )
-    ]
-    assert any(b and b.get("api_key") == KEY for b in bindings)
+    plain = await _attacker_walk(tmp_path / "default-scheme", default_secret)
+    assert any(r.get("api_key") == KEY for r in plain)

@@ -25,19 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#261](https://github.com/jztan/redmine-mcp-server/issues/261),
   [#286](https://github.com/jztan/redmine-mcp-server/pull/286),
   [#287](https://github.com/jztan/redmine-mcp-server/pull/287)).
-- `REDMINE_API_KEY_LOGIN_BINDING_CRYPTO=token-derived` protects stored Redmine
-  API keys against a reader who holds both the store and
-  `REDMINE_MCP_JWT_SIGNING_KEY`. Each binding is encrypted under its own random
-  key, which is kept only wrapped under the authorization code and under every
-  token minted from it (HKDF-SHA256, AES-256-GCM), so the key that opens a
-  binding exists only inside the tokens clients hold and a stolen volume yields
-  ciphertext. The cost is permanent: nothing server-side can read a stored key
-  without a presented token, which rules out a session admin UI, background
-  revalidation of stored keys and re-encryption on key rotation. Records written
-  under one scheme cannot be read under the other, so switching a running
-  deployment ends every session and users log in again. The default stays
-  `server-secret`, and the startup warning states whichever guarantee is in
-  force ([#265](https://github.com/jztan/redmine-mcp-server/discussions/265)).
+- `REDMINE_API_KEY_LOGIN_BINDING_CRYPTO=token-derived` keeps stored Redmine API
+  keys out of reach of anyone holding both the store and
+  `REDMINE_MCP_JWT_SIGNING_KEY`, at the cost of any server-side read of a stored
+  key. The default stays `server-secret`; switching a running deployment signs
+  everyone out. Trade-offs and switchover:
+  [docs/api-key-login-auth.md](docs/api-key-login-auth.md#binding-protection)
+  ([#299](https://github.com/jztan/redmine-mcp-server/pull/299)).
 
 ### Fixed
 - `legacy-per-user` mode no longer runs a wrong or reset
@@ -76,7 +70,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   design ([#265](https://github.com/jztan/redmine-mcp-server/discussions/265)),
   and implemented it
   ([#286](https://github.com/jztan/redmine-mcp-server/pull/286),
-  [#287](https://github.com/jztan/redmine-mcp-server/pull/287)).
+  [#287](https://github.com/jztan/redmine-mcp-server/pull/287),
+  [#299](https://github.com/jztan/redmine-mcp-server/pull/299)).
 
 ## [2.15.0] - 2026-09-12
 ### Added

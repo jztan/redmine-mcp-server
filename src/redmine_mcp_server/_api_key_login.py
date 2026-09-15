@@ -1007,8 +1007,14 @@ class ApiKeyLoginProvider(OAuthProvider):
         data_key: Optional[bytes],
     ) -> str:
         code = _token()
+        # The code itself is deliberately NOT in the record. Under
+        # token-derived protection the wrap below is keyed by the code, so
+        # storing it here would hand the data key -- and through it the API
+        # key -- to anyone holding the store and the operator secret, for as
+        # long as an unexchanged or abandoned code sits on disk. The record is
+        # found by sha256(code) and the caller always presents the code, so
+        # nothing needs it back.
         record = {
-            "code": code,
             "client_id": transaction["client_id"],
             "redirect_uri": str(transaction["redirect_uri"]),
             "redirect_uri_provided_explicitly": bool(
@@ -1041,7 +1047,8 @@ class ApiKeyLoginProvider(OAuthProvider):
             await self._forget(_hash(authorization_code), collection=COLLECTION_CODES)
             return None
         return AuthorizationCode(
-            code=record["code"],
+            # From the caller, never from the record: see _mint_code.
+            code=authorization_code,
             scopes=list(record.get("scopes", [])),
             expires_at=float(record["expires_at"]),
             client_id=record["client_id"],
