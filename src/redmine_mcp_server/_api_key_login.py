@@ -46,6 +46,7 @@ Two properties are load-bearing and easy to break:
 """
 
 import asyncio
+import contextvars
 import hashlib
 import hmac
 import logging
@@ -53,9 +54,9 @@ import os
 import secrets
 import time
 from abc import ABC, abstractmethod
+import weakref
 from pathlib import Path
 from typing import Any, Mapping, Optional
-from urllib.parse import parse_qs, urlparse
 
 import httpx
 from fastmcp import settings
@@ -163,60 +164,72 @@ def _now() -> float:
     return time.time()
 
 
-# Single-use records are claimed under this lock. ``FileTreeStore.delete``
-# is a stat-then-unlink, so two concurrent claims can both see the file and
-# both report success (41 of 300 runs on macOS), or the loser can raise
+# Single-use records are claimed under a lock. ``FileTreeStore.delete`` is a
+# stat-then-unlink, so two concurrent claims can both see the file and both
+# report success (41 of 300 runs on macOS), or the loser can raise
 # FileNotFoundError. Neither is acceptable for a code or a refresh token,
-# where "exactly one caller wins" is the whole point. The lock is
-# process-wide, which matches the store: it is node-local anyway.
-_CLAIM_LOCK = asyncio.Lock()
+# where "exactly one caller wins" is the whole point.
+#
+# One lock per running loop: an asyncio.Lock binds to the loop that first
+# contends it, and a later contended use from another loop raises. Tests run
+# each case on their own loop, and so would a second server in one process.
+_CLAIM_LOCKS: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
+
+
+def _claim_lock() -> asyncio.Lock:
+    loop = asyncio.get_running_loop()
+    lock = _CLAIM_LOCKS.get(loop)
+    if lock is None:
+        lock = asyncio.Lock()
+        _CLAIM_LOCKS[loop] = lock
+    return lock
+
+
+# The transaction a request created, if any. Set per request by the wrapper
+# below and appended to by ``authorize``; never read from the response.
+_ISSUED_TRANSACTIONS: contextvars.ContextVar[Optional[list]] = contextvars.ContextVar(
+    "api_key_login_issued_transactions", default=None
+)
 
 
 class _BindingCookieASGI:
-    """Attach a transaction's binding cookie to the redirect that created it."""
+    """Attach a transaction's binding cookie to the redirect that created it.
+
+    The transaction comes from the provider itself, not from the response.
+    Reading it out of the Location header looked equivalent and was
+    exploitable: the SDK keeps the query string of a registered redirect URI,
+    so a client registered with ``.../login?txn=<someone else's>`` could
+    trigger an authorize error and be handed that person's cookie -- enough to
+    finish their login with its own key.
+
+    The holder is seeded per request rather than left to default, because a
+    bare contextvar set inside a task leaks into whatever runs next on it.
+    """
 
     def __init__(self, app, provider: "ApiKeyLoginProvider"):
         self._app = app
         self._provider = provider
 
     async def __call__(self, scope, receive, send):
+        issued: list = []
+        token = _ISSUED_TRANSACTIONS.set(issued)
+
         async def send_with_cookie(message):
-            if message["type"] == "http.response.start":
+            if message["type"] == "http.response.start" and len(issued) == 1:
                 from starlette.datastructures import MutableHeaders
 
-                headers = MutableHeaders(raw=message["headers"])
-                txn_id = _txn_from_login_url(
-                    headers.get("location", ""), self._provider.login_path
-                )
-                if txn_id:
-                    transaction = await self._provider.get_transaction(txn_id)
-                    if transaction:
-                        from ._api_key_login_routes import binding_cookie_header
+                from ._api_key_login_routes import binding_cookie_header
 
-                        headers.append(
-                            "set-cookie",
-                            binding_cookie_header(
-                                txn_id, str(transaction["browser_nonce"])
-                            ),
-                        )
+                txn_id, nonce = issued[0]
+                MutableHeaders(raw=message["headers"]).append(
+                    "set-cookie", binding_cookie_header(txn_id, nonce)
+                )
             await send(message)
 
-        await self._app(scope, receive, send_with_cookie)
-
-
-def _txn_from_login_url(location: str, login_path: str) -> Optional[str]:
-    """The transaction id from our own login redirect, or ``None``.
-
-    Only our login URL qualifies: /authorize also redirects errors back to the
-    client, and those must not carry a cookie.
-    """
-    if not location:
-        return None
-    parsed = urlparse(location)
-    if not parsed.path.endswith(login_path):
-        return None
-    values = parse_qs(parsed.query).get("txn") or []
-    return values[0] if values else None
+        try:
+            await self._app(scope, receive, send_with_cookie)
+        finally:
+            _ISSUED_TRANSACTIONS.reset(token)
 
 
 def _constant_time_equal(expected: Any, given: Any) -> bool:
@@ -555,6 +568,12 @@ class ApiKeyLoginProvider(OAuthProvider):
             collection=COLLECTION_TRANSACTIONS,
             ttl=self._transaction_ttl,
         )
+        # Tell the ASGI wrapper which transaction this request created, so the
+        # cookie goes to the browser that is about to be redirected here and
+        # to no one else.
+        issued = _ISSUED_TRANSACTIONS.get()
+        if issued is not None:
+            issued.append((txn_id, str(transaction["browser_nonce"])))
         # Keep the registration alive for as long as sessions can last, so an
         # idle-but-valid client is not evicted mid-session.
         await self._refresh_client_ttl(client)
@@ -570,18 +589,41 @@ class ApiKeyLoginProvider(OAuthProvider):
 
     # -- the login step ---------------------------------------------------
 
+    async def _forget(self, key: str, *, collection: str) -> bool:
+        """Delete a record, treating "someone else got there first" as done.
+
+        Every delete on this store needs this. ``FileTreeStore.delete`` is a
+        stat-then-unlink, so two callers removing the same record collide, and
+        the loser's error depends on the platform: ``FileNotFoundError`` on
+        macOS, ``PermissionError`` on Windows (the file is still open), and a
+        ``PathSecurityError`` when a peer removes the collection directory
+        between the path check and the unlink. All three mean the same thing,
+        and the caller's intent -- that the record be gone -- holds either way.
+
+        The lock removes the collision within a process, which is the whole
+        story for a node-local store; the tolerance covers what it cannot,
+        such as a second process sharing the directory.
+        """
+        async with _claim_lock():
+            try:
+                return await self._store.delete(key, collection=collection)
+            except OSError as exc:
+                logger.debug("Lost a delete race on %s (%s).", collection, exc)
+                return False
+            except Exception as exc:  # pragma: no cover - store-specific
+                if type(exc).__name__ != "PathSecurityError":
+                    raise
+                logger.debug("Lost a delete race on %s (%s).", collection, exc)
+                return False
+
     async def _claim(self, key: str, *, collection: str) -> bool:
         """Delete a single-use record, returning ``True`` to exactly one caller.
 
-        See ``_CLAIM_LOCK``: the store's delete is not atomic, so the lock
-        serialises the claims and a ``FileNotFoundError`` from a racing peer
-        counts as a loss rather than an error.
+        The lock lives in ``_forget``; this name exists because "claim" is what
+        the call sites mean -- a transaction, a code and a rotated refresh
+        token are spent here, and the boolean is the permission to proceed.
         """
-        async with _CLAIM_LOCK:
-            try:
-                return await self._store.delete(key, collection=collection)
-            except FileNotFoundError:
-                return False
+        return await self._forget(key, collection=collection)
 
     async def get_transaction(self, txn_id: str) -> Optional[dict[str, Any]]:
         """Return a pending transaction, or ``None`` when unknown or expired."""
@@ -591,12 +633,12 @@ class ApiKeyLoginProvider(OAuthProvider):
         if record is None:
             return None
         if float(record.get("expires_at", 0)) < _now():
-            await self._store.delete(_hash(txn_id), collection=COLLECTION_TRANSACTIONS)
+            await self._forget(_hash(txn_id), collection=COLLECTION_TRANSACTIONS)
             return None
         return record
 
     async def drop_transaction(self, txn_id: str) -> None:
-        await self._store.delete(_hash(txn_id), collection=COLLECTION_TRANSACTIONS)
+        await self._forget(_hash(txn_id), collection=COLLECTION_TRANSACTIONS)
 
     async def _count_attempt(self, txn_id: str, transaction: dict[str, Any]) -> None:
         """Charge one attempt, dropping the transaction once the budget is out.
@@ -609,7 +651,7 @@ class ApiKeyLoginProvider(OAuthProvider):
         """
         attempts = int(transaction.get("attempts", 0)) + 1
         if attempts >= MAX_LOGIN_ATTEMPTS:
-            await self._store.delete(_hash(txn_id), collection=COLLECTION_TRANSACTIONS)
+            await self._forget(_hash(txn_id), collection=COLLECTION_TRANSACTIONS)
             return
         transaction["attempts"] = attempts
         remaining = max(1.0, float(transaction.get("expires_at", 0)) - _now())
@@ -762,9 +804,7 @@ class ApiKeyLoginProvider(OAuthProvider):
         if record is None or record.get("client_id") != client.client_id:
             return None
         if float(record.get("expires_at", 0)) < _now():
-            await self._store.delete(
-                _hash(authorization_code), collection=COLLECTION_CODES
-            )
+            await self._forget(_hash(authorization_code), collection=COLLECTION_CODES)
             return None
         return AuthorizationCode(
             code=record["code"],
@@ -975,15 +1015,27 @@ class ApiKeyLoginProvider(OAuthProvider):
             raise TokenError("invalid_grant", "This session can no longer be read.")
 
         try:
-            # Its own budget: a refresh must not hang for REDMINE_TIMEOUT, and
-            # a slow Redmine should keep the session rather than end it.
-            identity = await fetch_redmine_identity(
-                self._redmine_url,
-                binding["api_key"],
-                timeout=httpx.Timeout(REVALIDATION_TIMEOUT_SECONDS),
+            # wait_for, not httpx's timeout: that one is per phase, so a
+            # Redmine dribbling a byte every three seconds kept this alive for
+            # eighteen. A refresh sits on the client's critical path.
+            identity = await asyncio.wait_for(
+                fetch_redmine_identity(
+                    self._redmine_url,
+                    binding["api_key"],
+                    timeout=httpx.Timeout(REVALIDATION_TIMEOUT_SECONDS),
+                ),
+                timeout=REVALIDATION_TIMEOUT_SECONDS,
             )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Keeping the session: revalidation did not finish within %ss.",
+                REVALIDATION_TIMEOUT_SECONDS,
+            )
+            return
         except (RedmineForbidden, RedmineUnavailable) as exc:
-            logger.info("Keeping the session: revalidation was inconclusive (%s).", exc)
+            logger.warning(
+                "Keeping the session: revalidation was inconclusive (%s).", exc
+            )
             return
 
         if identity is None:
@@ -1049,15 +1101,15 @@ class ApiKeyLoginProvider(OAuthProvider):
             record = await self._store.get(
                 _hash(raw), collection=COLLECTION_REFRESH_TOKENS
             )
-            await self._store.delete(_hash(raw), collection=COLLECTION_REFRESH_TOKENS)
+            await self._forget(_hash(raw), collection=COLLECTION_REFRESH_TOKENS)
             if record is not None:
                 await self.revoke_binding(str(record["binding_id"]))
             return
-        await self._store.delete(_hash(raw), collection=COLLECTION_ACCESS_TOKENS)
+        await self._forget(_hash(raw), collection=COLLECTION_ACCESS_TOKENS)
 
     async def revoke_binding(self, binding_id: str) -> bool:
         """Delete the binding. Every token pointing at it dies on next use."""
-        return await self._store.delete(binding_id, collection=COLLECTION_BINDINGS)
+        return await self._forget(binding_id, collection=COLLECTION_BINDINGS)
 
 
 # --- store wiring and factory ------------------------------------------

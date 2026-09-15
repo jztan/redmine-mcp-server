@@ -38,6 +38,14 @@ from .server import mcp
 logger = logging.getLogger(__name__)
 
 LOGIN_PATH = "/login"
+
+# One wording for both routes: the cause is the same, and "blocked cookies" is
+# the likeliest one a user can actually act on.
+_WRONG_BROWSER = (
+    "This login page was opened in a different browser, or its cookie was "
+    "blocked. Start the connection again in your client, and allow cookies "
+    "for this site."
+)
 DEFAULT_RATE_LIMIT_PER_MINUTE = 300
 
 _SECURITY_HEADERS = {
@@ -241,11 +249,7 @@ async def login_page(request: Request) -> Response:
     if not _constant_time_equal(
         transaction.get("browser_nonce"), request.cookies.get(cookie_name(txn_id))
     ):
-        return _error_page(
-            "This login link belongs to a different browser session. Start the "
-            "connection again in your client.",
-            400,
-        )
+        return _error_page(_WRONG_BROWSER, 400)
 
     return _render(
         txn_id,
@@ -276,12 +280,10 @@ async def login_submit(request: Request) -> Response:
 
     cookie = request.cookies.get(cookie_name(txn_id))
     if not _constant_time_equal(transaction.get("browser_nonce"), cookie):
-        await provider.drop_transaction(txn_id)
-        return _error_page(
-            "This page was opened in a different browser, or its cookie was "
-            "blocked.",
-            400,
-        )
+        # Refused, but the transaction lives: this check runs before the CSRF
+        # one, so dropping here would let anyone holding the URL cancel
+        # someone else's pending login.
+        return _error_page(_WRONG_BROWSER, 400)
 
     client_name = await _client_name(provider, str(transaction["client_id"]))
 

@@ -131,7 +131,8 @@ async def test_the_page_refuses_a_browser_without_the_cookie():
             response = await http.get(f"/login?txn={txn}")
 
     assert response.status_code == 400
-    assert "different browser session" in response.text
+    assert "different browser" in response.text
+    assert "cookie was blocked" in response.text
     # And it must not hand out a cookie that would let the attempt succeed.
     assert "set-cookie" not in response.headers
 
@@ -225,21 +226,22 @@ async def test_a_good_key_redirects_to_the_client_with_a_code():
     assert "code=" in location and "state=state-1" in location
 
 
-async def test_a_missing_cookie_is_refused_and_drops_the_transaction():
+async def test_a_missing_cookie_is_refused_without_cancelling_the_login():
+    """The check precedes CSRF, so dropping here would be a free cancel."""
     provider = _provider()
     txn = await _new_transaction(provider)
     response = await _submit(provider, txn, cookie=False)
     assert response.status_code == 400
-    assert "different browser" in response.text or "cookie was" in response.text
-    assert await provider.get_transaction(txn) is None
+    assert "cookie was blocked" in response.text
+    assert await provider.get_transaction(txn) is not None
 
 
-async def test_a_foreign_cookie_is_refused():
+async def test_a_foreign_cookie_is_refused_without_cancelling_the_login():
     provider = _provider()
     txn = await _new_transaction(provider)
     response = await _submit(provider, txn, cookie="somebody-elses-value")
     assert response.status_code == 400
-    assert await provider.get_transaction(txn) is None
+    assert await provider.get_transaction(txn) is not None
 
 
 async def test_two_concurrent_logins_in_one_browser_both_complete():
@@ -863,3 +865,42 @@ async def test_a_longer_list_is_left_alone():
             {"binding_id": "b"},
         )
     revoke.assert_not_awaited()
+
+
+async def test_a_403_at_login_is_a_rejection_not_a_500():
+    """Redmine can answer 403 for a known key; the route must not blow up."""
+    provider = _provider()
+    txn = await _new_transaction(provider)
+    transaction = await provider.get_transaction(txn)
+
+    with (
+        patch.object(routes, "_provider", lambda: provider),
+        patch.object(
+            provider_mod,
+            "fetch_redmine_identity",
+            AsyncMock(side_effect=provider_mod.RedmineForbidden("HTTP 403")),
+        ),
+    ):
+        async with await _browse(provider, await _jar(provider, txn)) as http:
+            response = await http.post(
+                "/login",
+                data={"txn": txn, "csrf": transaction["csrf"], "api_key": KEY},
+            )
+
+    assert response.status_code == 400
+    assert "rejected" in response.text
+
+
+async def test_a_head_request_does_not_consume_the_login():
+    """A link checker or a preloading browser must not burn the transaction."""
+    provider = _provider()
+    txn = await _new_transaction(provider)
+
+    with patch.object(routes, "_provider", lambda: provider):
+        async with await _browse(provider, await _jar(provider, txn)) as http:
+            head = await http.head(f"/login?txn={txn}")
+            get = await http.get(f"/login?txn={txn}")
+
+    assert head.status_code in (200, 405)
+    assert get.status_code == 200
+    assert await provider.get_transaction(txn) is not None

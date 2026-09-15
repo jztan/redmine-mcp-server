@@ -1051,7 +1051,7 @@ async def test_only_one_concurrent_claim_wins_on_a_real_file_store(tmp_path):
 
     monkeyed = m.settings.home
     try:
-        m.settings.home = tmp_path
+        m.settings.home = tmp_path.resolve()
         store = m.build_store("claim-test-secret")
         provider = _provider(store)
 
@@ -1074,3 +1074,185 @@ async def test_a_claim_of_something_already_gone_is_a_loss_not_an_error():
     assert (
         await provider._claim("never-existed", collection=m.COLLECTION_CODES) is False
     )
+
+
+# --- review round 3 -------------------------------------------------------
+
+
+async def test_a_crafted_redirect_uri_cannot_steal_a_cookie():
+    """The hole from reading the txn out of the Location header.
+
+    The SDK keeps the query string of a registered redirect URI, so a client
+    registered with ``.../login?txn=<someone else's>`` used to be handed that
+    person's cookie on an authorize error -- enough to finish their login with
+    its own key.
+    """
+    from fastmcp import FastMCP
+    from httpx import ASGITransport, AsyncClient
+
+    provider = _provider(allowed_client_redirect_uris=None)
+    victim_client = await _registered(provider)
+    victim_url = await provider.authorize(victim_client, _params())
+    victim_txn = victim_url.split("txn=", 1)[1]
+
+    attacker = _client(
+        client_id="attacker",
+        redirect=f"http://localhost:1/login?txn={victim_txn}",
+    )
+    await provider.register_client(attacker)
+
+    app = FastMCP("cookie-theft-test", auth=provider).http_app(stateless_http=True)
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url=BASE, follow_redirects=False
+    ) as http:
+        response = await http.get(
+            "/authorize",
+            params={
+                "response_type": "token",  # unsupported, so it errors out
+                "client_id": attacker.client_id,
+                "redirect_uri": str(attacker.redirect_uris[0]),
+                "state": "s",
+            },
+        )
+
+    assert "set-cookie" not in response.headers
+    assert await provider.get_transaction(victim_txn) is not None
+
+
+async def test_the_revalidation_budget_is_total_not_per_phase():
+    """httpx's timeout is per phase; a dribbling server outlived it."""
+    import asyncio
+
+    provider = _provider()
+    client, token = await _session(provider)
+
+    async def slow(*args, **kwargs):
+        await asyncio.sleep(m.REVALIDATION_TIMEOUT_SECONDS * 4)
+        return _identity()
+
+    refresh = await provider.load_refresh_token(client, token.refresh_token)
+    with patch.object(m, "REVALIDATION_TIMEOUT_SECONDS", 0.05):
+        with patch.object(m, "fetch_redmine_identity", slow):
+            started = asyncio.get_running_loop().time()
+            rotated = await provider.exchange_refresh_token(client, refresh, [])
+            elapsed = asyncio.get_running_loop().time() - started
+
+    # It gave up quickly and kept the session: an unanswered check is not a
+    # rejected key.
+    assert elapsed < 1.0
+    assert await provider.load_access_token(rotated.access_token) is not None
+
+
+async def test_revalidation_happens_before_the_old_token_is_claimed():
+    """Otherwise a revoked key would still burn the caller's refresh token."""
+    provider = _provider()
+    client, token = await _session(provider)
+    order = []
+
+    original_claim = provider._claim
+
+    async def watched_claim(key, *, collection):
+        order.append("claim")
+        return await original_claim(key, collection=collection)
+
+    async def watched_fetch(*args, **kwargs):
+        order.append("revalidate")
+        return _identity()
+
+    with (
+        patch.object(provider, "_claim", watched_claim),
+        patch.object(m, "fetch_redmine_identity", watched_fetch),
+    ):
+        refresh = await provider.load_refresh_token(client, token.refresh_token)
+        await provider.exchange_refresh_token(client, refresh, [])
+
+    assert order[:2] == ["revalidate", "claim"], order
+
+
+async def test_the_key_stays_out_of_the_revalidation_log(caplog):
+    provider = _provider()
+    client, token = await _session(provider)
+
+    with caplog.at_level("DEBUG"):
+        await _refresh(
+            provider, client, token, error=m.RedmineUnavailable("ConnectError")
+        )
+
+    text = "\n".join(r.getMessage() for r in caplog.records)
+    assert "inconclusive" in text
+    assert KEY not in text
+
+
+async def test_two_concurrent_revocations_do_not_raise(tmp_path, monkeypatch):
+    """229 of 300 runs raised FileNotFoundError, which is a 500 at /token."""
+    import asyncio
+
+    monkeypatch.setattr(m.settings, "home", tmp_path.resolve())
+    store = m.build_store("revoke-race-secret")
+    provider = _provider(store)
+
+    for round_number in range(20):
+        binding_id = f"binding-{round_number}"
+        await store.put(binding_id, {"api_key": KEY}, collection=m.COLLECTION_BINDINGS)
+        results = await asyncio.gather(
+            *(provider.revoke_binding(binding_id) for _ in range(4))
+        )
+        assert sum(1 for r in results if r) >= 1
+        assert await store.get(binding_id, collection=m.COLLECTION_BINDINGS) is None
+
+
+def test_each_event_loop_gets_its_own_claim_lock():
+    """An asyncio.Lock binds to the loop that first contends it."""
+    import asyncio
+
+    seen = []
+
+    async def grab():
+        lock = m._claim_lock()
+        async with lock:
+            pass
+        seen.append(lock)
+
+    asyncio.run(grab())
+    asyncio.run(grab())
+
+    assert len(seen) == 2
+    assert seen[0] is not seen[1]
+
+
+@pytest.mark.parametrize(
+    "collection,method",
+    [
+        (m.COLLECTION_TRANSACTIONS, "complete_login"),
+        (m.COLLECTION_CODES, "exchange_authorization_code"),
+        (m.COLLECTION_REFRESH_TOKENS, "exchange_refresh_token"),
+    ],
+)
+async def test_every_single_use_record_goes_through_claim(collection, method):
+    """Each of the three must take the lock, not a bare store.delete."""
+    provider = _provider()
+    client, token = await _session(provider)
+    claimed = []
+
+    original = provider._claim
+
+    async def watched(key, *, collection):
+        claimed.append(collection)
+        return await original(key, collection=collection)
+
+    with patch.object(provider, "_claim", watched):
+        if method == "complete_login":
+            other = await _registered(provider, _client(client_id="second"))
+            await _login(provider, other)
+        elif method == "exchange_authorization_code":
+            second = await _registered(provider, _client(client_id="third"))
+            redirect, _ = await _login(provider, second)
+            await _exchange(provider, second, redirect)
+        else:
+            with patch.object(
+                m, "fetch_redmine_identity", AsyncMock(return_value=_identity())
+            ):
+                refresh = await provider.load_refresh_token(client, token.refresh_token)
+                await provider.exchange_refresh_token(client, refresh, [])
+
+    assert collection in claimed, claimed

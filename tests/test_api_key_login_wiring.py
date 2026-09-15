@@ -54,7 +54,11 @@ def isolated_server(monkeypatch, tmp_path):
     monkeypatch.setenv("REDMINE_MCP_BASE_URL", BASE)
     monkeypatch.setenv("REDMINE_MCP_JWT_SIGNING_KEY", "wiring-test-signing-key")
     monkeypatch.setenv("REDMINE_API_KEY_LOGIN_ALLOW_HTTP", "true")
-    monkeypatch.setenv("FASTMCP_HOME", str(tmp_path))
+    # settings.home is read once at import, so the env var is too late; the
+    # store would land in the real FastMCP home.
+    from fastmcp import settings
+
+    monkeypatch.setattr(settings, "home", tmp_path)
 
     snapshot = {name: sys.modules[name] for name in _package_modules()}
     for name in snapshot:
