@@ -41,8 +41,10 @@ Two properties are load-bearing and easy to break:
   guaranteed through the encryption wrapper.
 * **Single use rides on ``delete()``.** The store has no compare-and-swap, so
   a transaction, a code, or a rotated refresh token is claimed by deleting it
-  and proceeding only when ``delete()`` returns ``True``. The one counter that
-  cannot work this way, ``attempts``, is documented as approximate.
+  and proceeding only when ``delete()`` returns ``True``. That delete is not
+  atomic either, so every one of them goes through ``_forget``, which holds a
+  per-loop lock and tolerates a peer that got there first. The one counter
+  that cannot work this way, ``attempts``, is documented as approximate.
 """
 
 import asyncio
@@ -53,12 +55,13 @@ import logging
 import os
 import secrets
 import time
-from abc import ABC, abstractmethod
 import weakref
+from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
 import httpx
+from cryptography.fernet import Fernet
 from fastmcp import settings
 from fastmcp.server.auth import OAuthProvider
 from fastmcp.server.auth.auth import AccessToken
@@ -67,7 +70,7 @@ from fastmcp.server.auth.redirect_validation import (
     build_client_redirect,
     validate_redirect_uri,
 )
-from cryptography.fernet import Fernet
+from fastmcp.server.middleware import Middleware
 from key_value.aio.protocols.key_value import AsyncKeyValue
 from key_value.aio.stores.filetree import (
     FileTreeStore,
@@ -83,7 +86,6 @@ from mcp.server.auth.provider import (
     RegistrationError,
     TokenError,
 )
-from fastmcp.server.middleware import Middleware
 from mcp.server.auth.settings import ClientRegistrationOptions, RevocationOptions
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
@@ -206,9 +208,8 @@ class _BindingCookieASGI:
     bare contextvar set inside a task leaks into whatever runs next on it.
     """
 
-    def __init__(self, app, provider: "ApiKeyLoginProvider"):
+    def __init__(self, app):
         self._app = app
-        self._provider = provider
 
     async def __call__(self, scope, receive, send):
         issued: list = []
@@ -444,7 +445,7 @@ class ApiKeyLoginProvider(OAuthProvider):
         routes = super().get_routes(mcp_path)
         for route in routes:
             if getattr(route, "path", None) == "/authorize":
-                route.app = _BindingCookieASGI(route.app, self)
+                route.app = _BindingCookieASGI(route.app)
         return routes
 
     # -- client registration ---------------------------------------------
@@ -694,9 +695,9 @@ class ApiKeyLoginProvider(OAuthProvider):
     ) -> str:
         """Validate the key, bind it, and return the client redirect URL.
 
-        Raises :class:`ApiKeyLoginError` for anything the user should see. A
-        transport failure reaching Redmine propagates unchanged so the route
-        can answer 502 and keep the transaction: the user's key may be fine.
+        Raises :class:`ApiKeyLoginError` for anything the user should see, and
+        lets :class:`RedmineUnavailable` through so the route can answer 502
+        and keep the transaction: an unanswered check is not a bad key.
         """
         transaction = await self.get_transaction(txn_id)
         if transaction is None:
