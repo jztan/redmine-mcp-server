@@ -54,11 +54,11 @@ def _select_auth_provider(auth_mode: str):
 def refresh_advertised_scopes(auth_provider) -> None:
     """Push the current advertised scope list back into the auth provider.
 
-    Both builders snapshot the list into the provider they return, and
+    Every builder snapshots the list into the provider it returns, and
     ``AUTH_PROVIDER`` is built while this module body runs -- before
     ``main.py`` has imported the modules ``REDMINE_MCP_EXTENSIONS`` names.
     So an extension's scopes reach ``advertised_scopes()`` but not the
-    served discovery documents unless the provider is told again. Both
+    served discovery documents unless the provider is told again. All three
     providers read their list when ``get_routes()`` builds the HTTP app,
     which is after extensions load, so one call is enough.
 
@@ -66,8 +66,15 @@ def refresh_advertised_scopes(auth_provider) -> None:
     :func:`oauth_scopes.advertised_scopes` for the OAuth proxy (whose
     ``valid_scopes`` is what it registers clients against) and
     :func:`oauth_scopes.configured_advertised_scopes` for the remote
-    provider (so ``REDMINE_MCP_SCOPES`` still narrows it). ``None`` -- the
-    legacy modes -- and any other provider are left alone.
+    provider and for ``api-key-login`` (so ``REDMINE_MCP_SCOPES`` still
+    narrows both). ``None``, the legacy modes, has nothing to refresh.
+
+    Any other provider fails startup if an extension declared scopes to
+    advertise. Left alone it would keep the narrower snapshot, so the
+    discovery documents would omit those scopes and, in a mode that grants
+    from the same list, every tool requiring one would be denied with
+    nothing in the log to say why. A provider nothing was declared for has
+    nothing to lose and is left as it is.
 
     Imported lazily for the same reason :func:`_select_auth_provider` is:
     a legacy deployment should not pull in the OAuth machinery.
@@ -89,6 +96,33 @@ def refresh_advertised_scopes(auth_provider) -> None:
         from .oauth_scopes import advertised_scopes
 
         auth_provider.update_default_scopes(advertised_scopes())
+        return
+
+    from ._api_key_login import ApiKeyLoginProvider
+
+    if isinstance(auth_provider, ApiKeyLoginProvider):
+        from .oauth_scopes import configured_advertised_scopes
+
+        auth_provider.update_scopes_supported(configured_advertised_scopes())
+        return
+
+    from ._extension_registry import REGISTERED_EXTENSIONS
+
+    declared = sorted(
+        {
+            scope
+            for spec in REGISTERED_EXTENSIONS
+            for scope in (*spec.advertised_read_scopes, *spec.advertised_write_scopes)
+        }
+    )
+    if declared:
+        raise RuntimeError(
+            f"Extensions advertise scope(s) {', '.join(declared)}, but the auth "
+            f"provider is a {type(auth_provider).__name__}, which this server "
+            "does not know how to refresh. It would keep the scope list it was "
+            "built with, so discovery would omit these scopes and every tool "
+            "that requires one would be denied."
+        )
 
 
 def _register_middlewares(mcp_instance, auth_provider) -> None:

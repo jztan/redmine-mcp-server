@@ -8,9 +8,10 @@ is bound. So the registry cannot live in :mod:`.extensions`, which imports
 import would be a cycle, and it would fail every OAuth-mode startup rather
 than only the deployments that set ``REDMINE_MCP_EXTENSIONS``.
 
-This module therefore imports nothing but :mod:`._env`. :mod:`.extensions`
-re-exports both names, which is the surface an extension depends on; nothing
-outside this package should import this module directly.
+This module therefore imports nothing but :mod:`._env`. ``main.py`` and
+``tools/meta.py`` read the registry from here. Neither name is part of the
+surface an extension depends on, so an extension has no reason to import
+this module.
 """
 
 from typing import TYPE_CHECKING, List

@@ -36,6 +36,7 @@ from .._env import (
     _is_read_only_mode,
     _is_tags_enabled,
 )
+from .._extension_registry import REGISTERED_EXTENSIONS
 from ..server import mcp
 
 logger = logging.getLogger("redmine_mcp_server")
@@ -121,10 +122,12 @@ async def get_mcp_server_info() -> Dict[str, Any]:
           Redmine (check ``/health`` for connectivity status).
         - ``plugin_flags`` (dict[str, bool]): which plugin-gated tool
           families are enabled. Keys: ``agile``, ``checklists``,
-          ``products``, ``crm``, ``deals``, ``dmsf``, ``tags``. ``True``
-          means the family's tools are listed and routable; ``False``
-          means they are hidden from ``tools/list`` (``agile`` and
-          ``tags`` only add fields to core tools and are never hidden).
+          ``products``, ``crm``, ``deals``, ``dmsf``, ``tags``, plus one
+          per family an extension module named by
+          ``REDMINE_MCP_EXTENSIONS`` registered, keyed by the family name.
+          ``True`` means the family's tools are listed and routable;
+          ``False`` means they are hidden from ``tools/list`` (``agile``
+          and ``tags`` only add fields to core tools and are never hidden).
 
     The response intentionally excludes credentials, internal
     hostnames, file-system paths, and any other operator-config that
@@ -162,5 +165,6 @@ async def get_mcp_server_info() -> Dict[str, Any]:
             "deals": _is_deals_enabled(),
             "dmsf": _is_dmsf_enabled(),
             "tags": _is_tags_enabled(),
+            **{spec.family: spec.enabled() for spec in REGISTERED_EXTENSIONS},
         },
     }

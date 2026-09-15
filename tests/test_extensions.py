@@ -18,11 +18,12 @@ import httpx
 import pytest
 from fastmcp import Client, FastMCP, settings
 
-from redmine_mcp_server import _auth, _oauth_proxy, extensions
+from redmine_mcp_server import _api_key_login, _auth, _oauth_proxy, extensions
 from redmine_mcp_server import main as main_module
 from redmine_mcp_server._annotations import TOOL_KINDS, ToolKind, annotations_for
 from redmine_mcp_server._decorators import ACTION_SPECS
 from redmine_mcp_server._env import get_extension_modules
+from redmine_mcp_server._extension_registry import REGISTERED_EXTENSIONS
 from redmine_mcp_server._plugin_visibility import (
     PLUGIN_FLAGS,
     apply_plugin_visibility,
@@ -49,6 +50,8 @@ def _source(
     kinds=None,
     scopes=None,
     untagged=(),
+    actions=None,
+    actionless=(),
 ):
     """Render an extension module: one registration, then one tool per name.
 
@@ -56,14 +59,19 @@ def _source(
     either explicitly to build the mismatched tables a bad extension would.
     Names in ``untagged`` are defined with a bare ``@mcp.tool()``, which is
     the extension that forgets the tag its family's visibility runs on.
+    ``actions`` maps a tool name to the values of its ``action`` Literal; a
+    tool not in it takes ``action: str``, and one named in ``actionless``
+    takes no action parameter at all.
     """
     if kinds is None:
         kinds = {name: "ToolKind.WRITE_DESTRUCTIVE" for name in tools}
     if scopes is None:
         scopes = {name: 'frozenset({"edit_issues"})' for name in tools}
+    actions = actions or {}
     lines = [
         '"""Fixture extension module built by tests/test_extensions.py."""',
         "",
+        *(["from typing import Literal", ""] if actions else []),
         "from redmine_mcp_server.extensions import (",
         "    ExtensionSpec,",
         "    ToolKind,",
@@ -92,21 +100,35 @@ def _source(
             if name in untagged
             else f"@mcp.tool(tags={{plugin_tag({family!r})}})"
         )
+        if name in actionless:
+            signature = "project_id: str"
+            args = ["        project_id: Project id or identifier."]
+            body = '    return {"project_id": project_id}'
+        else:
+            if name in actions:
+                literal = ", ".join(repr(value) for value in actions[name])
+                signature = f"action: Literal[{literal}], project_id: str"
+            else:
+                signature = "action: str, project_id: str"
+            args = [
+                "        action: What to do.",
+                "        project_id: Project id or identifier.",
+            ]
+            body = '    return {"action": action, "project_id": project_id}'
         lines += [
             "",
             "",
             decorator,
-            f"async def {name}(action: str, project_id: str) -> dict:",
+            f"async def {name}({signature}) -> dict:",
             '    """Stand-in for a tool over an in-house Redmine plugin.',
             "",
             "    Args:",
-            "        action: What to do.",
-            "        project_id: Project id or identifier.",
+            *args,
             "",
             "    Returns:",
             "        A dict echoing the arguments.",
             '    """',
-            '    return {"action": action, "project_id": project_id}',
+            body,
         ]
     return "\n".join(lines) + "\n"
 
@@ -128,7 +150,7 @@ def extension_sandbox(tmp_path, monkeypatch):
     """
     tables = (PLUGIN_FLAGS, TOOL_KINDS, TOOL_SCOPES, ACTION_SPECS)
     snapshots = [dict(table) for table in tables]
-    registered_before = list(extensions.REGISTERED_EXTENSIONS)
+    registered_before = list(REGISTERED_EXTENSIONS)
     modules_before = set(sys.modules)
     monkeypatch.syspath_prepend(str(tmp_path))
 
@@ -139,13 +161,13 @@ def extension_sandbox(tmp_path, monkeypatch):
 
     yield write
 
-    for spec in extensions.REGISTERED_EXTENSIONS[len(registered_before) :]:
+    for spec in REGISTERED_EXTENSIONS[len(registered_before) :]:
         for tool_name in spec.tool_kinds:
             try:
                 mcp._local_provider.remove_tool(tool_name)
             except Exception:  # pragma: no cover - tool was never defined
                 pass
-    extensions.REGISTERED_EXTENSIONS[:] = registered_before
+    REGISTERED_EXTENSIONS[:] = registered_before
     for table, snapshot in zip(tables, snapshots):
         table.clear()
         table.update(snapshot)
@@ -234,7 +256,7 @@ class TestRegistration:
         monkeypatch.setenv("REDMINE_MCP_EXTENSIONS", "ext_second, ext_first")
         _load_extensions()
 
-        assert [spec.family for spec in extensions.REGISTERED_EXTENSIONS] == [
+        assert [spec.family for spec in REGISTERED_EXTENSIONS] == [
             "acme_gadgets",
             "acme_widgets",
         ]
@@ -331,7 +353,7 @@ class TestRegistration:
         before_flags = dict(PLUGIN_FLAGS)
         before_kinds = dict(TOOL_KINDS)
         before_scopes = dict(TOOL_SCOPES)
-        registered = list(extensions.REGISTERED_EXTENSIONS)
+        registered = list(REGISTERED_EXTENSIONS)
         extension_sandbox(
             "ext_bad",
             _source(
@@ -346,7 +368,7 @@ class TestRegistration:
         assert PLUGIN_FLAGS == before_flags
         assert TOOL_KINDS == before_kinds
         assert TOOL_SCOPES == before_scopes
-        assert extensions.REGISTERED_EXTENSIONS == registered
+        assert REGISTERED_EXTENSIONS == registered
 
     def test_registering_the_same_spec_twice_is_rejected(self, extension_sandbox):
         """Import caching means a repeat can only be a real conflict.
@@ -363,14 +385,14 @@ class TestRegistration:
 
         with pytest.raises(RuntimeError, match="already registered"):
             register_extension(module.SPEC)
-        assert len(extensions.REGISTERED_EXTENSIONS) == 1
+        assert len(REGISTERED_EXTENSIONS) == 1
 
     def test_importing_the_same_module_twice_registers_once(self, extension_sandbox):
         name = extension_sandbox("ext_idem", _source("acme_widgets", ["manage_widget"]))
         importlib.import_module(name)
         importlib.import_module(name)
 
-        families = [spec.family for spec in extensions.REGISTERED_EXTENSIONS]
+        families = [spec.family for spec in REGISTERED_EXTENSIONS]
         assert families == ["acme_widgets"]
 
 
@@ -450,6 +472,37 @@ class TestStartupLoading:
             "extension loaded: family=acme_widgets enabled=false tools=1",
             "extension loaded: family=acme_gadgets enabled=false tools=1",
         ]
+
+
+class TestServerInfo:
+    """``get_mcp_server_info`` is the account of the surface a client can read.
+
+    The log line needs host access; ``plugin_flags`` needs a token. Between
+    them every deployment has one way to see which families loaded.
+    """
+
+    @pytest.mark.asyncio
+    async def test_plugin_flags_carry_the_family_and_its_state(
+        self, extension_sandbox, monkeypatch
+    ):
+        extension_sandbox("ext_info", _source("acme_widgets", ["manage_widget"]))
+        monkeypatch.setenv("REDMINE_MCP_EXTENSIONS", "ext_info")
+        _load_extensions()
+
+        async def flags():
+            async with Client(mcp) as client:
+                result = await client.call_tool("get_mcp_server_info", {})
+            return result.data["plugin_flags"]
+
+        monkeypatch.setenv(WIDGETS_FLAG, "true")
+        on = await flags()
+        monkeypatch.setenv(WIDGETS_FLAG, "false")
+        off = await flags()
+
+        assert on["acme_widgets"] is True
+        assert off["acme_widgets"] is False
+        # Added next to the built-in keys, never in place of them.
+        assert {"agile", "crm", "dmsf", "tags"} <= set(on)
 
 
 class TestColdStartImport:
@@ -740,7 +793,7 @@ class TestAntiDriftWithAnExtensionLoaded:
         extension_sandbox("ext_counted", _source("acme_widgets", ["manage_widget"]))
         importlib.import_module("ext_counted")
 
-        contributed = set(extensions.REGISTERED_EXTENSIONS[-1].tool_kinds)
+        contributed = set(REGISTERED_EXTENSIONS[-1].tool_kinds)
         assert contributed == {"manage_widget"}
         assert {
             name: kind for name, kind in TOOL_KINDS.items() if name not in contributed
@@ -758,6 +811,11 @@ class TestReExportedSurface:
     def test_every_advertised_name_exists(self):
         for name in extensions.__all__:
             assert hasattr(extensions, name), name
+
+    def test_the_registry_is_not_part_of_the_surface(self):
+        """``main.py`` reads it from ``_extension_registry``; extensions do not."""
+        assert "REGISTERED_EXTENSIONS" not in extensions.__all__
+        assert "extension_advertised_scopes" not in extensions.__all__
 
     def test_shared_objects_are_the_server_s_own(self):
         """Not a copy of the machinery, the machinery itself.
@@ -838,7 +896,7 @@ async def _listed() -> set:
 
 
 def _oauth_env(monkeypatch):
-    """The environment both authenticated modes need to build a provider."""
+    """The environment the authenticated modes need to build a provider."""
     monkeypatch.setenv("REDMINE_URL", "https://r.example.com")
     monkeypatch.setenv("REDMINE_MCP_BASE_URL", "http://localhost:3040")
     monkeypatch.setenv("REDMINE_INTROSPECT_CLIENT_ID", "cid")
@@ -854,6 +912,10 @@ def _build_provider(mode, monkeypatch, tmp_path):
     if mode == "oauth":
         return _auth.build_remote_auth()
     monkeypatch.setattr(settings, "home", tmp_path)
+    if mode == "api-key-login":
+        # _oauth_env's base URL is http, which the mode refuses without this.
+        monkeypatch.setenv("REDMINE_API_KEY_LOGIN_ALLOW_HTTP", "true")
+        return _api_key_login.build_api_key_login()
     return _oauth_proxy.build_oauth_proxy()
 
 
@@ -896,7 +958,7 @@ class TestRefreshAdvertisedScopes:
             )
         )
 
-    @pytest.mark.parametrize("mode", ["oauth", "oauth-proxy"])
+    @pytest.mark.parametrize("mode", ["oauth", "oauth-proxy", "api-key-login"])
     def test_provider_gains_the_extension_scopes(
         self, mode, extension_sandbox, monkeypatch, tmp_path
     ):
@@ -926,16 +988,18 @@ class TestRefreshAdvertisedScopes:
         assert "view_acme_widgets" in provider.scopes_supported
         assert "manage_acme_widgets" not in provider.scopes_supported
 
-    def test_configured_subset_still_narrows_the_remote_provider(
-        self, extension_sandbox, monkeypatch, tmp_path
+    @pytest.mark.parametrize("mode", ["oauth", "api-key-login"])
+    def test_configured_subset_still_narrows_the_provider(
+        self, mode, extension_sandbox, monkeypatch, tmp_path
     ):
-        """The remote provider keeps the source its own builder used.
+        """Each provider keeps the source its own builder used.
 
-        ``build_remote_auth`` passes ``configured_advertised_scopes()``, so
-        the refresh has to as well or ``REDMINE_MCP_SCOPES`` would quietly
-        stop applying the moment an extension loads.
+        ``build_remote_auth`` and ``build_api_key_login`` both pass
+        ``configured_advertised_scopes()``, so the refresh has to as well or
+        ``REDMINE_MCP_SCOPES`` would quietly stop applying the moment an
+        extension loads.
         """
-        provider = _build_provider("oauth", monkeypatch, tmp_path)
+        provider = _build_provider(mode, monkeypatch, tmp_path)
         self._register_widgets()
         monkeypatch.setenv("REDMINE_MCP_SCOPES", "view_issues view_acme_widgets")
 
@@ -943,11 +1007,61 @@ class TestRefreshAdvertisedScopes:
 
         assert provider.scopes_supported == ["view_issues", "view_acme_widgets"]
 
+    def test_api_key_login_grants_the_extension_scope_after_the_refresh(
+        self, extension_sandbox, monkeypatch, tmp_path
+    ):
+        """Advertising is half of it: this provider also grants from its copy.
+
+        ``_granted_scopes`` intersects the request with ``_advertised`` and
+        the SDK's registration handler checks ``valid_scopes`` and fills from
+        ``default_scopes``, three snapshots the constructor took. A refresh
+        that moved only the served document would leave every scoped
+        extension tool denied.
+        """
+        from mcp.server.auth.provider import AuthorizationParams
+        from mcp.shared.auth import OAuthClientInformationFull
+        from pydantic import AnyUrl
+
+        provider = _build_provider("api-key-login", monkeypatch, tmp_path)
+        redirect = AnyUrl("http://localhost:41999/callback")
+        client = OAuthClientInformationFull(
+            client_id="c1", redirect_uris=[redirect], scope="view_issues"
+        )
+        params = AuthorizationParams(
+            state=None,
+            scopes=["view_acme_widgets", "view_issues"],
+            code_challenge="challenge",
+            redirect_uri=redirect,
+            redirect_uri_provided_explicitly=True,
+        )
+        assert provider._granted_scopes(client, params) == ["view_issues"]
+
+        self._register_widgets()
+        refresh_advertised_scopes(provider)
+
+        assert provider._granted_scopes(client, params) == [
+            "view_acme_widgets",
+            "view_issues",
+        ]
+        options = provider.client_registration_options
+        assert "view_acme_widgets" in options.valid_scopes
+        assert "view_acme_widgets" in options.default_scopes
+
     def test_legacy_mode_has_nothing_to_refresh(self):
         assert refresh_advertised_scopes(None) is None
 
-    def test_an_unknown_provider_is_left_alone(self):
-        """A provider this server did not build keeps whatever it holds."""
+    def test_an_unknown_provider_is_left_alone_when_nothing_is_declared(
+        self, extension_sandbox
+    ):
+        """No advertised scopes, nothing a foreign provider could be missing."""
+        register_extension(
+            ExtensionSpec(
+                family="acme_widgets",
+                enabled=lambda: True,
+                tool_kinds={"manage_widget": ToolKind.WRITE_DESTRUCTIVE},
+                tool_scopes={"manage_widget": frozenset({"edit_issues"})},
+            )
+        )
 
         class Foreign:
             scopes_supported = ["view_issues"]
@@ -956,8 +1070,24 @@ class TestRefreshAdvertisedScopes:
         assert refresh_advertised_scopes(provider) is None
         assert provider.scopes_supported == ["view_issues"]
 
+    def test_an_unknown_provider_fails_startup_once_scopes_are_declared(
+        self, extension_sandbox
+    ):
+        """Fail closed: a provider left with its snapshot would deny the tools."""
+
+        class Foreign:
+            scopes_supported = ["view_issues"]
+
+        self._register_widgets()
+
+        with pytest.raises(RuntimeError) as excinfo:
+            refresh_advertised_scopes(Foreign())
+        message = str(excinfo.value)
+        assert "Foreign" in message
+        assert "manage_acme_widgets, view_acme_widgets" in message
+
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("mode", ["oauth", "oauth-proxy"])
+    @pytest.mark.parametrize("mode", ["oauth", "oauth-proxy", "api-key-login"])
     async def test_served_document_lists_the_extension_scope(
         self, mode, extension_sandbox, monkeypatch, tmp_path
     ):
@@ -1208,30 +1338,148 @@ class TestImportMatchesItsSpecs:
 
         _load_extensions()
 
-        assert [spec.family for spec in extensions.REGISTERED_EXTENSIONS] == [
-            "acme_widgets"
-        ]
+        assert [spec.family for spec in REGISTERED_EXTENSIONS] == ["acme_widgets"]
 
-    def test_an_unreadable_registry_warns_instead_of_failing(
-        self, extension_sandbox, monkeypatch, caplog
-    ):
-        """The table checks are the ones that gate an endpoint.
+    def test_an_unreadable_registry_fails_startup(self, extension_sandbox, monkeypatch):
+        """Every check here fails closed, this one included.
 
-        This second layer reads FastMCP's component registry, which the
-        allow list already treats as best-effort. If that ever moves, a
-        deployment that was working should say so rather than stop.
+        The allow list treats the same private registry as best-effort
+        because it only spots typos with it. Here it is what ties a module's
+        tools to its spec, so a registry that cannot be read leaves an
+        import unverified, and an unverified import is not served.
         """
         extension_sandbox("ext_blind", _source("acme_widgets", ["manage_widget"]))
         monkeypatch.setenv("REDMINE_MCP_EXTENSIONS", "ext_blind")
         monkeypatch.setattr(main_module, "registered_tool_names", lambda _mcp: set())
 
-        with caplog.at_level(logging.WARNING, logger="redmine_mcp_server.main"):
+        with pytest.raises(RuntimeError, match="Cannot enumerate"):
             _load_extensions()
 
-        assert any(
-            "not checked against what it declares" in record.getMessage()
-            for record in caplog.records
+    def _per_action(self, *actions):
+        """A scope map over ``actions``, in the source form ``_source`` takes."""
+        return "{" + ", ".join(f"{a!r}: frozenset()" for a in actions) + "}"
+
+    def test_per_action_scopes_matching_the_literal_pass(
+        self, extension_sandbox, monkeypatch
+    ):
+        extension_sandbox(
+            "ext_actions_ok",
+            _source(
+                "acme_widgets",
+                ["manage_widget"],
+                actions={"manage_widget": ("list", "create")},
+                scopes={"manage_widget": self._per_action("list", "create")},
+            ),
         )
+        monkeypatch.setenv("REDMINE_MCP_EXTENSIONS", "ext_actions_ok")
+
+        _load_extensions()
+
+        assert TOOL_SCOPES["manage_widget"] == {
+            "list": frozenset(),
+            "create": frozenset(),
+        }
+
+    def test_a_one_value_literal_is_read_as_a_const(
+        self, extension_sandbox, monkeypatch
+    ):
+        """pydantic renders ``Literal["list"]`` as ``const``, not ``enum``."""
+        extension_sandbox(
+            "ext_one_action",
+            _source(
+                "acme_widgets",
+                ["manage_widget"],
+                actions={"manage_widget": ("list",)},
+                scopes={"manage_widget": self._per_action("list")},
+            ),
+        )
+        monkeypatch.setenv("REDMINE_MCP_EXTENSIONS", "ext_one_action")
+
+        _load_extensions()
+
+        assert set(TOOL_SCOPES["manage_widget"]) == {"list"}
+
+    def test_an_action_the_map_leaves_out_fails_startup(
+        self, extension_sandbox, monkeypatch
+    ):
+        """The unmapped action is the one that would run with no scope check."""
+        extension_sandbox(
+            "ext_unmapped",
+            _source(
+                "acme_widgets",
+                ["manage_widget"],
+                actions={"manage_widget": ("list", "create", "delete")},
+                scopes={"manage_widget": self._per_action("list", "create")},
+            ),
+        )
+        monkeypatch.setenv("REDMINE_MCP_EXTENSIONS", "ext_unmapped")
+
+        with pytest.raises(RuntimeError) as excinfo:
+            _load_extensions()
+        message = str(excinfo.value)
+        assert "manage_widget" in message
+        assert "Accepted but not in tool_scopes: delete" in message
+        assert "in tool_scopes but not accepted: none" in message
+
+    def test_an_action_the_tool_does_not_accept_fails_startup(
+        self, extension_sandbox, monkeypatch
+    ):
+        extension_sandbox(
+            "ext_unaccepted",
+            _source(
+                "acme_widgets",
+                ["manage_widget"],
+                actions={"manage_widget": ("list", "create")},
+                scopes={"manage_widget": self._per_action("list", "create", "delete")},
+            ),
+        )
+        monkeypatch.setenv("REDMINE_MCP_EXTENSIONS", "ext_unaccepted")
+
+        with pytest.raises(RuntimeError, match="not accepted: delete"):
+            _load_extensions()
+
+    def test_per_action_scopes_on_a_plain_str_action_fail_startup(
+        self, extension_sandbox, monkeypatch
+    ):
+        """``action: str`` accepts anything, so no map can cover it."""
+        extension_sandbox(
+            "ext_str_action",
+            _source(
+                "acme_widgets",
+                ["manage_widget"],
+                scopes={"manage_widget": self._per_action("list", "create")},
+            ),
+        )
+        monkeypatch.setenv("REDMINE_MCP_EXTENSIONS", "ext_str_action")
+
+        with pytest.raises(RuntimeError, match="not a Literal|typed as a Literal"):
+            _load_extensions()
+
+    def test_per_action_scopes_on_a_tool_without_an_action_fail_startup(
+        self, extension_sandbox, monkeypatch
+    ):
+        extension_sandbox(
+            "ext_no_action",
+            _source(
+                "acme_widgets",
+                ["manage_widget"],
+                actionless=("manage_widget",),
+                scopes={"manage_widget": self._per_action("list")},
+            ),
+        )
+        monkeypatch.setenv("REDMINE_MCP_EXTENSIONS", "ext_no_action")
+
+        with pytest.raises(RuntimeError, match="no action parameter"):
+            _load_extensions()
+
+    def test_a_whole_tool_entry_needs_no_literal(self, extension_sandbox, monkeypatch):
+        """A frozenset applies to every call, so ``action: str`` is fine."""
+        extension_sandbox("ext_flat_scopes", _source("acme_widgets", ["manage_widget"]))
+        monkeypatch.setenv("REDMINE_MCP_EXTENSIONS", "ext_flat_scopes")
+
+        _load_extensions()
+
+        assert TOOL_SCOPES["manage_widget"] == frozenset({"edit_issues"})
 
 
 def _spec(**overrides):
@@ -1339,7 +1587,7 @@ class TestSpecValidation:
         before_flags = dict(PLUGIN_FLAGS)
         before_kinds = dict(TOOL_KINDS)
         before_scopes = dict(TOOL_SCOPES)
-        registered = list(extensions.REGISTERED_EXTENSIONS)
+        registered = list(REGISTERED_EXTENSIONS)
 
         with pytest.raises(RuntimeError):
             register_extension(_spec(advertised_read_scopes="view_acme_widgets"))
@@ -1347,7 +1595,7 @@ class TestSpecValidation:
         assert PLUGIN_FLAGS == before_flags
         assert TOOL_KINDS == before_kinds
         assert TOOL_SCOPES == before_scopes
-        assert extensions.REGISTERED_EXTENSIONS == registered
+        assert REGISTERED_EXTENSIONS == registered
 
     def test_a_well_formed_spec_is_accepted(self, extension_sandbox):
         register_extension(_spec())
@@ -1374,7 +1622,7 @@ class TestSpecValidation:
         """Most extensions need no new permission at all."""
         register_extension(_spec(advertised_read_scopes=(), advertised_write_scopes=[]))
 
-        assert extensions.REGISTERED_EXTENSIONS[-1].advertised_read_scopes == ()
+        assert REGISTERED_EXTENSIONS[-1].advertised_read_scopes == ()
 
 
 class TestPluginVisibilityForAnExtension:

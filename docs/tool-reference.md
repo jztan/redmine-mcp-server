@@ -284,6 +284,10 @@ hold for them:
 - Every one of them needs a `TOOL_SCOPES` entry, so the OAuth scope
   middleware gates them like any other tool, and the allow list narrows
   them like any other tool.
+- A per-action scope entry is checked against the tool's `action`
+  `Literal` at startup and must name each of its actions and nothing else,
+  because an action the map does not name would reach the plugin with no
+  scope check.
 - Any scope a family advertises must exist as a Redmine permission on the
   target instance and be granted on the OAuth application, or consent fails
   with `invalid_scope` for the whole list.
@@ -291,8 +295,11 @@ hold for them:
   replacing it, whether the extension claims the name in its spec or only
   decorates a function with it.
 - Any scope such a family advertises reaches the served discovery documents
-  too: the auth provider is handed the widened list once the extension
-  modules have loaded, before the HTTP app is built.
+  too, in `oauth`, `oauth-proxy` and `api-key-login` alike: the auth
+  provider is handed the widened list once the extension modules have
+  loaded, before the HTTP app is built.
+- Each registered family gets its own key in the `plugin_flags` dict
+  `get_mcp_server_info` returns, next to the built-in ones.
 
 Two of this server's guarantees are not middleware, so an extension applies
 them in its own tools exactly as the built-in ones do.
@@ -302,9 +309,8 @@ neither uses it nor calls `is_read_only_mode()` still writes.
 [Prompt Injection Protection](#prompt-injection-protection) is the returning
 tool calling `wrap_insecure_content` on each user-controlled field.
 
-Unset, nothing is imported. See
-[Extensions: tools for in-house plugins](../README.md#extensions-tools-for-in-house-plugins)
-for what a module looks like.
+Unset, nothing is imported. See [Extensions](extensions.md) for what a
+module looks like.
 
 ### Prompt Injection Protection
 
@@ -3161,7 +3167,7 @@ Return the MCP server's version, enabled-feature flags, and the identity of the 
 - `read_only_mode` (boolean): whether `REDMINE_MCP_READ_ONLY` is enabled. When `True`, all write tools refuse with the standard read-only error.
 - `auth_mode` (string): `"oauth"` or `"legacy"`.
 - `current_user` (dict or null): `{id, login, name}` for the authenticated Redmine user behind the configured API key. `null` when the server cannot reach Redmine (check `/health` for connectivity status). Use this to confirm who `assigned_to_id="me"` resolves to, which matters when a shared or robot API key is in use.
-- `plugin_flags` (dict): which plugin-gated tool families are enabled. Keys: `agile`, `checklists`, `products`, `crm`, `deals`, `dmsf`, `tags`. `True` means the family's tools are listed and routable and will reach the underlying plugin endpoints (for `tags`, that `get_redmine_issue` returns a `tags` array); `False` means they are hidden from `tools/list` (calling them by name returns "Unknown tool"), except for `agile` and `tags`, which only add fields to core tools and are never hidden (for `tags`, the field is simply omitted).
+- `plugin_flags` (dict): which plugin-gated tool families are enabled. Keys: `agile`, `checklists`, `products`, `crm`, `deals`, `dmsf`, `tags`, plus one per family registered by an [extension](extensions.md). `True` means the family's tools are listed and routable and will reach the underlying plugin endpoints (for `tags`, that `get_redmine_issue` returns a `tags` array); `False` means they are hidden from `tools/list` (calling them by name returns "Unknown tool"), except for `agile` and `tags`, which only add fields to core tools and are never hidden (for `tags`, the field is simply omitted).
 
 The response intentionally excludes credentials, internal hostnames, file-system paths, and any other operator config that a caller doesn't need to know to choose its call shape. Only flags that change *call shape* are surfaced.
 

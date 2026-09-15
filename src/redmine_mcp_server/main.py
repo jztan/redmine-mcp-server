@@ -49,7 +49,7 @@ from ._tool_allow_list import (  # noqa: E402
     build_tool_allow_list,
     registered_tool_names,
 )
-from .extensions import REGISTERED_EXTENSIONS  # noqa: E402
+from ._extension_registry import REGISTERED_EXTENSIONS  # noqa: E402
 
 
 def _registered_tool_objects() -> dict[str, object]:
@@ -71,6 +71,28 @@ def _registered_tool_objects() -> dict[str, object]:
     }
 
 
+def _action_values(tool: object) -> list[str] | None:
+    """The values a tool's ``action`` parameter accepts, or ``None``.
+
+    Read from the JSON schema FastMCP built for the tool, where a ``Literal``
+    renders as ``enum``, or as ``const`` when it has one value. Anything
+    else -- no ``action`` parameter, a plain ``str``, an ``Optional`` Literal
+    -- is ``None``: there is no closed set of actions to hold a scope map to.
+    """
+    schema = getattr(tool, "parameters", None)
+    if not isinstance(schema, dict):
+        return None
+    action = schema.get("properties", {}).get("action")
+    if not isinstance(action, dict):
+        return None
+    if isinstance(action.get("const"), str):
+        return [action["const"]]
+    values = action.get("enum")
+    if isinstance(values, list) and all(isinstance(v, str) for v in values):
+        return values
+    return None
+
+
 def _assert_import_matches_specs(
     module_name: str,
     specs: list,
@@ -82,9 +104,9 @@ def _assert_import_matches_specs(
     :func:`extensions.register_extension` checks the spec against the three
     tables, which is what keeps an extension from taking an entry that is
     already someone else's. It cannot check the other half: that the module
-    then defined the tools it described, and only those. The two halves are
-    written in different places in the module and nothing but this ties
-    them together.
+    then defined the tools it described, only those, and with the actions
+    its scope maps name. The two halves are written in different places in
+    the module and nothing but this ties them together.
 
     Each mismatch is a ``RuntimeError`` naming the module and the tools,
     because each leaves a tool on the surface that one of the tables does
@@ -94,6 +116,11 @@ def _assert_import_matches_specs(
       its own, so the scope middleware has nothing to enforce on it;
     - a tool a spec declares that the import did not define is a table
       entry for nothing, which the anti-drift cross-checks read as drift;
+    - a per-action scope map whose keys are not exactly the tool's
+      ``action`` Literal, or one on a tool whose ``action`` is not a Literal
+      at all: :func:`oauth_scopes.scopes_for_action` lets an action the map
+      does not name through with no scope check, so the map has to cover a
+      closed set, and only a Literal is one;
     - a pre-existing tool whose object changed means the module decorated a
       name this server already had. FastMCP's duplicate policy on ``mcp``
       is ``warn``, which logs and replaces, so nothing else stops it;
@@ -102,18 +129,19 @@ def _assert_import_matches_specs(
       :func:`._plugin_visibility.apply_plugin_visibility`, so the family
       flag cannot hide it and it is listed even where the plugin is absent.
 
-    Skipped, with a warning, if the tool registry cannot be enumerated at
-    all: this is the second layer, and the table checks that stand between
-    a token and an endpoint do not depend on FastMCP's internals.
+    Also a ``RuntimeError`` if the tool registry cannot be enumerated at
+    all. The allow list reads the same private registry and treats it as
+    best-effort, but it only spots typos with it; here it is what ties a
+    module's tools to its spec, and everything else about loading an
+    extension fails closed.
     """
     if not names_before:
-        logger.warning(
-            "Cannot enumerate registered tools, so the tools %r defines are "
-            "not checked against what it declares. The table checks in "
-            "register_extension still apply.",
-            module_name,
+        raise RuntimeError(
+            "Cannot enumerate the registered tools, so the tools "
+            f"'{module_name}' defines cannot be checked against what it "
+            "declares. FastMCP's component registry, which this reads, has "
+            "moved; an extension is not loaded on an unchecked import."
         )
-        return
 
     objects_after = _registered_tool_objects()
     added = registered_tool_names(mcp) - names_before
@@ -139,6 +167,33 @@ def _assert_import_matches_specs(
             "for a tool that does not exist, which is the drift the "
             "cross-checks over TOOL_KINDS and TOOL_SCOPES report."
         )
+
+    for spec in specs:
+        for tool_name, entry in spec.tool_scopes.items():
+            if not isinstance(entry, dict):
+                continue
+            accepted = _action_values(objects_after[tool_name])
+            if accepted is None:
+                raise RuntimeError(
+                    f"Extension module '{module_name}' gives {tool_name} "
+                    "per-action scopes, but the tool has no action parameter "
+                    "typed as a Literal of the actions it accepts. An action "
+                    "the map does not name runs with no scope check, so the "
+                    "map is held to the Literal, and only a Literal is a "
+                    "closed set to hold it to."
+                )
+            unmapped = sorted(set(accepted) - set(entry))
+            unaccepted = sorted(set(entry) - set(accepted))
+            if unmapped or unaccepted:
+                raise RuntimeError(
+                    f"Extension module '{module_name}' gives {tool_name} "
+                    "per-action scopes that do not match its action Literal. "
+                    "Accepted but not in tool_scopes: "
+                    f"{', '.join(unmapped) or 'none'}; in tool_scopes but not "
+                    f"accepted: {', '.join(unaccepted) or 'none'}. An action "
+                    "the map does not name runs with no scope check, and one "
+                    "the tool does not accept is an entry for nothing."
+                )
 
     replaced = sorted(
         name

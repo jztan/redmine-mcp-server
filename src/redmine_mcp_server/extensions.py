@@ -9,6 +9,10 @@ package registers its tools here at startup::
 
     REDMINE_MCP_EXTENSIONS=acme_redmine_mcp.widgets
 
+This module is provisional. Its names and the shape of :class:`ExtensionSpec`
+may still change in a minor release while the hook settles, so an extension
+should pin the server version it was written against.
+
 ``main.py`` imports each named module in order, after the built-in tool
 modules and before plugin visibility is applied. The module calls
 :func:`register_extension` first and defines its tools second::
@@ -60,10 +64,11 @@ one mistake here that opens an endpoint rather than closing one.
 The other half of that agreement is checked around the import itself:
 ``main.py`` compares the tool registry before and after, and refuses a
 module that defines a tool no spec of its own declares, declares one it
-never defines, redefines a tool this server already had, or defines one
-without its family's ``plugin:<family>`` tag. FastMCP's duplicate-tool
+never defines, gives a tool per-action scopes whose keys are not its
+``action`` Literal, redefines a tool this server already had, or defines
+one without its family's ``plugin:<family>`` tag. FastMCP's duplicate-tool
 policy on ``mcp`` is ``warn``, which logs and replaces, so nothing else
-would stop the third of those.
+would stop the redefinition.
 
 Read-only mode is the exception, and the one thing a tool here has to
 apply itself: nothing in the middleware stack enforces it, so a built-in
@@ -88,7 +93,7 @@ from ._annotations import TOOL_KINDS, ToolKind
 from ._decorators import ActionMode, action_dispatch
 from ._env import _is_crm_enabled, _is_read_only_mode, _is_true_env
 from ._errors import _READ_ONLY_ERROR, _handle_redmine_error
-from ._extension_registry import REGISTERED_EXTENSIONS, extension_advertised_scopes
+from ._extension_registry import REGISTERED_EXTENSIONS
 from ._offload import in_thread, offloaded
 from ._plugin_visibility import PLUGIN_FLAGS, plugin_tag
 from ._serialization import wrap_insecure_content
@@ -100,10 +105,8 @@ __all__ = [
     "ActionMode",
     "ExtensionSpec",
     "READ_ONLY_ERROR",
-    "REGISTERED_EXTENSIONS",
     "ToolKind",
     "action_dispatch",
-    "extension_advertised_scopes",
     "get_redmine_client",
     "handle_redmine_error",
     "in_thread",
@@ -173,12 +176,13 @@ class ExtensionSpec:
             ``TOOL_SCOPES`` already uses. ``frozenset()`` means any
             authenticated token, which is the honest entry when Redmine
             gates the endpoint on project membership rather than on a
-            permission. A ``dict`` has to name every action its tool
-            accepts: an action the map does not name resolves to no
-            requirement at all and the call reaches the tool unchecked,
-            which is how :func:`oauth_scopes.scopes_for_action` lets a
-            tool's own argument validation answer a bad action instead of
-            a scope denial.
+            permission. A ``dict`` has to name exactly the actions its
+            tool accepts, and the tool's ``action`` parameter has to be a
+            ``Literal`` of them: an action the map does not name resolves
+            to no requirement at all and the call reaches the tool
+            unchecked, so ``main.py`` compares the keys with the Literal
+            after the import and refuses a mismatch, or an ``action`` that
+            is not a Literal.
         advertised_read_scopes: Redmine permissions to add to
             ``scopes_supported`` while the family is enabled -- in
             :func:`oauth_scopes.advertised_scopes` and, once ``main.py``
