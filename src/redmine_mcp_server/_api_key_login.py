@@ -45,6 +45,7 @@ Two properties are load-bearing and easy to break:
   cannot work this way, ``attempts``, is documented as approximate.
 """
 
+import asyncio
 import hashlib
 import hmac
 import logging
@@ -54,6 +55,7 @@ import time
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Mapping, Optional
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 from fastmcp import settings
@@ -111,10 +113,22 @@ DEFAULT_SESSION_DAYS = 30
 DEFAULT_TRANSACTION_TTL = 300
 DEFAULT_CODE_TTL = 300
 MAX_LOGIN_ATTEMPTS = 3
+# Deliberately short and separate from REDMINE_TIMEOUT: this runs inside a
+# token refresh, which a client is waiting on.
+REVALIDATION_TIMEOUT_SECONDS = 5.0
 
 # Doorkeeper-issued tokens can carry ``admin``, which bypasses every per-tool
 # scope check (see _scope_middleware). A self-issued token never gets it.
 ADMIN_SCOPE = "admin"
+
+
+class RedmineForbidden(Exception):
+    """Redmine knows the key but refuses this call.
+
+    Distinct from a 401. At login it is a failed attempt like any other, but
+    at refresh-time revalidation it must *not* end the session: a permission
+    the account lost says nothing about whether the key is still valid.
+    """
 
 
 class RedmineUnavailable(Exception):
@@ -147,6 +161,62 @@ def _hash(value: str) -> str:
 
 def _now() -> float:
     return time.time()
+
+
+# Single-use records are claimed under this lock. ``FileTreeStore.delete``
+# is a stat-then-unlink, so two concurrent claims can both see the file and
+# both report success (41 of 300 runs on macOS), or the loser can raise
+# FileNotFoundError. Neither is acceptable for a code or a refresh token,
+# where "exactly one caller wins" is the whole point. The lock is
+# process-wide, which matches the store: it is node-local anyway.
+_CLAIM_LOCK = asyncio.Lock()
+
+
+class _BindingCookieASGI:
+    """Attach a transaction's binding cookie to the redirect that created it."""
+
+    def __init__(self, app, provider: "ApiKeyLoginProvider"):
+        self._app = app
+        self._provider = provider
+
+    async def __call__(self, scope, receive, send):
+        async def send_with_cookie(message):
+            if message["type"] == "http.response.start":
+                from starlette.datastructures import MutableHeaders
+
+                headers = MutableHeaders(raw=message["headers"])
+                txn_id = _txn_from_login_url(
+                    headers.get("location", ""), self._provider.login_path
+                )
+                if txn_id:
+                    transaction = await self._provider.get_transaction(txn_id)
+                    if transaction:
+                        from ._api_key_login_routes import binding_cookie_header
+
+                        headers.append(
+                            "set-cookie",
+                            binding_cookie_header(
+                                txn_id, str(transaction["browser_nonce"])
+                            ),
+                        )
+            await send(message)
+
+        await self._app(scope, receive, send_with_cookie)
+
+
+def _txn_from_login_url(location: str, login_path: str) -> Optional[str]:
+    """The transaction id from our own login redirect, or ``None``.
+
+    Only our login URL qualifies: /authorize also redirects errors back to the
+    client, and those must not carry a cookie.
+    """
+    if not location:
+        return None
+    parsed = urlparse(location)
+    if not parsed.path.endswith(login_path):
+        return None
+    values = parse_qs(parsed.query).get("txn") or []
+    return values[0] if values else None
 
 
 def _constant_time_equal(expected: Any, given: Any) -> bool:
@@ -240,9 +310,11 @@ async def fetch_redmine_identity(
 ) -> Optional[dict[str, Any]]:
     """Validate an API key against Redmine and return ``{id, login, admin}``.
 
-    ``None`` means Redmine rejected the key (401/403) -- that costs the user an
-    attempt. Anything else that leaves the answer unknown raises
-    :class:`RedmineUnavailable`, which does not.
+    ``None`` means Redmine rejected the key outright (401) -- that costs the
+    user an attempt, and at refresh time it ends the session. A 403 raises
+    :class:`RedmineForbidden`: the key is known but this call is not allowed,
+    which is a failed login but not a reason to revoke. Anything else that
+    leaves the answer unknown raises :class:`RedmineUnavailable`.
 
     Deliberately fails closed. A 200 that is not the JSON we expect, or that
     lacks an integer ``id`` or the ``admin`` flag, is treated as unknown rather
@@ -266,8 +338,10 @@ async def fetch_redmine_identity(
         # in its message -- never let that text out of here.
         raise RedmineUnavailable(type(exc).__name__) from None
 
-    if response.status_code in (401, 403):
+    if response.status_code == 401:
         return None
+    if response.status_code == 403:
+        raise RedmineForbidden("HTTP 403")
     if response.status_code != 200:
         # A redirect means the URL is wrong (http vs https, a proxy path); a
         # 5xx means Redmine is unwell. Neither says anything about the key.
@@ -336,6 +410,29 @@ class ApiKeyLoginProvider(OAuthProvider):
     @property
     def login_path(self) -> str:
         return "/login"
+
+    def get_routes(self, mcp_path: Optional[str] = None) -> list:
+        """The framework's routes, with the binding cookie set on /authorize.
+
+        The cookie has to be issued exactly once per transaction, and the
+        redirect that starts one is the only such moment. Setting it when the
+        login page renders looked equivalent and was not: every render handed
+        out the same nonce, so a second browser opening the same URL got a
+        valid cookie and could finish the login with its own key -- the replay
+        the cookie exists to stop. A "first render only" flag does not fix it
+        either; it races on a store without compare-and-swap, and a HEAD from a
+        link checker or a preloading browser burns the one render.
+
+        Wrapped at the ASGI layer rather than by rebuilding the Route: the
+        SDK's endpoint is already an ASGI app, and handing that to
+        ``Route(endpoint=...)`` makes Starlette call it as a request/response
+        function.
+        """
+        routes = super().get_routes(mcp_path)
+        for route in routes:
+            if getattr(route, "path", None) == "/authorize":
+                route.app = _BindingCookieASGI(route.app, self)
+        return routes
 
     # -- client registration ---------------------------------------------
 
@@ -473,6 +570,19 @@ class ApiKeyLoginProvider(OAuthProvider):
 
     # -- the login step ---------------------------------------------------
 
+    async def _claim(self, key: str, *, collection: str) -> bool:
+        """Delete a single-use record, returning ``True`` to exactly one caller.
+
+        See ``_CLAIM_LOCK``: the store's delete is not atomic, so the lock
+        serialises the claims and a ``FileNotFoundError`` from a racing peer
+        counts as a loss rather than an error.
+        """
+        async with _CLAIM_LOCK:
+            try:
+                return await self._store.delete(key, collection=collection)
+            except FileNotFoundError:
+                return False
+
     async def get_transaction(self, txn_id: str) -> Optional[dict[str, Any]]:
         """Return a pending transaction, or ``None`` when unknown or expired."""
         record = await self._store.get(
@@ -549,7 +659,12 @@ class ApiKeyLoginProvider(OAuthProvider):
             await self._count_attempt(txn_id, transaction)
             raise ApiKeyLoginError("That does not look like a Redmine API key.")
 
-        identity = await fetch_redmine_identity(self._redmine_url, api_key)
+        try:
+            identity = await fetch_redmine_identity(self._redmine_url, api_key)
+        except RedmineForbidden:
+            # Known key, refused call. A failed login like any other here; the
+            # distinction only matters when revalidating an existing session.
+            identity = None
         if identity is None:
             await self._count_attempt(txn_id, transaction)
             raise ApiKeyLoginError("Redmine rejected this API key.")
@@ -562,9 +677,7 @@ class ApiKeyLoginProvider(OAuthProvider):
 
         # Claim the transaction. The store has no compare-and-swap, so the
         # delete result is what makes a double submit fail on the second.
-        claimed = await self._store.delete(
-            _hash(txn_id), collection=COLLECTION_TRANSACTIONS
-        )
+        claimed = await self._claim(_hash(txn_id), collection=COLLECTION_TRANSACTIONS)
         if not claimed:
             raise ApiKeyLoginError("This login was already completed.")
 
@@ -673,7 +786,7 @@ class ApiKeyLoginProvider(OAuthProvider):
         record = await self._store.get(
             _hash(authorization_code.code), collection=COLLECTION_CODES
         )
-        claimed = await self._store.delete(
+        claimed = await self._claim(
             _hash(authorization_code.code), collection=COLLECTION_CODES
         )
         if record is None or not claimed:
@@ -807,11 +920,13 @@ class ApiKeyLoginProvider(OAuthProvider):
         session_expires_at = float(record.get("expires_at", 0))
         data_key = self._protection.unwrap(record, refresh_token.token)
 
+        await self._revalidate_binding(binding_id, data_key)
+
         # Claim the old token, then leave a tombstone so a later reuse is
         # recognisable. Two refreshes racing on one live token can both succeed
         # before either tombstone lands; accepted, since a client serialises
         # its own refreshes.
-        claimed = await self._store.delete(key, collection=COLLECTION_REFRESH_TOKENS)
+        claimed = await self._claim(key, collection=COLLECTION_REFRESH_TOKENS)
         if not claimed:
             raise TokenError("invalid_grant", "Refresh token is not valid.")
         await self._store.put(
@@ -833,6 +948,57 @@ class ApiKeyLoginProvider(OAuthProvider):
             # for good, with no way back short of a new login.
             refresh_scopes=granted,
         )
+
+    async def _revalidate_binding(
+        self, binding_id: str, data_key: Optional[bytes]
+    ) -> None:
+        """Check the bound key is still the same user's before rotating.
+
+        Redmine serves an unknown API key as *anonymous* rather than with a
+        401 on anything anonymous may read, so a reset key keeps working for
+        public projects and nothing revokes. Checking a login-required
+        endpoint once per refresh caps that window at the access token's
+        lifetime.
+
+        Only three answers end the session: a 401, a different user id behind
+        the key, or a user who has become an administrator while the gate is
+        closed. A 403 or an unreachable Redmine leave it alone -- a lost
+        permission or a bad minute says nothing about the key.
+        """
+        binding_record = await self._store.get(
+            binding_id, collection=COLLECTION_BINDINGS
+        )
+        if binding_record is None:
+            raise TokenError("invalid_grant", "This session has been revoked.")
+        binding = self._protection.unseal(binding_record, data_key)
+        if not binding or not binding.get("api_key"):
+            raise TokenError("invalid_grant", "This session can no longer be read.")
+
+        try:
+            # Its own budget: a refresh must not hang for REDMINE_TIMEOUT, and
+            # a slow Redmine should keep the session rather than end it.
+            identity = await fetch_redmine_identity(
+                self._redmine_url,
+                binding["api_key"],
+                timeout=httpx.Timeout(REVALIDATION_TIMEOUT_SECONDS),
+            )
+        except (RedmineForbidden, RedmineUnavailable) as exc:
+            logger.info("Keeping the session: revalidation was inconclusive (%s).", exc)
+            return
+
+        if identity is None:
+            await self.revoke_binding(binding_id)
+            raise TokenError("invalid_grant", "The bound API key was rejected.")
+        if identity["id"] != binding.get("redmine_user_id"):
+            logger.warning(
+                "Bound key now resolves to a different Redmine user; revoking."
+            )
+            await self.revoke_binding(binding_id)
+            raise TokenError("invalid_grant", "The bound API key changed hands.")
+        if identity["admin"] and not self._allow_admin:
+            logger.warning("Bound user became a Redmine administrator; revoking.")
+            await self.revoke_binding(binding_id)
+            raise TokenError("invalid_grant", "Administrator keys are not accepted.")
 
     # -- per-request token loading ----------------------------------------
 
@@ -1082,17 +1248,34 @@ class BindingRevocationMiddleware(Middleware):
         self._provider = provider
 
     @staticmethod
-    def _envelope(result: Any) -> Optional[dict]:
+    def _is_envelope(candidate: Any) -> bool:
+        """An error envelope, not data that happens to carry a code.
+
+        Both keys are required: a tool returning a record whose ``code`` field
+        reads ``AUTH_FAILED`` -- a product code, a status code -- would
+        otherwise end the viewer's session.
+        """
+        return (
+            isinstance(candidate, dict) and "error" in candidate and "code" in candidate
+        )
+
+    @classmethod
+    def _envelope(cls, result: Any) -> Optional[dict]:
         """The error envelope from a tool result, unwrapped if need be."""
         structured = getattr(result, "structured_content", None)
+        if cls._is_envelope(structured):
+            return structured
         if not isinstance(structured, dict):
             return None
         # Tools whose return type is not a plain dict carry the payload under
-        # "result"; see build_error_tool_result.
+        # "result"; see build_error_tool_result. Several list tools return the
+        # envelope as the sole element of that list.
         inner = structured.get("result")
-        if isinstance(inner, dict) and "code" in inner:
+        if cls._is_envelope(inner):
             return inner
-        return structured
+        if isinstance(inner, list) and len(inner) == 1 and cls._is_envelope(inner[0]):
+            return inner[0]
+        return None
 
     async def on_call_tool(self, context, call_next):
         result = await call_next(context)

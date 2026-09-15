@@ -16,7 +16,6 @@ redirect allowlist is the guard there, and setting it to ``*`` removes it.
 import hashlib
 import html
 import logging
-import secrets
 import threading
 import time
 from typing import Optional
@@ -29,6 +28,7 @@ from ._api_key_login import (
     ApiKeyLoginError,
     ApiKeyLoginProvider,
     RedmineUnavailable,
+    _constant_time_equal,
 )
 from ._env import _get_int_env, _is_true_env
 from ._mount import mcp_mount_prefix
@@ -199,7 +199,13 @@ def _render(
     return HTMLResponse(body, status_code=status, headers=dict(_SECURITY_HEADERS))
 
 
-def _set_binding_cookie(response: Response, txn_id: str, nonce: str) -> None:
+def binding_cookie_header(txn_id: str, nonce: str) -> str:
+    """The ``Set-Cookie`` value binding a transaction to one browser.
+
+    Issued once, on the /authorize redirect, so a second browser opening the
+    same login URL has no cookie and cannot complete the transaction.
+    """
+    response = Response()
     response.set_cookie(
         cookie_name(txn_id),
         nonce,
@@ -209,6 +215,7 @@ def _set_binding_cookie(response: Response, txn_id: str, nonce: str) -> None:
         path=cookie_path(),
         max_age=600,
     )
+    return response.headers["set-cookie"]
 
 
 async def _client_name(provider: ApiKeyLoginProvider, client_id: str) -> str:
@@ -229,14 +236,23 @@ async def login_page(request: Request) -> Response:
         # Never redirect from here: an unknown txn may be someone probing.
         return _error_page("This login link is unknown or has expired.", 400)
 
-    response = _render(
+    # Checked on the render too, not only on submit: a page rendered in the
+    # wrong browser is a page someone is being walked through.
+    if not _constant_time_equal(
+        transaction.get("browser_nonce"), request.cookies.get(cookie_name(txn_id))
+    ):
+        return _error_page(
+            "This login link belongs to a different browser session. Start the "
+            "connection again in your client.",
+            400,
+        )
+
+    return _render(
         txn_id,
         transaction,
         await _client_name(provider, str(transaction["client_id"])),
         provider.redmine_url,
     )
-    _set_binding_cookie(response, txn_id, str(transaction["browser_nonce"]))
-    return response
 
 
 async def login_submit(request: Request) -> Response:
@@ -259,9 +275,7 @@ async def login_submit(request: Request) -> Response:
         return _error_page("This login link is unknown or has expired.", 400)
 
     cookie = request.cookies.get(cookie_name(txn_id))
-    if not cookie or not secrets.compare_digest(
-        cookie, str(transaction.get("browser_nonce", ""))
-    ):
+    if not _constant_time_equal(transaction.get("browser_nonce"), cookie):
         await provider.drop_transaction(txn_id)
         return _error_page(
             "This page was opened in a different browser, or its cookie was "

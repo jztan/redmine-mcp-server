@@ -32,6 +32,25 @@ REDIRECT = "http://localhost:41999/callback"
 KEY = "a" * 40
 
 
+@pytest.fixture(autouse=True)
+def _no_network(request):
+    """Revalidation must never leave the process in a unit test.
+
+    Refresh now revalidates the bound key, so an unmocked test would hit DNS.
+    The default answer is "inconclusive", which keeps the session -- tests that
+    care about revocation patch it themselves.
+    """
+    if "no_network_guard" in request.keywords:
+        yield
+        return
+    with patch.object(
+        m,
+        "fetch_redmine_identity",
+        AsyncMock(side_effect=m.RedmineUnavailable("no network in unit tests")),
+    ):
+        yield
+
+
 def _identity(user_id: int = 7, login: str = "tester", admin: bool = False):
     return {"id": user_id, "login": login, "admin": admin}
 
@@ -493,6 +512,7 @@ def _transport(handler):
     return httpx.MockTransport(handler)
 
 
+@pytest.mark.no_network_guard
 async def test_fetch_redmine_identity_sends_the_key_in_the_header():
     import httpx
 
@@ -514,6 +534,7 @@ async def test_fetch_redmine_identity_sends_the_key_in_the_header():
     assert "key=" not in seen["url"]
 
 
+@pytest.mark.no_network_guard
 async def test_fetch_redmine_identity_returns_none_on_401():
     import httpx
 
@@ -524,6 +545,7 @@ async def test_fetch_redmine_identity_returns_none_on_401():
         assert await m.fetch_redmine_identity(REDMINE, KEY) is None
 
 
+@pytest.mark.no_network_guard
 async def test_fetch_redmine_identity_reports_a_transport_failure_as_unavailable():
     import httpx
 
@@ -793,6 +815,7 @@ async def test_a_pasted_key_with_a_newline_is_rejected_before_httpx_sees_it():
     assert (await provider.get_transaction(txn_id))["attempts"] == 1
 
 
+@pytest.mark.no_network_guard
 @pytest.mark.parametrize(
     "status,payload",
     [
@@ -816,6 +839,7 @@ async def test_an_unusable_answer_is_unavailable_not_a_non_admin_user(status, pa
             await m.fetch_redmine_identity(REDMINE, KEY)
 
 
+@pytest.mark.no_network_guard
 async def test_a_non_json_body_is_unavailable():
     import httpx
 
@@ -827,6 +851,7 @@ async def test_a_non_json_body_is_unavailable():
             await m.fetch_redmine_identity(REDMINE, KEY)
 
 
+@pytest.mark.no_network_guard
 async def test_the_unavailable_error_never_carries_the_key():
     import httpx
 
@@ -914,3 +939,138 @@ async def test_codes_are_keyed_by_hash_too():
 
     assert await store.get(code, collection=m.COLLECTION_CODES) is None
     assert await store.get(m._hash(code), collection=m.COLLECTION_CODES) is not None
+
+
+# --- review #287: revalidation at refresh --------------------------------
+
+
+async def _session(provider):
+    """A logged-in session: returns (client, token)."""
+    client = await _registered(provider)
+    redirect, _ = await _login(provider, client)
+    _, token = await _exchange(provider, client, redirect)
+    return client, token
+
+
+async def _refresh(provider, client, token, identity=None, error=None):
+    refresh = await provider.load_refresh_token(client, token.refresh_token)
+    mock = AsyncMock(side_effect=error) if error else AsyncMock(return_value=identity)
+    with patch.object(m, "fetch_redmine_identity", mock):
+        return await provider.exchange_refresh_token(client, refresh, [])
+
+
+async def test_a_refresh_revalidates_the_bound_key():
+    """Redmine serves an unknown key as anonymous, so nothing else would notice."""
+    provider = _provider()
+    client, token = await _session(provider)
+
+    seen = AsyncMock(return_value=_identity())
+    refresh = await provider.load_refresh_token(client, token.refresh_token)
+    with patch.object(m, "fetch_redmine_identity", seen):
+        await provider.exchange_refresh_token(client, refresh, [])
+
+    seen.assert_awaited_once()
+    assert seen.await_args.args[1] == KEY
+    # Its own budget, not REDMINE_TIMEOUT: a client is waiting on this.
+    assert seen.await_args.kwargs["timeout"].read == m.REVALIDATION_TIMEOUT_SECONDS
+
+
+async def test_a_rejected_key_ends_the_session_at_refresh():
+    provider = _provider()
+    client, token = await _session(provider)
+    access = token.access_token
+
+    with pytest.raises(TokenError) as exc:
+        await _refresh(provider, client, token, identity=None)
+
+    assert exc.value.error == "invalid_grant"
+    assert await provider.load_access_token(access) is None
+
+
+async def test_a_key_that_now_answers_as_someone_else_ends_the_session():
+    provider = _provider()
+    client, token = await _session(provider)
+
+    with pytest.raises(TokenError):
+        await _refresh(provider, client, token, identity=_identity(user_id=99))
+
+    assert await provider.load_access_token(token.access_token) is None
+
+
+async def test_a_user_who_became_an_admin_ends_the_session():
+    provider = _provider()
+    client, token = await _session(provider)
+
+    with pytest.raises(TokenError):
+        await _refresh(provider, client, token, identity=_identity(admin=True))
+
+    assert await provider.load_access_token(token.access_token) is None
+
+
+async def test_a_new_admin_is_fine_when_the_gate_is_open():
+    provider = _provider(allow_admin=True)
+    client, token = await _session(provider)
+    rotated = await _refresh(provider, client, token, identity=_identity(admin=True))
+    assert rotated.access_token
+
+
+@pytest.mark.parametrize(
+    "error", [m.RedmineForbidden("403"), m.RedmineUnavailable("timeout")]
+)
+async def test_an_inconclusive_revalidation_keeps_the_session(error):
+    """A lost permission or a bad minute says nothing about the key."""
+    provider = _provider()
+    client, token = await _session(provider)
+    rotated = await _refresh(provider, client, token, error=error)
+    assert await provider.load_access_token(rotated.access_token) is not None
+
+
+@pytest.mark.no_network_guard
+async def test_a_403_is_told_apart_from_a_401():
+    import httpx
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, json={})
+
+    with patch.object(httpx, "AsyncClient", _client_factory(handler)):
+        with pytest.raises(m.RedmineForbidden):
+            await m.fetch_redmine_identity(REDMINE, KEY)
+
+
+# --- review #287: claiming single-use records ----------------------------
+
+
+async def test_only_one_concurrent_claim_wins_on_a_real_file_store(tmp_path):
+    """FileTreeStore.delete is a stat-then-unlink, so the lock is load-bearing.
+
+    Without it two concurrent claims both reported success (41 of 300 runs on
+    macOS), or the loser raised FileNotFoundError -- either way a code or a
+    refresh token could be spent twice.
+    """
+    import asyncio
+
+    monkeyed = m.settings.home
+    try:
+        m.settings.home = tmp_path
+        store = m.build_store("claim-test-secret")
+        provider = _provider(store)
+
+        wins = 0
+        for round_number in range(25):
+            key = f"record-{round_number}"
+            await store.put(key, {"v": 1}, collection=m.COLLECTION_CODES)
+            results = await asyncio.gather(
+                *(provider._claim(key, collection=m.COLLECTION_CODES) for _ in range(6))
+            )
+            assert sum(1 for r in results if r) == 1, results
+            wins += 1
+        assert wins == 25
+    finally:
+        m.settings.home = monkeyed
+
+
+async def test_a_claim_of_something_already_gone_is_a_loss_not_an_error():
+    provider = _provider()
+    assert (
+        await provider._claim("never-existed", collection=m.COLLECTION_CODES) is False
+    )

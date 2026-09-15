@@ -18,11 +18,13 @@ Unset, everything here skips with a reason.
 
 import os
 
-import httpx
 import pytest
 from dotenv import load_dotenv
 
-from redmine_mcp_server._api_key_login import fetch_redmine_identity
+from redmine_mcp_server._api_key_login import (
+    RedmineUnavailable,
+    fetch_redmine_identity,
+)
 
 load_dotenv()
 
@@ -84,5 +86,5 @@ async def test_an_admin_key_reports_itself_as_admin():
 async def test_an_unreachable_redmine_raises_instead_of_denying():
     # Port 1 answers nothing; the login route turns this into a 502 and keeps
     # the transaction, because the user's key may be perfectly good.
-    with pytest.raises(httpx.RequestError):
+    with pytest.raises(RedmineUnavailable):
         await fetch_redmine_identity("http://127.0.0.1:1", TEST_KEY)

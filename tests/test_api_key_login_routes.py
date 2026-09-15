@@ -86,6 +86,12 @@ async def _new_transaction(provider):
     return url.split("txn=", 1)[1]
 
 
+async def _jar(provider, txn):
+    """The cookie the /authorize redirect would have set."""
+    transaction = await provider.get_transaction(txn)
+    return {routes.cookie_name(txn): transaction["browser_nonce"]}
+
+
 async def _browse(provider, cookies=None):
     """Return an httpx client wired to the routes with this provider.
 
@@ -103,7 +109,7 @@ async def test_the_page_names_the_client_the_redirect_host_and_redmine():
     provider = _provider()
     txn = await _new_transaction(provider)
     with patch.object(routes, "_provider", lambda: provider):
-        async with await _browse(provider) as http:
+        async with await _browse(provider, await _jar(provider, txn)) as http:
             response = await http.get(f"/login?txn={txn}")
 
     assert response.status_code == 200
@@ -115,20 +121,32 @@ async def test_the_page_names_the_client_the_redirect_host_and_redmine():
     assert 'type="password"' in body and 'autocomplete="off"' in body
 
 
-async def test_the_page_sets_a_per_transaction_binding_cookie():
+async def test_the_page_refuses_a_browser_without_the_cookie():
+    """The replay the cookie exists to stop: a second browser, same URL."""
     provider = _provider()
     txn = await _new_transaction(provider)
-    transaction = await provider.get_transaction(txn)
+
     with patch.object(routes, "_provider", lambda: provider):
         async with await _browse(provider) as http:
             response = await http.get(f"/login?txn={txn}")
 
-    name = routes.cookie_name(txn)
-    assert response.cookies.get(name) == transaction["browser_nonce"]
-    header = response.headers["set-cookie"]
-    assert "HttpOnly" in header and "SameSite=lax" in header.lower().replace(
-        "samesite=lax", "SameSite=lax"
-    )
+    assert response.status_code == 400
+    assert "different browser session" in response.text
+    # And it must not hand out a cookie that would let the attempt succeed.
+    assert "set-cookie" not in response.headers
+
+
+async def test_a_reload_in_the_same_browser_still_works():
+    provider = _provider()
+    txn = await _new_transaction(provider)
+
+    with patch.object(routes, "_provider", lambda: provider):
+        async with await _browse(provider, await _jar(provider, txn)) as http:
+            first = await http.get(f"/login?txn={txn}")
+            second = await http.get(f"/login?txn={txn}")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
 
 
 async def test_the_csp_carries_no_form_action():
@@ -136,7 +154,7 @@ async def test_the_csp_carries_no_form_action():
     provider = _provider()
     txn = await _new_transaction(provider)
     with patch.object(routes, "_provider", lambda: provider):
-        async with await _browse(provider) as http:
+        async with await _browse(provider, await _jar(provider, txn)) as http:
             response = await http.get(f"/login?txn={txn}")
 
     csp = response.headers["content-security-policy"]
@@ -683,3 +701,165 @@ async def test_revoking_the_refresh_token_over_http_ends_the_session():
 
     assert revoked.status_code == 200
     assert await provider.load_access_token(payload["access_token"]) is None
+
+
+# --- review #287 ---------------------------------------------------------
+
+
+async def _fastmcp_app(provider):
+    from fastmcp import FastMCP
+
+    app = FastMCP("api-key-login-cookie-test", auth=provider).http_app(
+        stateless_http=True
+    )
+    return AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://localhost:8000",
+        follow_redirects=False,
+    )
+
+
+async def test_the_authorize_redirect_carries_the_binding_cookie():
+    """Issued once, where the transaction is born -- not on every render."""
+    provider = _provider(allowed_client_redirect_uris=["http://localhost:*"])
+    client = _client_info()
+    await provider.register_client(client)
+
+    async with await _fastmcp_app(provider) as http:
+        response = await http.get(
+            "/authorize",
+            params={
+                "response_type": "code",
+                "client_id": client.client_id,
+                "redirect_uri": REDIRECT,
+                "code_challenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+                "code_challenge_method": "S256",
+                "state": "s",
+            },
+        )
+
+    assert response.status_code == 302
+    txn = response.headers["location"].split("txn=", 1)[1]
+    transaction = await provider.get_transaction(txn)
+    assert response.cookies.get(routes.cookie_name(txn)) == transaction["browser_nonce"]
+    header = response.headers["set-cookie"]
+    assert "HttpOnly" in header
+    assert "samesite=lax" in header.lower()
+
+
+async def test_an_error_redirect_carries_no_cookie():
+    """Only our own login URL gets one; /authorize also bounces errors back."""
+    provider = _provider(allowed_client_redirect_uris=["http://localhost:*"])
+    client = _client_info()
+    await provider.register_client(client)
+
+    async with await _fastmcp_app(provider) as http:
+        response = await http.get(
+            "/authorize",
+            params={
+                "response_type": "token",  # unsupported, so it errors
+                "client_id": client.client_id,
+                "redirect_uri": REDIRECT,
+                "state": "s",
+            },
+        )
+
+    assert "set-cookie" not in response.headers
+
+
+async def test_a_percent_encoded_non_ascii_cookie_is_refused_not_a_500():
+    """Cookies travel as ASCII, so this is how a non-ASCII value arrives.
+
+    Starlette unquotes it back into a str that hmac.compare_digest refuses,
+    which used to surface as a 500.
+    """
+    provider = _provider()
+    txn = await _new_transaction(provider)
+
+    with patch.object(routes, "_provider", lambda: provider):
+        async with await _browse(provider) as http:
+            response = await http.get(
+                f"/login?txn={txn}",
+                headers={"Cookie": f"{routes.cookie_name(txn)}=schl%C3%BCssel"},
+            )
+
+    assert response.status_code == 400
+
+
+async def test_the_key_stays_out_of_the_logs_when_the_login_is_refused(caplog):
+    provider = _provider()
+    txn = await _new_transaction(provider)
+    transaction = await provider.get_transaction(txn)
+
+    with caplog.at_level("DEBUG"):
+        with (
+            patch.object(routes, "_provider", lambda: provider),
+            patch.object(
+                provider_mod, "fetch_redmine_identity", AsyncMock(return_value=None)
+            ),
+        ):
+            async with await _browse(provider, await _jar(provider, txn)) as http:
+                await http.post(
+                    "/login",
+                    data={
+                        "txn": txn,
+                        "csrf": transaction["csrf"],
+                        "api_key": KEY,
+                    },
+                )
+
+    text = "\n".join(r.getMessage() for r in caplog.records)
+    assert KEY not in text
+    assert "...aaaa" in text
+
+
+async def test_the_client_name_is_escaped_on_the_page():
+    """It comes from open registration, so it is attacker-controlled text."""
+    provider = _provider()
+    client = _client_info(name='<img src=x onerror="alert(1)">')
+    await provider.register_client(client)
+    url = await provider.authorize(client, _params())
+    txn = url.split("txn=", 1)[1]
+
+    with patch.object(routes, "_provider", lambda: provider):
+        async with await _browse(provider, await _jar(provider, txn)) as http:
+            response = await http.get(f"/login?txn={txn}")
+
+    assert "<img src=x" not in response.text
+    assert "&lt;img src=x" in response.text
+
+
+async def test_data_carrying_the_code_but_no_error_does_not_revoke():
+    """A record whose own code field reads AUTH_FAILED is data, not a refusal."""
+    provider = _provider()
+    revoke = AsyncMock(return_value=True)
+    with patch.object(provider, "revoke_binding", revoke):
+        await _run_middleware(
+            provider, {"code": "AUTH_FAILED", "name": "a product"}, {"binding_id": "b"}
+        )
+    revoke.assert_not_awaited()
+
+
+async def test_an_envelope_alone_in_a_list_still_revokes():
+    """get_private_notes and list_project_trackers answer [envelope]."""
+    provider = _provider()
+    revoke = AsyncMock(return_value=True)
+    with patch.object(provider, "revoke_binding", revoke):
+        await _run_middleware(
+            provider,
+            {"result": [{"error": "no", "code": "AUTH_FAILED"}]},
+            {"binding_id": "b-list"},
+        )
+    revoke.assert_awaited_once_with("b-list")
+
+
+async def test_a_longer_list_is_left_alone():
+    provider = _provider()
+    revoke = AsyncMock(return_value=True)
+    with patch.object(provider, "revoke_binding", revoke):
+        await _run_middleware(
+            provider,
+            {"result": [{"error": "a", "code": "AUTH_FAILED"}, {"id": 2}]},
+            {"binding_id": "b"},
+        )
+    revoke.assert_not_awaited()
