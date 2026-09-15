@@ -122,20 +122,29 @@ async def test_unknown_client_is_none():
     assert await _provider().get_client("nope") is None
 
 
-async def test_client_record_ttl_is_refreshed_on_authorize():
+async def test_authorize_rewrites_the_client_record_with_a_full_ttl():
+    """Registrations must not age out mid-session while a client is active.
+
+    Asserted on the write rather than on the remaining TTL: patching the
+    provider's clock does not move ``MemoryStore``'s, so comparing two
+    readings of "600 minus a few microseconds" is a race, and it lost one in
+    CI (599.999828 > 599.999842).
+    """
     store = MemoryStore()
     provider = _provider(store, session_ttl=600)
     client = await _registered(provider)
-    _, ttl_before = await store.ttl(client.client_id, collection=m.COLLECTION_CLIENTS)
 
-    # Without moving the clock the remaining TTL barely changes, so the
-    # assertion would hold even if authorize never rewrote the record.
-    with patch.object(m, "_now", lambda: time.time() + 120):
+    writes = []
+    original_put = store.put
+
+    async def recording_put(key, value, *, collection=None, ttl=None):
+        writes.append((collection, key, ttl))
+        return await original_put(key, value, collection=collection, ttl=ttl)
+
+    with patch.object(store, "put", recording_put):
         await provider.authorize(client, _params())
 
-    _, ttl_after = await store.ttl(client.client_id, collection=m.COLLECTION_CLIENTS)
-    assert ttl_before is not None and ttl_after is not None
-    assert ttl_after > ttl_before
+    assert (m.COLLECTION_CLIENTS, client.client_id, 600) in writes
 
 
 # --- authorize ----------------------------------------------------------
