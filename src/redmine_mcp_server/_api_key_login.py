@@ -365,10 +365,36 @@ class ApiKeyLoginProvider(OAuthProvider):
         )
 
     async def get_client(self, client_id: str) -> Optional[OAuthClientInformationFull]:
+        """Load a registration, dropping redirect URIs the allowlist no longer
+        matches.
+
+        Filtering here rather than in ``authorize`` is what keeps a refusal off
+        the redirect. The SDK calls ``client.validate_redirect_uri`` before it
+        ever reaches the provider, so a URI that is gone from this list yields
+        a 400 error page -- which is what RFC 6749 4.1.2.1 asks for, since
+        redirecting the error would send it to the very URI just judged
+        untrustworthy. Registrations outlive the allowlist, so without this a
+        tightened allowlist would never reach a client that registered under
+        the old one.
+        """
         record = await self._store.get(client_id, collection=COLLECTION_CLIENTS)
         if record is None:
             return None
-        return OAuthClientInformationFull.model_validate(record)
+        client = OAuthClientInformationFull.model_validate(record)
+        allowed = [
+            uri
+            for uri in (client.redirect_uris or [])
+            if validate_redirect_uri(uri, self._allowed_client_redirect_uris)
+        ]
+        if len(allowed) != len(client.redirect_uris or []):
+            logger.warning(
+                "Client %s has %d registered redirect URI(s) the allowlist no "
+                "longer matches; they are ignored.",
+                client_id,
+                len(client.redirect_uris or []) - len(allowed),
+            )
+            client.redirect_uris = allowed
+        return client
 
     # -- authorize --------------------------------------------------------
 
@@ -403,18 +429,6 @@ class ApiKeyLoginProvider(OAuthProvider):
             raise AuthorizeError(
                 "invalid_request",
                 "redirect_uri does not match this client's registration.",
-            )
-        # Checked again here, not only at registration: registrations outlive
-        # the allowlist, so without this a tightened
-        # REDMINE_MCP_ALLOWED_CLIENT_REDIRECT_URIS would never reach a client
-        # that registered under the old one -- and every authorize renews that
-        # client's record.
-        if not validate_redirect_uri(
-            params.redirect_uri, self._allowed_client_redirect_uris
-        ):
-            raise AuthorizeError(
-                "invalid_request",
-                "redirect_uri is no longer allowed by this server.",
             )
 
         txn_id = _token()
