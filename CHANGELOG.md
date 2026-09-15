@@ -39,6 +39,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   request through instead of blaming the key. Redmine's "Authentication
   required" setting removes the anonymous fallback entirely
   ([#290](https://github.com/jztan/redmine-mcp-server/issues/290)).
+- Expired OAuth state is now deleted from `FASTMCP_HOME` in `oauth-proxy` and
+  `api-key-login` modes. FastMCP's file store stops serving an expired record
+  but never removes the file, and unauthenticated `/register` and `/authorize`
+  requests write them, so the directory could grow without bound. The cleanup
+  task now sweeps expired files every `CLEANUP_INTERVAL_MINUTES`, starts when
+  the server boots in those modes, and runs even with `AUTO_CLEANUP_ENABLED`
+  off. Records without a TTL, such as `oauth-proxy` client registrations, are
+  kept ([#289](https://github.com/jztan/redmine-mcp-server/issues/289)).
 
 ### Contributors
 - @andilem proposed the `api-key-login` mode and proved it against a production

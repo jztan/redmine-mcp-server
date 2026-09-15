@@ -14,6 +14,8 @@ Modules:
 
 import logging
 import os
+from contextlib import asynccontextmanager
+
 import uvicorn
 from importlib.metadata import version, PackageNotFoundError
 from starlette.applications import Starlette
@@ -29,6 +31,7 @@ logging.basicConfig(
 from . import tools  # noqa: E402,F401  -- triggers @mcp.tool registration
 from . import apps  # noqa: E402,F401  -- triggers MCP App registration
 from . import _http_routes  # noqa: E402,F401  -- registers HTTP custom routes
+from . import _cleanup  # noqa: E402
 from .server import AUTH_PROVIDER, mcp  # noqa: E402
 from ._mount import (  # noqa: E402
     mcp_mount_prefix,
@@ -98,7 +101,20 @@ def build_authenticated_app(mcp_instance, auth_provider):
             Mount(mcp_mount_prefix(), app=mcp_app),
         ]
     )
-    return Starlette(routes=routes, lifespan=mcp_app.lifespan)
+
+    @asynccontextmanager
+    async def lifespan(app):
+        async with mcp_app.lifespan(app):
+            # The OAuth endpoints write state to disk without authentication,
+            # so its sweep starts with the server rather than waiting for the
+            # first tool call or health check (#289).
+            await _cleanup._ensure_cleanup_started()
+            try:
+                yield
+            finally:
+                await _cleanup.cleanup_manager.stop()
+
+    return Starlette(routes=routes, lifespan=lifespan)
 
 
 def build_app():

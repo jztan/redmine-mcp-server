@@ -104,6 +104,11 @@ live in a file store below `FASTMCP_HOME/api-key-login/`. The Docker image sets
 volume every rebuild discards the store and every user has to log in again. The
 server logs the resolved directory at startup and warns when `FASTMCP_HOME` is unset.
 
+**Expired records.** The server deletes expired records from that store every
+`CLEANUP_INTERVAL_MINUTES` (default 10), starting when it boots. This runs whatever
+`AUTO_CLEANUP_ENABLED` says, because `/register` and `/authorize` write to the store
+without authentication.
+
 **One replica.** The store is node-local, so a second replica does not see the
 sessions of the first. Run a single instance, or pin each client to one instance.
 
