@@ -496,17 +496,6 @@ class ApiKeyLoginProvider(OAuthProvider):
             ttl=remaining,
         )
 
-    async def charge_failed_attempt(
-        self, txn_id: str, transaction: dict[str, Any]
-    ) -> None:
-        """Charge one attempt for a failure the route caught itself.
-
-        The malformed-key check lives in the route, so it never reaches
-        ``complete_login``; without this a scripted flood against one
-        transaction would never run out of budget.
-        """
-        await self._count_attempt(txn_id, transaction)
-
     async def complete_login(
         self,
         txn_id: str,

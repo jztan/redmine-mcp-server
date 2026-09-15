@@ -8,7 +8,6 @@ is mocked.
 import json
 from unittest.mock import AsyncMock, Mock, patch
 
-import httpx
 import pytest
 from httpx import ASGITransport, AsyncClient
 from key_value.aio.stores.memory import MemoryStore
@@ -253,12 +252,56 @@ async def test_two_concurrent_logins_in_one_browser_both_complete():
 
 
 async def test_a_malformed_key_re_renders_and_costs_an_attempt():
+    """The check lives in complete_login now; the page still presents it well."""
     provider = _provider()
     txn = await _new_transaction(provider)
-    response = await _submit(provider, txn, key="short")
+    transaction = await provider.get_transaction(txn)
+    with (
+        patch.object(routes, "_provider", lambda: provider),
+        patch.object(provider_mod, "fetch_redmine_identity", AsyncMock()) as fetch,
+    ):
+        async with await _browse(
+            provider, {routes.cookie_name(txn): transaction["browser_nonce"]}
+        ) as http:
+            response = await http.post(
+                "/login",
+                data={"txn": txn, "csrf": transaction["csrf"], "api_key": "short"},
+            )
+
+    # A malformed key must never reach Redmine.
+    fetch.assert_not_awaited()
     assert response.status_code == 400
     assert "does not look like" in response.text
     assert (await provider.get_transaction(txn))["attempts"] == 1
+
+
+async def test_whitespace_around_a_pasted_key_is_tolerated():
+    """Selecting a key in Redmine picks up a trailing newline more often than not."""
+    provider = _provider()
+    txn = await _new_transaction(provider)
+    transaction = await provider.get_transaction(txn)
+    with (
+        patch.object(routes, "_provider", lambda: provider),
+        patch.object(
+            provider_mod, "fetch_redmine_identity", AsyncMock(return_value=_identity())
+        ) as fetch,
+    ):
+        async with await _browse(
+            provider, {routes.cookie_name(txn): transaction["browser_nonce"]}
+        ) as http:
+            response = await http.post(
+                "/login",
+                data={
+                    "txn": txn,
+                    "csrf": transaction["csrf"],
+                    "api_key": "  " + KEY + "\n",
+                },
+            )
+
+    assert response.status_code == 302
+    # Stripped before it travels, so httpx never sees a header value it would
+    # reject with the whole key in the message.
+    assert fetch.await_args.args[1] == KEY
 
 
 async def test_a_rejected_key_re_renders_with_a_generic_error():
@@ -294,7 +337,7 @@ async def test_an_unreachable_redmine_is_502_and_keeps_the_transaction():
     provider = _provider()
     txn = await _new_transaction(provider)
     transaction = await provider.get_transaction(txn)
-    boom = AsyncMock(side_effect=httpx.ConnectError("down"))
+    boom = AsyncMock(side_effect=provider_mod.RedmineUnavailable("ConnectError"))
     with (
         patch.object(routes, "_provider", lambda: provider),
         patch.object(provider_mod, "fetch_redmine_identity", boom),
@@ -307,7 +350,10 @@ async def test_an_unreachable_redmine_is_502_and_keeps_the_transaction():
                 data={"txn": txn, "csrf": transaction["csrf"], "api_key": KEY},
             )
     assert response.status_code == 502
-    assert await provider.get_transaction(txn) is not None
+    # No attempt charged: the key's validity is unknown, not wrong.
+    transaction = await provider.get_transaction(txn)
+    assert transaction is not None
+    assert transaction["attempts"] == 0
 
 
 async def test_the_rate_limit_answers_429_without_costing_an_attempt(monkeypatch):

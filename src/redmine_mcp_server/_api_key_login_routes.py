@@ -22,14 +22,17 @@ import time
 from typing import Optional
 from urllib.parse import urlparse
 
-import httpx
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 
-from ._api_key_login import ApiKeyLoginError, ApiKeyLoginProvider
+from ._api_key_login import (
+    ApiKeyLoginError,
+    ApiKeyLoginProvider,
+    RedmineUnavailable,
+)
 from ._env import _get_int_env, _is_true_env
 from ._mount import mcp_mount_prefix
-from ._per_user import _fingerprint, _validate_key_format
+from ._per_user import _fingerprint
 from .server import mcp
 
 logger = logging.getLogger(__name__)
@@ -267,30 +270,16 @@ async def login_submit(request: Request) -> Response:
         )
 
     client_name = await _client_name(provider, str(transaction["client_id"]))
-    if not _validate_key_format(api_key):
-        # Cheap rejection before Redmine sees it, and it still costs an attempt
-        # so a scripted flood against one transaction runs out.
-        await provider.charge_failed_attempt(txn_id, transaction)
-        return _render(
-            txn_id,
-            transaction,
-            client_name,
-            provider.redmine_url,
-            error="That does not look like a Redmine API key.",
-            status=400,
-        )
 
     try:
         redirect = await provider.complete_login(
             txn_id, csrf, api_key, browser_nonce=cookie
         )
-    except httpx.RequestError as exc:
-        # Redmine is unreachable; the key may be perfectly good, so the
-        # transaction survives and the user can retry.
-        logger.warning(
-            "api-key-login: Redmine unreachable during login (%s)",
-            type(exc).__name__,
-        )
+    except RedmineUnavailable as exc:
+        # Redmine could not be asked, so the key's validity is unknown: the
+        # transaction survives, no attempt is charged, and the user can retry.
+        # The exception carries no key material, so it is safe to log.
+        logger.warning("api-key-login: Redmine unavailable during login (%s)", exc)
         return _error_page("Redmine could not be reached. Please try again.", 502)
     except ApiKeyLoginError as exc:
         logger.info(
