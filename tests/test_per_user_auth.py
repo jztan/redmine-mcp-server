@@ -121,6 +121,7 @@ def test_client_uses_per_user_key_over_secure_transport():
         patch.object(_client, "Redmine") as mock_redmine,
         patch.object(_client, "_build_requests_config", return_value={}),
         patch("redmine_mcp_server._client.get_http_request", return_value=req),
+        patch("redmine_mcp_server._per_user.validate_key_with_redmine"),
     ):
         _client._get_redmine_client()
         mock_redmine.assert_called_once_with(
