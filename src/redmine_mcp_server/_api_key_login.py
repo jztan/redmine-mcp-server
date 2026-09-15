@@ -19,6 +19,7 @@ Store layout, one collection per record kind::
     transactions     random id          a pending /authorize, TTL 5 min
     codes            random code        AuthorizationCode + binding_id
     bindings         random id          the API key and who it belongs to
+                                        (ciphertext under ``token-derived``)
     access_tokens    sha256(token)      {binding_id, scopes, expires_at}
     refresh_tokens   sha256(token)      {binding_id, scopes, expires_at}
     rotated_refresh  sha256(old token)  tombstone for reuse detection
@@ -45,12 +46,20 @@ Two properties are load-bearing and easy to break:
   atomic either, so every one of them goes through ``_forget``, which holds a
   per-loop lock and tolerates a peer that got there first. The one counter
   that cannot work this way, ``attempts``, is documented as approximate.
+* **A binding is only ever read with its capability in hand.** Under
+  ``REDMINE_API_KEY_LOGIN_BINDING_CRYPTO=token-derived`` that is not a style
+  rule but the guarantee itself: the key that opens a binding is reachable
+  only through a presented code or token. Any new code path that wants to read
+  a binding from the side -- an admin view, a sweep, a migration -- cannot work
+  under that scheme and must not be built on the assumption that it can.
 """
 
 import asyncio
+import base64
 import contextvars
 import hashlib
 import hmac
+import json
 import logging
 import os
 import secrets
@@ -61,7 +70,11 @@ from pathlib import Path
 from typing import Any, Mapping, Optional
 
 import httpx
+from cryptography.exceptions import InvalidTag
 from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from fastmcp import settings
 from fastmcp.server.auth import OAuthProvider
 from fastmcp.server.auth.auth import AccessToken
@@ -257,16 +270,17 @@ def _valid_key_format(api_key: str) -> bool:
 class BindingProtection(ABC):
     """How a binding's payload is protected at rest.
 
-    Two schemes are planned and only one ships today. They sit behind this
-    interface so nothing in the provider branches on which is in use:
-    ``seal`` produces the record written to ``bindings``, ``wrap`` produces the
-    fields added to whichever secret may later open it (the authorization code,
-    then each token minted from it), and ``unwrap``/``unseal`` reverse that.
+    Two schemes, selected by ``REDMINE_API_KEY_LOGIN_BINDING_CRYPTO``. They sit
+    behind this interface so nothing in the provider branches on which is in
+    use: ``seal`` produces the record written to ``bindings``, ``wrap``
+    produces the fields added to whichever secret may later open it (the
+    authorization code, then each token minted from it), and
+    ``unwrap``/``unseal`` reverse that.
 
-    ``server-secret`` (this file) leans on the store's own
+    ``ServerSecretBindingProtection`` leans on the store's own
     ``FernetEncryptionWrapper`` and therefore needs no data key: ``wrap``
-    returns nothing and ``unseal`` ignores the key argument. The token-derived
-    scheme lands separately and fills those in without touching the provider.
+    returns nothing and ``unseal`` ignores the key argument.
+    ``TokenDerivedBindingProtection`` fills both in.
     """
 
     @abstractmethod
@@ -288,6 +302,16 @@ class BindingProtection(ABC):
         self, record: Mapping[str, Any], data_key: Optional[bytes]
     ) -> Optional[dict[str, Any]]:
         """Return the binding payload, or ``None`` when it cannot be opened."""
+
+    @property
+    @abstractmethod
+    def storage_warning(self) -> str:
+        """What an operator must know about stored keys under this scheme.
+
+        Here rather than at the call site so that selecting a scheme cannot
+        leave the startup log describing the other one's threat model, and so
+        that nothing outside this interface has to ask which scheme is in use.
+        """
 
 
 class ServerSecretBindingProtection(BindingProtection):
@@ -314,6 +338,193 @@ class ServerSecretBindingProtection(BindingProtection):
         self, record: Mapping[str, Any], data_key: Optional[bytes]
     ) -> Optional[dict[str, Any]]:
         return dict(record)
+
+    @property
+    def storage_warning(self) -> str:
+        return (
+            "This server now stores full-power Redmine API keys, encrypted at "
+            "rest under REDMINE_MCP_JWT_SIGNING_KEY; whoever holds both the "
+            "store and that secret can read them. Set "
+            "REDMINE_API_KEY_LOGIN_BINDING_CRYPTO=token-derived if that is not "
+            "acceptable."
+        )
+
+
+BINDING_CRYPTO_SERVER_SECRET = "server-secret"
+BINDING_CRYPTO_TOKEN_DERIVED = "token-derived"
+BINDING_CRYPTO_SCHEMES = (BINDING_CRYPTO_SERVER_SECRET, BINDING_CRYPTO_TOKEN_DERIVED)
+
+# Stamped on every record this scheme writes. It is what tells a record sealed
+# by one scheme from a record sealed by the other, so flipping
+# REDMINE_API_KEY_LOGIN_BINDING_CRYPTO on a running deployment ends the old
+# sessions instead of failing somewhere deeper with a decryption error.
+TOKEN_DERIVED_VERSION = "token-derived-v1"
+
+# HKDF's info string: domain separation, so a key derived here can never
+# collide with one derived for another purpose from the same input.
+_HKDF_INFO = b"redmine-mcp-server api-key-login binding data key v1"
+_DATA_KEY_BYTES = 32  # AES-256
+_NONCE_BYTES = 12  # the size AES-GCM is specified for
+_SALT_BYTES = 16
+
+
+def _b64e(raw: bytes) -> str:
+    return base64.b64encode(raw).decode("ascii")
+
+
+def _b64d(value: Any) -> bytes:
+    if not isinstance(value, str):
+        raise ValueError("expected base64 text")
+    return base64.b64decode(value, validate=True)
+
+
+def _derive_kek(secret: str, salt: bytes) -> bytes:
+    """The key-encryption key for one wrapped data key.
+
+    HKDF rather than the raw token because the token is text of our choosing,
+    not uniform key material, and because the info string keeps this key from
+    ever equalling one derived elsewhere from the same secret.
+    """
+    return HKDF(
+        algorithm=hashes.SHA256(),
+        length=_DATA_KEY_BYTES,
+        salt=salt,
+        info=_HKDF_INFO,
+    ).derive(secret.encode("utf-8"))
+
+
+class TokenDerivedBindingProtection(BindingProtection):
+    """Encrypt the binding so the operator secret alone cannot open it.
+
+    Textbook KEK/DEK. ``seal`` draws a random data key, encrypts the payload
+    under it with AES-256-GCM and keeps no copy. ``wrap`` stores that data key
+    a second time for each capability that may later need it -- the
+    authorization code, then every access and refresh token minted from it --
+    each time under a key derived from that capability's own value. The store
+    therefore holds the *hash* of each token next to a data key encrypted under
+    the *token*, and the token itself only ever exists in the client's hands
+    and on the wire.
+
+    What that buys, against ``server-secret``: a stolen volume plus the
+    operator secret yields ciphertext. Reading a binding needs a live token
+    presented to a running server, so the attacker gets the keys of whoever
+    transacts while they are watching, not every key of every user who logged
+    in during the past month.
+
+    What it costs, permanently:
+
+    * No server-side read of a binding without a token. That rules out a
+      session admin UI, background revalidation of stored keys, and
+      re-encryption when the signing key rotates. The revalidation at refresh
+      is deliberately built the other way round -- it runs with the refresh
+      token in hand -- so it keeps working here.
+    * A binding whose tokens are all gone is unreadable. Nothing reads it
+      again, and its TTL removes it, but it is dead weight until then.
+    * Bespoke code where ``server-secret`` leans on the framework's Fernet
+      wrapper. That wrapper still runs on top of this, so what reaches disk is
+      encrypted twice; verified harmless, since it round-trips a ciphertext
+      payload like any other value.
+
+    Every failure to open something returns ``None`` rather than raising: the
+    callers already treat an unreadable binding as a session that ends, which
+    is the safe direction. The log lines say what could not be opened and
+    never the secret that failed to open it.
+    """
+
+    def seal(
+        self, payload: Mapping[str, Any]
+    ) -> tuple[dict[str, Any], Optional[bytes]]:
+        data_key = secrets.token_bytes(_DATA_KEY_BYTES)
+        nonce = secrets.token_bytes(_NONCE_BYTES)
+        plaintext = json.dumps(
+            dict(payload), separators=(",", ":"), sort_keys=True
+        ).encode("utf-8")
+        return (
+            {
+                "crypto": TOKEN_DERIVED_VERSION,
+                "ciphertext": _b64e(AESGCM(data_key).encrypt(nonce, plaintext, None)),
+                "nonce": _b64e(nonce),
+            },
+            data_key,
+        )
+
+    def wrap(self, data_key: Optional[bytes], secret: str) -> dict[str, Any]:
+        if data_key is None:
+            # A binding sealed by the other scheme, read during a switchover.
+            # Nothing to carry; the record stays unreadable and the session
+            # ends at the next dereference.
+            return {}
+        salt = secrets.token_bytes(_SALT_BYTES)
+        nonce = secrets.token_bytes(_NONCE_BYTES)
+        wrapped = AESGCM(_derive_kek(secret, salt)).encrypt(nonce, data_key, None)
+        return {
+            "crypto": TOKEN_DERIVED_VERSION,
+            "wrapped_key": _b64e(wrapped),
+            "wrap_nonce": _b64e(nonce),
+            "wrap_salt": _b64e(salt),
+        }
+
+    def unwrap(self, carrier: Mapping[str, Any], secret: str) -> Optional[bytes]:
+        if carrier.get("crypto") != TOKEN_DERIVED_VERSION:
+            return None
+        try:
+            kek = _derive_kek(secret, _b64d(carrier["wrap_salt"]))
+            return AESGCM(kek).decrypt(
+                _b64d(carrier["wrap_nonce"]), _b64d(carrier["wrapped_key"]), None
+            )
+        except (InvalidTag, KeyError, TypeError, ValueError):
+            logger.warning(
+                "Could not unwrap the data key carried by this credential; "
+                "the session it belongs to ends here."
+            )
+            return None
+
+    def unseal(
+        self, record: Mapping[str, Any], data_key: Optional[bytes]
+    ) -> Optional[dict[str, Any]]:
+        if data_key is None or record.get("crypto") != TOKEN_DERIVED_VERSION:
+            return None
+        try:
+            plaintext = AESGCM(data_key).decrypt(
+                _b64d(record["nonce"]), _b64d(record["ciphertext"]), None
+            )
+            payload = json.loads(plaintext)
+        except (InvalidTag, KeyError, TypeError, ValueError):
+            logger.warning("Could not open this binding; the session ends here.")
+            return None
+        return payload if isinstance(payload, dict) else None
+
+    @property
+    def storage_warning(self) -> str:
+        return (
+            "Binding crypto is token-derived: stored Redmine API keys are "
+            "encrypted under keys that exist only inside the tokens clients "
+            "hold, so the store and REDMINE_MCP_JWT_SIGNING_KEY together do "
+            "not open them. Nothing server-side can read a stored key without "
+            "a presented token."
+        )
+
+
+def build_binding_protection() -> BindingProtection:
+    """Pick the scheme from the environment, failing fast on a typo.
+
+    A misspelled value must not fall back to the default: an operator who
+    asked for ``token-derived`` and silently got ``server-secret`` would
+    believe in a guarantee the deployment does not have.
+    """
+    scheme = (
+        os.getenv("REDMINE_API_KEY_LOGIN_BINDING_CRYPTO", BINDING_CRYPTO_SERVER_SECRET)
+        .strip()
+        .lower()
+    )
+    if scheme == BINDING_CRYPTO_SERVER_SECRET:
+        return ServerSecretBindingProtection()
+    if scheme == BINDING_CRYPTO_TOKEN_DERIVED:
+        return TokenDerivedBindingProtection()
+    raise RuntimeError(
+        "REDMINE_API_KEY_LOGIN_BINDING_CRYPTO must be one of "
+        f"{', '.join(BINDING_CRYPTO_SCHEMES)}; got {scheme!r}."
+    )
 
 
 # --- Redmine identity --------------------------------------------------
@@ -817,8 +1028,14 @@ class ApiKeyLoginProvider(OAuthProvider):
         data_key: Optional[bytes],
     ) -> str:
         code = _token()
+        # The code itself is deliberately NOT in the record. Under
+        # token-derived protection the wrap below is keyed by the code, so
+        # storing it here would hand the data key -- and through it the API
+        # key -- to anyone holding the store and the operator secret, for as
+        # long as an unexchanged or abandoned code sits on disk. The record is
+        # found by sha256(code) and the caller always presents the code, so
+        # nothing needs it back.
         record = {
-            "code": code,
             "client_id": transaction["client_id"],
             "redirect_uri": str(transaction["redirect_uri"]),
             "redirect_uri_provided_explicitly": bool(
@@ -851,7 +1068,8 @@ class ApiKeyLoginProvider(OAuthProvider):
             await self._forget(_hash(authorization_code), collection=COLLECTION_CODES)
             return None
         return AuthorizationCode(
-            code=record["code"],
+            # From the caller, never from the record: see _mint_code.
+            code=authorization_code,
             scopes=list(record.get("scopes", [])),
             expires_at=float(record["expires_at"]),
             client_id=record["client_id"],
@@ -1300,6 +1518,7 @@ def build_api_key_login() -> ApiKeyLoginProvider:
             "is issued would make every call re-run the browser login."
         )
     _warn_about_ignored_env()
+    protection = build_binding_protection()
     provider = ApiKeyLoginProvider(
         base_url=base_url,
         redmine_url=redmine_url,
@@ -1308,12 +1527,15 @@ def build_api_key_login() -> ApiKeyLoginProvider:
         allowed_client_redirect_uris=get_allowed_client_redirect_uris(),
         allow_admin=_is_true_env("REDMINE_API_KEY_LOGIN_ALLOW_ADMIN"),
         session_ttl=session_days * 86400,
+        protection=protection,
     )
+    # The scheme supplies its own sentence, so an operator reading the log is
+    # never told the other one's threat model, and nothing here branches on
+    # which scheme was selected.
     logger.warning(
-        "api-key-login mode active. This server now stores full-power Redmine "
-        "API keys, encrypted at rest under REDMINE_MCP_JWT_SIGNING_KEY; whoever "
-        "holds both the store and that secret can read them. The store is "
-        "node-local, so a second replica will not see these sessions."
+        "api-key-login mode active. %s The store is node-local, so a second "
+        "replica will not see these sessions.",
+        protection.storage_warning,
     )
     return provider
 

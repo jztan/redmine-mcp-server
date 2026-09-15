@@ -25,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#261](https://github.com/jztan/redmine-mcp-server/issues/261),
   [#286](https://github.com/jztan/redmine-mcp-server/pull/286),
   [#287](https://github.com/jztan/redmine-mcp-server/pull/287)).
+- `REDMINE_API_KEY_LOGIN_BINDING_CRYPTO=token-derived` keeps stored Redmine API
+  keys out of reach of anyone holding both the store and
+  `REDMINE_MCP_JWT_SIGNING_KEY`, at the cost of any server-side read of a stored
+  key. The default stays `server-secret`; switching a running deployment signs
+  everyone out. Trade-offs and switchover:
+  [docs/api-key-login-auth.md](docs/api-key-login-auth.md#binding-protection)
+  ([#299](https://github.com/jztan/redmine-mcp-server/pull/299)).
 - `REDMINE_MCP_EXTENSIONS` imports named Python modules at startup, so a separate
   package can add tools for a Redmine plugin written in house. The hook is
   provisional: [docs/extensions.md](docs/extensions.md)
@@ -67,7 +74,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   design ([#265](https://github.com/jztan/redmine-mcp-server/discussions/265)),
   and implemented it
   ([#286](https://github.com/jztan/redmine-mcp-server/pull/286),
-  [#287](https://github.com/jztan/redmine-mcp-server/pull/287)).
+  [#287](https://github.com/jztan/redmine-mcp-server/pull/287),
+  [#299](https://github.com/jztan/redmine-mcp-server/pull/299)).
 
 ## [2.15.0] - 2026-09-12
 ### Added
