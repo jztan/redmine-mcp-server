@@ -51,6 +51,46 @@ def _select_auth_provider(auth_mode: str):
     return None
 
 
+def refresh_advertised_scopes(auth_provider) -> None:
+    """Push the current advertised scope list back into the auth provider.
+
+    Both builders snapshot the list into the provider they return, and
+    ``AUTH_PROVIDER`` is built while this module body runs -- before
+    ``main.py`` has imported the modules ``REDMINE_MCP_EXTENSIONS`` names.
+    So an extension's scopes reach ``advertised_scopes()`` but not the
+    served discovery documents unless the provider is told again. Both
+    providers read their list when ``get_routes()`` builds the HTTP app,
+    which is after extensions load, so one call is enough.
+
+    Each mode keeps the source its own builder used:
+    :func:`oauth_scopes.advertised_scopes` for the OAuth proxy (whose
+    ``valid_scopes`` is what it registers clients against) and
+    :func:`oauth_scopes.configured_advertised_scopes` for the remote
+    provider (so ``REDMINE_MCP_SCOPES`` still narrows it). ``None`` -- the
+    legacy modes -- and any other provider are left alone.
+
+    Imported lazily for the same reason :func:`_select_auth_provider` is:
+    a legacy deployment should not pull in the OAuth machinery.
+    """
+    if auth_provider is None:
+        return
+
+    from ._auth import RedmineAuthProvider
+
+    if isinstance(auth_provider, RedmineAuthProvider):
+        from .oauth_scopes import configured_advertised_scopes
+
+        auth_provider.update_scopes_supported(configured_advertised_scopes())
+        return
+
+    from fastmcp.server.auth.oauth_proxy import OAuthProxy
+
+    if isinstance(auth_provider, OAuthProxy):
+        from .oauth_scopes import advertised_scopes
+
+        auth_provider.update_default_scopes(advertised_scopes())
+
+
 def _register_middlewares(mcp_instance, auth_provider) -> None:
     """Attach tool-boundary middlewares.
 

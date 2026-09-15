@@ -11,6 +11,7 @@ from redmine_mcp_server._annotations import (
     annotations_for,
 )
 from redmine_mcp_server._decorators import ACTION_SPECS, ActionMode
+from redmine_mcp_server.extensions import REGISTERED_EXTENSIONS
 from redmine_mcp_server.oauth_scopes import (
     READ_SCOPES,
     TOOL_SCOPES,
@@ -22,6 +23,23 @@ from redmine_mcp_server.oauth_scopes import (
 def _full_surface(all_plugin_tools_visible):
     """Enumerating tests must see every plugin tool (see conftest)."""
     yield
+
+
+def _extension_tool_names() -> set:
+    """Tool names an out-of-tree extension merged into the tables.
+
+    Empty on a stock server and in this suite; a deployment that sets
+    ``REDMINE_MCP_EXTENSIONS`` fills the same ``TOOL_KINDS`` and
+    ``TOOL_SCOPES``. The assertions that count or enumerate this tree's own
+    entries subtract these, so they keep measuring this tree rather than the
+    host that runs it. The assertions that check a tool against its own kind
+    and scopes do not: an extension's tools have to agree exactly as the
+    built-in ones do.
+    """
+    names: set = set()
+    for spec in REGISTERED_EXTENSIONS:
+        names |= set(spec.tool_kinds)
+    return names
 
 
 class TestAnnotationsTable:
@@ -59,9 +77,15 @@ class TestAnnotationsTable:
         assert annotations_for("list_redmine_projects").read_only_hint is True
 
     def test_table_size_and_kind_counts(self):
-        assert len(TOOL_KINDS) == 63
+        from_extensions = _extension_tool_names()
+        own = {
+            name: kind
+            for name, kind in TOOL_KINDS.items()
+            if name not in from_extensions
+        }
+        assert len(own) == 63
         counts = {kind: 0 for kind in ToolKind}
-        for kind in TOOL_KINDS.values():
+        for kind in own.values():
             counts[kind] += 1
         assert counts[ToolKind.READ] == 36
         assert counts[ToolKind.WRITE_ADDITIVE] == 6
@@ -213,10 +237,11 @@ class TestClassificationCrossChecks:
         )
 
     def test_empty_scope_tools_match_reviewed_map(self):
+        from_extensions = _extension_tool_names()
         actual = {
             name
             for name, entry in TOOL_SCOPES.items()
-            if not isinstance(entry, dict) and not entry
+            if name not in from_extensions and not isinstance(entry, dict) and not entry
         }
         assert actual == set(_EMPTY_SCOPE_KINDS), (
             "the set of empty-scope tools changed; each one needs a reviewed "

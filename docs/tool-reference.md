@@ -271,6 +271,41 @@ Three properties are worth knowing:
 Because this is enforced by the server rather than the client, it holds for
 every user of a shared deployment.
 
+### Extensions
+
+`REDMINE_MCP_EXTENSIONS` names Python modules imported at startup, each of
+which registers tools for a Redmine plugin written in house. Tools reaching
+the surface this way are not documented in this file — they belong to the
+deployment, not to this project — but the server-side rules above still
+hold for them:
+
+- Their tools carry a `plugin:<family>` tag and appear only while the
+  family's own env flag is on, exactly like the vendor plugin tools above.
+- Every one of them needs a `TOOL_SCOPES` entry, so the OAuth scope
+  middleware gates them like any other tool, and the allow list narrows
+  them like any other tool.
+- Any scope a family advertises must exist as a Redmine permission on the
+  target instance and be granted on the OAuth application, or consent fails
+  with `invalid_scope` for the whole list.
+- A name collision with a tool documented here fails startup instead of
+  replacing it, whether the extension claims the name in its spec or only
+  decorates a function with it.
+- Any scope such a family advertises reaches the served discovery documents
+  too: the auth provider is handed the widened list once the extension
+  modules have loaded, before the HTTP app is built.
+
+Two of this server's guarantees are not middleware, so an extension applies
+them in its own tools exactly as the built-in ones do.
+[Read-Only Mode](#read-only-mode) is enforced by `action_dispatch`, which
+refuses a write action while `REDMINE_MCP_READ_ONLY` is set; a tool that
+neither uses it nor calls `is_read_only_mode()` still writes.
+[Prompt Injection Protection](#prompt-injection-protection) is the returning
+tool calling `wrap_insecure_content` on each user-controlled field.
+
+Unset, nothing is imported. See
+[Extensions: tools for in-house plugins](../README.md#extensions-tools-for-in-house-plugins)
+for what a module looks like.
+
 ### Prompt Injection Protection
 
 All user-controlled content returned from Redmine (issue descriptions, journal notes, wiki page text, search excerpts, version descriptions) is automatically wrapped in unique boundary tags:

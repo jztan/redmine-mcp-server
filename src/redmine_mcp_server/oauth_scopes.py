@@ -229,7 +229,10 @@ def advertised_scopes() -> list[str]:
     :data:`DEALS_WRITE_SCOPES` follow the same shape under a flag of their
     own, ``REDMINE_DEALS_ENABLED`` (per :func:`_is_deals_enabled`), because
     the CRM plugin's Light edition does not define the deal permissions at
-    all. Always returns a fresh list so callers cannot mutate the source of
+    all. Extensions registered through :mod:`.extensions` append their own
+    lists last, under the same enabled/read-only rule, which is where a
+    permission an in-house plugin declares for itself enters the list.
+    Always returns a fresh list so callers cannot mutate the source of
     truth.
     """
     if _is_read_only_mode():
@@ -252,7 +255,20 @@ def advertised_scopes() -> list[str]:
             scopes += list(DEALS_WRITE_SCOPES)
     if (_is_crm_enabled() or _is_deals_enabled()) and not _is_read_only_mode():
         scopes += list(CRM_NOTES_WRITE_SCOPES)
-    return scopes
+
+    # Registered extensions come last, in registration order, so a stock
+    # deployment -- where there are none -- gets exactly the list above.
+    # Imported here rather than at module scope because this function runs
+    # while ``server`` is still executing its own body, building the auth
+    # provider; ``_extension_registry`` is the half of ``extensions`` that
+    # carries no ``.server`` import, so reading it here cannot close a cycle.
+    from ._extension_registry import extension_advertised_scopes
+
+    scopes += extension_advertised_scopes()
+    # An extension may well need a permission already advertised above.
+    # dict.fromkeys keeps the first occurrence, so deduplicating cannot
+    # reorder this module's own scopes.
+    return list(dict.fromkeys(scopes))
 
 
 def configured_advertised_scopes() -> list[str]:

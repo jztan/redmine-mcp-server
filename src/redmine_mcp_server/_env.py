@@ -161,6 +161,22 @@ def get_allowed_tools() -> set[str] | None:
     return {entry.strip() for entry in entries if entry.strip()}
 
 
+def get_extension_modules() -> list[str]:
+    """Python modules to import at startup so they can register tools.
+
+    ``REDMINE_MCP_EXTENSIONS`` names them, comma- or whitespace-separated
+    (the shape :func:`get_allowed_client_redirect_uris` already uses), and
+    unset or blank means none, which is every stock deployment. Order is
+    preserved and duplicates are left in: importing a module twice is a
+    no-op to Python, so removing them would only hide a copy-paste mistake
+    in the variable.
+
+    See :mod:`.extensions` for what an extension module does once imported.
+    """
+    raw = os.getenv("REDMINE_MCP_EXTENSIONS", "")
+    return [name for name in raw.replace(",", " ").split() if name]
+
+
 def _get_int_env(var_name: str, default: int) -> int:
     """Parse an integer environment variable, falling back to default."""
     try:

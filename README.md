@@ -161,6 +161,7 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `REDMINE_MCP_READ_ONLY` | No | `false` | Block all write operations (create/update/delete) when set to `true` |
 | `REDMINE_MCP_ALLOW_TOOLS` | No | – | Expose only these tools (comma-separated names). Unset exposes all; set but naming no tool refuses to start. Narrows the surface only: a listed tool whose plugin flag is off stays hidden. Whole tools, so per-action control on `manage_X` remains `REDMINE_MCP_READ_ONLY`'s job. Names matching no tool are warned about at startup ([details](docs/tool-reference.md#tool-allow-list)) |
 | `REDMINE_MCP_ALLOW_TOOLS_FILE` | No | – | Path to a file with one allowed tool name per line (`#` starts a comment). Used when `REDMINE_MCP_ALLOW_TOOLS` is unset or empty |
+| `REDMINE_MCP_EXTENSIONS` | No | – | Python modules to import at startup so they can register tools for an in-house Redmine plugin (comma- or whitespace-separated, imported in order). Unset means none. A module that fails to import, or that claims a family or tool name already taken, stops the server ([details](docs/extensions.md)) |
 | `REDMINE_OAUTH_SCOPE_ENFORCEMENT` | No | `on` | OAuth modes and `api-key-login` only: deny tool calls whose access token lacks the tool's Redmine permission scopes, and filter `tools/list` accordingly. Set to `off` temporarily while re-consenting older tokens ([details](docs/oauth-setup.md#scope-enforcement)) |
 | `REDMINE_OAUTH_DISCOVERY_AS` | No | `redmine` | OAuth modes only: which authorization server discovery advertises. `redmine` names your Redmine; `self` advertises this server (issuer = `REDMINE_MCP_BASE_URL`) and serves RFC 8414 metadata at its own canonical well-known location, which clients that probe there need, Cursor among them ([details](docs/oauth-setup.md#cursor-and-self-as-discovery)) |
 | `REDMINE_MCP_SCOPES` | No | – | OAuth modes and `api-key-login` only: advertise a subset of scopes in discovery, matching the permissions your Redmine OAuth Application actually enables. Avoids `invalid_scope` at consent when a client requests the full advertised list. In `api-key-login` it only narrows the scopes this server offers |
@@ -631,6 +632,180 @@ register no new tools. The other five bring their own, which appear in
 `tools/list` either way but return a feature-disabled error until you set the
 flag. Tags also needs the `view_issue_tags`, `create_issue_tags`, and
 `edit_issue_tags` permissions on the Redmine server.
+
+## Extensions: tools for in-house plugins
+
+The table above covers plugins other people can install. A plugin written for
+one organization is a different problem: its API is real, but no public server
+can carry a tool for it. `REDMINE_MCP_EXTENSIONS` names Python modules to
+import at startup, each of which registers a family of tools of its own — no
+fork to rebase on every release, and no second MCP server to authenticate
+against.
+
+```bash
+# In .env file, comma- or whitespace-separated
+REDMINE_MCP_EXTENSIONS=acme_redmine_mcp.widgets
+```
+
+The module registers first and defines its tools second, because `@mcp.tool()`
+reads a tool's annotations out of the table at decoration time:
+
+```python
+# acme_redmine_mcp/widgets.py -- installed alongside redmine-mcp-server
+import json
+from typing import Any, Literal
+
+from redmine_mcp_server.extensions import (
+    ActionMode,
+    ExtensionSpec,
+    ToolKind,
+    action_dispatch,
+    get_redmine_client,
+    handle_redmine_error,
+    is_true_env,
+    mcp,
+    offloaded,
+    plugin_tag,
+    redmine_url,
+    register_extension,
+    wrap_insecure_content,
+)
+
+FAMILY = "acme_widgets"
+
+register_extension(
+    ExtensionSpec(
+        family=FAMILY,
+        enabled=lambda: is_true_env("REDMINE_ACME_WIDGETS_ENABLED"),
+        tool_kinds={"manage_widget": ToolKind.WRITE_DESTRUCTIVE},
+        tool_scopes={
+            "manage_widget": {
+                "list": frozenset({"view_acme_widgets"}),
+                "create": frozenset({"manage_acme_widgets"}),
+            }
+        },
+        advertised_read_scopes=("view_acme_widgets",),
+        advertised_write_scopes=("manage_acme_widgets",),
+    )
+)
+
+
+def _widgets_url(project_id: str) -> str:
+    return f"{redmine_url()}/projects/{project_id}/widgets.json"
+
+
+@offloaded
+def _list_widgets(project_id: str, name: str = "") -> dict:
+    try:
+        payload = get_redmine_client().engine.request("get", _widgets_url(project_id))
+    except Exception as e:
+        return handle_redmine_error(
+            e, "list widgets", {"resource_type": "project", "resource_id": project_id}
+        )
+    return {
+        "widgets": [
+            {**w, "name": wrap_insecure_content(w.get("name", ""))}
+            for w in payload.get("widgets", [])
+        ]
+    }
+
+
+@offloaded
+def _create_widget(project_id: str, name: str = "") -> dict:
+    try:
+        payload = get_redmine_client().engine.request(
+            "post",
+            _widgets_url(project_id),
+            headers={"Content-Type": "application/json"},
+            data=json.dumps({"widget": {"name": name}}),
+        )
+    except Exception as e:
+        return handle_redmine_error(
+            e, "create widget", {"resource_type": "project", "resource_id": project_id}
+        )
+    # A 201 with an empty body decodes to True, so normalize to a dict.
+    return payload if isinstance(payload, dict) else {"success": True}
+
+
+@action_dispatch({"list": ActionMode.READ, "create": ActionMode.WRITE})
+async def _manage_widget_dispatch(action: str, **kwargs: Any) -> Any:
+    return {"list": _list_widgets, "create": _create_widget}
+
+
+@mcp.tool(tags={plugin_tag(FAMILY)})
+async def manage_widget(
+    action: Literal["list", "create"], project_id: str, name: str = ""
+) -> dict:
+    """List or create widgets on a project.
+
+    Args:
+        action: `list` or `create`.
+        project_id: Project id or identifier.
+        name: Widget name. Required for `create`.
+
+    Returns:
+        The plugin's JSON, or `{"error": ...}`.
+    """
+    return await _manage_widget_dispatch(action, project_id=project_id, name=name)
+```
+
+Nothing here is a second registration path. The spec's entries are merged into
+the same three tables the built-in tools use — visibility, annotations, and
+per-tool scopes — so the allow list and OAuth scope enforcement, which read
+those tables, cover an extension's tools unchanged, and a name already taken
+by a built-in tool or by another extension fails startup rather than replacing
+it. A spec whose `tool_kinds` and `tool_scopes` name different tools fails
+startup as well, and so does a failed import, a spec field of the wrong shape,
+and a module whose tools and spec disagree — one it defines but does not
+declare, one it declares but never defines, one that redefines a name this
+server already had, or one defined without its family's `plugin:<family>` tag.
+One line per family goes to the log:
+
+```
+extension loaded: family=acme_widgets enabled=true tools=1
+```
+
+**Scopes are Redmine permissions, not names this server invents.** Anything in
+`advertised_read_scopes` or `advertised_write_scopes` has to be registered by
+the plugin through `Redmine::AccessControl` on the target instance, *and*
+ticked on the Redmine OAuth application, before the first deploy that
+advertises it. Otherwise consent fails with `invalid_scope` for the whole
+list, not just the new entry. Write lists are suppressed under
+`REDMINE_MCP_READ_ONLY`, and both lists are advertised only while the family's
+`enabled()` is true — the same rule the built-in plugin scopes follow, so a
+Redmine without the plugin never sees a scope it does not recognize.
+
+The auth provider is built before the extension modules are imported, so it
+holds a scope list taken before any of them registered. Once they have loaded,
+the server hands it the widened list and logs the count:
+
+```
+extensions: advertised scopes refreshed (36 scopes)
+```
+
+Both `/.well-known/oauth-protected-resource/mcp` and the authorization-server
+metadata are built from that list when the HTTP app is assembled, which is
+after this, so a family's scopes reach the documents a client reads. A server
+with no extensions configured registers nothing and its provider is never
+touched. `REDMINE_MCP_SCOPES` still narrows the result and still rejects a
+name that is not in it, so an extension scope can be named there only while
+its family is enabled.
+
+Two guarantees stay the extension's own to keep, because neither is
+middleware. Read-only mode is enforced by the tool: `action_dispatch` refuses
+a `WRITE` action under `REDMINE_MCP_READ_ONLY`, which is why the example above
+routes its write through it rather than calling the API directly. And the
+wrapping described in
+[Prompt Injection Protection](docs/tool-reference.md#prompt-injection-protection)
+is applied by each tool to the fields it returns, so a tool that hands back
+user-controlled Redmine text passes it through `wrap_insecure_content` itself.
+
+The full re-exported surface an extension may import — `mcp`, `plugin_tag`,
+`offloaded`, `in_thread`, `action_dispatch`, `ActionMode`, `ToolKind`,
+`get_redmine_client`, `redmine_url`, `handle_redmine_error`,
+`READ_ONLY_ERROR`, `wrap_insecure_content`, `is_positive_int`, `is_true_env`,
+`is_read_only_mode`, `is_crm_enabled` — is `redmine_mcp_server/extensions.py`
+and its docstring.
 
 ## Available Tools
 
