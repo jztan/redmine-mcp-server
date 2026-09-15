@@ -6,12 +6,19 @@ the filesystem except the two tests that exercise the real file store.
 """
 
 import time
+import urllib.parse
 from typing import Any, Optional
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from key_value.aio.stores.memory import MemoryStore
-from mcp.server.auth.provider import AuthorizationParams, RefreshToken
+from mcp.server.auth.provider import (
+    AuthorizationParams,
+    AuthorizeError,
+    RefreshToken,
+    RegistrationError,
+    TokenError,
+)
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
 
@@ -92,8 +99,10 @@ async def _login(provider, client, api_key=KEY, identity=None, **kwargs):
 
 async def test_register_client_rejects_a_redirect_outside_the_allowlist():
     provider = _provider()
-    with pytest.raises(ValueError, match="not allowed"):
+    with pytest.raises(RegistrationError) as exc:
         await provider.register_client(_client(redirect="https://evil.example.com/cb"))
+    # A ValueError here would surface as a 500 rather than an OAuth error.
+    assert exc.value.error == "invalid_redirect_uri"
 
 
 async def test_register_client_accepts_loopback_and_round_trips():
@@ -118,10 +127,15 @@ async def test_client_record_ttl_is_refreshed_on_authorize():
     provider = _provider(store, session_ttl=600)
     client = await _registered(provider)
     _, ttl_before = await store.ttl(client.client_id, collection=m.COLLECTION_CLIENTS)
-    await provider.authorize(client, _params())
+
+    # Without moving the clock the remaining TTL barely changes, so the
+    # assertion would hold even if authorize never rewrote the record.
+    with patch.object(m, "_now", lambda: time.time() + 120):
+        await provider.authorize(client, _params())
+
     _, ttl_after = await store.ttl(client.client_id, collection=m.COLLECTION_CLIENTS)
     assert ttl_before is not None and ttl_after is not None
-    assert ttl_after >= ttl_before - 1
+    assert ttl_after > ttl_before
 
 
 # --- authorize ----------------------------------------------------------
@@ -133,7 +147,9 @@ async def test_authorize_returns_the_login_url_and_stores_the_transaction():
     client = await _registered(provider)
     url = await provider.authorize(client, _params())
     assert url.startswith(f"{BASE}/login?txn=")
-    txn = await store.get(url.split("txn=", 1)[1], collection=m.COLLECTION_TRANSACTIONS)
+    txn_id = url.split("txn=", 1)[1]
+    assert await store.get(txn_id, collection=m.COLLECTION_TRANSACTIONS) is None
+    txn = await store.get(m._hash(txn_id), collection=m.COLLECTION_TRANSACTIONS)
     assert txn["client_id"] == client.client_id
     assert txn["csrf"] and txn["browser_nonce"]
     assert txn["redirect_uri_provided_explicitly"] is True
@@ -144,8 +160,9 @@ async def test_authorize_rejects_a_redirect_the_client_did_not_register():
     client = await _registered(provider)
     params = _params()
     params.redirect_uri = AnyUrl("http://localhost:1234/other")
-    with pytest.raises(ValueError, match="does not match"):
+    with pytest.raises(AuthorizeError) as exc:
         await provider.authorize(client, params)
+    assert exc.value.error == "invalid_request"
 
 
 async def test_scopes_are_intersected_with_the_advertised_set():
@@ -159,7 +176,9 @@ async def test_scopes_are_intersected_with_the_advertised_set():
 
 
 async def test_admin_scope_is_dropped():
-    provider = _provider()
+    # admin is advertised here on purpose: otherwise the plain intersection
+    # removes it and this test would still pass with the explicit drop gone.
+    provider = _provider(scopes_supported=SCOPES + [m.ADMIN_SCOPE])
     client = await _registered(provider)
     url = await provider.authorize(client, _params(scopes=["view_issues", "admin"]))
     txn = await provider.get_transaction(url.split("txn=", 1)[1])
@@ -195,7 +214,9 @@ async def test_a_wrong_key_costs_an_attempt_and_does_not_bind():
     txn = await provider.get_transaction(txn_id)
     with patch.object(m, "fetch_redmine_identity", AsyncMock(return_value=None)):
         with pytest.raises(m.ApiKeyLoginError, match="rejected"):
-            await provider.complete_login(txn_id, txn["csrf"], KEY)
+            await provider.complete_login(
+                txn_id, txn["csrf"], KEY, browser_nonce=txn["browser_nonce"]
+            )
     assert (await provider.get_transaction(txn_id))["attempts"] == 1
 
 
@@ -210,7 +231,9 @@ async def test_the_transaction_is_dropped_after_three_failures():
             if txn is None:
                 break
             with pytest.raises(m.ApiKeyLoginError):
-                await provider.complete_login(txn_id, txn["csrf"], KEY)
+                await provider.complete_login(
+                    txn_id, txn["csrf"], KEY, browser_nonce=txn["browser_nonce"]
+                )
     assert await provider.get_transaction(txn_id) is None
 
 
@@ -219,8 +242,11 @@ async def test_a_bad_csrf_drops_the_transaction():
     client = await _registered(provider)
     url = await provider.authorize(client, _params())
     txn_id = url.split("txn=", 1)[1]
+    txn = await provider.get_transaction(txn_id)
     with pytest.raises(m.ApiKeyLoginError):
-        await provider.complete_login(txn_id, "wrong", KEY)
+        await provider.complete_login(
+            txn_id, "wrong", KEY, browser_nonce=txn["browser_nonce"]
+        )
     assert await provider.get_transaction(txn_id) is None
 
 
@@ -244,9 +270,13 @@ async def test_the_transaction_is_single_use():
     txn_id = url.split("txn=", 1)[1]
     txn = await provider.get_transaction(txn_id)
     with patch.object(m, "fetch_redmine_identity", AsyncMock(return_value=_identity())):
-        await provider.complete_login(txn_id, txn["csrf"], KEY)
+        await provider.complete_login(
+            txn_id, txn["csrf"], KEY, browser_nonce=txn["browser_nonce"]
+        )
         with pytest.raises(m.ApiKeyLoginError):
-            await provider.complete_login(txn_id, txn["csrf"], KEY)
+            await provider.complete_login(
+                txn_id, txn["csrf"], KEY, browser_nonce=txn["browser_nonce"]
+            )
 
 
 async def test_an_expired_transaction_is_gone():
@@ -310,8 +340,9 @@ async def test_a_code_cannot_be_exchanged_twice():
     client = await _registered(provider)
     redirect, _ = await _login(provider, client)
     auth_code, _token = await _exchange(provider, client, redirect)
-    with pytest.raises(ValueError):
+    with pytest.raises(TokenError) as exc:
         await provider.exchange_authorization_code(client, auth_code)
+    assert exc.value.error == "invalid_grant"
 
 
 async def test_a_code_belongs_to_one_client():
@@ -364,6 +395,8 @@ async def test_refresh_rotates_and_invalidates_the_old_token():
     rotated = await provider.exchange_refresh_token(client, refresh, [])
     assert rotated.refresh_token != token.refresh_token
     assert await provider.load_access_token(rotated.access_token) is not None
+    # The old one must be gone, not merely superseded.
+    assert await provider.load_refresh_token(client, token.refresh_token) is None
 
 
 async def test_refresh_cannot_widen_the_grant():
@@ -372,8 +405,9 @@ async def test_refresh_cannot_widen_the_grant():
     redirect, _ = await _login(provider, client, scopes=["view_issues"])
     _, token = await _exchange(provider, client, redirect)
     refresh = await provider.load_refresh_token(client, token.refresh_token)
-    with pytest.raises(ValueError, match="widen"):
+    with pytest.raises(TokenError) as exc:
         await provider.exchange_refresh_token(client, refresh, ["edit_issues"])
+    assert exc.value.error == "invalid_scope"
 
 
 async def test_reusing_a_rotated_refresh_token_revokes_the_session():
@@ -481,14 +515,14 @@ async def test_fetch_redmine_identity_returns_none_on_401():
         assert await m.fetch_redmine_identity(REDMINE, KEY) is None
 
 
-async def test_fetch_redmine_identity_propagates_a_transport_failure():
+async def test_fetch_redmine_identity_reports_a_transport_failure_as_unavailable():
     import httpx
 
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("no route", request=request)
 
     with patch.object(httpx, "AsyncClient", _client_factory(handler)):
-        with pytest.raises(httpx.RequestError):
+        with pytest.raises(m.RedmineUnavailable):
             await m.fetch_redmine_identity(REDMINE, KEY)
 
 
@@ -631,7 +665,209 @@ async def test_the_file_store_round_trips_and_a_wrong_secret_reads_as_a_miss(
     blobs = [p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()]
     assert blobs and not any(KEY.encode() in b for b in blobs)
 
-    # A different secret lands in its own directory, so it simply finds nothing
-    # rather than failing to decrypt someone else's records.
-    other = m.build_store("a-different-secret")
-    assert await other.get("k", collection=m.COLLECTION_BINDINGS) is None
+    # Pointed at the *same* directory, a wrong secret must fail to decrypt
+    # rather than hand the record over. Reading a different directory would
+    # prove nothing, so the isolation property is asserted separately.
+    wrong = m.FernetEncryptionWrapper(
+        key_value=m.FileTreeStore(
+            data_directory=m.api_key_login_store_path("the-operator-secret")
+        ),
+        fernet=m.Fernet(key=m._storage_encryption_key("a-different-secret")),
+        raise_on_decryption_error=False,
+    )
+    assert await wrong.get("k", collection=m.COLLECTION_BINDINGS) is None
+
+
+# --- review #286: fixes, one test each -----------------------------------
+
+
+@pytest.mark.parametrize(
+    "base", ["https://mcp.example.com", "https://host.example.com/redmine"]
+)
+async def test_iss_matches_the_metadata_issuer_byte_for_byte(base):
+    """RFC 9207 is an exact string match, and a root base URL gains a slash."""
+    provider = m.ApiKeyLoginProvider(
+        base_url=base,
+        redmine_url=REDMINE,
+        store=MemoryStore(),
+        scopes_supported=list(SCOPES),
+        allowed_client_redirect_uris=list(LOOPBACK),
+    )
+    client = await _registered(provider)
+    redirect, _ = await _login(provider, client)
+
+    iss = urllib.parse.parse_qs(urllib.parse.urlparse(redirect).query)["iss"][0]
+    assert iss == str(provider.issuer_url)
+
+
+async def test_a_revoked_binding_is_an_oauth_error_not_a_500():
+    provider = _provider()
+    client = await _registered(provider)
+    redirect, _ = await _login(provider, client)
+    code = redirect.split("code=", 1)[1].split("&", 1)[0]
+    auth_code = await provider.load_authorization_code(client, code)
+
+    # Revoked in the window between the code being minted and exchanged.
+    await provider.revoke_binding(auth_code.code and await _binding_id(provider, code))
+    with pytest.raises(TokenError) as exc:
+        await provider.exchange_authorization_code(client, auth_code)
+    assert exc.value.error == "invalid_grant"
+
+
+async def _binding_id(provider, code):
+    record = await provider._store.get(m._hash(code), collection=m.COLLECTION_CODES)
+    return record["binding_id"]
+
+
+async def test_authorize_re_checks_the_allowlist_against_an_old_registration():
+    """Tightening the allowlist has to reach clients that already registered."""
+    provider = _provider()
+    client = await _registered(provider)
+
+    provider._allowed_client_redirect_uris = ["https://only-this.example.com/*"]
+    with pytest.raises(AuthorizeError) as exc:
+        await provider.authorize(client, _params())
+    assert exc.value.error == "invalid_request"
+
+
+async def test_a_pasted_key_with_a_newline_is_rejected_before_httpx_sees_it():
+    provider = _provider()
+    client = await _registered(provider)
+    url = await provider.authorize(client, _params())
+    txn_id = url.split("txn=", 1)[1]
+    txn = await provider.get_transaction(txn_id)
+
+    fetch = AsyncMock()
+    with patch.object(m, "fetch_redmine_identity", fetch):
+        with pytest.raises(m.ApiKeyLoginError, match="does not look like"):
+            await provider.complete_login(
+                txn_id, txn["csrf"], KEY + "\n", browser_nonce=txn["browser_nonce"]
+            )
+
+    # httpx would raise LocalProtocolError here, carrying the whole key in the
+    # message and landing on the "Redmine unreachable" path.
+    fetch.assert_not_awaited()
+    assert (await provider.get_transaction(txn_id))["attempts"] == 1
+
+
+@pytest.mark.parametrize(
+    "status,payload",
+    [
+        (200, {"user": {"login": "x", "admin": False}}),
+        (200, {"user": {"id": 7, "login": "x"}}),
+        (200, {"user": {"id": "7", "login": "x", "admin": False}}),
+        (200, {"nothing": "useful"}),
+        (302, {}),
+        (500, {}),
+    ],
+)
+async def test_an_unusable_answer_is_unavailable_not_a_non_admin_user(status, payload):
+    """Reading a missing admin flag as False would walk an admin past the gate."""
+    import httpx
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status, json=payload)
+
+    with patch.object(httpx, "AsyncClient", _client_factory(handler)):
+        with pytest.raises(m.RedmineUnavailable):
+            await m.fetch_redmine_identity(REDMINE, KEY)
+
+
+async def test_a_non_json_body_is_unavailable():
+    import httpx
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="<html>login page</html>")
+
+    with patch.object(httpx, "AsyncClient", _client_factory(handler)):
+        with pytest.raises(m.RedmineUnavailable):
+            await m.fetch_redmine_identity(REDMINE, KEY)
+
+
+async def test_the_unavailable_error_never_carries_the_key():
+    import httpx
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError(f"failed talking to {KEY}", request=request)
+
+    with patch.object(httpx, "AsyncClient", _client_factory(handler)):
+        with pytest.raises(m.RedmineUnavailable) as exc:
+            await m.fetch_redmine_identity(REDMINE, KEY)
+    assert KEY not in str(exc.value)
+
+
+async def test_the_browser_nonce_is_required():
+    provider = _provider()
+    client = await _registered(provider)
+    url = await provider.authorize(client, _params())
+    txn_id = url.split("txn=", 1)[1]
+    txn = await provider.get_transaction(txn_id)
+
+    with pytest.raises(TypeError):
+        await provider.complete_login(txn_id, txn["csrf"], KEY)
+
+
+def test_secret_comparison_survives_non_ascii_and_wrong_types():
+    # hmac.compare_digest raises TypeError on a str holding non-ASCII, and the
+    # value comes straight from a form field.
+    assert m._constant_time_equal("abc", "abc") is True
+    assert m._constant_time_equal("abc", "abd") is False
+    assert m._constant_time_equal("abc", "schlüssel") is False
+    assert m._constant_time_equal(None, "abc") is False
+    assert m._constant_time_equal("abc", None) is False
+
+
+async def test_a_narrowed_refresh_does_not_shrink_the_session():
+    """RFC 6749 section 6: it narrows the access token, not the grant."""
+    provider = _provider()
+    client = await _registered(provider, _client(scope="view_issues edit_issues"))
+    redirect, _ = await _login(provider, client, scopes=["view_issues", "edit_issues"])
+    _, token = await _exchange(provider, client, redirect)
+
+    refresh = await provider.load_refresh_token(client, token.refresh_token)
+    narrowed = await provider.exchange_refresh_token(client, refresh, ["view_issues"])
+    assert narrowed.scope == "view_issues"
+
+    # The new refresh token still carries the original grant, so the next
+    # refresh can ask for the full set again.
+    again = await provider.load_refresh_token(client, narrowed.refresh_token)
+    assert set(again.scopes) == {"view_issues", "edit_issues"}
+    widened = await provider.exchange_refresh_token(
+        client, again, ["view_issues", "edit_issues"]
+    )
+    assert set(widened.scope.split()) == {"view_issues", "edit_issues"}
+
+
+def test_a_session_length_of_zero_refuses_to_start(monkeypatch, tmp_path):
+    monkeypatch.setattr(m.settings, "home", tmp_path)
+    with patch.dict(
+        "os.environ", _env(REDMINE_API_KEY_LOGIN_SESSION_DAYS="0"), clear=False
+    ):
+        with pytest.raises(RuntimeError, match="positive number of days"):
+            m.build_api_key_login()
+
+
+def test_variables_from_the_other_modes_are_called_out(monkeypatch, tmp_path, caplog):
+    monkeypatch.setattr(m.settings, "home", tmp_path)
+    with patch.dict(
+        "os.environ",
+        _env(REDMINE_OAUTH_DISCOVERY_AS="self", REDMINE_INTROSPECT_CLIENT_ID="x"),
+        clear=False,
+    ):
+        with caplog.at_level("WARNING"):
+            m.build_api_key_login()
+    text = "\n".join(r.getMessage() for r in caplog.records)
+    assert "do not apply in api-key-login mode" in text
+    assert "REDMINE_OAUTH_DISCOVERY_AS" in text
+    assert "REDMINE_INTROSPECT_CLIENT_ID" in text
+
+
+async def test_codes_are_keyed_by_hash_too():
+    store = MemoryStore()
+    provider = _provider(store)
+    client = await _registered(provider)
+    redirect, _ = await _login(provider, client)
+    code = redirect.split("code=", 1)[1].split("&", 1)[0]
+
+    assert await store.get(code, collection=m.COLLECTION_CODES) is None
+    assert await store.get(m._hash(code), collection=m.COLLECTION_CODES) is not None
