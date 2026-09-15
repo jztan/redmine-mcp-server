@@ -407,13 +407,19 @@ def _get_redmine_client() -> Redmine:
 
     # legacy-per-user mode: per-request key from the X-Redmine-API-Key header.
     if g["REDMINE_AUTH_MODE"] == "legacy-per-user":
-        from ._per_user import maybe_log_identity, resolve_per_user_key
+        from ._per_user import (
+            maybe_log_identity,
+            resolve_per_user_key,
+            validate_key_with_redmine,
+        )
 
         try:
             request = get_http_request()
         except RuntimeError:
             request = None
         key = resolve_per_user_key(request)  # raises PerUserAuthError
+        # Redmine serves an unknown key as anonymous on public data (#290).
+        validate_key_with_redmine(key)  # raises PerUserAuthError on 401
         client = _new_client(key=key)
         maybe_log_identity(client, key)
         return client

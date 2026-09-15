@@ -7,6 +7,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Fixed
+- `legacy-per-user` mode no longer runs a wrong or reset
+  `X-Redmine-API-Key` as the anonymous user. Redmine serves an unknown key as
+  anonymous on anything anonymous may read, so a mistyped key used to return
+  the public view (fewer projects, "no issues") with no error. Each distinct
+  key is now checked once with `GET /users/current.json` and refused with
+  `PER_USER_AUTH` when Redmine answers 401. The result is cached in memory
+  (accepted for 5 minutes, rejected for 60 seconds, at most 1024 keys, stored
+  as digests), so a key reset inside that window can still see the anonymous
+  view until its entry expires. A 403, 5xx or unreachable Redmine lets the
+  request through instead of blaming the key. Redmine's "Authentication
+  required" setting removes the anonymous fallback entirely
+  ([#290](https://github.com/jztan/redmine-mcp-server/issues/290)).
 
 ## [2.15.0] - 2026-09-12
 ### Added

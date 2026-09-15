@@ -312,6 +312,22 @@ though the transfer itself completed.
 
    The response is always HTTP 200 so orchestrators keep treating it as a binary liveness probe; inspect the JSON `status` field for the real state.
 
+### legacy-per-user: "Redmine did not accept this API key"
+
+**Symptoms:**
+- Tool calls fail with `code: PER_USER_AUTH` and "Redmine did not accept this API key (fingerprint ...abcd)"
+- Or, within 5 minutes of a key reset: reads return fewer projects than expected or "no issues", and writes fail with 403
+
+**Cause:** Redmine serves an unknown or reset key as the anonymous user on anything anonymous may read. The server checks each key once against `GET /users/current.json` and refuses it when Redmine answers 401. `/health` cannot catch this in `legacy-per-user` mode, because there is no shared key to probe with.
+
+**Solutions:**
+
+1. **Fix the key in the client.** Copy the current key from Redmine ("My account" → "API access key" → "Show") into the client's `X-Redmine-API-Key` header. The fingerprint in the error is the last four characters of the key the client sent.
+2. **Wait out the cache after a reset.** An accepted key is cached for 5 minutes, so a key reset in that window can still get the anonymous view until the entry expires. A rejected key is cached for 60 seconds, so a corrected key is picked up on the next request.
+3. **Remove the anonymous fallback.** Enable Administration → Settings → Authentication → "Authentication required" in Redmine. Redmine then answers any unrecognised key with 401 everywhere.
+
+A 403, 5xx, timeout, or connection error during the check never produces this message: the request goes ahead and the real error, if any, comes from the tool call itself. See [legacy-per-user auth](legacy-per-user-auth.md#key-validation) for details.
+
 ### Username/Password Authentication Failed
 
 **Symptoms:**

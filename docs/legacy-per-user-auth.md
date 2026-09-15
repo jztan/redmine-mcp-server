@@ -114,6 +114,38 @@ field. The workspace `.mcp.json` silently discards `headers` (microsoft/vscode#3
 Any client that cannot set a custom request header, or that reserves the
 `Authorization` header for its own OAuth flow, is not compatible with this mode.
 
+## Key validation
+
+Redmine does not answer an unknown or reset API key with 401 everywhere. On any
+endpoint anonymous users may read, it serves the request as the anonymous user, so
+a mistyped key would quietly return the public view (fewer projects, "no issues")
+instead of an error.
+
+To catch that, the server checks each distinct key once with
+`GET /users/current.json` (key in the `X-Redmine-API-Key` header, same TLS settings
+and `REDMINE_TIMEOUT` as every other Redmine call) and caches the outcome in
+memory:
+
+- **Accepted** keys are cached for 5 minutes, so the check costs one extra
+  round-trip per user every 5 minutes, not one per request.
+- **Rejected** keys (Redmine answers 401) are cached for 60 seconds. The request
+  fails with `code: PER_USER_AUTH` and "Redmine did not accept this API key".
+- **Anything else** (403 when the REST API is disabled, 5xx, redirects, timeouts,
+  connection errors) lets the request through unchanged and is not cached, so a
+  Redmine outage is never reported as a wrong key.
+
+The cache holds at most 1024 keys, stored as SHA-256 digests, never the raw key.
+It is per process and is lost on restart.
+
+**Known window:** if a key is reset in Redmine while its "accepted" entry is
+cached, requests with the old key can still be served as the anonymous user for up
+to 5 minutes. They never run as the original user: Redmine stops honouring the
+old key immediately.
+
+To remove the anonymous fallback entirely, enable **Administration** -
+**Settings** - **Authentication** - **Authentication required** in Redmine. With it
+on, Redmine answers an unrecognised key with 401 on every endpoint.
+
 ## Audit
 
 By default the server logs a key fingerprint (last four characters) alongside the tool
@@ -132,8 +164,10 @@ Redmine user ID alongside the fingerprint. This adds latency. It is off by defau
 
 ## Revocation runbook
 
-The server keeps no key store, denylist, or local validation cache. Revocation is
-delegated entirely to Redmine and takes effect on the next request.
+The server keeps no key store or denylist. Revocation is delegated entirely to
+Redmine: the old key stops acting as the user on the next request. The only local
+state is the short-lived validation cache described under
+[Key validation](#key-validation).
 
 **To cut off one user:**
 
@@ -144,8 +178,11 @@ delegated entirely to Redmine and takes effect on the next request.
      immediately). Notify the user so they can update their client config.
    - Or click **Lock** to disable the account entirely if the user should no longer
      have any access.
-4. No action is needed on the MCP server. The next request from that user's client
-   will fail with a 401 or 403 from Redmine, which the server returns as an error.
+4. No action is needed on the MCP server. Requests with the old key fail with
+   "Redmine did not accept this API key" once its validation cache entry expires
+   (at most 5 minutes). Until then, reads can return the anonymous view and writes
+   fail with 403 (unless "Authentication required" is on, in which case they fail
+   right away).
 
 **Lost laptop / departed contractor:** same as above. Regenerate or lock in Redmine;
 the MCP server has nothing to flush or restart.

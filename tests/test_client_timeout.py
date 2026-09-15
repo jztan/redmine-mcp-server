@@ -139,6 +139,7 @@ class TestEveryBuildPathIsTimed:
                 "redmine_mcp_server._per_user.resolve_per_user_key", return_value="k"
             ),
             patch("redmine_mcp_server._per_user.maybe_log_identity"),
+            patch("redmine_mcp_server._per_user.validate_key_with_redmine"),
         ):
             _client._get_redmine_client()
         assert fake.call_args.kwargs["engine"] is TimeoutSyncEngine
