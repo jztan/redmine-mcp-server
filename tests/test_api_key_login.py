@@ -1119,30 +1119,6 @@ async def test_a_crafted_redirect_uri_cannot_steal_a_cookie():
     assert await provider.get_transaction(victim_txn) is not None
 
 
-async def test_the_revalidation_budget_is_total_not_per_phase():
-    """httpx's timeout is per phase; a dribbling server outlived it."""
-    import asyncio
-
-    provider = _provider()
-    client, token = await _session(provider)
-
-    async def slow(*args, **kwargs):
-        await asyncio.sleep(m.REVALIDATION_TIMEOUT_SECONDS * 4)
-        return _identity()
-
-    refresh = await provider.load_refresh_token(client, token.refresh_token)
-    with patch.object(m, "REVALIDATION_TIMEOUT_SECONDS", 0.05):
-        with patch.object(m, "fetch_redmine_identity", slow):
-            started = asyncio.get_running_loop().time()
-            rotated = await provider.exchange_refresh_token(client, refresh, [])
-            elapsed = asyncio.get_running_loop().time() - started
-
-    # It gave up quickly and kept the session: an unanswered check is not a
-    # rejected key.
-    assert elapsed < 1.0
-    assert await provider.load_access_token(rotated.access_token) is not None
-
-
 async def test_revalidation_happens_before_the_old_token_is_claimed():
     """Otherwise a revoked key would still burn the caller's refresh token."""
     provider = _provider()
@@ -1256,3 +1232,78 @@ async def test_every_single_use_record_goes_through_claim(collection, method):
                 await provider.exchange_refresh_token(client, refresh, [])
 
     assert collection in claimed, claimed
+
+
+# --- review round 4: pinning the two fixes that were not pinned ----------
+
+
+class _DeleteRefuses:
+    """A store whose delete always fails, wrapping a real MemoryStore."""
+
+    def __init__(self, error, *, actually_delete=False):
+        self._inner = MemoryStore()
+        self._error = error
+        self._actually_delete = actually_delete
+
+    async def get(self, key, *, collection=None):
+        return await self._inner.get(key, collection=collection)
+
+    async def put(self, key, value, *, collection=None, ttl=None):
+        return await self._inner.put(key, value, collection=collection, ttl=ttl)
+
+    async def ttl(self, key, *, collection=None):
+        return await self._inner.ttl(key, collection=collection)
+
+    async def delete(self, key, *, collection=None):
+        if self._actually_delete:
+            # The race: the record really is gone, the error is just the loser
+            # noticing late.
+            await self._inner.delete(key, collection=collection)
+        raise self._error
+
+
+async def test_a_lost_delete_race_is_quiet():
+    """The record is gone, so the caller's intent holds. False, no exception."""
+    provider = _provider(
+        _DeleteRefuses(FileNotFoundError("gone"), actually_delete=True)
+    )
+    await provider._store.put("k", {"a": 1}, collection=m.COLLECTION_BINDINGS)
+
+    assert await provider.revoke_binding("k") is False
+
+
+async def test_a_store_that_cannot_delete_raises_instead_of_lying(caplog):
+    """Otherwise revoke_binding answers False while the token keeps working."""
+    provider = _provider(_DeleteRefuses(PermissionError("read-only mount")))
+    await provider._store.put("k", {"a": 1}, collection=m.COLLECTION_BINDINGS)
+
+    with caplog.at_level("ERROR"):
+        with pytest.raises(PermissionError):
+            await provider.revoke_binding("k")
+
+    assert any("Could not delete" in r.getMessage() for r in caplog.records)
+
+
+async def test_the_refresh_returns_within_the_budget(monkeypatch):
+    """Without wait_for this waits for the whole slow call."""
+    import asyncio
+
+    provider = _provider()
+    client, token = await _session(provider)
+
+    slow_seconds = 30.0
+
+    async def far_too_slow(*args, **kwargs):
+        await asyncio.sleep(slow_seconds)
+        return _identity()
+
+    refresh = await provider.load_refresh_token(client, token.refresh_token)
+    monkeypatch.setattr(m, "REVALIDATION_TIMEOUT_SECONDS", 0.05)
+    with patch.object(m, "fetch_redmine_identity", far_too_slow):
+        started = asyncio.get_running_loop().time()
+        rotated = await provider.exchange_refresh_token(client, refresh, [])
+        elapsed = asyncio.get_running_loop().time() - started
+
+    # Nowhere near the slow call, and the session survived an unanswered check.
+    assert elapsed < slow_seconds / 10
+    assert await provider.load_access_token(rotated.access_token) is not None

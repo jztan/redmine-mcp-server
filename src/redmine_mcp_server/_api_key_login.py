@@ -608,13 +608,35 @@ class ApiKeyLoginProvider(OAuthProvider):
             try:
                 return await self._store.delete(key, collection=collection)
             except OSError as exc:
-                logger.debug("Lost a delete race on %s (%s).", collection, exc)
-                return False
+                return await self._lost_the_race_or_raise(key, collection, exc)
             except Exception as exc:  # pragma: no cover - store-specific
                 if type(exc).__name__ != "PathSecurityError":
                     raise
-                logger.debug("Lost a delete race on %s (%s).", collection, exc)
-                return False
+                return await self._lost_the_race_or_raise(key, collection, exc)
+
+    async def _lost_the_race_or_raise(
+        self, key: str, collection: str, exc: Exception
+    ) -> bool:
+        """Quiet only once the record is confirmed gone.
+
+        A store that simply cannot delete -- a read-only mount, a lock held by
+        something else -- would otherwise look exactly like a lost race:
+        ``revoke_binding`` would answer ``False``, the access token would keep
+        loading, and the only trace would be a DEBUG line.
+        """
+        if await self._still_present(key, collection):
+            logger.error("Could not delete %r from %s: %s", key, collection, exc)
+            raise exc
+        logger.debug("Lost a delete race on %s (%s).", collection, exc)
+        return False
+
+    async def _still_present(self, key: str, collection: str) -> bool:
+        """``True`` when the record is there, or when that cannot be told."""
+        try:
+            return await self._store.get(key, collection=collection) is not None
+        except Exception:
+            # The store is answering badly; do not call that a clean loss.
+            return True
 
     async def _claim(self, key: str, *, collection: str) -> bool:
         """Delete a single-use record, returning ``True`` to exactly one caller.
