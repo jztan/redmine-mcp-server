@@ -80,6 +80,7 @@ REDMINE_MCP_JWT_SIGNING_KEY=<long random secret>
 | `REDMINE_API_KEY_LOGIN_ALLOW_HTTP` | `false` | allow an `http://` base URL; local development only |
 | `REDMINE_API_KEY_LOGIN_SESSION_DAYS` | `30` | how long a session lasts before the user logs in again; must be positive |
 | `REDMINE_API_KEY_LOGIN_RATE_LIMIT` | `300` | login attempts per minute, process-wide safety ceiling |
+| `REDMINE_API_KEY_LOGIN_BINDING_CRYPTO` | `server-secret` | `server-secret` or `token-derived`; see [Binding protection](#binding-protection) |
 
 The server refuses to start without `REDMINE_URL`, `REDMINE_MCP_BASE_URL` or the
 signing key, with an `http://` base URL (unless the dev flag is set), or with a
@@ -240,15 +241,55 @@ an hour.
 **To cut off one user:** reset their API key or lock their account in Redmine. The
 MCP server needs no action.
 
+## Binding protection
+
+`REDMINE_API_KEY_LOGIN_BINDING_CRYPTO` decides how the stored API key is protected
+at rest. Both schemes encrypt; they differ in who can decrypt.
+
+| | `server-secret` (default) | `token-derived` |
+|---|---|---|
+| Encrypted with | FastMCP's Fernet wrapper, key derived from `REDMINE_MCP_JWT_SIGNING_KEY` | a random per-binding key, itself encrypted under each token that may need it (HKDF-SHA256, AES-256-GCM) |
+| A stolen volume plus the signing key yields | every stored API key | ciphertext |
+| A stolen volume alone yields | ciphertext | ciphertext |
+| Server-side read of a stored key | possible | impossible without a presented token |
+| Code | the framework's, inherits upstream fixes | this repository's |
+
+**How `token-derived` works.** At login the server draws a random data key,
+encrypts the binding under it and keeps no copy. That data key is then stored a
+second time for each capability that may later need it -- first the authorization
+code, then every access and refresh token minted from it -- each time encrypted
+under a key derived from that capability's own value. The store holds the *hash* of
+a token next to a data key encrypted under the *token*, and the token exists only in
+the client's hands. Rotation carries the data key forward to the new pair.
+
+**What it does not protect against.** Root on a live host still harvests keys from
+traffic and memory; so does anyone who can read a token. The difference is the blast
+radius of a backup, snapshot or disk image: instead of every key of every user who
+logged in during the past month, an attacker gets the keys of whoever transacts
+while they are watching.
+
+**What it costs, permanently.** Nothing server-side can read a binding without a
+token presented to it. That rules out a session admin UI, background revalidation of
+stored keys, and re-encrypting bindings when the signing key rotates. The
+revalidation at refresh is unaffected: it deliberately runs with the refresh token in
+hand. A binding whose tokens have all expired is unreadable and simply ages out.
+
+**Switching an existing deployment.** Records already written under one scheme cannot
+be read under the other, in either direction. Nothing is lost and nothing leaks --
+every affected session ends at its next call and the user logs in again -- but plan
+the change for a moment when that is acceptable, and expect a burst of logins.
+
 ## Security model
 
-**What is stored.** The API keys, encrypted with a key derived from
-`REDMINE_MCP_JWT_SIGNING_KEY`, and everything else the server needs to finish logins
-and check tokens. Tokens, login links and codes are keyed by their hashes, so a
-directory listing yields nothing usable. **Whoever holds both the store and the
-signing key can read every stored API key**, including those of users who have not
-connected in weeks. Protect the volume, its backups and the secret accordingly.
-The server says so in a warning at every startup.
+**What is stored.** The API keys and everything else the server needs to finish
+logins and check tokens. Tokens, login links and codes are keyed by their hashes, so
+a directory listing yields nothing usable. How the keys themselves are protected
+depends on `REDMINE_API_KEY_LOGIN_BINDING_CRYPTO`; see
+[Binding protection](#binding-protection). Under the default, **whoever holds both
+the store and the signing key can read every stored API key**, including those of
+users who have not connected in weeks. Protect the volume, its backups and the
+secret accordingly. The server states the guarantee actually in force in a warning
+at every startup.
 
 **Who can finish a login.** Only the browser the client opened (see [The login
 page](#the-login-page)). The remaining risk is someone who registers their own client

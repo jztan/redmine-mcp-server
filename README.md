@@ -128,6 +128,7 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `REDMINE_API_KEY_LOGIN_ALLOW_HTTP` | No | `false` | `api-key-login` only: allow an `http://` `REDMINE_MCP_BASE_URL`. Local development only |
 | `REDMINE_API_KEY_LOGIN_SESSION_DAYS` | No | `30` | `api-key-login` only: how long a session lasts before the user logs in again. Must be positive |
 | `REDMINE_API_KEY_LOGIN_RATE_LIMIT` | No | `300` | `api-key-login` only: login attempts per minute, a process-wide safety ceiling |
+| `REDMINE_API_KEY_LOGIN_BINDING_CRYPTO` | No | `server-secret` | `api-key-login` only: `server-secret` or `token-derived`. `token-derived` puts stored API keys beyond the reach of the volume plus the signing key, at the cost of any server-side read ([details](docs/api-key-login-auth.md#binding-protection)) |
 | `REDMINE_API_KEY` | Yes† | – | API key (legacy mode only) |
 | `REDMINE_USERNAME` | Yes† | – | Username for basic auth (legacy mode only) |
 | `REDMINE_PASSWORD` | Yes† | – | Password for basic auth (legacy mode only) |

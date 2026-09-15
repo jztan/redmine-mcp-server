@@ -25,6 +25,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#261](https://github.com/jztan/redmine-mcp-server/issues/261),
   [#286](https://github.com/jztan/redmine-mcp-server/pull/286),
   [#287](https://github.com/jztan/redmine-mcp-server/pull/287)).
+- `REDMINE_API_KEY_LOGIN_BINDING_CRYPTO=token-derived` protects stored Redmine
+  API keys against a reader who holds both the store and
+  `REDMINE_MCP_JWT_SIGNING_KEY`. Each binding is encrypted under its own random
+  key, which is kept only wrapped under the authorization code and under every
+  token minted from it (HKDF-SHA256, AES-256-GCM), so the key that opens a
+  binding exists only inside the tokens clients hold and a stolen volume yields
+  ciphertext. The cost is permanent: nothing server-side can read a stored key
+  without a presented token, which rules out a session admin UI, background
+  revalidation of stored keys and re-encryption on key rotation. Records written
+  under one scheme cannot be read under the other, so switching a running
+  deployment ends every session and users log in again. The default stays
+  `server-secret`, and the startup warning states whichever guarantee is in
+  force ([#265](https://github.com/jztan/redmine-mcp-server/discussions/265)).
 
 ### Fixed
 - `legacy-per-user` mode no longer runs a wrong or reset
