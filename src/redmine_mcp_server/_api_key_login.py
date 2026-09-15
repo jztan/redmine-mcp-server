@@ -23,9 +23,14 @@ Store layout, one collection per record kind::
     refresh_tokens   sha256(token)      {binding_id, scopes, expires_at}
     rotated_refresh  sha256(old token)  tombstone for reuse detection
 
-Tokens are stored by hash, so a directory listing yields nothing usable. Every
-write passes the record's remaining lifetime as the store TTL, so transactions,
-codes and tokens expire on their own and no pruning job is needed.
+Every record is keyed by ``sha256`` of the capability it belongs to -- token,
+transaction id or authorization code -- so a directory listing yields nothing
+usable to a reader who has the volume but not the secret.
+
+Every write passes the record's remaining lifetime as the store TTL, so an
+expired record is never served. It is *not* deleted: ``FileTreeStore`` drops
+the value on read, but the file stays until something overwrites it. Cleaning
+those up is a separate matter (the same gap ``oauth-proxy`` has).
 
 Two properties are load-bearing and easy to break:
 
@@ -41,6 +46,7 @@ Two properties are load-bearing and easy to break:
 """
 
 import hashlib
+import hmac
 import logging
 import os
 import secrets
@@ -69,7 +75,10 @@ from key_value.aio.wrappers.encryption import FernetEncryptionWrapper
 from mcp.server.auth.provider import (
     AuthorizationCode,
     AuthorizationParams,
+    AuthorizeError,
     RefreshToken,
+    RegistrationError,
+    TokenError,
 )
 from fastmcp.server.middleware import Middleware
 from mcp.server.auth.settings import ClientRegistrationOptions, RevocationOptions
@@ -108,6 +117,16 @@ MAX_LOGIN_ATTEMPTS = 3
 ADMIN_SCOPE = "admin"
 
 
+class RedmineUnavailable(Exception):
+    """Redmine could not be asked, so the key's validity is unknown.
+
+    Distinct from "Redmine said no": a transport failure, a 5xx, a redirect or
+    an answer that is not the JSON we expect must not cost the user an attempt
+    and must not be reported as a bad key. The route maps this to 502 and
+    keeps the transaction.
+    """
+
+
 class ApiKeyLoginError(Exception):
     """A login attempt failed for a reason the user should see."""
 
@@ -128,6 +147,24 @@ def _hash(value: str) -> str:
 
 def _now() -> float:
     return time.time()
+
+
+def _constant_time_equal(expected: Any, given: Any) -> bool:
+    """Compare two secrets without leaking their length through timing.
+
+    Encodes first: ``hmac.compare_digest`` raises ``TypeError`` on a ``str``
+    holding non-ASCII, and the given value comes from a form field.
+    """
+    if not isinstance(expected, str) or not isinstance(given, str):
+        return False
+    return hmac.compare_digest(expected.encode("utf-8"), given.encode("utf-8"))
+
+
+def _valid_key_format(api_key: str) -> bool:
+    """The same shape check ``legacy-per-user`` applies to its header."""
+    from ._per_user import _validate_key_format
+
+    return bool(api_key) and _validate_key_format(api_key)
 
 
 # --- binding protection ------------------------------------------------
@@ -203,10 +240,14 @@ async def fetch_redmine_identity(
 ) -> Optional[dict[str, Any]]:
     """Validate an API key against Redmine and return ``{id, login, admin}``.
 
-    ``None`` means Redmine rejected the key (401/403). A transport failure
-    propagates as ``httpx.RequestError`` so the caller can tell "your key is
-    wrong" from "Redmine is down" -- the first costs the user an attempt, the
-    second must not.
+    ``None`` means Redmine rejected the key (401/403) -- that costs the user an
+    attempt. Anything else that leaves the answer unknown raises
+    :class:`RedmineUnavailable`, which does not.
+
+    Deliberately fails closed. A 200 that is not the JSON we expect, or that
+    lacks an integer ``id`` or the ``admin`` flag, is treated as unknown rather
+    than as a non-admin user: reading a missing ``admin`` as ``False`` would
+    walk an administrator straight past the admin gate.
 
     The key travels in the ``X-Redmine-API-Key`` header, never in the query
     string, so it cannot land in Redmine's access log.
@@ -215,19 +256,36 @@ async def fetch_redmine_identity(
 
     url = f"{redmine_url.rstrip('/')}/users/current.json"
     request_timeout = timeout if timeout is not None else get_redmine_timeout()
-    async with httpx.AsyncClient(
-        timeout=request_timeout, **httpx_ssl_kwargs(url)
-    ) as client:
-        response = await client.get(url, headers={"X-Redmine-API-Key": api_key})
+    try:
+        async with httpx.AsyncClient(
+            timeout=request_timeout, **httpx_ssl_kwargs(url)
+        ) as client:
+            response = await client.get(url, headers={"X-Redmine-API-Key": api_key})
+    except httpx.HTTPError as exc:
+        # Includes LocalProtocolError, which carries the offending header value
+        # in its message -- never let that text out of here.
+        raise RedmineUnavailable(type(exc).__name__) from None
+
     if response.status_code in (401, 403):
         return None
-    response.raise_for_status()
-    user = response.json().get("user") or {}
-    return {
-        "id": user.get("id"),
-        "login": user.get("login") or "",
-        "admin": bool(user.get("admin")),
-    }
+    if response.status_code != 200:
+        # A redirect means the URL is wrong (http vs https, a proxy path); a
+        # 5xx means Redmine is unwell. Neither says anything about the key.
+        raise RedmineUnavailable(f"HTTP {response.status_code}")
+    try:
+        user = response.json()["user"]
+        identity = {
+            "id": user["id"],
+            "login": user.get("login") or "",
+            "admin": user["admin"],
+        }
+    except (ValueError, KeyError, TypeError) as exc:
+        raise RedmineUnavailable(
+            f"unexpected response ({type(exc).__name__})"
+        ) from None
+    if not isinstance(identity["id"], int) or not isinstance(identity["admin"], bool):
+        raise RedmineUnavailable("unexpected response (id/admin types)")
+    return identity
 
 
 # --- the provider ------------------------------------------------------
@@ -293,10 +351,11 @@ class ApiKeyLoginProvider(OAuthProvider):
             if not validate_redirect_uri(
                 redirect_uri, self._allowed_client_redirect_uris
             ):
-                raise ValueError(
+                raise RegistrationError(
+                    "invalid_redirect_uri",
                     f"redirect_uri {redirect_uri} is not allowed by this server. "
                     "Ask the operator to add it to "
-                    "REDMINE_MCP_ALLOWED_CLIENT_REDIRECT_URIS."
+                    "REDMINE_MCP_ALLOWED_CLIENT_REDIRECT_URIS.",
                 )
         await self._store.put(
             client_info.client_id,
@@ -341,7 +400,22 @@ class ApiKeyLoginProvider(OAuthProvider):
     ) -> str:
         registered = [str(uri) for uri in (client.redirect_uris or [])]
         if str(params.redirect_uri) not in registered:
-            raise ValueError("redirect_uri does not match this client's registration.")
+            raise AuthorizeError(
+                "invalid_request",
+                "redirect_uri does not match this client's registration.",
+            )
+        # Checked again here, not only at registration: registrations outlive
+        # the allowlist, so without this a tightened
+        # REDMINE_MCP_ALLOWED_CLIENT_REDIRECT_URIS would never reach a client
+        # that registered under the old one -- and every authorize renews that
+        # client's record.
+        if not validate_redirect_uri(
+            params.redirect_uri, self._allowed_client_redirect_uris
+        ):
+            raise AuthorizeError(
+                "invalid_request",
+                "redirect_uri is no longer allowed by this server.",
+            )
 
         txn_id = _token()
         transaction = {
@@ -361,8 +435,11 @@ class ApiKeyLoginProvider(OAuthProvider):
             "attempts": 0,
             "expires_at": _now() + self._transaction_ttl,
         }
+        # Keyed by hash like the tokens: a transaction id is a bearer
+        # capability too, and a plain filename would hand it to anyone who can
+        # list the directory.
         await self._store.put(
-            txn_id,
+            _hash(txn_id),
             transaction,
             collection=COLLECTION_TRANSACTIONS,
             ttl=self._transaction_ttl,
@@ -384,16 +461,18 @@ class ApiKeyLoginProvider(OAuthProvider):
 
     async def get_transaction(self, txn_id: str) -> Optional[dict[str, Any]]:
         """Return a pending transaction, or ``None`` when unknown or expired."""
-        record = await self._store.get(txn_id, collection=COLLECTION_TRANSACTIONS)
+        record = await self._store.get(
+            _hash(txn_id), collection=COLLECTION_TRANSACTIONS
+        )
         if record is None:
             return None
         if float(record.get("expires_at", 0)) < _now():
-            await self._store.delete(txn_id, collection=COLLECTION_TRANSACTIONS)
+            await self._store.delete(_hash(txn_id), collection=COLLECTION_TRANSACTIONS)
             return None
         return record
 
     async def drop_transaction(self, txn_id: str) -> None:
-        await self._store.delete(txn_id, collection=COLLECTION_TRANSACTIONS)
+        await self._store.delete(_hash(txn_id), collection=COLLECTION_TRANSACTIONS)
 
     async def _count_attempt(self, txn_id: str, transaction: dict[str, Any]) -> None:
         """Charge one attempt, dropping the transaction once the budget is out.
@@ -406,12 +485,12 @@ class ApiKeyLoginProvider(OAuthProvider):
         """
         attempts = int(transaction.get("attempts", 0)) + 1
         if attempts >= MAX_LOGIN_ATTEMPTS:
-            await self._store.delete(txn_id, collection=COLLECTION_TRANSACTIONS)
+            await self._store.delete(_hash(txn_id), collection=COLLECTION_TRANSACTIONS)
             return
         transaction["attempts"] = attempts
         remaining = max(1.0, float(transaction.get("expires_at", 0)) - _now())
         await self._store.put(
-            txn_id,
+            _hash(txn_id),
             transaction,
             collection=COLLECTION_TRANSACTIONS,
             ttl=remaining,
@@ -434,7 +513,7 @@ class ApiKeyLoginProvider(OAuthProvider):
         csrf: str,
         api_key: str,
         *,
-        browser_nonce: Optional[str] = None,
+        browser_nonce: str,
     ) -> str:
         """Validate the key, bind it, and return the client redirect URL.
 
@@ -448,19 +527,24 @@ class ApiKeyLoginProvider(OAuthProvider):
                 "This login page has expired or was already used. "
                 "Start the connection again in your client."
             )
-        if not secrets.compare_digest(str(transaction.get("csrf", "")), csrf or ""):
+        if not _constant_time_equal(transaction.get("csrf"), csrf):
             await self.drop_transaction(txn_id)
             raise ApiKeyLoginError(
                 "This form is no longer valid.", drop_transaction=True
             )
-        if browser_nonce is not None and not secrets.compare_digest(
-            str(transaction.get("browser_nonce", "")), browser_nonce
-        ):
+        if not _constant_time_equal(transaction.get("browser_nonce"), browser_nonce):
             await self.drop_transaction(txn_id)
             raise ApiKeyLoginError(
                 "This login page was opened in a different browser.",
                 drop_transaction=True,
             )
+        if not _valid_key_format(api_key):
+            # Before httpx sees it: a pasted key with a trailing newline raises
+            # LocalProtocolError, which is an httpx error carrying the whole
+            # key in its message, and would be reported as "Redmine
+            # unreachable" rather than as a bad key.
+            await self._count_attempt(txn_id, transaction)
+            raise ApiKeyLoginError("That does not look like a Redmine API key.")
 
         identity = await fetch_redmine_identity(self._redmine_url, api_key)
         if identity is None:
@@ -475,7 +559,9 @@ class ApiKeyLoginProvider(OAuthProvider):
 
         # Claim the transaction. The store has no compare-and-swap, so the
         # delete result is what makes a double submit fail on the second.
-        claimed = await self._store.delete(txn_id, collection=COLLECTION_TRANSACTIONS)
+        claimed = await self._store.delete(
+            _hash(txn_id), collection=COLLECTION_TRANSACTIONS
+        )
         if not claimed:
             raise ApiKeyLoginError("This login was already completed.")
 
@@ -486,10 +572,13 @@ class ApiKeyLoginProvider(OAuthProvider):
         params = {"code": code}
         if transaction.get("state"):
             params["state"] = str(transaction["state"])
+        # The issuer must match the metadata byte for byte: RFC 9207 is an
+        # exact string comparison, and AnyHttpUrl renders a root base URL with
+        # the trailing slash the metadata carries.
         return build_client_redirect(
             str(transaction["redirect_uri"]),
             params,
-            iss=str(self.base_url).rstrip("/"),
+            iss=str(self.issuer_url),
         )
 
     async def _create_binding(
@@ -542,7 +631,7 @@ class ApiKeyLoginProvider(OAuthProvider):
         }
         record.update(self._protection.wrap(data_key, code))
         await self._store.put(
-            code, record, collection=COLLECTION_CODES, ttl=DEFAULT_CODE_TTL
+            _hash(code), record, collection=COLLECTION_CODES, ttl=DEFAULT_CODE_TTL
         )
         return code
 
@@ -551,11 +640,15 @@ class ApiKeyLoginProvider(OAuthProvider):
     async def load_authorization_code(
         self, client: OAuthClientInformationFull, authorization_code: str
     ) -> Optional[AuthorizationCode]:
-        record = await self._store.get(authorization_code, collection=COLLECTION_CODES)
+        record = await self._store.get(
+            _hash(authorization_code), collection=COLLECTION_CODES
+        )
         if record is None or record.get("client_id") != client.client_id:
             return None
         if float(record.get("expires_at", 0)) < _now():
-            await self._store.delete(authorization_code, collection=COLLECTION_CODES)
+            await self._store.delete(
+                _hash(authorization_code), collection=COLLECTION_CODES
+            )
             return None
         return AuthorizationCode(
             code=record["code"],
@@ -575,13 +668,13 @@ class ApiKeyLoginProvider(OAuthProvider):
         self, client: OAuthClientInformationFull, authorization_code: AuthorizationCode
     ) -> OAuthToken:
         record = await self._store.get(
-            authorization_code.code, collection=COLLECTION_CODES
+            _hash(authorization_code.code), collection=COLLECTION_CODES
         )
         claimed = await self._store.delete(
-            authorization_code.code, collection=COLLECTION_CODES
+            _hash(authorization_code.code), collection=COLLECTION_CODES
         )
         if record is None or not claimed:
-            raise ValueError("Authorization code is not valid.")
+            raise TokenError("invalid_grant", "Authorization code is not valid.")
 
         binding_id = str(record["binding_id"])
         data_key = self._protection.unwrap(record, authorization_code.code)
@@ -602,15 +695,18 @@ class ApiKeyLoginProvider(OAuthProvider):
         data_key: Optional[bytes],
         subject: Optional[str],
         session_expires_at: Optional[float] = None,
+        refresh_scopes: Optional[list[str]] = None,
     ) -> OAuthToken:
         binding = await self._store.get(binding_id, collection=COLLECTION_BINDINGS)
         if binding is None:
-            raise ValueError("This session has been revoked.")
+            # Revoked between the code being minted and exchanged, or between
+            # two refreshes. invalid_grant is what a client retries the flow on.
+            raise TokenError("invalid_grant", "This session has been revoked.")
         if session_expires_at is None:
             session_expires_at = float(binding.get("session_expires_at", 0))
         session_remaining = max(0.0, session_expires_at - _now())
         if session_remaining <= 0:
-            raise ValueError("This session has expired.")
+            raise TokenError("invalid_grant", "This session has expired.")
 
         access = _token()
         refresh = _token()
@@ -626,7 +722,7 @@ class ApiKeyLoginProvider(OAuthProvider):
         refresh_record: dict[str, Any] = {
             "binding_id": binding_id,
             "client_id": client_id,
-            "scopes": scopes,
+            "scopes": list(refresh_scopes) if refresh_scopes is not None else scopes,
             "expires_at": session_expires_at,
             "subject": subject,
         }
@@ -696,11 +792,13 @@ class ApiKeyLoginProvider(OAuthProvider):
         key = _hash(refresh_token.token)
         record = await self._store.get(key, collection=COLLECTION_REFRESH_TOKENS)
         if record is None:
-            raise ValueError("Refresh token is not valid.")
+            raise TokenError("invalid_grant", "Refresh token is not valid.")
         granted = list(record.get("scopes", []))
         requested = list(scopes) if scopes else granted
         if not set(requested).issubset(set(granted)):
-            raise ValueError("Refresh cannot widen the granted scopes.")
+            raise TokenError(
+                "invalid_scope", "Refresh cannot widen the granted scopes."
+            )
 
         binding_id = str(record["binding_id"])
         session_expires_at = float(record.get("expires_at", 0))
@@ -712,7 +810,7 @@ class ApiKeyLoginProvider(OAuthProvider):
         # its own refreshes.
         claimed = await self._store.delete(key, collection=COLLECTION_REFRESH_TOKENS)
         if not claimed:
-            raise ValueError("Refresh token is not valid.")
+            raise TokenError("invalid_grant", "Refresh token is not valid.")
         await self._store.put(
             key,
             {"binding_id": binding_id},
@@ -726,6 +824,11 @@ class ApiKeyLoginProvider(OAuthProvider):
             data_key=data_key,
             subject=record.get("subject"),
             session_expires_at=session_expires_at,
+            # RFC 6749 section 6: a narrowed refresh narrows the access token
+            # it returns, not the grant. Carrying `requested` onto the new
+            # refresh token would make one narrow request shrink the session
+            # for good, with no way back short of a new login.
+            refresh_scopes=granted,
         )
 
     # -- per-request token loading ----------------------------------------
@@ -867,6 +970,26 @@ def build_store(signing_key: str) -> AsyncKeyValue:
     )
 
 
+# Variables that belong to the other auth modes. Silently ignoring one is how
+# an operator ends up believing a setting applies when it does not.
+_IGNORED_ENV_PREFIXES = ("REDMINE_INTROSPECT_CLIENT_", "REDMINE_OAUTH_CLIENT_")
+_IGNORED_ENV_NAMES = ("REDMINE_OAUTH_DISCOVERY_AS", "REDMINE_PER_USER_TRUST_PROXY")
+
+
+def _warn_about_ignored_env() -> None:
+    ignored = sorted(
+        name
+        for name in os.environ
+        if name.startswith(_IGNORED_ENV_PREFIXES) or name in _IGNORED_ENV_NAMES
+    )
+    if ignored:
+        logger.warning(
+            "These variables do not apply in api-key-login mode and are "
+            "ignored: %s.",
+            ", ".join(ignored),
+        )
+
+
 def build_api_key_login() -> ApiKeyLoginProvider:
     """Construct the provider from the environment, failing fast.
 
@@ -905,6 +1028,13 @@ def build_api_key_login() -> ApiKeyLoginProvider:
     session_days = _get_int_env(
         "REDMINE_API_KEY_LOGIN_SESSION_DAYS", DEFAULT_SESSION_DAYS
     )
+    if session_days <= 0:
+        raise RuntimeError(
+            "REDMINE_API_KEY_LOGIN_SESSION_DAYS must be a positive number of "
+            f"days; got {session_days}. A session that expires the moment it "
+            "is issued would make every call re-run the browser login."
+        )
+    _warn_about_ignored_env()
     provider = ApiKeyLoginProvider(
         base_url=base_url,
         redmine_url=redmine_url,
