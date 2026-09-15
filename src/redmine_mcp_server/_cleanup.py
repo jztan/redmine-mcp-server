@@ -21,6 +21,10 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _attachment_cleanup_enabled() -> bool:
+    return os.getenv("AUTO_CLEANUP_ENABLED", "true").lower() == "true"
+
+
 def _auth_state_sweep_applies() -> bool:
     return os.getenv("REDMINE_AUTH_MODE", "legacy").lower() in AUTH_STATE_MODES
 
@@ -82,7 +86,7 @@ class CleanupTaskManager:
         is not optional: in the modes that keep that state it always runs, on
         the same interval.
         """
-        self.enabled = os.getenv("AUTO_CLEANUP_ENABLED", "false").lower() == "true"
+        self.enabled = _attachment_cleanup_enabled()
         self.sweep_auth_state = _auth_state_sweep_applies()
 
         if not self.enabled and not self.sweep_auth_state:
@@ -94,12 +98,24 @@ class CleanupTaskManager:
 
         if self.enabled:
             attachments_dir = os.getenv("ATTACHMENTS_DIR", "./attachments")
-            self.manager = AttachmentFileManager(attachments_dir)
-            logger.info(
-                f"Starting automatic cleanup task "
-                f"(interval: {interval_minutes} minutes, "
-                f"directory: {attachments_dir})"
-            )
+            try:
+                self.manager = AttachmentFileManager(attachments_dir)
+            except OSError as exc:
+                # This runs inside tool calls and /health; raising here would
+                # fail every one of them, e.g. when launched from a read-only
+                # working directory with the default ATTACHMENTS_DIR.
+                logger.warning(
+                    f"Attachment cleanup disabled: cannot use "
+                    f"ATTACHMENTS_DIR {attachments_dir!r} ({exc})"
+                )
+            else:
+                logger.info(
+                    f"Starting automatic cleanup task "
+                    f"(interval: {interval_minutes} minutes, "
+                    f"directory: {attachments_dir})"
+                )
+        if not self.manager and not self.sweep_auth_state:
+            return
         if self.sweep_auth_state:
             logger.info(
                 f"Expired OAuth state under FASTMCP_HOME will be deleted "
@@ -189,8 +205,7 @@ async def _ensure_cleanup_started():
     """Ensure cleanup task is started (lazy initialization)."""
     global _cleanup_initialized
     if not _cleanup_initialized:
-        cleanup_enabled = os.getenv("AUTO_CLEANUP_ENABLED", "false").lower() == "true"
-        if cleanup_enabled or _auth_state_sweep_applies():
+        if _attachment_cleanup_enabled() or _auth_state_sweep_applies():
             await cleanup_manager.start()
             _cleanup_initialized = True
             logger.info("Cleanup task initialized")

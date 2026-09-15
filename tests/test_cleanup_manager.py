@@ -63,6 +63,46 @@ class TestCleanupTaskManager:
         assert fresh_manager.manager is None
 
     @pytest.mark.asyncio
+    async def test_attachment_cleanup_is_on_when_the_flag_is_unset(
+        self, fresh_manager, tmp_path
+    ):
+        """The documented default is true (README, server.json, .env examples)."""
+        env = {k: v for k, v in os.environ.items() if k != "AUTO_CLEANUP_ENABLED"}
+        env["ATTACHMENTS_DIR"] = str(tmp_path / "attachments")
+        with patch.dict(os.environ, env, clear=True):
+            await fresh_manager.start()
+
+        try:
+            assert fresh_manager.enabled is True
+            assert fresh_manager.manager is not None
+        finally:
+            await fresh_manager.stop()
+
+    @pytest.mark.asyncio
+    async def test_an_unusable_attachments_dir_does_not_break_start(
+        self, fresh_manager, tmp_path
+    ):
+        """start() runs inside tool calls and /health, so it must not raise.
+
+        With the default on, a server launched from a read-only working
+        directory would otherwise fail every call that starts the task.
+        """
+        env = {
+            "AUTO_CLEANUP_ENABLED": "true",
+            "ATTACHMENTS_DIR": str(tmp_path / "missing-parent" / "attachments"),
+            "REDMINE_AUTH_MODE": "api-key-login",
+        }
+        with patch.dict(os.environ, env):
+            await fresh_manager.start()
+
+        try:
+            assert fresh_manager.manager is None
+            # The OAuth state sweep still runs without attachment cleanup.
+            assert fresh_manager.task is not None
+        finally:
+            await fresh_manager.stop()
+
+    @pytest.mark.asyncio
     async def test_cleanup_manager_start_enabled(self, fresh_manager, tmp_path):
         """Test start() when AUTO_CLEANUP_ENABLED=true."""
         attachments_dir = tmp_path / "attachments"
@@ -237,6 +277,24 @@ class TestEnsureCleanupStarted:
                 mock_start.assert_called_once()
 
         assert cleanup_mod._cleanup_initialized is True
+
+    @pytest.mark.asyncio
+    async def test_ensure_cleanup_started_when_the_flag_is_unset(
+        self, reset_global_state
+    ):
+        cleanup_mod = reset_global_state
+        env = {k: v for k, v in os.environ.items() if k != "AUTO_CLEANUP_ENABLED"}
+        env["REDMINE_AUTH_MODE"] = "legacy"
+
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch.object(
+                cleanup_mod.cleanup_manager, "start", new_callable=AsyncMock
+            ) as mock_start,
+        ):
+            await cleanup_mod._ensure_cleanup_started()
+
+        mock_start.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_ensure_cleanup_started_when_disabled(self, reset_global_state):

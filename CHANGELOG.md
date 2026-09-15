@@ -47,6 +47,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the server boots in those modes, and runs even with `AUTO_CLEANUP_ENABLED`
   off. Records without a TTL, such as `oauth-proxy` client registrations, are
   kept ([#289](https://github.com/jztan/redmine-mcp-server/issues/289)).
+- `AUTO_CLEANUP_ENABLED` now defaults to `true`, as the README, `server.json`
+  and the `.env` examples have always said. The code read an unset variable as
+  `false`, so the background cleanup never ran unless the variable was set
+  explicitly, and an expired download was only removed if someone requested
+  it again. Set `AUTO_CLEANUP_ENABLED=false` to keep the old
+  behavior. If `ATTACHMENTS_DIR` cannot be created, the server now logs a
+  warning and skips attachment cleanup instead of failing the tool call that
+  started the task ([#296](https://github.com/jztan/redmine-mcp-server/issues/296)).
 
 ### Contributors
 - @andilem proposed the `api-key-login` mode and proved it against a production
