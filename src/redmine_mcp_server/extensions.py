@@ -91,7 +91,12 @@ from typing import NoReturn
 from . import _client
 from ._annotations import TOOL_KINDS, ToolKind
 from ._decorators import ActionMode, action_dispatch
-from ._env import _is_crm_enabled, _is_read_only_mode, _is_true_env
+from ._env import (
+    SERVER_INFO_PLUGIN_FLAGS,
+    _is_crm_enabled,
+    _is_read_only_mode,
+    _is_true_env,
+)
 from ._errors import _READ_ONLY_ERROR, _handle_redmine_error
 from ._extension_registry import REGISTERED_EXTENSIONS
 from ._offload import in_thread, offloaded
@@ -158,10 +163,12 @@ class ExtensionSpec:
     ``scopes_supported`` -- rather than where it was written.
 
     Attributes:
-        family: Name of the family, unique across ``PLUGIN_FLAGS``. It
-            becomes the FastMCP tag ``plugin:<family>``, which every tool
-            the extension defines carries as
-            ``tags={plugin_tag(family)}``.
+        family: Name of the family, unique across ``PLUGIN_FLAGS`` and
+            across the built-in keys of ``get_mcp_server_info``'s
+            ``plugin_flags`` (``_env.SERVER_INFO_PLUGIN_FLAGS``), which
+            are not the same set. It becomes the FastMCP tag
+            ``plugin:<family>``, which every tool the extension defines
+            carries as ``tags={plugin_tag(family)}``.
         enabled: Whether this family's tools are listed. Called on every
             visibility pass, on every :func:`oauth_scopes.advertised_scopes`
             call, and once at startup for the log line, so it reads its
@@ -331,7 +338,11 @@ def register_extension(spec: ExtensionSpec) -> None:
     Every conflict raises ``RuntimeError``, which fails startup rather than
     degrading. A family or tool name that is already taken would otherwise
     replace a built-in entry, and the entry most worth protecting is the
-    scope one: it is what stands between a token and an endpoint. The
+    scope one: it is what stands between a token and an endpoint. A family
+    is checked against two sets, because they differ: ``PLUGIN_FLAGS``,
+    where a name collision means two families sharing one visibility
+    switch, and the built-in keys of ``get_mcp_server_info``'s
+    ``plugin_flags``, where it means a client is told the wrong thing. The
     spec's own shape is checked first, by :func:`_validate_spec`, since a
     field of the wrong type is not something the table checks below would
     notice. All checks run before anything is merged, so a rejected
@@ -346,6 +357,17 @@ def register_extension(spec: ExtensionSpec) -> None:
             f"Extension family '{spec.family}' is already registered. A "
             "family owns the visibility tag plugin:<family>, so two of them "
             "would share one on/off switch. Rename one."
+        )
+
+    if spec.family in SERVER_INFO_PLUGIN_FLAGS:
+        raise RuntimeError(
+            f"Extension family '{spec.family}' is a built-in key of "
+            "get_mcp_server_info's plugin_flags. The registered families "
+            "are merged into that dict after the built-in flags, so this "
+            f"family would replace the '{spec.family}' entry, and a client "
+            "reading it to decide whether the built-in support is "
+            "available would get the extension's flag instead. Rename the "
+            "family."
         )
 
     only_kinds = sorted(set(kinds) - set(scopes))

@@ -22,7 +22,10 @@ from redmine_mcp_server import _api_key_login, _auth, _oauth_proxy, extensions
 from redmine_mcp_server import main as main_module
 from redmine_mcp_server._annotations import TOOL_KINDS, ToolKind, annotations_for
 from redmine_mcp_server._decorators import ACTION_SPECS
-from redmine_mcp_server._env import get_extension_modules
+from redmine_mcp_server._env import (
+    SERVER_INFO_PLUGIN_FLAGS,
+    get_extension_modules,
+)
 from redmine_mcp_server._extension_registry import REGISTERED_EXTENSIONS
 from redmine_mcp_server._plugin_visibility import (
     PLUGIN_FLAGS,
@@ -275,6 +278,54 @@ class TestRegistration:
         with pytest.raises(RuntimeError, match="'crm' is already registered"):
             importlib.import_module("ext_crm")
 
+    @pytest.mark.parametrize("family", ["agile", "tags"])
+    def test_collision_with_a_reported_but_unhidden_family_raises(
+        self, extension_sandbox, family
+    ):
+        """``agile`` and ``tags`` are reported without ever being hidden.
+
+        Neither owns a tool -- both only add fields to core ones -- so
+        neither is in ``PLUGIN_FLAGS``, and a check against that table alone
+        let an extension take the name. Its flag would then stand in the
+        ``plugin_flags`` dict where the built-in one belongs, and a client
+        reading that key to decide whether agile fields come back would be
+        told about an unrelated extension instead.
+        """
+        module = f"ext_reported_{family}"
+        extension_sandbox(module, _source(family, ["manage_widget"]))
+
+        with pytest.raises(RuntimeError, match=f"'{family}' is a built-in key"):
+            importlib.import_module(module)
+
+    def test_collision_with_a_family_in_both_tables_raises(self, extension_sandbox):
+        """``dmsf`` is hidden when off *and* reported, so both checks claim it.
+
+        It was already refused by the ``PLUGIN_FLAGS`` check, and adding a
+        second one is exactly the kind of edit that reorders the first out
+        of the way. Pinned so a name that was taken stays taken.
+        """
+        extension_sandbox("ext_dmsf", _source("dmsf", ["manage_widget"]))
+
+        with pytest.raises(RuntimeError, match="'dmsf' is already registered"):
+            importlib.import_module("ext_dmsf")
+
+    @pytest.mark.parametrize("family", sorted(SERVER_INFO_PLUGIN_FLAGS))
+    def test_every_key_the_server_info_response_carries_is_refused(
+        self, extension_sandbox, family
+    ):
+        """Driven by the table, so a flag added upstream is covered on arrival.
+
+        A new built-in family reaches ``plugin_flags`` and this list in the
+        same commit. A hand-written list of the seven names would have to be
+        remembered instead, and the name that was forgotten is the one an
+        extension could still take.
+        """
+        module = f"ext_builtin_{family}"
+        extension_sandbox(module, _source(family, ["manage_widget"]))
+
+        with pytest.raises(RuntimeError, match=f"'{family}'"):
+            importlib.import_module(module)
+
     def test_tool_name_collision_between_extensions_raises(self, extension_sandbox):
         extension_sandbox("ext_a", _source("acme_widgets", ["manage_widget"]))
         extension_sandbox(
@@ -364,6 +415,29 @@ class TestRegistration:
 
         with pytest.raises(RuntimeError):
             importlib.import_module("ext_bad")
+
+        assert PLUGIN_FLAGS == before_flags
+        assert TOOL_KINDS == before_kinds
+        assert TOOL_SCOPES == before_scopes
+        assert REGISTERED_EXTENSIONS == registered
+
+    def test_a_rejected_reported_family_changes_nothing(self, extension_sandbox):
+        """The family checks have to finish before the first table is written.
+
+        The four tables are process-wide and the merge is three lines below
+        the checks, so a check moved under one of them would leave a family
+        that was refused holding a visibility switch and a registry entry
+        for tools that were never defined -- in this suite, and in anything
+        else that catches the error rather than dying on it.
+        """
+        before_flags = dict(PLUGIN_FLAGS)
+        before_kinds = dict(TOOL_KINDS)
+        before_scopes = dict(TOOL_SCOPES)
+        registered = list(REGISTERED_EXTENSIONS)
+        extension_sandbox("ext_agile", _source("agile", ["manage_widget"]))
+
+        with pytest.raises(RuntimeError):
+            importlib.import_module("ext_agile")
 
         assert PLUGIN_FLAGS == before_flags
         assert TOOL_KINDS == before_kinds

@@ -1,6 +1,7 @@
 """Environment-variable accessor helpers."""
 
 import os
+from collections.abc import Callable
 from pathlib import Path
 
 
@@ -85,6 +86,31 @@ def _crm_edition() -> str:
 def _is_dmsf_enabled() -> bool:
     """Check if DMSF (document management) plugin support is enabled."""
     return _is_true_env("REDMINE_DMSF_ENABLED", "false")
+
+
+# The built-in half of ``get_mcp_server_info``'s ``plugin_flags``: flag name
+# -> the accessor whose answer that key carries, in the order the response
+# lists them. Two things read it. The tool builds those keys from here
+# instead of writing the calls out by hand, so the response and this table
+# cannot drift. And ``extensions.register_extension`` refuses a family named
+# after one of these keys, because the registered families are merged into
+# the same dict and one of them would replace the built-in entry, leaving a
+# client that reads the key to decide whether the built-in support is on
+# with the extension's flag instead.
+#
+# Wider than ``_plugin_visibility.PLUGIN_FLAGS``, which holds only the
+# families whose tools are hidden from ``tools/list``: ``agile`` and ``tags``
+# add fields to core tools rather than tools of their own, so they are
+# reported here and have nothing to hide.
+SERVER_INFO_PLUGIN_FLAGS: dict[str, Callable[[], bool]] = {
+    "agile": _is_agile_enabled,
+    "checklists": _is_checklists_enabled,
+    "products": _is_products_enabled,
+    "crm": _is_crm_enabled,
+    "deals": _is_deals_enabled,
+    "dmsf": _is_dmsf_enabled,
+    "tags": _is_tags_enabled,
+}
 
 
 def _is_scope_enforcement_enabled() -> bool:

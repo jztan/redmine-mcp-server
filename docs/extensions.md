@@ -185,9 +185,14 @@ extensions: advertised scopes refreshed (36 scopes)
 
 The log is not the only place a family shows up. `get_mcp_server_info` reports one
 `plugin_flags` key per registered family, named after the family, next to the
-built-in keys (`agile`, `checklists`, `products`, `crm`, `deals`, `dmsf`, `tags`).
-The example above adds `"acme_widgets": true`, so a client can see the extension
-surface for itself rather than only the server's log.
+built-in keys. The example above adds `"acme_widgets": true`, so a client can see
+the extension surface for itself rather than only the server's log.
+
+Those built-in keys are therefore reserved names. A family called `agile`,
+`checklists`, `products`, `crm`, `deals`, `dmsf` or `tags` would replace the
+built-in entry in that response and tell a client the wrong thing about the
+built-in support, so registration refuses it, as it refuses a family that
+collides with a plugin the server hides on its own flag.
 
 ## Scopes
 

@@ -26,16 +26,7 @@ import logging
 from typing import Any, Dict, Optional
 
 from .. import __version__
-from .._env import (
-    _is_agile_enabled,
-    _is_checklists_enabled,
-    _is_crm_enabled,
-    _is_deals_enabled,
-    _is_dmsf_enabled,
-    _is_products_enabled,
-    _is_read_only_mode,
-    _is_tags_enabled,
-)
+from .._env import SERVER_INFO_PLUGIN_FLAGS, _is_read_only_mode
 from .._extension_registry import REGISTERED_EXTENSIONS
 from ..server import mcp
 
@@ -121,13 +112,15 @@ async def get_mcp_server_info() -> Dict[str, Any]:
           authenticated Redmine user. ``None`` if the server cannot reach
           Redmine (check ``/health`` for connectivity status).
         - ``plugin_flags`` (dict[str, bool]): which plugin-gated tool
-          families are enabled. Keys: ``agile``, ``checklists``,
-          ``products``, ``crm``, ``deals``, ``dmsf``, ``tags``, plus one
-          per family an extension module named by
-          ``REDMINE_MCP_EXTENSIONS`` registered, keyed by the family name.
+          families are enabled. Always ``agile``, ``checklists``,
+          ``products``, ``crm``, ``deals``, ``dmsf``, ``tags``, in that
+          order, and after them one key per family this deployment added
+          through ``REDMINE_MCP_EXTENSIONS``, named after the family. The
+          seven are reserved, so each always carries its own flag.
           ``True`` means the family's tools are listed and routable;
           ``False`` means they are hidden from ``tools/list`` (``agile``
-          and ``tags`` only add fields to core tools and are never hidden).
+          and ``tags`` only add fields to core tools and are never
+          hidden).
 
     The response intentionally excludes credentials, internal
     hostnames, file-system paths, and any other operator-config that
@@ -158,13 +151,10 @@ async def get_mcp_server_info() -> Dict[str, Any]:
         "auth_mode": (os.environ.get("REDMINE_AUTH_MODE") or "legacy").lower(),
         "current_user": await _fetch_current_user_info(),
         "plugin_flags": {
-            "agile": _is_agile_enabled(),
-            "checklists": _is_checklists_enabled(),
-            "products": _is_products_enabled(),
-            "crm": _is_crm_enabled(),
-            "deals": _is_deals_enabled(),
-            "dmsf": _is_dmsf_enabled(),
-            "tags": _is_tags_enabled(),
+            **{
+                family: is_enabled()
+                for family, is_enabled in SERVER_INFO_PLUGIN_FLAGS.items()
+            },
             **{spec.family: spec.enabled() for spec in REGISTERED_EXTENSIONS},
         },
     }
