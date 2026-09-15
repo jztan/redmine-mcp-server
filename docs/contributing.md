@@ -110,7 +110,7 @@ Cross-cutting utilities live as flat private modules:
 | `_errors.py` | `_handle_redmine_error`, `_scrub_error_message`, `_READ_ONLY_ERROR` |
 | `_validation.py` | Input validators (`_is_positive_int`, `_is_valid_project_id`, `_validate_hours`) |
 | `_serialization.py` | `wrap_insecure_content`, `_safe_isoformat`, `_iter_capped`, `_named_ref`, `_coerce_json_safe`, `_normalize_csv_list` |
-| `_env.py` | Environment accessors: read-only / plugin flags (`_is_read_only_mode`, `_is_*_enabled`), secret resolution with Docker/Kubernetes `*_FILE` support (`get_secret`, `get_required`, `get_required_secret`), `require_introspection_credentials`, `get_allowed_client_redirect_uris` (oauth-proxy redirect-URI allowlist), `get_health_introspection_ttl_seconds` |
+| `_env.py` | Environment accessors: read-only / plugin flags (`_is_read_only_mode`, `_is_*_enabled`), secret resolution with Docker/Kubernetes `*_FILE` support (`get_secret`, `get_required`, `get_required_secret`), `require_introspection_credentials`, `get_allowed_client_redirect_uris` (oauth-proxy redirect-URI allowlist), `get_health_introspection_ttl_seconds`, `get_extension_modules` (parses `REDMINE_MCP_EXTENSIONS`) |
 | `_custom_fields.py` | Custom-field parsing, autofill, and update coercion |
 | `_ssrf.py` | SSRF protection for `upload_file`'s `source_url` |
 | `_cleanup.py` | Background cleanup task |
@@ -124,6 +124,8 @@ Cross-cutting utilities live as flat private modules:
 | `_mount.py` | Public base-URL helpers (`mcp_base_url`, `mcp_path_for_http_app`, `mcp_mount_prefix`) for serving the authenticated app behind `REDMINE_MCP_BASE_URL`. |
 | `_tool_error_middleware.py` | FastMCP middleware that surfaces tool-validation errors with a clean payload. |
 | `oauth_scopes.py` | `READ_SCOPES` / `WRITE_SCOPES` inventory + `advertised_scopes()` used by both the protected-resource and AS-metadata discovery documents. |
+| `extensions.py` | The public — and for now provisional — surface an out-of-tree extension imports: `ExtensionSpec`, `register_extension`, and the helpers a tool needs, re-exported without their leading underscore. `main.py` imports the modules `REDMINE_MCP_EXTENSIONS` names. |
+| `_extension_registry.py` | `REGISTERED_EXTENSIONS` and `extension_advertised_scopes()`, kept out of `extensions.py` so `oauth_scopes.advertised_scopes()` can read them while `server.py` is still building the auth provider, without an import cycle. |
 
 ### Keeping blocking calls off the event loop
 
@@ -691,6 +693,7 @@ redmine-mcp-server/
 │   ├── troubleshooting.md   # Troubleshooting guide
 │   ├── oauth-setup.md       # OAuth2 multi-tenant setup walkthrough
 │   ├── api-key-login-auth.md  # api-key-login mode guide
+│   ├── extensions.md        # Tools for an in-house Redmine plugin
 │   └── contributing.md      # This file
 ├── .env.example            # Environment configuration template
 ├── Dockerfile              # Container configuration

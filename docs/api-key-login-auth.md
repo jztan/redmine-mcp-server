@@ -117,10 +117,6 @@ sessions of the first. Run a single instance, or pin each client to one instance
 (the directory name is derived from the key) and every user logs in again. Keep it
 stable and secret.
 
-**Expired records.** Expired tokens and pending logins are never served, but their
-files stay on disk until a cleanup job exists
-([#289](https://github.com/jztan/redmine-mcp-server/issues/289)).
-
 ## Connecting a client
 
 The client needs only the server's MCP URL, `https://redmine-mcp.example.com/mcp`
