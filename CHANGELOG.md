@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#261](https://github.com/jztan/redmine-mcp-server/issues/261),
   [#286](https://github.com/jztan/redmine-mcp-server/pull/286),
   [#287](https://github.com/jztan/redmine-mcp-server/pull/287)).
+- `REDMINE_MCP_EXTENSIONS` imports named Python modules at startup, so a separate
+  package can add tools for a Redmine plugin written in house. The hook is
+  provisional: [docs/extensions.md](docs/extensions.md)
+  ([#294](https://github.com/jztan/redmine-mcp-server/issues/294)).
 
 ### Fixed
 - `legacy-per-user` mode no longer runs a wrong or reset

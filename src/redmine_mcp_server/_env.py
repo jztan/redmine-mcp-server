@@ -1,6 +1,7 @@
 """Environment-variable accessor helpers."""
 
 import os
+from collections.abc import Callable
 from pathlib import Path
 
 
@@ -87,6 +88,31 @@ def _is_dmsf_enabled() -> bool:
     return _is_true_env("REDMINE_DMSF_ENABLED", "false")
 
 
+# The built-in half of ``get_mcp_server_info``'s ``plugin_flags``: flag name
+# -> the accessor whose answer that key carries, in the order the response
+# lists them. Two things read it. The tool builds those keys from here
+# instead of writing the calls out by hand, so the response and this table
+# cannot drift. And ``extensions.register_extension`` refuses a family named
+# after one of these keys, because the registered families are merged into
+# the same dict and one of them would replace the built-in entry, leaving a
+# client that reads the key to decide whether the built-in support is on
+# with the extension's flag instead.
+#
+# Wider than ``_plugin_visibility.PLUGIN_FLAGS``, which holds only the
+# families whose tools are hidden from ``tools/list``: ``agile`` and ``tags``
+# add fields to core tools rather than tools of their own, so they are
+# reported here and have nothing to hide.
+SERVER_INFO_PLUGIN_FLAGS: dict[str, Callable[[], bool]] = {
+    "agile": _is_agile_enabled,
+    "checklists": _is_checklists_enabled,
+    "products": _is_products_enabled,
+    "crm": _is_crm_enabled,
+    "deals": _is_deals_enabled,
+    "dmsf": _is_dmsf_enabled,
+    "tags": _is_tags_enabled,
+}
+
+
 def _is_scope_enforcement_enabled() -> bool:
     """Check if per-tool OAuth scope enforcement is enabled (#185).
 
@@ -159,6 +185,22 @@ def get_allowed_tools() -> set[str] | None:
         ) from exc
     entries = [line.split("#", 1)[0] for line in raw_lines]
     return {entry.strip() for entry in entries if entry.strip()}
+
+
+def get_extension_modules() -> list[str]:
+    """Python modules to import at startup so they can register tools.
+
+    ``REDMINE_MCP_EXTENSIONS`` names them, comma- or whitespace-separated
+    (the shape :func:`get_allowed_client_redirect_uris` already uses), and
+    unset or blank means none, which is every stock deployment. Order is
+    preserved and duplicates are left in: importing a module twice is a
+    no-op to Python, so removing them would only hide a copy-paste mistake
+    in the variable.
+
+    See :mod:`.extensions` for what an extension module does once imported.
+    """
+    raw = os.getenv("REDMINE_MCP_EXTENSIONS", "")
+    return [name for name in raw.replace(",", " ").split() if name]
 
 
 def _get_int_env(var_name: str, default: int) -> int:

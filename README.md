@@ -161,6 +161,7 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `REDMINE_MCP_READ_ONLY` | No | `false` | Block all write operations (create/update/delete) when set to `true` |
 | `REDMINE_MCP_ALLOW_TOOLS` | No | – | Expose only these tools (comma-separated names). Unset exposes all; set but naming no tool refuses to start. Narrows the surface only: a listed tool whose plugin flag is off stays hidden. Whole tools, so per-action control on `manage_X` remains `REDMINE_MCP_READ_ONLY`'s job. Names matching no tool are warned about at startup ([details](docs/tool-reference.md#tool-allow-list)) |
 | `REDMINE_MCP_ALLOW_TOOLS_FILE` | No | – | Path to a file with one allowed tool name per line (`#` starts a comment). Used when `REDMINE_MCP_ALLOW_TOOLS` is unset or empty |
+| `REDMINE_MCP_EXTENSIONS` | No | – | Python modules to import at startup so they can register tools for an in-house Redmine plugin (comma- or whitespace-separated, imported in order). Unset means none. A module that fails to import, or that claims a family or tool name already taken, stops the server ([details](docs/extensions.md)) |
 | `REDMINE_OAUTH_SCOPE_ENFORCEMENT` | No | `on` | OAuth modes and `api-key-login` only: deny tool calls whose access token lacks the tool's Redmine permission scopes, and filter `tools/list` accordingly. Set to `off` temporarily while re-consenting older tokens ([details](docs/oauth-setup.md#scope-enforcement)) |
 | `REDMINE_OAUTH_DISCOVERY_AS` | No | `redmine` | OAuth modes only: which authorization server discovery advertises. `redmine` names your Redmine; `self` advertises this server (issuer = `REDMINE_MCP_BASE_URL`) and serves RFC 8414 metadata at its own canonical well-known location, which clients that probe there need, Cursor among them ([details](docs/oauth-setup.md#cursor-and-self-as-discovery)) |
 | `REDMINE_MCP_SCOPES` | No | – | OAuth modes and `api-key-login` only: advertise a subset of scopes in discovery, matching the permissions your Redmine OAuth Application actually enables. Avoids `invalid_scope` at consent when a client requests the full advertised list. In `api-key-login` it only narrows the scopes this server offers |
@@ -631,6 +632,8 @@ register no new tools. The other five bring their own, which appear in
 `tools/list` either way but return a feature-disabled error until you set the
 flag. Tags also needs the `view_issue_tags`, `create_issue_tags`, and
 `edit_issue_tags` permissions on the Redmine server.
+
+Tools for a Redmine plugin written in house can be added from a separate package without forking this server; see [Extensions](docs/extensions.md).
 
 ## Available Tools
 

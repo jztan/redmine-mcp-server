@@ -415,6 +415,27 @@ class ApiKeyLoginProvider(OAuthProvider):
         self._transaction_ttl = transaction_ttl
         self._protection = protection or ServerSecretBindingProtection()
 
+    def update_scopes_supported(self, scopes: list[str]) -> None:
+        """Replace the scope list this provider advertises and grants.
+
+        The constructor copies ``scopes_supported`` into three places: the
+        registration options' ``valid_scopes`` and ``default_scopes``, which
+        the SDK checks and fills at ``/register``, and ``_advertised``, which
+        :meth:`_granted_scopes` intersects a request with. All three are
+        snapshots taken when ``server.py`` builds the provider, before
+        ``main.py`` has imported the modules ``REDMINE_MCP_EXTENSIONS``
+        names, so a scope an extension adds would otherwise be neither
+        advertised nor granted here. ``RedmineAuthProvider`` has
+        ``update_scopes_supported`` and FastMCP's ``OAuthProxy`` has
+        ``update_default_scopes`` for the same reason.
+
+        Safe to call up to the point the HTTP app is built: the discovery
+        documents read ``valid_scopes`` when ``get_routes()`` runs.
+        """
+        self.client_registration_options.valid_scopes = list(scopes)
+        self.client_registration_options.default_scopes = list(scopes)
+        self._advertised = list(scopes)
+
     # -- properties used by the routes -----------------------------------
 
     @property
