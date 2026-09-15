@@ -719,15 +719,49 @@ async def _binding_id(provider, code):
     return record["binding_id"]
 
 
-async def test_authorize_re_checks_the_allowlist_against_an_old_registration():
-    """Tightening the allowlist has to reach clients that already registered."""
+async def test_a_registration_loses_redirect_uris_the_allowlist_no_longer_matches():
+    """Registrations outlive the allowlist, so tightening it has to reach them."""
     provider = _provider()
     client = await _registered(provider)
 
     provider._allowed_client_redirect_uris = ["https://only-this.example.com/*"]
-    with pytest.raises(AuthorizeError) as exc:
-        await provider.authorize(client, _params())
-    assert exc.value.error == "invalid_request"
+    loaded = await provider.get_client(client.client_id)
+    assert loaded.redirect_uris == []
+
+
+async def test_a_disallowed_redirect_is_refused_with_a_page_not_a_redirect():
+    """RFC 6749 4.1.2.1: never bounce the error off the URI just rejected.
+
+    Filtering in get_client is what makes this work. Raising in authorize
+    instead would have the SDK deliver the error as a redirect to
+    ``…/cb?error=invalid_request``, handing it to the very endpoint the
+    allowlist had judged untrustworthy.
+    """
+    from fastmcp import FastMCP
+    from httpx import ASGITransport, AsyncClient
+
+    provider = _provider()
+    client = await _registered(provider)
+    provider._allowed_client_redirect_uris = ["https://only-this.example.com/*"]
+
+    app = FastMCP("allowlist-test", auth=provider).http_app(stateless_http=True)
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url=BASE, follow_redirects=False
+    ) as http:
+        response = await http.get(
+            "/authorize",
+            params={
+                "response_type": "code",
+                "client_id": client.client_id,
+                "redirect_uri": REDIRECT,
+                "code_challenge": "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+                "code_challenge_method": "S256",
+                "state": "s",
+            },
+        )
+
+    assert response.status_code == 400
+    assert "location" not in response.headers
 
 
 async def test_a_pasted_key_with_a_newline_is_rejected_before_httpx_sees_it():
