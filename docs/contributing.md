@@ -106,7 +106,7 @@ Cross-cutting utilities live as flat private modules:
 
 | Module | Responsibility |
 |---|---|
-| `_client.py` | Redmine connection (legacy, `oauth`, and `oauth-proxy`), module-level config, logger |
+| `_client.py` | Redmine connection (legacy, `legacy-per-user`, `oauth`, `oauth-proxy`, and `api-key-login`), module-level config, logger |
 | `_errors.py` | `_handle_redmine_error`, `_scrub_error_message`, `_READ_ONLY_ERROR` |
 | `_validation.py` | Input validators (`_is_positive_int`, `_is_valid_project_id`, `_validate_hours`) |
 | `_serialization.py` | `wrap_insecure_content`, `_safe_isoformat`, `_iter_capped`, `_named_ref`, `_coerce_json_safe`, `_normalize_csv_list` |
@@ -114,11 +114,13 @@ Cross-cutting utilities live as flat private modules:
 | `_custom_fields.py` | Custom-field parsing, autofill, and update coercion |
 | `_ssrf.py` | SSRF protection for `upload_file`'s `source_url` |
 | `_cleanup.py` | Background cleanup task |
-| `_http_routes.py` | Starlette routes (`/health` with a Doorkeeper introspection probe in `oauth` / `oauth-proxy` modes and a Redmine credential probe in legacy mode, `/files/{id}`, `/cleanup/status`) |
+| `_http_routes.py` | Starlette routes (`/health` with a Doorkeeper introspection probe in `oauth` / `oauth-proxy` modes, a reachability probe in `legacy-per-user` / `api-key-login` modes, and a Redmine credential probe in legacy mode, `/files/{id}`, `/cleanup/status`) |
 | `_decorators.py` | `@action_dispatch` decorator + `ActionMode` enum |
 | `_offload.py` | `@offloaded` decorator and `in_thread()`: run blocking python-redmine work in a worker thread instead of on the event loop |
 | `_auth.py` | `RedmineAuthProvider` (a `RemoteAuthProvider` subclass) and its `build_remote_auth()` factory: composes `IntrospectionTokenVerifier` (RFC 7662) and adds the RFC 8414 AS-metadata mirror plus the RFC 7009 `/revoke` route. Used by `oauth` mode. |
 | `_oauth_proxy.py` | `build_oauth_proxy()` factory: a FastMCP `OAuthProxy` backed by `IntrospectionTokenVerifier`, proxying `/authorize`, `/token`, and `/revoke` to Doorkeeper with external consent and a loopback-default redirect-URI allowlist. Used by `oauth-proxy` mode. |
+| `_api_key_login.py` | `api-key-login` mode: `ApiKeyLoginProvider` (an `OAuthProvider` subclass that is its own authorization server), the encrypted binding store and its factory `build_api_key_login()`, refresh-time key revalidation, and `BindingRevocationMiddleware` (revokes a binding when Redmine answers 401). |
+| `_api_key_login_routes.py` | `api-key-login` mode: the `GET`/`POST /login` page that collects a user's API key, its browser-binding cookie, and the login rate limit. |
 | `_mount.py` | Public base-URL helpers (`mcp_base_url`, `mcp_path_for_http_app`, `mcp_mount_prefix`) for serving the authenticated app behind `REDMINE_MCP_BASE_URL`. |
 | `_tool_error_middleware.py` | FastMCP middleware that surfaces tool-validation errors with a clean payload. |
 | `oauth_scopes.py` | `READ_SCOPES` / `WRITE_SCOPES` inventory + `advertised_scopes()` used by both the protected-resource and AS-metadata discovery documents. |
@@ -660,14 +662,16 @@ In short:
 ```
 redmine-mcp-server/
 ├── src/redmine_mcp_server/
-│   ├── main.py              # Entry point; build_authenticated_app() mounts the MCP app + discovery routes (oauth / oauth-proxy)
+│   ├── main.py              # Entry point; build_authenticated_app() mounts the MCP app + discovery routes (oauth / oauth-proxy / api-key-login)
 │   ├── server.py            # Owns the shared `mcp = FastMCP(...)` instance; _select_auth_provider() picks the auth provider
 │   ├── tools/               # 17 per-resource tool modules (49 core + 13 plugin-gated + 1 admin-gated)
 │   ├── apps/                # Interactive MCP Apps: triage board + project dashboard (4 tools)
 │   ├── _auth.py             # RedmineAuthProvider (introspection + AS-metadata + revoke), oauth mode
 │   ├── _oauth_proxy.py      # OAuthProxy factory (DCR + authorize/token/revoke proxy), oauth-proxy mode
+│   ├── _api_key_login.py    # Self-issuing OAuth provider + encrypted key store, api-key-login mode
+│   ├── _api_key_login_routes.py  # /login page that collects the API key, api-key-login mode
 │   ├── _mount.py            # Public base-URL / MCP-path / mount-prefix helpers
-│   ├── _client.py           # Redmine connection (legacy singleton; per-request bearer for oauth / oauth-proxy)
+│   ├── _client.py           # Redmine connection (legacy singleton; per-request bearer for oauth / oauth-proxy; bound key for api-key-login)
 │   ├── _errors.py           # Exception → user-friendly dict
 │   ├── _validation.py       # Input validators
 │   ├── _serialization.py    # Serializer helpers + `wrap_insecure_content`
@@ -686,6 +690,7 @@ redmine-mcp-server/
 │   ├── tool-reference.md    # Tool usage documentation
 │   ├── troubleshooting.md   # Troubleshooting guide
 │   ├── oauth-setup.md       # OAuth2 multi-tenant setup walkthrough
+│   ├── api-key-login-auth.md  # api-key-login mode guide
 │   └── contributing.md      # This file
 ├── .env.example            # Environment configuration template
 ├── Dockerfile              # Container configuration
@@ -695,13 +700,13 @@ redmine-mcp-server/
 
 ### Core Components
 
-- **`main.py`**: Entry point. In an authenticated mode (`oauth` or `oauth-proxy`), `build_authenticated_app()` mounts the FastMCP app under the `REDMINE_MCP_BASE_URL` path prefix and adds the provider's `get_well_known_routes()` (discovery) plus `/health`, `/files`, `/cleanup/status`; in legacy mode it returns `mcp.http_app(stateless_http=True)`. Tool registration is triggered via `from . import tools`. No Starlette middleware is added; auth lives inside FastMCP via the `auth=` constructor parameter.
-- **`server.py`**: Owns the shared `mcp = FastMCP("redmine_mcp_tools", auth=...)` instance imported by every tool module. `_select_auth_provider(auth_mode)` returns `build_remote_auth()` (a `RedmineAuthProvider`) for `oauth`, `build_oauth_proxy()` (a FastMCP `OAuthProxy`) for `oauth-proxy`, and `None` for legacy.
+- **`main.py`**: Entry point. In an authenticated mode (`oauth`, `oauth-proxy` or `api-key-login`), `build_authenticated_app()` mounts the FastMCP app under the `REDMINE_MCP_BASE_URL` path prefix and adds the provider's `get_well_known_routes()` (discovery) plus `/health`, `/files`, `/cleanup/status`; in legacy mode it returns `mcp.http_app(stateless_http=True)`. Tool registration is triggered via `from . import tools`. No Starlette middleware is added; auth lives inside FastMCP via the `auth=` constructor parameter.
+- **`server.py`**: Owns the shared `mcp = FastMCP("redmine_mcp_tools", auth=...)` instance imported by every tool module. `_select_auth_provider(auth_mode)` returns `build_remote_auth()` (a `RedmineAuthProvider`) for `oauth`, `build_oauth_proxy()` (a FastMCP `OAuthProxy`) for `oauth-proxy`, `build_api_key_login()` (an `ApiKeyLoginProvider`) for `api-key-login`, and `None` for legacy.
 - **`_auth.py`** (`oauth` mode): `build_remote_auth()` returns a `RedmineAuthProvider`, a `RemoteAuthProvider` subclass that composes `IntrospectionTokenVerifier` (RFC 7662 against Doorkeeper's `/oauth/introspect`) and additionally serves the RFC 8414 AS-metadata mirror and the RFC 7009 `/revoke` route. Reads `REDMINE_INTROSPECT_CLIENT_ID` / `_SECRET` via `_env.require_introspection_credentials()` (fail-fast on startup).
 - **`_oauth_proxy.py`** (`oauth-proxy` mode): `build_oauth_proxy()` returns a FastMCP `OAuthProxy` that makes the MCP server the OAuth authorization server for clients (DCR + `/authorize` / `/token` / `/register`) and proxies upstream to Redmine/Doorkeeper, validating tokens with the same `IntrospectionTokenVerifier`. Keeps consent external (`require_authorization_consent="external"`), requires `REDMINE_MCP_JWT_SIGNING_KEY`, and restricts client redirect URIs to loopback by default (`get_allowed_client_redirect_uris()`).
 - **`tools/`**: Per-resource tool modules. Each file owns its `@mcp.tool()` definitions and resource-specific serializers (`_X_to_dict` helpers). See [Where things live](#where-things-live) earlier in this guide for the full table.
-- **Flat `_X.py` modules**: Cross-cutting helpers (`_client`, `_errors`, `_validation`, `_serialization`, `_env`, `_custom_fields`, `_ssrf`, `_cleanup`, `_http_routes`, `_decorators`, `_auth`, `_oauth_proxy`, `_mount`, `_tool_error_middleware`). See [Where things live](#where-things-live) for responsibilities.
-- **`_client.py`**: In `oauth` and `oauth-proxy` modes, builds a per-request `Redmine(...)` from the bearer returned by `fastmcp.server.dependencies.get_access_token()`. In legacy mode, caches a singleton built from `REDMINE_API_KEY` or `REDMINE_USERNAME`/`REDMINE_PASSWORD`. (Pre-v2.1: validated tokens via `GET /users/current.json` through a custom `ContextVar`-based middleware; both removed in the v2.1 native-auth migration.)
+- **Flat `_X.py` modules**: Cross-cutting helpers (`_client`, `_errors`, `_validation`, `_serialization`, `_env`, `_custom_fields`, `_ssrf`, `_cleanup`, `_http_routes`, `_decorators`, `_auth`, `_oauth_proxy`, `_api_key_login`, `_api_key_login_routes`, `_mount`, `_tool_error_middleware`). See [Where things live](#where-things-live) for responsibilities.
+- **`_client.py`**: In `oauth` and `oauth-proxy` modes, builds a per-request `Redmine(...)` from the bearer returned by `fastmcp.server.dependencies.get_access_token()`. In `api-key-login` mode, builds it from the Redmine API key bound to the access token's claims, checked before the bearer branch. In legacy mode, caches a singleton built from `REDMINE_API_KEY` or `REDMINE_USERNAME`/`REDMINE_PASSWORD`. (Pre-v2.1: validated tokens via `GET /users/current.json` through a custom `ContextVar`-based middleware; both removed in the v2.1 native-auth migration.)
 - **`oauth_scopes.py`**: Single source of truth for `scopes_supported` in the protected-resource and AS-metadata discovery documents. Filters `WRITE_SCOPES` out when `REDMINE_MCP_READ_ONLY=true`, appends the agile read scope (`view_agile_queries`) when `REDMINE_AGILE_ENABLED=true`, and the tags scopes when `REDMINE_TAGS_ENABLED=true` — `view_issue_tags` (read) always, plus `create_issue_tags`/`edit_issue_tags` (write) unless read-only.
 - **`file_manager.py`**: Attachment file storage manager (UUID-based files + metadata.json with expiry).
 

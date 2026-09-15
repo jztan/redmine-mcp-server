@@ -4,6 +4,8 @@ Set up the MCP server so each user authenticates with their own Redmine account.
 
 **Requirements:** Redmine 6.1+ and admin access to register an OAuth application.
 
+> **No OAuth on your Redmine?** Easy Redmine and Redmine older than 6.1 have no Doorkeeper. Use `REDMINE_AUTH_MODE=api-key-login` instead: clients connect the same way, and each user logs in once with their own API key. See the [api-key-login guide](api-key-login-auth.md).
+
 This guide covers both direct Redmine Bearer-token mode (`REDMINE_AUTH_MODE=oauth`) and hosted OAuthProxy mode (`REDMINE_AUTH_MODE=oauth-proxy`). In `oauth-proxy` mode, FastMCP handles DCR/CIMD for MCP clients and uses Redmine as the upstream OAuth provider and external consent screen.
 
 ## Step 1: Register an OAuth App in Redmine

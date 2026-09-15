@@ -981,3 +981,65 @@ The v2.1+ release dropped several discovery path aliases. Only these paths remai
 In `REDMINE_AUTH_MODE=oauth-proxy`, the authorization-server metadata describes FastMCP's OAuthProxy endpoints instead.
 
 Clients should follow `WWW-Authenticate: Bearer resource_metadata="..."` headers from 401 responses (RFC 9728 §5.3) rather than guessing paths. If a client hardcodes the dropped variants, update the client; we don't plan to restore aliases.
+
+## api-key-login
+
+Setup, security model and session rules are in the [api-key-login guide](api-key-login-auth.md). The entries below cover what users and operators actually run into.
+
+### The server refuses to start
+
+**Symptoms:** startup fails with one of:
+- `Missing required env var: REDMINE_URL` or `Missing required env var: REDMINE_MCP_BASE_URL`
+- `Missing required secret env var: REDMINE_MCP_JWT_SIGNING_KEY or REDMINE_MCP_JWT_SIGNING_KEY_FILE.`
+- `REDMINE_MCP_BASE_URL must be https in api-key-login mode`
+- `REDMINE_API_KEY_LOGIN_SESSION_DAYS must be a positive number of days`
+
+**Solutions:** set the missing variable; serve the base URL over `https` (set `REDMINE_API_KEY_LOGIN_ALLOW_HTTP=true` only for local development); give the session length a positive number of days.
+
+### "This login page was opened in a different browser, or its cookie was blocked"
+
+**Cause:** a login only works in the browser the client opened, which receives a cookie when the login starts. The page refuses a browser without that cookie: a link copied into another browser, a private window, or a browser that blocks cookies for this site.
+
+**Solution:** allow cookies for the server's address and start the connection again from the client, so the same browser runs the whole login.
+
+### "Keys of Redmine administrators are not accepted here"
+
+**Cause:** keys of Redmine administrators are refused by default, because they bypass Redmine's permission checks.
+
+**Solution:** start the connection again from the client and log in with a second, non-administrative Redmine account; the refused login cannot be retried. Only if that is not an option, set `REDMINE_API_KEY_LOGIN_ALLOW_ADMIN=true`. See [Administrator accounts](api-key-login-auth.md#administrator-accounts).
+
+### "Redmine could not be reached" on the login page
+
+**Cause:** the server could not get an answer from `GET /users/current.json`: Redmine is down, `REDMINE_URL` is wrong, or a proxy redirected the request. The login attempt is not charged and the link stays valid for its 5 minutes.
+
+**Solution:** check that the server can reach `REDMINE_URL` (the `/health` endpoint probes it), then go back to the login page and press Connect again within its 5 minutes, or start again from the client.
+
+### "This login link is unknown or has expired"
+
+**Cause:** login links are valid for 5 minutes and allow 3 attempts; the link is also gone once a login succeeded.
+
+**Solution:** start the connection again from the client.
+
+### Client registration fails with "redirect_uri ... is not allowed by this server"
+
+**Cause:** the client's redirect URI is not on `REDMINE_MCP_ALLOWED_CLIENT_REDIRECT_URIS`. The default allows only loopback addresses, which local clients use.
+
+**Solution:** add the hosted client's exact redirect URI pattern to the allowlist. Avoid `*`: it removes the protection against crafted `/authorize` links described in the [security model](api-key-login-auth.md#security-model).
+
+### Everyone has to log in again after a deploy
+
+**Cause:** the store below `FASTMCP_HOME/api-key-login/` is not on a persistent volume, or `REDMINE_MCP_JWT_SIGNING_KEY` changed (a new key starts a new, empty store).
+
+**Solution:** check the `api-key-login state directory: ...` line in the startup log and make sure that path is on a volume. The Docker image sets `FASTMCP_HOME=/app/data/fastmcp`, which `docker-compose` mounts. Keep the signing key stable.
+
+### Tools return fewer results than expected, or "Redmine rejected the API key bound to this session"
+
+**Cause:** the user's API key was reset, or the account was locked, in Redmine. Redmine serves an unknown key as the anonymous user on anything anonymous may read, so until the session ends, reads can return the anonymous view. The session ends at the first call that gets a 401 (the tool then returns "Redmine rejected the API key bound to this session") or at the next token refresh, within an hour.
+
+**Solution:** nothing on the server. The client asks the user to log in again with the new key. To end sessions immediately after a reset, enable Administration → Settings → Authentication → "Authentication required" in Redmine.
+
+### Every user was signed out at once
+
+**Cause:** each token refresh checks the user's key with Redmine, and a 401 ends the session. A gateway or single-sign-on proxy in front of Redmine that answers 401 for its own reasons makes every check fail, so every session ends within an hour. A 403 or an unreachable Redmine does not end sessions.
+
+**Solution:** make sure `REDMINE_URL` reaches Redmine's API directly, or that the proxy passes `X-Redmine-API-Key` requests through.

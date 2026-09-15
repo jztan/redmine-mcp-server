@@ -27,7 +27,7 @@ A Model Context Protocol (MCP) server that connects AI assistants to Redmine. It
 
 - **49 MCP tools on a stock Redmine, 62 with the RedmineUP and DMSF plugins** (plus 1 operator tool gated by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`): Issues, projects, news, time tracking, wiki, Gantt, file operations, membership management, products, contacts and deals (CRM), DMSF documents, and more
 - **Interactive Kanban Board**: `show_triage_board` renders a live, drag-and-drop issue board right in the chat via the MCP Apps extension
-- **Flexible Authentication**: API key, username/password, or OAuth2 per-user tokens
+- **Flexible Authentication**: API key, username/password, OAuth2 per-user tokens, or a browser login with each user's own API key on Redmines without OAuth
 - **Prompt Injection Protection**: User-controlled content wrapped in boundary tags for safe LLM consumption
 - **Read-Only Mode**: Restrict to read-only operations via `REDMINE_MCP_READ_ONLY` environment variable
 - **HTTP File Serving**: Secure attachment access via UUID-based URLs with automatic expiry
@@ -66,8 +66,9 @@ known (global search needs 3.3.0+, issue watchers 2.3.0+, project time-entry
 activities 3.4.0+), so on an older server those specific tools fail rather than
 the whole server.
 
-OAuth2 is the one hard requirement: it needs Redmine 6.1+ for Doorkeeper
-support. See [docs/oauth-setup.md](docs/oauth-setup.md).
+Per-user authentication works on any version: OAuth2 needs Redmine 6.1+ for
+Doorkeeper, and the other per-user modes do not. See
+[Authentication](#authentication) to pick a mode.
 
 ### Install from PyPI (Recommended)
 
@@ -120,21 +121,25 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `REDMINE_URL` | Yes | – | Base URL of your Redmine instance |
-| `REDMINE_AUTH_MODE` | No | `legacy` | Authentication mode: `legacy`, `legacy-per-user`, `oauth`, or `oauth-proxy` (see [Authentication](#authentication)) |
+| `REDMINE_AUTH_MODE` | No | `legacy` | Authentication mode: `legacy`, `legacy-per-user`, `oauth`, `oauth-proxy`, or `api-key-login` (see [Authentication](#authentication)) |
 | `REDMINE_PER_USER_TRUST_PROXY` | Yes* | `false` | Required for `legacy-per-user` mode. Operator attestation: "this server sits behind TLS and my proxy does not forward client `X-Forwarded-Proto`." |
 | `REDMINE_PER_USER_AUDIT_IDENTITY` | No | `false` | `legacy-per-user` only: resolve and log the Redmine user ID per request (adds one extra round-trip) |
+| `REDMINE_API_KEY_LOGIN_ALLOW_ADMIN` | No | `false` | `api-key-login` only: accept the API keys of Redmine administrators. Tokens never carry the `admin` scope either way ([details](docs/api-key-login-auth.md#administrator-accounts)) |
+| `REDMINE_API_KEY_LOGIN_ALLOW_HTTP` | No | `false` | `api-key-login` only: allow an `http://` `REDMINE_MCP_BASE_URL`. Local development only |
+| `REDMINE_API_KEY_LOGIN_SESSION_DAYS` | No | `30` | `api-key-login` only: how long a session lasts before the user logs in again. Must be positive |
+| `REDMINE_API_KEY_LOGIN_RATE_LIMIT` | No | `300` | `api-key-login` only: login attempts per minute, a process-wide safety ceiling |
 | `REDMINE_API_KEY` | Yes† | – | API key (legacy mode only) |
 | `REDMINE_USERNAME` | Yes† | – | Username for basic auth (legacy mode only) |
 | `REDMINE_PASSWORD` | Yes† | – | Password for basic auth (legacy mode only) |
-| `REDMINE_MCP_BASE_URL` | Yes‡ | `http://localhost:3040` | Public base URL of this server, no trailing slash (OAuth modes only) |
+| `REDMINE_MCP_BASE_URL` | Yes‡¶ | `http://localhost:3040` | Public base URL of this server, no trailing slash (OAuth modes and `api-key-login`) |
 | `FASTMCP_STREAMABLE_HTTP_PATH` | No | `/mcp` | MCP transport path inside `REDMINE_MCP_BASE_URL` |
 | `REDMINE_INTROSPECT_CLIENT_ID` | Yes‡ | – | Doorkeeper OAuth client ID used by the MCP server to introspect Bearer tokens (RFC 7662). Register a confidential OAuth app in Redmine (see [`docs/oauth-setup.md`](docs/oauth-setup.md) Step 2). |
 | `REDMINE_INTROSPECT_CLIENT_SECRET` | Yes‡ | – | Secret for the introspection client |
-| `REDMINE_MCP_JWT_SIGNING_KEY` | Yes§ | – | Stable signing/encryption key used by FastMCP OAuthProxy tokens and storage |
+| `REDMINE_MCP_JWT_SIGNING_KEY` | Yes§¶ | – | Stable signing/encryption key used by FastMCP OAuthProxy tokens and storage, and by the `api-key-login` store. Changing it signs everyone out |
 | `REDMINE_OAUTH_CLIENT_ID` | No | – | Optional upstream Redmine OAuth client ID for `oauth-proxy`; defaults to `REDMINE_INTROSPECT_CLIENT_ID` |
 | `REDMINE_OAUTH_CLIENT_SECRET` | No | – | Optional upstream Redmine OAuth client secret for `oauth-proxy`; defaults to `REDMINE_INTROSPECT_CLIENT_SECRET` |
-| `FASTMCP_HOME` | No | platform default (`/app/data/fastmcp` in Docker) | FastMCP data directory. In `oauth-proxy` mode, encrypted OAuthProxy state is stored below `FASTMCP_HOME/oauth-proxy/`, and must be on a persistent volume to survive a container rebuild |
-| `REDMINE_MCP_ALLOWED_CLIENT_REDIRECT_URIS` | No | loopback only | `oauth-proxy` client redirect-URI allowlist (glob patterns, comma/space separated). Unset = `http://localhost:*` and `http://127.0.0.1:*`; `*` = allow any |
+| `FASTMCP_HOME` | No | platform default (`/app/data/fastmcp` in Docker) | FastMCP data directory. In `oauth-proxy` mode, encrypted OAuthProxy state is stored below `FASTMCP_HOME/oauth-proxy/`, and in `api-key-login` mode below `FASTMCP_HOME/api-key-login/`. Either must be on a persistent volume to survive a container rebuild |
+| `REDMINE_MCP_ALLOWED_CLIENT_REDIRECT_URIS` | No | loopback only | `oauth-proxy` and `api-key-login` client redirect-URI allowlist (glob patterns, comma/space separated). Unset = `http://localhost:*` and `http://127.0.0.1:*`; `*` = allow any |
 | `HEALTH_INTROSPECTION_TTL_SECONDS` | No | `30` | TTL (seconds) for the `/health` Doorkeeper introspection probe cache. Set to `0` to disable caching. |
 | `SERVER_HOST` | No | `0.0.0.0` | Host/IP the MCP server binds to |
 | `SERVER_PORT` | No | `8000` | Port the MCP server listens on |
@@ -156,9 +161,9 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `REDMINE_MCP_READ_ONLY` | No | `false` | Block all write operations (create/update/delete) when set to `true` |
 | `REDMINE_MCP_ALLOW_TOOLS` | No | – | Expose only these tools (comma-separated names). Unset exposes all; set but naming no tool refuses to start. Narrows the surface only: a listed tool whose plugin flag is off stays hidden. Whole tools, so per-action control on `manage_X` remains `REDMINE_MCP_READ_ONLY`'s job. Names matching no tool are warned about at startup ([details](docs/tool-reference.md#tool-allow-list)) |
 | `REDMINE_MCP_ALLOW_TOOLS_FILE` | No | – | Path to a file with one allowed tool name per line (`#` starts a comment). Used when `REDMINE_MCP_ALLOW_TOOLS` is unset or empty |
-| `REDMINE_OAUTH_SCOPE_ENFORCEMENT` | No | `on` | OAuth modes only: deny tool calls whose access token lacks the tool's Redmine permission scopes, and filter `tools/list` accordingly. Set to `off` temporarily while re-consenting older tokens ([details](docs/oauth-setup.md#scope-enforcement)) |
+| `REDMINE_OAUTH_SCOPE_ENFORCEMENT` | No | `on` | OAuth modes and `api-key-login` only: deny tool calls whose access token lacks the tool's Redmine permission scopes, and filter `tools/list` accordingly. Set to `off` temporarily while re-consenting older tokens ([details](docs/oauth-setup.md#scope-enforcement)) |
 | `REDMINE_OAUTH_DISCOVERY_AS` | No | `redmine` | OAuth modes only: which authorization server discovery advertises. `redmine` names your Redmine; `self` advertises this server (issuer = `REDMINE_MCP_BASE_URL`) and serves RFC 8414 metadata at its own canonical well-known location, which clients that probe there need, Cursor among them ([details](docs/oauth-setup.md#cursor-and-self-as-discovery)) |
-| `REDMINE_MCP_SCOPES` | No | – | OAuth modes only: advertise a subset of scopes in discovery, matching the permissions your Redmine OAuth Application actually enables. Avoids `invalid_scope` at consent when a client requests the full advertised list |
+| `REDMINE_MCP_SCOPES` | No | – | OAuth modes and `api-key-login` only: advertise a subset of scopes in discovery, matching the permissions your Redmine OAuth Application actually enables. Avoids `invalid_scope` at consent when a client requests the full advertised list. In `api-key-login` it only narrows the scopes this server offers |
 | `REDMINE_AGILE_ENABLED` | No | `false` | Enable RedmineUP Agile plugin support: `get_redmine_issue` returns `story_points`, `agile_sprint_id`, `agile_position`; `update_redmine_issue` accepts `story_points` |
 | `REDMINE_CHECKLISTS_ENABLED` | No | `false` | Enable RedmineUP Checklists plugin support: `get_checklist`, `create_checklist_item`, `update_checklist_item` (requires Checklists Pro plugin) |
 | `REDMINE_PRODUCTS_ENABLED` | No | `false` | Enable RedmineUP Products plugin support: `manage_product` (action=list/get/create/update) |
@@ -175,6 +180,7 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 *† Required when `REDMINE_AUTH_MODE=legacy`. Either `REDMINE_API_KEY` or `REDMINE_USERNAME`+`REDMINE_PASSWORD` must be set. API key is recommended.*
 *‡ Required when `REDMINE_AUTH_MODE=oauth` or `REDMINE_AUTH_MODE=oauth-proxy`.*
 *§ Required when `REDMINE_AUTH_MODE=oauth-proxy`.*
+*¶ Required when `REDMINE_AUTH_MODE=api-key-login`.*
 Secret values can also be supplied with Docker/Kubernetes-style file variables: `REDMINE_INTROSPECT_CLIENT_SECRET_FILE`, `REDMINE_MCP_JWT_SIGNING_KEY_FILE`, and `REDMINE_OAUTH_CLIENT_SECRET_FILE`.
 
 When `REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true`, `create_redmine_issue` retries once on relevant custom-field validation errors (for example `<Field Name> cannot be blank` or `<Field Name> is not included in the list`) and fills values only from:
@@ -247,16 +253,17 @@ For SSL troubleshooting, see the [Troubleshooting Guide](./docs/troubleshooting.
 
 ## Authentication
 
-The server supports four authentication modes, selected via `REDMINE_AUTH_MODE`. It defaults to `legacy`, so existing deployments keep working with no changes; OAuth2 support is purely additive.
+The server supports five authentication modes, selected via `REDMINE_AUTH_MODE`. It defaults to `legacy`, so existing deployments keep working with no changes; OAuth2 support is purely additive.
 
 | Your situation | Mode | Redmine |
 |---|---|---|
 | Single shared credential, simplest setup | `legacy` (default) | any |
 | Multi-user, you control the MCP client | `oauth` | 6.1+ |
 | Hosted server, clients self-register (DCR) | `oauth-proxy` | 6.1+ |
-| Multi-user, Redmine too old for OAuth | `legacy-per-user` | < 6.1 |
+| Multi-user, no OAuth on your Redmine, users log in in a browser | `api-key-login` | any, incl. Easy Redmine |
+| Multi-user, no OAuth on your Redmine, users set their key in the client | `legacy-per-user` | any |
 
-The advanced modes are collapsed below. For full setup, the [OAuth2 Setup Guide](./docs/oauth-setup.md) covers `oauth` and `oauth-proxy`, and the [legacy-per-user guide](./docs/legacy-per-user-auth.md) covers `legacy-per-user`.
+The advanced modes are collapsed below. For full setup, the [OAuth2 Setup Guide](./docs/oauth-setup.md) covers `oauth` and `oauth-proxy`, the [api-key-login guide](./docs/api-key-login-auth.md) covers `api-key-login`, and the [legacy-per-user guide](./docs/legacy-per-user-auth.md) covers `legacy-per-user`.
 
 ### Legacy mode (default)
 
@@ -307,6 +314,22 @@ REDMINE_MCP_JWT_SIGNING_KEY=...
 ```
 
 The upstream Redmine app must register `${REDMINE_MCP_BASE_URL}/auth/callback` as its redirect URI. Storage, scaling, and credential-reuse notes are in the [OAuth2 Setup Guide](./docs/oauth-setup.md).
+
+</details>
+
+<details>
+<summary><strong>api-key-login mode</strong> (per-user identity without OAuth: Easy Redmine, Redmine older than 6.1)</summary>
+
+The server acts as its own OAuth authorization server, so MCP clients connect with nothing but its URL. On first use the client opens a browser, the user pastes their personal Redmine API key into a page this server serves, and every tool call from then on runs as that user. No key goes into any client configuration, and passwords are never asked for.
+
+```bash
+REDMINE_AUTH_MODE=api-key-login
+REDMINE_URL=https://redmine.example.com
+REDMINE_MCP_BASE_URL=https://redmine-mcp.example.com   # public https URL of this server
+REDMINE_MCP_JWT_SIGNING_KEY=...                        # encrypts the stored keys
+```
+
+The server stores each user's key encrypted below `FASTMCP_HOME/api-key-login/`, so that directory needs a persistent volume and the mode runs as a single replica. OAuth scopes here are a narrowing the client asks for, not Redmine permissions; Redmine's own permissions stay the boundary. Read the [api-key-login guide](./docs/api-key-login-auth.md) for the security model, session rules and client setup before enabling it.
 
 </details>
 
