@@ -1718,21 +1718,25 @@ async def create_redmine_issue(
         uploads: Files to attach to the new issue. Maximum 10 items, 50 MiB
             each. Every item carries exactly one content source:
 
-            - ``file_path``: a path on **this server's** filesystem, inside
-              ``ATTACHMENTS_DIR`` or a directory listed in
-              ``REDMINE_MCP_UPLOAD_FILE_ROOTS``. The bytes never pass
-              through the caller, so prefer it for a file that is already
-              there -- which, when the server runs on the caller's own
-              machine, includes the caller's own files. Where the server is
-              a different host, a caller-side path cannot be read here,
-              whatever the roots are set to.
+            - ``content_base64``: the file's bytes, base64-encoded.
+              **The way to send a file that lives on the caller's own
+              machine**, and the first thing to reach for when the file
+              came from the caller: it needs no configuration and works
+              however this server is deployed, at the price of moving the
+              file through the conversation.
             - ``source_url``: an HTTP(S) URL this server downloads from.
-              Also spares the caller the bytes, so prefer it whenever the
-              file is reachable at a URL.
-            - ``content_base64``: the file's bytes, base64-encoded. The way
-              to send a file the caller holds and the server cannot reach;
-              it needs no configuration, at the price of moving the file
-              through the conversation.
+              Prefer it over ``content_base64`` whenever the file is
+              already reachable at a URL -- including one another MCP tool
+              just handed over -- since it spares the caller the bytes.
+            - ``file_path``: a path read on **this server's own**
+              filesystem, inside ``ATTACHMENTS_DIR`` or a directory listed
+              in ``REDMINE_MCP_UPLOAD_FILE_ROOTS``. It reaches the caller's
+              own files only where the server runs on the caller's machine;
+              against a server on a different host a caller-side path
+              cannot be read, whatever the roots are set to. Use it for a
+              file that genuinely lives on the server -- and where the
+              deployment is not known, send ``content_base64`` rather than
+              trying a local path first.
             - ``filename``: the name the attachment gets. Required with
               ``content_base64``; derived from the URL or
               ``Content-Disposition`` for ``source_url`` and from the
@@ -1956,21 +1960,25 @@ async def update_redmine_issue(
         uploads: Files to attach to the issue. Maximum 10 items, 50 MiB
             each. Every item carries exactly one content source:
 
-            - ``file_path``: a path on **this server's** filesystem, inside
-              ``ATTACHMENTS_DIR`` or a directory listed in
-              ``REDMINE_MCP_UPLOAD_FILE_ROOTS``. The bytes never pass
-              through the caller, so prefer it for a file that is already
-              there -- which, when the server runs on the caller's own
-              machine, includes the caller's own files. Where the server is
-              a different host, a caller-side path cannot be read here,
-              whatever the roots are set to.
+            - ``content_base64``: the file's bytes, base64-encoded.
+              **The way to send a file that lives on the caller's own
+              machine**, and the first thing to reach for when the file
+              came from the caller: it needs no configuration and works
+              however this server is deployed, at the price of moving the
+              file through the conversation.
             - ``source_url``: an HTTP(S) URL this server downloads from.
-              Also spares the caller the bytes, so prefer it whenever the
-              file is reachable at a URL.
-            - ``content_base64``: the file's bytes, base64-encoded. The way
-              to send a file the caller holds and the server cannot reach;
-              it needs no configuration, at the price of moving the file
-              through the conversation.
+              Prefer it over ``content_base64`` whenever the file is
+              already reachable at a URL -- including one another MCP tool
+              just handed over -- since it spares the caller the bytes.
+            - ``file_path``: a path read on **this server's own**
+              filesystem, inside ``ATTACHMENTS_DIR`` or a directory listed
+              in ``REDMINE_MCP_UPLOAD_FILE_ROOTS``. It reaches the caller's
+              own files only where the server runs on the caller's machine;
+              against a server on a different host a caller-side path
+              cannot be read, whatever the roots are set to. Use it for a
+              file that genuinely lives on the server -- and where the
+              deployment is not known, send ``content_base64`` rather than
+              trying a local path first.
             - ``filename``: the name the attachment gets. Required with
               ``content_base64``; derived from the URL or
               ``Content-Disposition`` for ``source_url`` and from the

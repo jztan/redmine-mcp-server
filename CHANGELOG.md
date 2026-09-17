@@ -37,6 +37,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provisional: [docs/extensions.md](docs/extensions.md)
   ([#294](https://github.com/jztan/redmine-mcp-server/issues/294)).
 
+### Changed
+- The `uploads` sources are documented caller-first: `content_base64`,
+  then `source_url`, then `file_path`, in `create_redmine_issue`,
+  `update_redmine_issue`, `manage_redmine_wiki_page` and `upload_file`.
+  The old order led with `file_path` and recommended it for "a file that is
+  already there", with the qualifier -- that it is only the caller's files
+  when the server runs on the caller's machine -- trailing a condition no
+  model can check. Against the usual remote deployment that reads as the
+  first thing to try, and it can never work: the path is resolved on the
+  server. Reported from the field, where a client tried `file_path` for a
+  local mockup, hit the roots error and reported the attachment as
+  impossible rather than resending it as `content_base64`. The error text
+  already named the way out; nothing else about the behaviour changes, and
+  two tests now pin the ordering so it cannot drift back
+  ([#303](https://github.com/jztan/redmine-mcp-server/issues/303),
+  [#304](https://github.com/jztan/redmine-mcp-server/pull/304)).
+
 ### Fixed
 - `legacy-per-user` mode no longer runs a wrong or reset
   `X-Redmine-API-Key` as the anonymous user. Redmine serves an unknown key as

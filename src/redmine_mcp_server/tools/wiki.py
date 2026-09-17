@@ -465,15 +465,16 @@ async def manage_redmine_wiki_page(
         uploads: Files to attach, for ``create`` and ``update`` only.
             Requires the ``edit_wiki_pages`` permission on the project.
             Maximum 10 items, 50 MiB each. Each item needs exactly ONE
-            source key: ``file_path`` (a path on **this server's**
-            filesystem, inside ``ATTACHMENTS_DIR`` or a directory listed in
-            ``REDMINE_MCP_UPLOAD_FILE_ROOTS``), ``source_url`` (an HTTP(S)
-            URL the server fetches), or ``content_base64``. Prefer
-            ``file_path`` or ``source_url`` where either applies:
-            ``content_base64`` sends the whole file through the model. But
-            ``file_path`` is read where the server runs, so a file that
-            lives on the caller's machine travels as ``content_base64``
-            unless the two are the same host. Optional per item:
+            source key: ``content_base64``, ``source_url`` (an HTTP(S) URL
+            the server fetches), or ``file_path`` (a path read on **this
+            server's own** filesystem, inside ``ATTACHMENTS_DIR`` or a
+            directory listed in ``REDMINE_MCP_UPLOAD_FILE_ROOTS``). A file
+            that lives on the caller's own machine travels as
+            ``content_base64``: ``file_path`` is read where the server
+            runs, so it reaches the caller's files only when the two are
+            the same host. Prefer ``source_url`` where the file is already
+            at a URL, since ``content_base64`` sends the whole file through
+            the model. Optional per item:
             ``filename`` (required with ``content_base64``),
             ``content_type``, ``description``. Ignored by the other
             actions.

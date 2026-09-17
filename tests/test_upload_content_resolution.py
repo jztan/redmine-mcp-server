@@ -282,3 +282,52 @@ async def test_build_uploads_entry_count_cap():
 async def test_build_uploads_rejects_non_dict_entry():
     descriptors, err = await _build_upload_descriptors(["not-a-dict"])
     assert err is not None
+
+
+# ---------------------------------------------------------------------------
+# Docstring ordering: the caller-held file must be the first source a model
+# reads about.
+#
+# ``file_path`` is read on the server, so against a remote deployment a
+# caller-side path can never work. A description that names it first, or
+# recommends it, sends the model down that path and -- as seen in the field --
+# it can stop at the error instead of falling back. The order of the bullets
+# is the fix, so it is pinned here.
+# ---------------------------------------------------------------------------
+
+from redmine_mcp_server.tools.files import upload_file  # noqa: E402
+from redmine_mcp_server.tools.issues import (  # noqa: E402
+    create_redmine_issue,
+    update_redmine_issue,
+)
+from redmine_mcp_server.tools.wiki import manage_redmine_wiki_page  # noqa: E402
+
+
+@pytest.mark.parametrize(
+    "tool",
+    [create_redmine_issue, update_redmine_issue, upload_file, manage_redmine_wiki_page],
+    ids=lambda t: getattr(t, "__name__", str(t)),
+)
+def test_upload_docstring_names_content_base64_before_file_path(tool):
+    doc = (getattr(tool, "fn", tool)).__doc__ or ""
+    assert "content_base64" in doc and "file_path" in doc
+    assert doc.index("content_base64") < doc.index("file_path"), (
+        f"{tool} documents file_path before content_base64; a caller-held "
+        "file must be the first source described."
+    )
+
+
+@pytest.mark.parametrize(
+    "tool",
+    [create_redmine_issue, update_redmine_issue, upload_file, manage_redmine_wiki_page],
+    ids=lambda t: getattr(t, "__name__", str(t)),
+)
+def test_upload_docstring_does_not_recommend_file_path(tool):
+    doc = (getattr(tool, "fn", tool)).__doc__ or ""
+    discouraged = (
+        "prefer it for a file",
+        "Prefer ``file_path``",
+        "Prefer `file_path`",
+    )
+    for phrase in discouraged:
+        assert phrase not in doc, f"{tool} still recommends file_path: {phrase!r}"

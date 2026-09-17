@@ -593,20 +593,25 @@ async def upload_file(
 
     **Content sources — provide exactly ONE of:**
 
+    - ``content_base64``: raw file bytes encoded as base64. **The way
+      to send a file that lives on the caller's own machine**, and the
+      first thing to reach for when the file came from the caller: it
+      needs no configuration and works however this server is deployed.
     - ``source_url``: an HTTP(S) URL the server will download from.
-      Use this when chaining with another MCP tool that returns a
-      download URL (e.g., a Google Drive MCP's
-      ``get_drive_file_download_url``), when the file is hosted on the
-      public web, or when the file is served by another local MCP
-      server over localhost. **Prefer this over content_base64** when a
-      URL is available — no need to download-then-re-encode.
-    - ``content_base64``: raw file bytes encoded as base64. Use this
-      only when the caller already has the file content in memory.
-    - ``file_path``: a path on **this server's** filesystem, inside
-      ``ATTACHMENTS_DIR`` or a directory listed in
-      ``REDMINE_MCP_UPLOAD_FILE_ROOTS``. Where the server runs on a
-      different host than the caller, a caller-side path cannot be read
-      here, whatever the roots are set to.
+      **Prefer this over content_base64** when a URL is available — no
+      need to download-then-re-encode. Use it when chaining with
+      another MCP tool that returns a download URL (e.g., a Google
+      Drive MCP's ``get_drive_file_download_url``), when the file is
+      hosted on the public web, or when the file is served by another
+      local MCP server over localhost.
+    - ``file_path``: a path read on **this server's own** filesystem,
+      inside ``ATTACHMENTS_DIR`` or a directory listed in
+      ``REDMINE_MCP_UPLOAD_FILE_ROOTS``. It reaches the caller's own
+      files only where the server runs on the caller's machine; against
+      a server on a different host a caller-side path cannot be read,
+      whatever the roots are set to. Use it for a file that genuinely
+      lives on the server — and where the deployment is not known, send
+      ``content_base64`` rather than trying a local path first.
 
     Under the hood this performs Redmine's standard two-step upload:
     ``POST /uploads.json`` to get a token, then
