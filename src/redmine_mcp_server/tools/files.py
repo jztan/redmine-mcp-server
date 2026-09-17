@@ -397,6 +397,7 @@ def _public_base_url() -> Optional[str]:
     )
     return f"{public_scheme}://{netloc}"
 
+
 _ATTACHMENT_MAX_DOWNLOAD_BYTES_DEFAULT = 200 * 1024 * 1024  # 200 MB
 
 

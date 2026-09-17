@@ -375,11 +375,7 @@ async def receive_upload(request):
                         fh.close()
                         _upload_store.discard(upload_id)
                         return JSONResponse(
-                            {
-                                "error": (
-                                    f"Upload exceeds the {max_bytes}-byte limit."
-                                )
-                            },
+                            {"error": f"Upload exceeds the {max_bytes}-byte limit."},
                             status_code=413,
                         )
                     digest.update(chunk)
@@ -394,11 +390,7 @@ async def receive_upload(request):
                         fh.close()
                         _upload_store.discard(upload_id)
                         return JSONResponse(
-                            {
-                                "error": (
-                                    f"Upload exceeds the {max_bytes}-byte limit."
-                                )
-                            },
+                            {"error": f"Upload exceeds the {max_bytes}-byte limit."},
                             status_code=413,
                         )
                     digest.update(chunk)
