@@ -1098,8 +1098,10 @@ Creates a new issue in the specified project. Blocked when `REDMINE_MCP_READ_ONL
   - Exactly ONE source key:
     - `content_base64` (string): Raw file bytes encoded as base64. `filename` is required when using this source.
     - `source_url` (string): HTTP(S) URL the server fetches. Filename is derived from the URL or `Content-Disposition` if omitted.
+    - `upload_id` (string): A file staged with `create_upload_ticket`. **The way to send a file that lives on the caller's own machine** — the caller POSTs the bytes to the ticket's `upload_url` in one request, so they go from disk to the server directly and are never written into a tool argument. Filename defaults to the one the ticket was created with.
     - `file_path` (string): Absolute path to a file already on the server. Must be inside `ATTACHMENTS_DIR` or a directory listed in `REDMINE_MCP_UPLOAD_FILE_ROOTS`. Filename is derived from the path if omitted. The path is resolved on the server's own filesystem. Where the server runs on the caller's machine that includes the caller's own files, and this source costs no tokens; over HTTP the two are different hosts, and no value of `REDMINE_MCP_UPLOAD_FILE_ROOTS` can bridge the gap — such a file travels as `content_base64` or `source_url`, neither of which needs roots configured.
   - `filename` (string, optional): Name the attachment will have in Redmine. Required for `content_base64`; derived for other sources when omitted.
+  - `sha256` (string, optional) / `size_bytes` (integer, optional): what the caller meant to send. Checked after the content is resolved and before anything reaches Redmine; a mismatch refuses the whole call. Worth passing with `content_base64`, whose payload is written out by the model and can arrive mangled.
   - `content_type` (string, optional): MIME type override (e.g. `"application/pdf"`).
   - `description` (string, optional): Human-readable description for the attachment.
 
@@ -1193,8 +1195,10 @@ Updates an existing issue with the provided fields. Blocked when `REDMINE_MCP_RE
   - Exactly ONE source key:
     - `content_base64` (string): Raw file bytes encoded as base64. `filename` is required when using this source.
     - `source_url` (string): HTTP(S) URL the server fetches. Filename is derived from the URL or `Content-Disposition` if omitted.
+    - `upload_id` (string): A file staged with `create_upload_ticket`. **The way to send a file that lives on the caller's own machine** — the caller POSTs the bytes to the ticket's `upload_url` in one request, so they go from disk to the server directly and are never written into a tool argument. Filename defaults to the one the ticket was created with.
     - `file_path` (string): Absolute path to a file already on the server. Must be inside `ATTACHMENTS_DIR` or a directory listed in `REDMINE_MCP_UPLOAD_FILE_ROOTS`. Filename is derived from the path if omitted. The path is resolved on the server's own filesystem. Where the server runs on the caller's machine that includes the caller's own files, and this source costs no tokens; over HTTP the two are different hosts, and no value of `REDMINE_MCP_UPLOAD_FILE_ROOTS` can bridge the gap — such a file travels as `content_base64` or `source_url`, neither of which needs roots configured.
   - `filename` (string, optional): Name the attachment will have in Redmine. Required for `content_base64`; derived for other sources when omitted.
+  - `sha256` (string, optional) / `size_bytes` (integer, optional): what the caller meant to send. Checked after the content is resolved and before anything reaches Redmine; a mismatch refuses the whole call. Worth passing with `content_base64`, whose payload is written out by the model and can arrive mangled.
   - `content_type` (string, optional): MIME type override (e.g. `"application/pdf"`).
   - `description` (string, optional): Human-readable description for the attachment.
 
@@ -2102,10 +2106,12 @@ List, get, create, update, delete, or rename a Redmine wiki page. Replaces `list
 - `redirect_existing_links` (boolean, optional): When `true` (default), `rename` creates a `WikiRedirect` from the old title to the new title
 - `uploads` (list, optional): Files to attach to the page on `create` and `update`. Requires the `edit_wiki_pages` permission on the project. Maximum 10 items. Each item is an object with:
   - Exactly ONE source key:
-    - `file_path` (string): Absolute path to a file already on the server. Must be inside `ATTACHMENTS_DIR` or a directory listed in `REDMINE_MCP_UPLOAD_FILE_ROOTS`. Filename is derived from the path if omitted. The path is resolved on the server's own filesystem. Where the server runs on the caller's machine that includes the caller's own files, and this source costs no tokens; over HTTP the two are different hosts, and no value of `REDMINE_MCP_UPLOAD_FILE_ROOTS` can bridge the gap — such a file travels as `content_base64` or `source_url`, neither of which needs roots configured.
+    - `upload_id` (string): A file staged with `create_upload_ticket`. **The way to send a file that lives on the caller's own machine** — the caller POSTs the bytes to the ticket's `upload_url` in one request, so they go from disk to the server directly and are never written into a tool argument. Filename defaults to the one the ticket was created with.
     - `source_url` (string): HTTP(S) URL the server fetches. Filename is derived from the URL or `Content-Disposition` if omitted.
-    - `content_base64` (string): Raw file bytes encoded as base64. `filename` is required when using this source. Prefer `file_path` or `source_url` where possible: base64 sends the entire file through the model, while a path or URL costs a few tokens regardless of file size.
+    - `content_base64` (string): Raw file bytes encoded as base64. `filename` is required when using this source. For small content the caller **generated**, not for a file on disk: the payload is written out character by character by the model and a long one does not reliably survive that. Pass `sha256` with it.
+    - `file_path` (string): Absolute path to a file already on the server. Must be inside `ATTACHMENTS_DIR` or a directory listed in `REDMINE_MCP_UPLOAD_FILE_ROOTS`. Filename is derived from the path if omitted. The path is resolved on the server's own filesystem, so it reaches the caller's own files only where the server runs on the caller's machine; against a server on a different host it cannot, whatever the roots are set to.
   - `filename` (string, optional): Name the attachment will have in Redmine. Required for `content_base64`; derived for other sources when omitted.
+  - `sha256` (string, optional) / `size_bytes` (integer, optional): what the caller meant to send. Checked after the content is resolved and before anything reaches Redmine; a mismatch refuses the whole call. Worth passing with `content_base64`, whose payload is written out by the model and can arrive mangled.
   - `content_type` (string, optional): MIME type override (e.g. `"application/xml"`).
   - `description` (string, optional): Human-readable description for the attachment.
 
@@ -2380,16 +2386,46 @@ List all files uploaded to a Redmine project's **Files** section (not issue atta
 
 ---
 
+### `create_upload_ticket`
+
+Reserve a slot for a file on the caller's own machine and return the URL to send it to. This is the only upload route whose bytes do not pass through the model: there is no way to pipe a file into a tool argument, so a `content_base64` payload is written out character by character and a long one does not reliably survive that.
+
+**Parameters:**
+- `filename` (string, optional): Name the attachment should get. Overridable later, but passing it now keeps the staged file recognisable.
+- `content_type` (string, optional): MIME type recorded with the staged file.
+
+**Returns:** `{upload_url, upload_id, ticket, filename, expires_at, max_bytes}`, or `{"error": ...}` when the server has no publicly reachable address (neither `PUBLIC_HOST` nor a routable `SERVER_HOST`) and therefore no URL to hand out.
+
+**Flow:**
+1. Call `create_upload_ticket`.
+2. Send the file to `upload_url` in one HTTP request, ticket in the `X-Upload-Ticket` header, the raw file as the body. The response carries `upload_id`, `size` and `sha256`. Multipart is deliberately not accepted — Starlette's `request.form()` buffers the whole body before its size can be checked, so the cap would not hold.
+3. Name that `upload_id` as the content source — in `uploads` on `create_redmine_issue`, `update_redmine_issue` or `manage_redmine_wiki_page`, or on `upload_file`.
+
+```bash
+curl -sS -H "X-Upload-Ticket: $TICKET" --data-binary @mockup.png "$UPLOAD_URL"
+```
+
+**Notes:**
+- The ticket is good for **one** upload, for `REDMINE_MCP_UPLOAD_TICKET_MINUTES` (default 15), up to `max_bytes` (`REDMINE_MCP_UPLOAD_MAX_BYTES`, default 50 MiB). It authorises nothing else, which is why it can be handed to a model at all.
+- A reused or expired ticket is refused with 410; an unknown id or a wrong ticket with 404, deliberately indistinguishable so the endpoint cannot be used to probe which ids exist.
+- The staged file is swept on the same expiry as a downloaded attachment, so a failed attach can be retried without sending the file again.
+- `POST /uploads/{upload_id}` is guarded by the ticket, not by the MCP session's auth — the same capability model `/files/{file_id}` uses for downloads.
+
+---
+
 ### `upload_file`
 
 Upload a file to a Redmine project's Files section. Uses Redmine's standard two-step upload (`POST /uploads.json` for the token, then `POST /projects/{id}/files.json`).
 
 This is the project's document store, not an attachment on something. To attach a file to an issue, pass `uploads` to `create_redmine_issue` or `update_redmine_issue`; to a wiki page, pass `uploads` to `manage_redmine_wiki_page`. All three take the same content sources as this tool.
 
-**Provide exactly ONE of `source_url`, `content_base64`, or `file_path`:**
-- `source_url` (string) — the server downloads from an HTTP(S) URL. Use this when chaining from another MCP tool that returns a download URL (e.g., Google Drive MCP's `get_drive_file_download_url`), or when the file is served by a local MCP on `localhost`. **Preferred when a URL is available** — no need for the caller to download and re-encode.
-- `content_base64` (string) — raw file bytes encoded as base64. Use this only when the caller already has the bytes in memory.
-- `file_path` (string): a path on **this server's** filesystem, inside `ATTACHMENTS_DIR` or a directory listed in `REDMINE_MCP_UPLOAD_FILE_ROOTS`. Filename is derived from the path if `filename` is omitted. Where the server runs on the caller's machine that includes the caller's own files, and this source costs no tokens; over HTTP the two are different hosts, and no value of `REDMINE_MCP_UPLOAD_FILE_ROOTS` can bridge the gap, so such a file travels as `content_base64` or `source_url`, neither of which needs roots configured.
+**Provide exactly ONE of `upload_id`, `source_url`, `content_base64`, or `file_path`:**
+- `upload_id` (string) — a file staged with `create_upload_ticket`. **The way to send a file that lives on the caller's own machine**; the bytes never enter a tool argument.
+- `source_url` (string) — the server downloads from an HTTP(S) URL. Preferred whenever the file is already reachable at one, including chaining from another MCP tool that returns a download URL, since it spares the caller the bytes entirely.
+- `content_base64` (string) — raw file bytes encoded as base64. For content the caller **generated** and that is small: a short CSV, an SVG, a note. Not for a file on disk — the payload is written out by the model itself. Pass `sha256` with it.
+- `file_path` (string): a path read on **this server's own** filesystem, inside `ATTACHMENTS_DIR` or a directory listed in `REDMINE_MCP_UPLOAD_FILE_ROOTS`. Filename is derived from the path if `filename` is omitted. It reaches the caller's own files only where the server runs on the caller's machine; against a server on a different host a caller-side path cannot be read, whatever the roots are set to.
+
+`sha256` and `size_bytes` are optional on any source and verified after the content is resolved, before anything reaches Redmine.
 
 **Parameters:**
 - `project_id` (integer or string, required): Project identifier.

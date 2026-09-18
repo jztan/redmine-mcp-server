@@ -1718,25 +1718,35 @@ async def create_redmine_issue(
         uploads: Files to attach to the new issue. Maximum 10 items, 50 MiB
             each. Every item carries exactly one content source:
 
-            - ``file_path``: a path on **this server's** filesystem, inside
-              ``ATTACHMENTS_DIR`` or a directory listed in
-              ``REDMINE_MCP_UPLOAD_FILE_ROOTS``. The bytes never pass
-              through the caller, so prefer it for a file that is already
-              there -- which, when the server runs on the caller's own
-              machine, includes the caller's own files. Where the server is
-              a different host, a caller-side path cannot be read here,
-              whatever the roots are set to.
+            - ``upload_id``: a file already staged with
+              ``create_upload_ticket``. **The way to send a file that lives
+              on the caller's own machine.** The caller POSTs the bytes to
+              the ticket's ``upload_url`` in one request, so they travel
+              from disk to this server directly and are never written into
+              a tool argument.
             - ``source_url``: an HTTP(S) URL this server downloads from.
-              Also spares the caller the bytes, so prefer it whenever the
-              file is reachable at a URL.
-            - ``content_base64``: the file's bytes, base64-encoded. The way
-              to send a file the caller holds and the server cannot reach;
-              it needs no configuration, at the price of moving the file
-              through the conversation.
+              Preferred whenever the file is already reachable at one,
+              since it spares the caller the bytes entirely.
+            - ``content_base64``: the file's bytes, base64-encoded. For
+              content the caller **generated** and that is small -- a short
+              CSV, an SVG, a note. Not for a file on disk: there is no way
+              to pipe a file into a tool argument, so this payload is
+              written out character by character by the model, and a long
+              one does not reliably survive that. Pass ``sha256`` with it.
+            - ``file_path``: a path read on **this server's own**
+              filesystem, inside ``ATTACHMENTS_DIR`` or a directory listed
+              in ``REDMINE_MCP_UPLOAD_FILE_ROOTS``. It reaches the caller's
+              own files only where the server runs on the caller's machine;
+              against a server on a different host a caller-side path
+              cannot be read, whatever the roots are set to.
             - ``filename``: the name the attachment gets. Required with
               ``content_base64``; derived from the URL or
-              ``Content-Disposition`` for ``source_url`` and from the
-              basename for ``file_path``.
+              ``Content-Disposition`` for ``source_url``, from the basename
+              for ``file_path``, and from the ticket for ``upload_id``.
+            - ``sha256`` and ``size_bytes``: optional integrity claims,
+              checked after the content is resolved and before anything
+              reaches Redmine. Worth passing with ``content_base64``, where
+              a mangled payload would otherwise be attached silently.
             - ``content_type`` and ``description``: optional, per item.
     """
 
@@ -1956,25 +1966,35 @@ async def update_redmine_issue(
         uploads: Files to attach to the issue. Maximum 10 items, 50 MiB
             each. Every item carries exactly one content source:
 
-            - ``file_path``: a path on **this server's** filesystem, inside
-              ``ATTACHMENTS_DIR`` or a directory listed in
-              ``REDMINE_MCP_UPLOAD_FILE_ROOTS``. The bytes never pass
-              through the caller, so prefer it for a file that is already
-              there -- which, when the server runs on the caller's own
-              machine, includes the caller's own files. Where the server is
-              a different host, a caller-side path cannot be read here,
-              whatever the roots are set to.
+            - ``upload_id``: a file already staged with
+              ``create_upload_ticket``. **The way to send a file that lives
+              on the caller's own machine.** The caller POSTs the bytes to
+              the ticket's ``upload_url`` in one request, so they travel
+              from disk to this server directly and are never written into
+              a tool argument.
             - ``source_url``: an HTTP(S) URL this server downloads from.
-              Also spares the caller the bytes, so prefer it whenever the
-              file is reachable at a URL.
-            - ``content_base64``: the file's bytes, base64-encoded. The way
-              to send a file the caller holds and the server cannot reach;
-              it needs no configuration, at the price of moving the file
-              through the conversation.
+              Preferred whenever the file is already reachable at one,
+              since it spares the caller the bytes entirely.
+            - ``content_base64``: the file's bytes, base64-encoded. For
+              content the caller **generated** and that is small -- a short
+              CSV, an SVG, a note. Not for a file on disk: there is no way
+              to pipe a file into a tool argument, so this payload is
+              written out character by character by the model, and a long
+              one does not reliably survive that. Pass ``sha256`` with it.
+            - ``file_path``: a path read on **this server's own**
+              filesystem, inside ``ATTACHMENTS_DIR`` or a directory listed
+              in ``REDMINE_MCP_UPLOAD_FILE_ROOTS``. It reaches the caller's
+              own files only where the server runs on the caller's machine;
+              against a server on a different host a caller-side path
+              cannot be read, whatever the roots are set to.
             - ``filename``: the name the attachment gets. Required with
               ``content_base64``; derived from the URL or
-              ``Content-Disposition`` for ``source_url`` and from the
-              basename for ``file_path``.
+              ``Content-Disposition`` for ``source_url``, from the basename
+              for ``file_path``, and from the ticket for ``upload_id``.
+            - ``sha256`` and ``size_bytes``: optional integrity claims,
+              checked after the content is resolved and before anything
+              reaches Redmine. Worth passing with ``content_base64``, where
+              a mangled payload would otherwise be attached silently.
             - ``content_type`` and ``description``: optional, per item.
 
             An attachment referenced from the description or a note as

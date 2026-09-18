@@ -36,6 +36,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   package can add tools for a Redmine plugin written in house. The hook is
   provisional: [docs/extensions.md](docs/extensions.md)
   ([#294](https://github.com/jztan/redmine-mcp-server/issues/294)).
+- `create_upload_ticket` and `POST /uploads/{upload_id}`: a file on the
+  caller's own machine can now reach `uploads` without its bytes passing
+  through the model. The tool reserves a slot and returns `upload_url`,
+  `ticket` and `expires_at`; the caller sends the file in one HTTP request
+  with the ticket in `X-Upload-Ticket` and the raw file as the body
+  (multipart is deliberately refused: the whole body would be buffered
+  before its size could be checked); the resulting `upload_id` is accepted
+  as a fourth content source by `create_redmine_issue`,
+  `update_redmine_issue`, `manage_redmine_wiki_page` and `upload_file`.
+  There is no way to pipe a file into a tool argument, so a `content_base64`
+  payload is written out character by character by the model -- observed
+  losing 32 characters out of 4312 in a repetitive stretch, which attached a
+  PNG missing its `IEND` chunk and reported success. The ticket is
+  single-use, minutes long and bounded by `REDMINE_MCP_UPLOAD_MAX_BYTES`; it
+  authorises nothing else, which is why it can be handed to a model at all.
+  Staged files live in the same UUID directories under `ATTACHMENTS_DIR` as
+  downloaded attachments and are swept by the same cleanup manager, so a
+  failed attach can be retried without sending the file again. The route is
+  guarded by the ticket rather than by the MCP session's auth, matching how
+  `/files/{file_id}` already guards downloads ([#305](https://github.com/jztan/redmine-mcp-server/issues/305)).
+- Optional `sha256` and `size_bytes` per `uploads` item, verified once the
+  content is resolved and refused before anything reaches Redmine. A
+  checksum is 64 characters and survives being copied where a
+  multi-kilobyte payload does not, so a mangled `content_base64` upload now
+  fails loudly instead of attaching a corrupt file. Accepted on every
+  source, and on `upload_file` directly ([#305](https://github.com/jztan/redmine-mcp-server/issues/305)).
+- `REDMINE_MCP_CONTENT_BASE64_MAX_BYTES` caps that one source specifically.
+  Unset, the ordinary upload limit applies and nothing that works today
+  stops working; operators who would rather refuse a large base64 payload
+  than risk a silent corruption can lower it, and the error names the
+  upload route ([#305](https://github.com/jztan/redmine-mcp-server/issues/305)).
+
+### Changed
+- The `uploads` sources are documented caller-first: `upload_id`, then
+  `source_url`, then `content_base64`, then `file_path`. The old order led
+  with `file_path` and recommended it for "a file that is already there",
+  with the qualifier -- that it is only the caller's files when the server
+  runs on the caller's machine -- trailing a condition no model can check.
+  Against the usual remote deployment that reads as the first thing to try,
+  and it can never work. `content_base64` is now described as what it is
+  good for, content the caller generated and that is small, rather than as
+  the way to send "a file the caller holds"
+  ([#303](https://github.com/jztan/redmine-mcp-server/issues/303),
+  [#305](https://github.com/jztan/redmine-mcp-server/issues/305)).
 
 ### Fixed
 - `legacy-per-user` mode no longer runs a wrong or reset

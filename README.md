@@ -25,7 +25,7 @@ A Model Context Protocol (MCP) server that connects AI assistants to Redmine. It
 
 ## Features
 
-- **49 MCP tools on a stock Redmine, 62 with the RedmineUP and DMSF plugins** (plus 1 operator tool gated by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`): Issues, projects, news, time tracking, wiki, Gantt, file operations, membership management, products, contacts and deals (CRM), DMSF documents, and more
+- **50 MCP tools on a stock Redmine, 63 with the RedmineUP and DMSF plugins** (plus 1 operator tool gated by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`): Issues, projects, news, time tracking, wiki, Gantt, file operations, membership management, products, contacts and deals (CRM), DMSF documents, and more
 - **Interactive Kanban Board**: `show_triage_board` renders a live, drag-and-drop issue board right in the chat via the MCP Apps extension
 - **Flexible Authentication**: API key, username/password, OAuth2 per-user tokens, or a browser login with each user's own API key on Redmines without OAuth
 - **Prompt Injection Protection**: User-controlled content wrapped in boundary tags for safe LLM consumption
@@ -640,9 +640,9 @@ Tools for a Redmine plugin written in house can be added from a separate package
 
 A deployment can expose a subset of these with `REDMINE_MCP_ALLOW_TOOLS`; everything else disappears from `tools/list` and is refused by `call_tool`.
 
-This MCP server provides 49 core tools for interacting with Redmine, plus 13 plugin tools that are listed only when the matching `REDMINE_*_ENABLED` flag is set (62 in total), and 1 operator tool exposed by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true` (maximum of 63). A client connected to a vanilla Redmine sees just the 49 core tools. For full documentation of every tool, see the [Tool Reference](./docs/tool-reference.md).
+This MCP server provides 50 core tools for interacting with Redmine, plus 13 plugin tools that are listed only when the matching `REDMINE_*_ENABLED` flag is set (63 in total), and 1 operator tool exposed by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true` (maximum of 64). A client connected to a vanilla Redmine sees just the 50 core tools. For full documentation of every tool, see the [Tool Reference](./docs/tool-reference.md).
 
-**Core tools (49, always available):** Project Management (9), Issue Operations (13), Time Tracking (4), Discovery / Enumeration (7), Search & Wiki (2), News (4), File Operations (4), Gantt (1), Interactive Apps (4), Meta (1).
+**Core tools (50, always available):** Project Management (9), Issue Operations (13), Time Tracking (4), Discovery / Enumeration (7), Search & Wiki (2), News (4), File Operations (5), Gantt (1), Interactive Apps (4), Meta (1).
 
 **Plugin-gated tools (13, listed only when their flag is set):** Checklists (3), Products (1), Contacts / CRM (2), Deals / CRM (3), shared CRM notes and saved queries (2, either CRM flag), deal product lines (1, deals plus products), Documents / DMSF (1). Each requires the matching Redmine plugin installed **and** its env flag set; with the flag off the tools are not registered on the MCP surface.
 
@@ -651,7 +651,7 @@ This MCP server provides 49 core tools for interacting with Redmine, plus 13 plu
 <details>
 <summary><strong>Full tool list with descriptions</strong></summary>
 
-### Core tools (49, always available)
+### Core tools (50, always available)
 
 These tools require only a Redmine instance and credentials, with no extra plugins or feature flags.
 
@@ -707,9 +707,10 @@ These tools require only a Redmine instance and credentials, with no extra plugi
   - [`manage_redmine_news`](docs/tool-reference.md#manage_redmine_news) - Create or update a news item (Redmine 4.1+)
   - [`delete_redmine_news`](docs/tool-reference.md#delete_redmine_news) - Delete a news item, with confirmation (Redmine 4.1+)
 
-- **File Operations** (4 tools)
+- **File Operations** (5 tools)
   - [`list_files`](docs/tool-reference.md#list_files) - List files uploaded to a project's Files section
-  - [`upload_file`](docs/tool-reference.md#upload_file) - Upload a new file to a project (from base64 content, a URL, or a server-side `file_path`), optionally tied to a version
+  - [`create_upload_ticket`](docs/tool-reference.md#create_upload_ticket) - Reserve an upload slot and return a single-use URL, so a file on the caller's machine reaches the server without its bytes passing through the model
+  - [`upload_file`](docs/tool-reference.md#upload_file) - Upload a new file to a project (from a staged `upload_id`, a URL, base64 content, or a server-side `file_path`), optionally tied to a version
   - [`delete_file`](docs/tool-reference.md#delete_file) - Delete a file from a project
   - [`get_redmine_attachment`](docs/tool-reference.md#get_redmine_attachment) - Download an attachment (works in both HTTP and stdio mode)
 

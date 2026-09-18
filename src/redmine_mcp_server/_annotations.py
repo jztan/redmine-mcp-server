@@ -111,6 +111,7 @@ TOOL_KINDS: Dict[str, ToolKind] = {
     # ATTACHMENTS_DIR that the background cleanup manager expires.
     "get_redmine_attachment": ToolKind.READ,
     "list_files": ToolKind.READ,
+    "create_upload_ticket": ToolKind.WRITE_ADDITIVE,
     "upload_file": ToolKind.WRITE_ADDITIVE,
     "delete_file": ToolKind.WRITE_DESTRUCTIVE_IDEMPOTENT,
     # Empty scope set like list_redmine_roles, but it deletes files. This is

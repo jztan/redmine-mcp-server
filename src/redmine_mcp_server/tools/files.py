@@ -4,6 +4,7 @@ delete, attachment download URL generation, and cleanup of expired files.
 
 import base64
 import binascii
+import hashlib
 import io
 import json
 import os
@@ -32,6 +33,7 @@ from .._serialization import (
     wrap_insecure_content,
 )
 from .._ssrf import _download_file_url
+from .. import _upload_store
 from ..file_manager import AttachmentFileManager
 from ..server import mcp
 
@@ -47,6 +49,22 @@ _FILE_UPLOAD_MAX_SIZE_BYTES = 50 * 1024 * 1024
 
 # Cap the number of attachments accepted in a single issue create/update call.
 _MAX_UPLOADS_PER_CALL = 10
+
+
+def _base64_max_bytes() -> int:
+    """Ceiling for a ``content_base64`` payload specifically.
+
+    Base64 is the one source whose bytes are written out by the model rather
+    than moved by a machine, and a long payload does not reliably survive that
+    (#305). Operators who would rather refuse a large one than risk a silently
+    corrupted attachment can lower this; unset, it is the ordinary upload cap,
+    so nothing that works today stops working.
+    """
+    try:
+        value = int(os.getenv("REDMINE_MCP_CONTENT_BASE64_MAX_BYTES", ""))
+    except ValueError:
+        return _FILE_UPLOAD_MAX_SIZE_BYTES
+    return value if value > 0 else _FILE_UPLOAD_MAX_SIZE_BYTES
 
 
 def _resolve_local_file(
@@ -116,30 +134,39 @@ def _resolve_local_file(
 async def _resolve_upload_content(
     *,
     filename: Optional[str],
-    content_base64: Optional[str],
-    source_url: Optional[str],
-    file_path: Optional[str],
+    content_base64: Optional[str] = None,
+    source_url: Optional[str] = None,
+    file_path: Optional[str] = None,
+    upload_id: Optional[str] = None,
 ) -> tuple[bytes, Optional[str], Optional[Dict[str, Any]]]:
-    """Resolve exactly one of content_base64 / source_url / file_path to bytes.
+    """Resolve exactly one of the four content sources to bytes.
 
     Returns ``(content_bytes, final_filename, None)`` or
     ``(b"", None, {"error": ...})``. Filename rules: content_base64 requires an
     explicit ``filename``; source_url falls back to the fetch-inferred filename;
-    file_path falls back to the basename. An explicit ``filename`` always wins.
+    file_path falls back to the basename; upload_id falls back to the name the
+    ticket was created with. An explicit ``filename`` always wins.
     """
-    sources = [s for s in (content_base64, source_url, file_path) if s]
+    sources = [s for s in (content_base64, source_url, file_path, upload_id) if s]
     if len(sources) != 1:
         return (
             b"",
             None,
             {
                 "error": (
-                    "Provide exactly ONE of content_base64, source_url, or file_path."
+                    "Provide exactly ONE of upload_id, content_base64, "
+                    "source_url, or file_path."
                 )
             },
         )
 
     explicit = filename.strip() if filename and filename.strip() else None
+
+    if upload_id:
+        content_bytes, staged_name, staged_err = _upload_store.read_staged(upload_id)
+        if staged_err is not None:
+            return b"", None, staged_err
+        return content_bytes, explicit or staged_name, None
 
     if source_url:
         content_bytes, inferred, fetch_err = await _download_file_url(source_url)
@@ -177,20 +204,71 @@ async def _resolve_upload_content(
         )
     if len(content_bytes) == 0:
         return b"", None, {"error": "Decoded file content is empty."}
-    if len(content_bytes) > _FILE_UPLOAD_MAX_SIZE_BYTES:
-        size_mb = len(content_bytes) / (1024 * 1024)
-        limit_mb = _FILE_UPLOAD_MAX_SIZE_BYTES / (1024 * 1024)
+    cap = _base64_max_bytes()
+    if len(content_bytes) > cap:
         return (
             b"",
             None,
             {
                 "error": (
-                    f"File too large: {size_mb:.1f} MiB exceeds the "
-                    f"{limit_mb:.0f} MiB upload limit."
+                    f"File too large for content_base64: "
+                    f"{len(content_bytes)} bytes exceeds the {cap}-byte "
+                    "limit for this source. Send it with create_upload_ticket "
+                    "and the upload_url instead -- the bytes go straight from "
+                    "disk to this server, so nothing has to be encoded into "
+                    "the conversation."
                 )
             },
         )
     return content_bytes, explicit, None
+
+
+def _verify_integrity(
+    content_bytes: bytes,
+    expected_sha256: Optional[str],
+    expected_size: Optional[Any],
+) -> Optional[Dict[str, Any]]:
+    """Check a caller's claim about what it meant to send.
+
+    Only ``content_base64`` really needs this -- its bytes are written out by
+    the model, and a long payload does not reliably survive that (#305). A
+    checksum is 64 characters and survives what 4000 do not, so a corrupted
+    payload becomes an error instead of a silently broken attachment. The
+    check is offered on every source because a caller that can compute it may
+    as well have it verified.
+
+    Returns ``None`` when the claim holds or none was made.
+    """
+    if expected_size is not None:
+        try:
+            wanted = int(expected_size)
+        except (TypeError, ValueError):
+            return {"error": f"size_bytes is not a number: {expected_size!r}"}
+        if wanted != len(content_bytes):
+            return {
+                "error": (
+                    f"size_bytes mismatch: declared {wanted}, received "
+                    f"{len(content_bytes)}. The content did not arrive intact."
+                )
+            }
+
+    if expected_sha256:
+        if not isinstance(expected_sha256, str):
+            return {"error": "sha256 must be a hex string."}
+        wanted = expected_sha256.strip().lower()
+        actual = hashlib.sha256(content_bytes).hexdigest()
+        if wanted != actual:
+            return {
+                "error": (
+                    f"sha256 mismatch: declared {wanted}, received {actual}. "
+                    "The content did not arrive intact -- for a base64 payload "
+                    "this usually means it was truncated or garbled on the way "
+                    "in. Send the file with create_upload_ticket instead, which "
+                    "does not route the bytes through the conversation."
+                )
+            }
+
+    return None
 
 
 async def _build_upload_descriptors(
@@ -228,9 +306,15 @@ async def _build_upload_descriptors(
             content_base64=entry.get("content_base64"),
             source_url=entry.get("source_url"),
             file_path=entry.get("file_path"),
+            upload_id=entry.get("upload_id"),
         )
         if resolve_error is not None:
             return [], {"error": f"uploads[{index}]: {resolve_error['error']}"}
+        integrity_error = _verify_integrity(
+            content_bytes, entry.get("sha256"), entry.get("size_bytes")
+        )
+        if integrity_error is not None:
+            return [], {"error": f"uploads[{index}]: {integrity_error['error']}"}
         try:
 
             def _upload() -> str:
@@ -278,6 +362,41 @@ def _file_to_dict(file_obj: Any) -> Dict[str, Any]:
 
 
 _LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0"}
+
+
+def _public_base_url() -> Optional[str]:
+    """This server's externally reachable origin, or ``None`` when it has none.
+
+    An explicit ``PUBLIC_HOST`` always wins -- it is the operator saying the
+    server is reachable there, as in a Docker port-forward where localhost
+    really does work. Otherwise ``SERVER_HOST`` promotes only when it names
+    something other than a bind address (it is commonly ``0.0.0.0``, which is
+    not reachable as a URL). ``None`` means stdio-style deployment: there is
+    no URL to hand anyone, so callers fall back to a local file path.
+
+    Scheme: explicit ``PUBLIC_SCHEME`` wins; otherwise port 443 implies a
+    TLS-terminating proxy upstream (#252). Default ports are omitted so the
+    URL survives that proxy.
+    """
+    public_host_env = os.environ.get("PUBLIC_HOST")
+    server_host_env = os.environ.get("SERVER_HOST")
+    if public_host_env is not None:
+        public_host = public_host_env
+    elif server_host_env and server_host_env not in _LOOPBACK_HOSTS:
+        public_host = server_host_env
+    else:
+        return None
+
+    public_port = os.getenv("PUBLIC_PORT", os.getenv("SERVER_PORT", "8000"))
+    public_scheme = os.getenv("PUBLIC_SCHEME") or (
+        "https" if public_port == "443" else "http"
+    )
+    default_port = {"http": "80", "https": "443"}.get(public_scheme)
+    netloc = (
+        public_host if public_port == default_port else f"{public_host}:{public_port}"
+    )
+    return f"{public_scheme}://{netloc}"
+
 
 _ATTACHMENT_MAX_DOWNLOAD_BYTES_DEFAULT = 200 * 1024 * 1024  # 200 MB
 
@@ -444,32 +563,8 @@ async def get_redmine_attachment(
             #   names a non-loopback host (SERVER_HOST is the bind address
             #   and is commonly "0.0.0.0", which is not reachable as a URL).
             # - Otherwise, fall back to stdio/file mode.
-            public_host_env = os.environ.get("PUBLIC_HOST")
-            server_host_env = os.environ.get("SERVER_HOST")
-            if public_host_env is not None:
-                public_host = public_host_env
-                use_file_mode = False
-            elif server_host_env and server_host_env not in _LOOPBACK_HOSTS:
-                public_host = server_host_env
-                use_file_mode = False
-            else:
-                public_host = "localhost"
-                use_file_mode = True
-
-            public_port = os.getenv("PUBLIC_PORT", os.getenv("SERVER_PORT", "8000"))
-
-            # Scheme: explicit PUBLIC_SCHEME wins; otherwise port 443 implies
-            # a TLS-terminating proxy upstream (#252). Default ports are
-            # omitted so the URL survives that proxy.
-            public_scheme = os.getenv("PUBLIC_SCHEME") or (
-                "https" if public_port == "443" else "http"
-            )
-            default_port = {"http": "80", "https": "443"}.get(public_scheme)
-            netloc = (
-                public_host
-                if public_port == default_port
-                else f"{public_host}:{public_port}"
-            )
+            public_base = _public_base_url()
+            use_file_mode = public_base is None
 
             expires_str = expires_at.isoformat()
             # filename is structured metadata (used for paths, URLs,
@@ -489,7 +584,7 @@ async def get_redmine_attachment(
                 }
 
             return {
-                "uri": f"{public_scheme}://{netloc}/files/{file_id}",
+                "uri": f"{public_base}/files/{file_id}",
                 "uri_type": "http",
                 "filename": safe_filename,
                 "content_type": content_type,
@@ -574,12 +669,87 @@ def list_files(
 
 
 @mcp.tool()
+async def create_upload_ticket(
+    filename: Optional[str] = None,
+    content_type: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Reserve a slot for a file on the caller's own machine, and say where to send it.
+
+    Use this whenever the file to attach lives on the caller's side. It is the
+    only route that does not put the file's bytes through the conversation:
+    there is no way to pipe a file into a tool argument, so a
+    ``content_base64`` payload is written out character by character by the
+    model, and a payload of a few thousand characters does not reliably
+    survive that (#305).
+
+    Three steps:
+
+    1. Call this. It answers with ``upload_url``, ``ticket`` and
+       ``expires_at``.
+    2. Send the file to ``upload_url`` in one HTTP request, with the ticket in
+       the ``X-Upload-Ticket`` header and the file as the body::
+
+           curl -sS -H "X-Upload-Ticket: TICKET" --data-binary @file.png URL
+
+       The response carries ``upload_id``, ``size`` and ``sha256``.
+       Multipart is deliberately not accepted: the whole body would be
+       buffered before its size could be checked.
+    3. Name that ``upload_id`` as the content source: in ``uploads`` on
+       ``create_redmine_issue`` / ``update_redmine_issue`` /
+       ``manage_redmine_wiki_page``, or on ``upload_file``.
+
+    The ticket is good for one upload, for a few minutes
+    (``REDMINE_MCP_UPLOAD_TICKET_MINUTES``, default 15), up to
+    ``max_bytes``. It authorises nothing else. The staged file is swept on
+    the same expiry as a downloaded attachment, so a failed attach can be
+    retried without sending the file again.
+
+    Returns:
+        ``{upload_url, upload_id, ticket, filename, expires_at, max_bytes}``,
+        or ``{"error": ...}`` when this server has no address a caller could
+        POST to -- a stdio-style deployment with neither ``PUBLIC_HOST`` nor a
+        routable ``SERVER_HOST``. There, a file the server can already read is
+        reachable through ``file_path`` instead.
+
+    Args:
+        filename: Name the attachment should get. Optional here and
+            overridable later, but passing it now keeps the staged file
+            recognisable.
+        content_type: Optional MIME type recorded with the staged file.
+    """
+    if _is_read_only_mode():
+        return dict(_READ_ONLY_ERROR)
+
+    base = _public_base_url()
+    if base is None:
+        return {
+            "error": (
+                "This server has no publicly reachable address configured "
+                "(PUBLIC_HOST, or a SERVER_HOST that is not a bind address), "
+                "so there is no upload_url to hand out. Attach the file with "
+                "file_path if the server can read it, or content_base64 if it "
+                "is small."
+            )
+        }
+
+    ticket = _upload_store.create_ticket(filename=filename, content_type=content_type)
+    await _ensure_cleanup_started()
+    return {
+        "upload_url": f"{base}/uploads/{ticket['upload_id']}",
+        **ticket,
+    }
+
+
+@mcp.tool()
 async def upload_file(
     project_id: Union[str, int],
     filename: Optional[str] = None,
+    upload_id: Optional[str] = None,
     content_base64: Optional[str] = None,
     source_url: Optional[str] = None,
     file_path: Optional[str] = None,
+    sha256: Optional[str] = None,
+    size_bytes: Optional[int] = None,
     description: Optional[str] = None,
     version_id: Optional[int] = None,
 ) -> Dict[str, Any]:
@@ -593,20 +763,35 @@ async def upload_file(
 
     **Content sources — provide exactly ONE of:**
 
+    - ``upload_id``: a file already staged with ``create_upload_ticket``.
+      **The way to send a file that lives on the caller's own machine.**
+      The caller POSTs the bytes to the ticket's ``upload_url`` in one
+      HTTP request, so they travel from disk to this server directly and
+      are never written into a tool argument.
     - ``source_url``: an HTTP(S) URL the server will download from.
-      Use this when chaining with another MCP tool that returns a
-      download URL (e.g., a Google Drive MCP's
-      ``get_drive_file_download_url``), when the file is hosted on the
-      public web, or when the file is served by another local MCP
-      server over localhost. **Prefer this over content_base64** when a
-      URL is available — no need to download-then-re-encode.
-    - ``content_base64``: raw file bytes encoded as base64. Use this
-      only when the caller already has the file content in memory.
-    - ``file_path``: a path on **this server's** filesystem, inside
-      ``ATTACHMENTS_DIR`` or a directory listed in
-      ``REDMINE_MCP_UPLOAD_FILE_ROOTS``. Where the server runs on a
-      different host than the caller, a caller-side path cannot be read
-      here, whatever the roots are set to.
+      Preferred whenever the file is already reachable at one — chaining
+      from another MCP tool that returns a download URL, a file on the
+      public web — since it spares the caller the bytes entirely.
+    - ``content_base64``: raw file bytes encoded as base64. For content
+      the caller **generated** and that is small: a short CSV, an SVG, a
+      note. Not for a file on disk. There is no way to pipe a file into
+      a tool argument, so this payload is written out character by
+      character by the model, and a long one does not reliably survive
+      that (#305). Pass ``sha256`` with it.
+    - ``file_path``: a path read on **this server's own** filesystem,
+      inside ``ATTACHMENTS_DIR`` or a directory listed in
+      ``REDMINE_MCP_UPLOAD_FILE_ROOTS``. It reaches the caller's own
+      files only where the server runs on the caller's machine; against
+      a server on a different host a caller-side path cannot be read,
+      whatever the roots are set to.
+
+    **Integrity:** ``sha256`` and ``size_bytes`` are optional on any
+    source and are checked after the content is resolved, before
+    anything is sent to Redmine. They matter most for
+    ``content_base64``: 64 characters of checksum survive being copied
+    in a way a multi-kilobyte payload does not, so a mangled upload
+    fails loudly instead of attaching a corrupt file. Take them from the
+    same shell invocation that encoded the file.
 
     Under the hood this performs Redmine's standard two-step upload:
     ``POST /uploads.json`` to get a token, then
@@ -618,13 +803,18 @@ async def upload_file(
             Required when using ``content_base64``. Optional with
             ``source_url`` — if omitted, inferred from the URL path.
             Always prefer passing an explicit filename.
+        upload_id: A file staged with ``create_upload_ticket``. Mutually
+            exclusive with the other three sources.
         content_base64: File content encoded as a base64 string. Mutually
-            exclusive with ``source_url`` and ``file_path``.
+            exclusive with the other three sources.
         source_url: HTTP(S) URL to download the file from. Mutually
-            exclusive with ``content_base64`` and ``file_path``.
+            exclusive with the other three sources.
         file_path: Path to a file on this server, inside ``ATTACHMENTS_DIR``
             or a directory listed in ``REDMINE_MCP_UPLOAD_FILE_ROOTS``.
-            Mutually exclusive with ``content_base64`` and ``source_url``.
+            Mutually exclusive with the other three sources.
+        sha256: Optional hex digest of the file. Verified after the content
+            is resolved; a mismatch refuses the upload.
+        size_bytes: Optional byte count of the file, verified the same way.
         description: Optional human-readable description.
         version_id: Optional version/release ID to attach the file to
             (use ``list_redmine_versions`` to discover valid IDs).
@@ -646,13 +836,20 @@ async def upload_file(
         ...     description="Q2 report",
         ... )
 
-        >>> # From base64 content
-        >>> import base64
-        >>> content = base64.b64encode(b"Hello world").decode("ascii")
+        >>> # From a file on the caller's own machine
+        >>> ticket = await create_upload_ticket(filename="report.pdf")
+        >>> # the caller then sends the bytes itself, in one request:
+        >>> #   curl -H "X-Upload-Ticket: TICKET" --data-binary @report.pdf URL
+        >>> await upload_file(project_id="web", upload_id=ticket["upload_id"])
+
+        >>> # From generated content, with its checksum
+        >>> import base64, hashlib
+        >>> body = "id,name".encode("utf-8")
         >>> await upload_file(
         ...     project_id="web",
-        ...     filename="hello.txt",
-        ...     content_base64=content,
+        ...     filename="people.csv",
+        ...     content_base64=base64.b64encode(body).decode("ascii"),
+        ...     sha256=hashlib.sha256(body).hexdigest(),
         ... )
     """
     if _is_read_only_mode():
@@ -663,9 +860,14 @@ async def upload_file(
         content_base64=content_base64,
         source_url=source_url,
         file_path=file_path,
+        upload_id=upload_id,
     )
     if resolve_error is not None:
         return resolve_error
+
+    integrity_error = _verify_integrity(content_bytes, sha256, size_bytes)
+    if integrity_error is not None:
+        return integrity_error
 
     def _run():
         client = _get_redmine_client()

@@ -465,18 +465,21 @@ async def manage_redmine_wiki_page(
         uploads: Files to attach, for ``create`` and ``update`` only.
             Requires the ``edit_wiki_pages`` permission on the project.
             Maximum 10 items, 50 MiB each. Each item needs exactly ONE
-            source key: ``file_path`` (a path on **this server's**
-            filesystem, inside ``ATTACHMENTS_DIR`` or a directory listed in
-            ``REDMINE_MCP_UPLOAD_FILE_ROOTS``), ``source_url`` (an HTTP(S)
-            URL the server fetches), or ``content_base64``. Prefer
-            ``file_path`` or ``source_url`` where either applies:
-            ``content_base64`` sends the whole file through the model. But
-            ``file_path`` is read where the server runs, so a file that
-            lives on the caller's machine travels as ``content_base64``
-            unless the two are the same host. Optional per item:
-            ``filename`` (required with ``content_base64``),
-            ``content_type``, ``description``. Ignored by the other
-            actions.
+            source key: ``upload_id`` (a file staged with
+            ``create_upload_ticket``), ``source_url`` (an HTTP(S) URL the
+            server fetches), ``content_base64``, or ``file_path`` (a path
+            read on **this server's own** filesystem, inside
+            ``ATTACHMENTS_DIR`` or a directory listed in
+            ``REDMINE_MCP_UPLOAD_FILE_ROOTS``). A file on the caller's own
+            machine goes through ``upload_id``: the caller POSTs it to the
+            ticket's ``upload_url``, so the bytes never pass through the
+            model. ``source_url`` is preferable where the file is already
+            at a URL. ``content_base64`` is for small content the caller
+            generated, and should carry ``sha256``, since a payload of any
+            length is written out by the model itself. Optional per item:
+            ``filename`` (required with ``content_base64``), ``sha256``,
+            ``size_bytes``, ``content_type``, ``description``. Ignored by
+            the other actions.
 
     Returns:
         ``list``: list of page metadata dicts (no body text).

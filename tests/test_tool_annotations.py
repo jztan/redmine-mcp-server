@@ -83,12 +83,12 @@ class TestAnnotationsTable:
             for name, kind in TOOL_KINDS.items()
             if name not in from_extensions
         }
-        assert len(own) == 63
+        assert len(own) == 64
         counts = {kind: 0 for kind in ToolKind}
         for kind in own.values():
             counts[kind] += 1
         assert counts[ToolKind.READ] == 36
-        assert counts[ToolKind.WRITE_ADDITIVE] == 6
+        assert counts[ToolKind.WRITE_ADDITIVE] == 7
         assert counts[ToolKind.WRITE_DESTRUCTIVE] == 16
         assert counts[ToolKind.WRITE_DESTRUCTIVE_IDEMPOTENT] == 5
 
@@ -149,6 +149,9 @@ class TestRegisteredToolAnnotations:
 # them mutate state despite looking exactly like the eight pure reads.
 _EMPTY_SCOPE_KINDS = {
     "cleanup_attachment_files": ToolKind.WRITE_DESTRUCTIVE_IDEMPOTENT,
+    # Reserves a local staging slot; touches no Redmine resource, so the
+    # scope belongs on whatever the staged file is later attached to.
+    "create_upload_ticket": ToolKind.WRITE_ADDITIVE,
     "get_current_user": ToolKind.READ,
     "get_mcp_server_info": ToolKind.READ,
     "list_redmine_issue_priorities": ToolKind.READ,

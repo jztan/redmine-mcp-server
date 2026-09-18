@@ -408,6 +408,10 @@ TOOL_SCOPES: Dict[str, ToolScopeEntry] = {
     # --- files / attachments ---
     "get_redmine_attachment": frozenset({"view_files"}),
     "list_files": frozenset({"view_files"}),
+    # Reserves a local staging slot and hands back a single-use ticket; it
+    # touches no Redmine resource. Whatever the staged file is later
+    # attached to is scoped where that attach happens.
+    "create_upload_ticket": frozenset(),
     "upload_file": frozenset({"manage_files"}),
     "delete_file": frozenset({"manage_files"}),
     # Local attachment-store maintenance; no Redmine call. Registered
