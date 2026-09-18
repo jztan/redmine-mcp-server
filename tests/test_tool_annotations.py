@@ -83,13 +83,13 @@ class TestAnnotationsTable:
             for name, kind in TOOL_KINDS.items()
             if name not in from_extensions
         }
-        assert len(own) == 64
+        assert len(own) == 65
         counts = {kind: 0 for kind in ToolKind}
         for kind in own.values():
             counts[kind] += 1
         assert counts[ToolKind.READ] == 36
         assert counts[ToolKind.WRITE_ADDITIVE] == 7
-        assert counts[ToolKind.WRITE_DESTRUCTIVE] == 16
+        assert counts[ToolKind.WRITE_DESTRUCTIVE] == 17
         assert counts[ToolKind.WRITE_DESTRUCTIVE_IDEMPOTENT] == 5
 
 

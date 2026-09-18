@@ -25,6 +25,7 @@ from .._serialization import (
 )
 from .._validation import (
     _is_positive_int,
+    _is_valid_project_id,
     _reject_non_scalar_filter_values,
     _reject_reserved_query_keys,
     _reject_unregistered_filter_keys,
@@ -864,6 +865,284 @@ async def manage_redmine_version(
         "create": _create_redmine_version_action,
         "update": _update_redmine_version_action,
         "delete": _delete_redmine_version_action,
+    }
+
+
+_INVALID_PROJECT_ID_ERROR = (
+    "project_id must be a non-empty string identifier or positive integer."
+)
+
+# Redmine's writable project attributes, from Project's safe_attributes
+# blocks (app/models/project.rb, verified at tag 6.1.1). Two names in those
+# blocks are deliberately absent: `identifier`, which Redmine freezes once a
+# project exists (Project#identifier_frozen?) and python-redmine lists in
+# Project._update_readonly, and `custom_field_values`, which is the HTML
+# form's shape for what the REST API takes as `custom_fields`.
+#
+# Two of these are gated on a permission of their own rather than on
+# edit_project: `is_public` needs select_project_publicity and
+# `enabled_module_names` needs select_project_modules. Redmine drops an
+# attribute the caller may not set instead of refusing the request, so both
+# are advertised as scopes (oauth_scopes.WRITE_SCOPES) while neither is
+# required by TOOL_SCOPES -- a token without them still edits everything
+# else. The returned project is read back from Redmine, so it always shows
+# what was actually stored.
+_PROJECT_WRITABLE_FIELDS = (
+    "name",
+    "description",
+    "homepage",
+    "is_public",
+    "parent_id",
+    "inherit_members",
+    "enabled_module_names",
+    "tracker_ids",
+    "issue_custom_field_ids",
+    "default_assigned_to_id",
+    "default_version_id",
+    "default_issue_query_id",
+    "custom_fields",
+)
+
+
+def _project_to_dict(project: Any) -> Dict[str, Any]:
+    """Convert a python-redmine Project object to a serializable dict.
+
+    Carries what ``app/views/projects/show.api.rsb`` renders. ``None`` marks
+    a key the payload did not carry, so an absent value is never returned as
+    a real one -- the same rule ``list_redmine_projects`` follows, and it
+    matters most for ``is_public`` and ``inherit_members``, where a
+    fabricated ``False`` reads as a deliberate setting.
+    """
+    return {
+        "id": _payload_attr(project, "id"),
+        "name": _payload_attr(project, "name"),
+        "identifier": _payload_attr(project, "identifier"),
+        "description": wrap_insecure_content(_payload_attr(project, "description")),
+        "homepage": _payload_attr(project, "homepage"),
+        "parent": _named_ref(_payload_attr(project, "parent")),
+        "status": _payload_attr(project, "status"),
+        "is_public": _payload_attr(project, "is_public"),
+        "inherit_members": _payload_attr(project, "inherit_members"),
+        "default_version": _named_ref(_payload_attr(project, "default_version")),
+        "default_assignee": _named_ref(_payload_attr(project, "default_assignee")),
+        "custom_fields": _custom_fields_to_list(project),
+        "created_on": _safe_isoformat(_payload_attr(project, "created_on")),
+        "updated_on": _safe_isoformat(_payload_attr(project, "updated_on")),
+    }
+
+
+def _project_write_fields(candidates: Dict[str, Any]) -> Dict[str, Any]:
+    """Keep the fields the caller actually set.
+
+    Only ``None`` means "not supplied". ``is_public=False`` and
+    ``description=""`` are real edits and must survive.
+    """
+    return {
+        key: candidates[key]
+        for key in _PROJECT_WRITABLE_FIELDS
+        if candidates.get(key) is not None
+    }
+
+
+@offloaded
+def _create_redmine_project_action(
+    name: Optional[str] = None,
+    identifier: Optional[str] = None,
+    **fields: Any,
+) -> Dict[str, Any]:
+    if name is None:
+        return {"error": "name is required for action 'create'"}
+    if identifier is None:
+        return {"error": "identifier is required for action 'create'"}
+    if not isinstance(identifier, str) or not _is_valid_project_id(identifier):
+        return {
+            "error": (
+                "identifier must match Redmine's project identifier rule: "
+                "a lowercase letter or digit, then lowercase letters, "
+                "digits, hyphens or underscores, up to 100 characters."
+            )
+        }
+
+    attributes = _project_write_fields({**fields, "name": name})
+    attributes["identifier"] = identifier
+
+    try:
+        project = _get_redmine_client().project.create(**attributes)
+        return _project_to_dict(project)
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"creating project '{identifier}'",
+            {"resource_type": "project", "resource_id": identifier},
+        )
+
+
+@offloaded
+def _update_redmine_project_action(
+    project_id: Optional[Union[str, int]] = None,
+    identifier: Optional[str] = None,
+    **fields: Any,
+) -> Dict[str, Any]:
+    if project_id is None:
+        return {"error": "project_id is required for action 'update'"}
+    if not _is_valid_project_id(project_id):
+        return {"error": _INVALID_PROJECT_ID_ERROR}
+    if identifier is not None:
+        return {
+            "error": (
+                "identifier cannot be changed after a project is created -- "
+                "Redmine freezes it (Project#identifier_frozen?) and would "
+                "discard the new value while reporting success. Omit it for "
+                "action 'update'."
+            )
+        }
+
+    update_fields = _project_write_fields(fields)
+    if not update_fields:
+        return {"error": "At least one field must be provided to update"}
+
+    try:
+        client = _get_redmine_client()
+        client.project.update(project_id, **update_fields)
+        # PUT /projects/{id}.json answers 204 No Content (render_api_ok), so
+        # the stored project has to be read back to be returned -- which is
+        # also what shows the caller whether a permission-gated field took.
+        return _project_to_dict(client.project.get(project_id))
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"updating project {project_id}",
+            {"resource_type": "project", "resource_id": project_id},
+        )
+
+
+_PROJECT_STATUS_GERUND = {"close": "closing", "reopen": "reopening"}
+
+
+def _set_project_status(
+    project_id: Optional[Union[str, int]], action: str
+) -> Dict[str, Any]:
+    """Run the close/reopen pair, which differ only in the endpoint called."""
+    if project_id is None:
+        return {"error": f"project_id is required for action '{action}'"}
+    if not _is_valid_project_id(project_id):
+        return {"error": _INVALID_PROJECT_ID_ERROR}
+
+    try:
+        client = _get_redmine_client()
+        # PUT /projects/{id}/{action}.json, also a 204, so read back for the
+        # new status rather than reporting one this code assumed.
+        getattr(client.project, action)(project_id)
+        return _project_to_dict(client.project.get(project_id))
+    except Exception as e:
+        return _handle_redmine_error(
+            e,
+            f"{_PROJECT_STATUS_GERUND[action]} project {project_id}",
+            {"resource_type": "project", "resource_id": project_id},
+        )
+
+
+@offloaded
+def _close_redmine_project_action(
+    project_id: Optional[Union[str, int]] = None, **_: Any
+) -> Dict[str, Any]:
+    return _set_project_status(project_id, "close")
+
+
+@offloaded
+def _reopen_redmine_project_action(
+    project_id: Optional[Union[str, int]] = None, **_: Any
+) -> Dict[str, Any]:
+    return _set_project_status(project_id, "reopen")
+
+
+@mcp.tool()
+@action_dispatch(
+    {
+        "create": ActionMode.WRITE,
+        "update": ActionMode.WRITE,
+        "close": ActionMode.WRITE,
+        "reopen": ActionMode.WRITE,
+    }
+)
+async def manage_redmine_project(
+    action: Literal["create", "update", "close", "reopen"],
+    project_id: Optional[Union[str, int]] = None,
+    name: Optional[str] = None,
+    identifier: Optional[str] = None,
+    description: Optional[str] = None,
+    homepage: Optional[str] = None,
+    is_public: Optional[bool] = None,
+    parent_id: Optional[int] = None,
+    inherit_members: Optional[bool] = None,
+    enabled_module_names: Optional[List[str]] = None,
+    tracker_ids: Optional[List[int]] = None,
+    issue_custom_field_ids: Optional[List[int]] = None,
+    default_assigned_to_id: Optional[int] = None,
+    default_version_id: Optional[int] = None,
+    default_issue_query_id: Optional[int] = None,
+    custom_fields: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """Create a Redmine project, edit its settings, or close and reopen it.
+
+    Use this tool to set up a new project, rename one, change its
+    description, homepage, parent, visibility, enabled modules, trackers or
+    custom field values, or to close a finished project and reopen it later.
+    A closed project stays visible and readable but accepts no edits.
+
+    This tool writes the project record itself. Its contents have their own
+    tools: ``manage_redmine_version`` for versions,
+    ``manage_project_member`` for memberships, ``manage_issue_category``
+    for issue categories.
+
+    Archiving is not offered. Redmine gates ``archive`` and ``unarchive``
+    on administrator rights rather than on a project permission, so no
+    non-admin token can reach them. Deleting is not offered either: it
+    destroys every issue, wiki page and file in the project and in each of
+    its subprojects.
+
+    Args:
+        action: Operation to perform. One of: ``create``, ``update``,
+            ``close``, ``reopen``.
+        project_id: Project ID or string identifier. Required for
+            ``update``, ``close`` and ``reopen``.
+        name: Project name. Required for ``action="create"``.
+        identifier: URL identifier, e.g. ``lunar-programme``. Required for
+            ``action="create"`` and rejected for ``action="update"``,
+            because Redmine freezes it once the project exists.
+        description: Project description text.
+        homepage: Project homepage URL.
+        is_public: Whether the project is visible to non-members. Needs the
+            ``select_project_publicity`` permission; without it Redmine
+            ignores this field rather than refusing the call.
+        parent_id: Numeric ID of the parent project. Creating a subproject
+            needs ``add_subprojects`` on the parent.
+        inherit_members: Whether the project inherits the parent's members.
+        enabled_module_names: Modules to enable, e.g.
+            ``["issue_tracking", "wiki"]``. Replaces the current set. Needs
+            the ``select_project_modules`` permission; without it Redmine
+            ignores this field rather than refusing the call.
+        tracker_ids: Numeric tracker IDs to enable. Replaces the current set.
+        issue_custom_field_ids: Numeric issue custom field IDs to enable.
+            Replaces the current set.
+        default_assigned_to_id: Numeric user ID used as the default assignee.
+        default_version_id: Numeric version ID used as the default version.
+        default_issue_query_id: Numeric saved-query ID used as the default
+            issue query. Redmine accepts it but does not render it back, so
+            it is absent from this tool's response.
+        custom_fields: Custom field values, as Redmine's own list of
+            ``{"id": ..., "value": ...}`` entries.
+
+    Returns:
+        The full project dictionary, read back from Redmine after the write,
+        so permission-gated fields show what was actually stored.
+        On error: ``{"error": "..."}``.
+    """
+    return {
+        "create": _create_redmine_project_action,
+        "update": _update_redmine_project_action,
+        "close": _close_redmine_project_action,
+        "reopen": _reopen_redmine_project_action,
     }
 
 

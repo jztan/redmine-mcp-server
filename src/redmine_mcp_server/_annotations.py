@@ -65,6 +65,10 @@ TOOL_KINDS: Dict[str, ToolKind] = {
     "manage_project_member": ToolKind.WRITE_DESTRUCTIVE,  # add/update/remove
     "list_redmine_versions": ToolKind.READ,
     "manage_redmine_version": ToolKind.WRITE_DESTRUCTIVE,  # create/update/delete
+    # create/update/close/reopen. Destructive because update overwrites
+    # existing settings and close takes a project out of service; no action
+    # deletes anything.
+    "manage_redmine_project": ToolKind.WRITE_DESTRUCTIVE,
     # --- issues ---
     "list_redmine_issues": ToolKind.READ,
     "get_redmine_issue": ToolKind.READ,

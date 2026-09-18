@@ -202,6 +202,7 @@ When enabled, the following tools return an error instead of executing
 - `manage_issue_note` — all actions
 - `manage_time_entry` — all actions
 - `manage_redmine_version` — all actions (`create`, `update`, `delete`)
+- `manage_redmine_project` — all actions (`create`, `update`, `close`, `reopen`)
 - `add_deal_product` (also requires `REDMINE_DEALS_ENABLED=true` and `REDMINE_PRODUCTS_ENABLED=true`)
 
 **Partially blocked (read actions still work):**
@@ -642,6 +643,88 @@ manage_redmine_version(
     action="delete",
     version_id=42,
 )
+```
+
+---
+
+### `manage_redmine_project`
+
+Create a Redmine project, edit its settings, or close and reopen it. This tool
+writes the project record itself; its contents have their own tools
+(`manage_redmine_version`, `manage_project_member`, `manage_issue_category`).
+
+Archiving is not offered: Redmine gates `archive` and `unarchive` on
+administrator rights rather than on a project permission, and this server never
+advertises the `admin` scope. Deleting is not offered either — it destroys every
+issue, wiki page and file in the project and in each of its subprojects.
+
+**Parameters:**
+- `action` (string, required): Operation to perform. Allowed values: `create`, `update`, `close`, `reopen`
+- `project_id` (integer or string): Project ID or identifier. Required for `action="update"`, `action="close"` and `action="reopen"`
+- `name` (string): Project name. Required for `action="create"`
+- `identifier` (string): URL identifier, e.g. `lunar-programme`. Required for `action="create"`; rejected for `action="update"`, because Redmine freezes the identifier once the project exists
+- `description` (string, optional): Project description
+- `homepage` (string, optional): Project homepage URL
+- `is_public` (boolean, optional): Whether the project is visible to non-members. Needs the `select_project_publicity` permission; without it Redmine ignores the field rather than refusing the call
+- `parent_id` (integer, optional): Parent project ID. Creating a subproject needs `add_subprojects` on the parent
+- `inherit_members` (boolean, optional): Whether the project inherits the parent's members
+- `enabled_module_names` (array of strings, optional): Modules to enable, e.g. `["issue_tracking", "wiki"]`. Replaces the current set. Needs the `select_project_modules` permission; without it Redmine ignores the field rather than refusing the call
+- `tracker_ids` (array of integers, optional): Tracker IDs to enable. Replaces the current set
+- `issue_custom_field_ids` (array of integers, optional): Issue custom field IDs to enable. Replaces the current set
+- `default_assigned_to_id` (integer, optional): Default assignee user ID
+- `default_version_id` (integer, optional): Default version ID
+- `default_issue_query_id` (integer, optional): Default issue query ID. Redmine accepts it but does not render it back, so it is absent from the response
+- `custom_fields` (array of objects, optional): Custom field values, as Redmine's own `{"id": ..., "value": ...}` entries
+
+**Returns:** the full project dictionary, read back from Redmine after the
+write — `PUT /projects/{id}.json` answers `204 No Content`, and reading back is
+also what shows the caller whether a permission-gated field took effect.
+
+```json
+{
+  "id": 42,
+  "name": "Lunar Programme",
+  "identifier": "lunar-programme",
+  "description": "<insecure-content-...>...</insecure-content-...>",
+  "homepage": "https://example.com/apollo",
+  "parent": {"id": 7, "name": "Space"},
+  "status": 1,
+  "is_public": false,
+  "inherit_members": true,
+  "default_version": {"id": 5, "name": "v1.0"},
+  "default_assignee": {"id": 4, "name": "Jo Doe"},
+  "custom_fields": [{"id": 11, "name": "Cost centre", "value": "CC-900"}],
+  "created_on": "2026-01-01T10:00:00",
+  "updated_on": "2026-04-01T14:30:00"
+}
+```
+
+Error: `{"error": "..."}`
+
+**Examples:**
+
+```python
+# Create a subproject with two modules enabled
+manage_redmine_project(
+    action="create",
+    name="Lunar Programme",
+    identifier="lunar-programme",
+    parent_id=7,
+    description="Apollo follow-on",
+    enabled_module_names=["issue_tracking", "wiki"],
+)
+
+# Rename a project and point it at a new homepage
+manage_redmine_project(
+    action="update",
+    project_id="lunar-programme",
+    name="Lunar Programme (2026)",
+    homepage="https://example.com/apollo",
+)
+
+# Close a finished project, and reopen it later
+manage_redmine_project(action="close", project_id="lunar-programme")
+manage_redmine_project(action="reopen", project_id="lunar-programme")
 ```
 
 ---
