@@ -680,6 +680,25 @@ issue, wiki page and file in the project and in each of its subprojects.
 write — `PUT /projects/{id}.json` answers `204 No Content`, and reading back is
 also what shows the caller whether a permission-gated field took effect.
 
+The read-back asks for `include=enabled_modules,trackers,issue_custom_fields`,
+so every collection the tool can write comes back in the response. That is what
+makes a silently dropped `enabled_module_names` visible: Redmine discards it
+for a caller without `select_project_modules` and still answers `204`, and
+`enabled_modules` in the response is the only way to tell. All three includes
+are gated on `include_in_api_response?` alone, so they need no extra scope.
+
+Modules come back as names, matching the `enabled_module_names` parameter that
+writes them; trackers and issue custom fields come back as `{id, name}`,
+because `tracker_ids` and `issue_custom_field_ids` write them by id.
+
+On `create` the read-back is best-effort. The project exists by then, so a
+failure to read it is never reported as an error — that would invite a retry
+and a duplicate project. Redmine adds the creator as a member only when a
+default role is configured, so a non-admin creator on an instance without one
+can create a project and then be refused `projects#show`. In that case the
+response is the creation body, which carries every field except the three
+include arrays, and the server logs a warning.
+
 ```json
 {
   "id": 42,
@@ -694,6 +713,9 @@ also what shows the caller whether a permission-gated field took effect.
   "default_version": {"id": 5, "name": "v1.0"},
   "default_assignee": {"id": 4, "name": "Jo Doe"},
   "custom_fields": [{"id": 11, "name": "Cost centre", "value": "CC-900"}],
+  "enabled_modules": ["issue_tracking", "wiki"],
+  "trackers": [{"id": 1, "name": "Bug"}, {"id": 2, "name": "Feature"}],
+  "issue_custom_fields": [{"id": 11, "name": "Cost centre"}],
   "created_on": "2026-01-01T10:00:00",
   "updated_on": "2026-04-01T14:30:00"
 }

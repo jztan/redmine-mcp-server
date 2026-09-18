@@ -16,7 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `issue_custom_field_ids`, `default_assigned_to_id`, `default_version_id`,
   `default_issue_query_id`, `custom_fields`); `identifier` is create-only,
   because Redmine freezes it once the project exists. Every write reads the
-  project back, since Redmine answers these endpoints with `204 No Content`.
+  project back with `include=enabled_modules,trackers,issue_custom_fields`,
+  since Redmine answers these endpoints with `204 No Content` and those arrays
+  are the only way to see that a field the caller lacks the permission for was
+  dropped rather than applied.
   Archiving is not offered (Redmine gates it on administrator rights, and
   `admin` is never advertised) and neither is deletion, which would cascade to
   every issue, wiki page and file in the project and its subprojects

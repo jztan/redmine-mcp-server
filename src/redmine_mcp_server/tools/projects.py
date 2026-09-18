@@ -2,6 +2,7 @@
 roles, modules, status summaries.
 """
 
+import logging
 from datetime import datetime, timedelta
 from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 
@@ -17,6 +18,7 @@ from .._offload import in_thread, offloaded
 from .._serialization import (
     _custom_fields_to_list,
     _enabled_module_names,
+    _included_list,
     _named_ref,
     _pagination_info,
     _payload_attr,
@@ -31,6 +33,8 @@ from .._validation import (
     _reject_unregistered_filter_keys,
 )
 from ..server import mcp
+
+logger = logging.getLogger("redmine_mcp_server")
 
 
 def _version_to_dict(version: Any) -> Dict[str, Any]:
@@ -904,14 +908,48 @@ _PROJECT_WRITABLE_FIELDS = (
 )
 
 
+# The include= arrays that make a write's outcome readable. Every settable
+# collection is in here: `enabled_module_names` and `tracker_ids` and
+# `issue_custom_field_ids` all write a set that only these can show back.
+# `enabled_modules` matters most -- Redmine drops it from a write by a caller
+# without select_project_modules and still answers 204, so without the include
+# a silently discarded write is indistinguishable from an applied one.
+#
+# All three are gated on include_in_api_response? alone in 6.1.1's
+# ProjectsHelper#render_api_includes, with no permission check, so requesting
+# them costs no scope.
+_PROJECT_INCLUDES = ["enabled_modules", "trackers", "issue_custom_fields"]
+
+
+def _read_project_back(client: Any, project_id: Union[str, int]) -> Any:
+    """Re-read a project with the includes that show what a write stored."""
+    return client.project.get(project_id, include=_PROJECT_INCLUDES)
+
+
+def _included_names(project: Any, key: str) -> List[str]:
+    """Names from an ``include=`` array, read from the payload.
+
+    Not ``_enabled_module_names``, which reads through the attribute: every
+    name in :data:`_PROJECT_INCLUDES` is in python-redmine's
+    ``Project._includes``, so ``getattr`` fires a second request instead of
+    reporting the key absent. See ``_included_list``.
+    """
+    return [
+        str(ref["name"])
+        for ref in (_named_ref(item) for item in _included_list(project, key))
+        if ref and ref.get("name")
+    ]
+
+
 def _project_to_dict(project: Any) -> Dict[str, Any]:
     """Convert a python-redmine Project object to a serializable dict.
 
-    Carries what ``app/views/projects/show.api.rsb`` renders. ``None`` marks
-    a key the payload did not carry, so an absent value is never returned as
-    a real one -- the same rule ``list_redmine_projects`` follows, and it
-    matters most for ``is_public`` and ``inherit_members``, where a
-    fabricated ``False`` reads as a deliberate setting.
+    Carries what ``app/views/projects/show.api.rsb`` renders, including the
+    three :data:`_PROJECT_INCLUDES` arrays when the read asked for them.
+    ``None`` marks a key the payload did not carry, so an absent value is
+    never returned as a real one -- the same rule ``list_redmine_projects``
+    follows, and it matters most for ``is_public`` and ``inherit_members``,
+    where a fabricated ``False`` reads as a deliberate setting.
     """
     return {
         "id": _payload_attr(project, "id"),
@@ -926,6 +964,15 @@ def _project_to_dict(project: Any) -> Dict[str, Any]:
         "default_version": _named_ref(_payload_attr(project, "default_version")),
         "default_assignee": _named_ref(_payload_attr(project, "default_assignee")),
         "custom_fields": _custom_fields_to_list(project),
+        # Modules as names, matching the enabled_module_names parameter that
+        # writes them and get_project_modules' shape. Trackers and issue
+        # custom fields as {id, name} refs, because tracker_ids and
+        # issue_custom_field_ids write them by id.
+        "enabled_modules": _included_names(project, "enabled_modules"),
+        "trackers": [_named_ref(t) for t in _included_list(project, "trackers")],
+        "issue_custom_fields": [
+            _named_ref(cf) for cf in _included_list(project, "issue_custom_fields")
+        ],
         "created_on": _safe_isoformat(_payload_attr(project, "created_on")),
         "updated_on": _safe_isoformat(_payload_attr(project, "updated_on")),
     }
@@ -967,14 +1014,35 @@ def _create_redmine_project_action(
     attributes["identifier"] = identifier
 
     try:
-        project = _get_redmine_client().project.create(**attributes)
-        return _project_to_dict(project)
+        client = _get_redmine_client()
+        created = client.project.create(**attributes)
     except Exception as e:
         return _handle_redmine_error(
             e,
             f"creating project '{identifier}'",
             {"resource_type": "project", "resource_id": identifier},
         )
+
+    # The POST renders show.api.rsb, but carries no include= params, so the
+    # created resource has none of the three arrays. Read it back for the same
+    # shape every other action returns.
+    #
+    # Deliberately outside the try above, and never fatal: the project exists
+    # by this point, so answering with an error would invite a retry and a
+    # duplicate -- the failure mode of #146. Redmine adds the creator as a
+    # member only when a default role is configured
+    # (Project#add_default_member), so a non-admin creator on an instance
+    # without one can create a project and then be refused projects#show. The
+    # POST's own body is the honest fallback: everything but the includes.
+    try:
+        return _project_to_dict(_read_project_back(client, created.id))
+    except Exception:
+        logger.warning(
+            "project %s was created but could not be read back; returning the "
+            "creation response, which carries no include= arrays",
+            getattr(created, "id", identifier),
+        )
+        return _project_to_dict(created)
 
 
 @offloaded
@@ -1007,7 +1075,7 @@ def _update_redmine_project_action(
         # PUT /projects/{id}.json answers 204 No Content (render_api_ok), so
         # the stored project has to be read back to be returned -- which is
         # also what shows the caller whether a permission-gated field took.
-        return _project_to_dict(client.project.get(project_id))
+        return _project_to_dict(_read_project_back(client, project_id))
     except Exception as e:
         return _handle_redmine_error(
             e,
@@ -1033,7 +1101,7 @@ def _set_project_status(
         # PUT /projects/{id}/{action}.json, also a 204, so read back for the
         # new status rather than reporting one this code assumed.
         getattr(client.project, action)(project_id)
-        return _project_to_dict(client.project.get(project_id))
+        return _project_to_dict(_read_project_back(client, project_id))
     except Exception as e:
         return _handle_redmine_error(
             e,

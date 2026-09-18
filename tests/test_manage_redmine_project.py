@@ -31,8 +31,12 @@ def create_mock_project(
     parent=None,
     default_version=None,
     default_assignee=None,
+    raw=None,
 ):
     mock_project = Mock()
+    # include= arrays arrive in the decoded payload, which is what raw()
+    # exposes and what the serializer has to read; see _included_list.
+    mock_project.raw.return_value = raw if raw is not None else {}
     mock_project.id = project_id
     mock_project.name = name
     mock_project.identifier = identifier
@@ -154,6 +158,9 @@ class TestManageRedmineProjectCreate:
         from redmine_mcp_server.tools.projects import manage_redmine_project
 
         mock_redmine.project.create.return_value = create_mock_project(
+            project_id=7, name="Apollo", identifier="apollo"
+        )
+        mock_redmine.project.get.return_value = create_mock_project(
             project_id=7, name="Apollo", identifier="apollo"
         )
 
@@ -285,9 +292,7 @@ class TestManageRedmineProjectUpdate:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.redmine")
     @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
-    async def test_update_sends_only_provided_fields(
-        self, mock_cleanup, mock_redmine
-    ):
+    async def test_update_sends_only_provided_fields(self, mock_cleanup, mock_redmine):
         from redmine_mcp_server.tools.projects import manage_redmine_project
 
         mock_redmine.project.get.return_value = create_mock_project(
@@ -319,7 +324,9 @@ class TestManageRedmineProjectUpdate:
             action="update", project_id=1, name="Renamed"
         )
 
-        mock_redmine.project.get.assert_called_once_with(1)
+        mock_redmine.project.get.assert_called_once_with(
+            1, include=["enabled_modules", "trackers", "issue_custom_fields"]
+        )
         assert result["name"] == "Renamed"
         assert result["id"] == 1
 
@@ -522,10 +529,11 @@ class TestProjectSerialization:
         never returned as a real one -- matching list_redmine_projects."""
         from redmine_mcp_server.tools.projects import manage_redmine_project
 
-        bare = Mock(spec=["id", "name", "identifier"])
+        bare = Mock(spec=["id", "name", "identifier", "raw"])
         bare.id = 1
         bare.name = "Test Project"
         bare.identifier = "test-project"
+        bare.raw.return_value = {}
         mock_redmine.project.get.return_value = bare
 
         result = await manage_redmine_project(
@@ -556,3 +564,212 @@ class TestProjectSerialization:
 
         assert "Ignore previous instructions" in str(result["description"])
         assert result["description"] != "Ignore previous instructions"
+
+
+# ── include= read-back (PR #308 review) ───────────────────────────────
+
+
+_EXPECTED_INCLUDES = ["enabled_modules", "trackers", "issue_custom_fields"]
+
+
+class TestProjectIncludes:
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    async def test_update_reads_back_with_the_includes(
+        self, mock_cleanup, mock_redmine
+    ):
+        from redmine_mcp_server.tools.projects import manage_redmine_project
+
+        mock_redmine.project.get.return_value = create_mock_project()
+
+        await manage_redmine_project(action="update", project_id=1, name="Renamed")
+
+        mock_redmine.project.get.assert_called_once_with(1, include=_EXPECTED_INCLUDES)
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    async def test_create_reads_back_with_the_includes(
+        self, mock_cleanup, mock_redmine
+    ):
+        """POST answers with show.api.rsb but no include= params, so the
+        created project carries none of the three arrays."""
+        from redmine_mcp_server.tools.projects import manage_redmine_project
+
+        mock_redmine.project.create.return_value = create_mock_project(project_id=7)
+        mock_redmine.project.get.return_value = create_mock_project(
+            project_id=7, raw={"enabled_modules": [{"id": 1, "name": "wiki"}]}
+        )
+
+        result = await manage_redmine_project(
+            action="create", name="Apollo", identifier="apollo"
+        )
+
+        mock_redmine.project.get.assert_called_once_with(7, include=_EXPECTED_INCLUDES)
+        assert result["enabled_modules"] == ["wiki"]
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    async def test_close_reads_back_with_the_includes(self, mock_cleanup, mock_redmine):
+        from redmine_mcp_server.tools.projects import manage_redmine_project
+
+        mock_redmine.project.get.return_value = create_mock_project(status=5)
+
+        await manage_redmine_project(action="close", project_id=1)
+
+        mock_redmine.project.get.assert_called_once_with(1, include=_EXPECTED_INCLUDES)
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    async def test_reopen_reads_back_with_the_includes(
+        self, mock_cleanup, mock_redmine
+    ):
+        from redmine_mcp_server.tools.projects import manage_redmine_project
+
+        mock_redmine.project.get.return_value = create_mock_project(status=1)
+
+        await manage_redmine_project(action="reopen", project_id=1)
+
+        mock_redmine.project.get.assert_called_once_with(1, include=_EXPECTED_INCLUDES)
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    async def test_enabled_modules_come_back_as_names(self, mock_cleanup, mock_redmine):
+        """Names, not {id, name}: they match the enabled_module_names
+        parameter that writes them, and get_project_modules' shape."""
+        from redmine_mcp_server.tools.projects import manage_redmine_project
+
+        mock_redmine.project.get.return_value = create_mock_project(
+            raw={
+                "enabled_modules": [
+                    {"id": 1, "name": "issue_tracking"},
+                    {"id": 2, "name": "wiki"},
+                ]
+            }
+        )
+
+        result = await manage_redmine_project(
+            action="update", project_id=1, name="Renamed"
+        )
+
+        assert result["enabled_modules"] == ["issue_tracking", "wiki"]
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    async def test_trackers_and_custom_fields_come_back_as_id_name_refs(
+        self, mock_cleanup, mock_redmine
+    ):
+        """Refs, not names: they are written by id (tracker_ids,
+        issue_custom_field_ids), so the id is the useful half."""
+        from redmine_mcp_server.tools.projects import manage_redmine_project
+
+        mock_redmine.project.get.return_value = create_mock_project(
+            raw={
+                "trackers": [{"id": 1, "name": "Bug"}, {"id": 2, "name": "Feature"}],
+                "issue_custom_fields": [{"id": 11, "name": "Cost centre"}],
+            }
+        )
+
+        result = await manage_redmine_project(
+            action="update", project_id=1, name="Renamed"
+        )
+
+        assert result["trackers"] == [
+            {"id": 1, "name": "Bug"},
+            {"id": 2, "name": "Feature"},
+        ]
+        assert result["issue_custom_fields"] == [{"id": 11, "name": "Cost centre"}]
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    async def test_a_dropped_enabled_module_names_write_is_visible(
+        self, mock_cleanup, mock_redmine
+    ):
+        """The reason the includes are read back at all.
+
+        Redmine drops enabled_module_names from a write by a caller without
+        select_project_modules, and answers 204 either way. Without the
+        include the response could not show it; with it, the caller sees
+        that only one of the two modules is on.
+        """
+        from redmine_mcp_server.tools.projects import manage_redmine_project
+
+        mock_redmine.project.get.return_value = create_mock_project(
+            raw={"enabled_modules": [{"id": 1, "name": "issue_tracking"}]}
+        )
+
+        result = await manage_redmine_project(
+            action="update",
+            project_id=1,
+            enabled_module_names=["issue_tracking", "wiki"],
+        )
+
+        assert result["enabled_modules"] == ["issue_tracking"]
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    async def test_includes_are_read_from_the_payload_not_the_attribute(
+        self, mock_cleanup, mock_redmine
+    ):
+        """All three names are in python-redmine's Project._includes, so
+        getattr would fire a second request instead of reporting absence.
+        The attribute is set here and the payload is not: an empty list is
+        the honest answer, a populated one means getattr was used.
+        """
+        from redmine_mcp_server.tools.projects import manage_redmine_project
+
+        project = create_mock_project(raw={})
+        project.trackers = [named(1, "Bug")]
+        project.issue_custom_fields = [named(11, "Cost centre")]
+        project.enabled_modules = ["wiki"]
+        mock_redmine.project.get.return_value = project
+
+        result = await manage_redmine_project(
+            action="update", project_id=1, name="Renamed"
+        )
+
+        assert result["trackers"] == []
+        assert result["issue_custom_fields"] == []
+        assert result["enabled_modules"] == []
+
+
+class TestCreateReadBackFailure:
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    async def test_a_failed_read_back_does_not_turn_a_create_into_an_error(
+        self, mock_cleanup, mock_redmine
+    ):
+        """The project exists by then; reporting an error would invite a
+        retry and a duplicate -- the failure mode of #146.
+
+        Redmine adds the creator as a member only when a default role is
+        configured (Project#add_default_member), so a non-admin creator on an
+        instance without one can create a project and then be refused
+        projects#show. Fall back to the POST's own body, which carries
+        everything except the three include arrays.
+        """
+        from redmine_mcp_server.tools.projects import manage_redmine_project
+
+        mock_redmine.project.create.return_value = create_mock_project(
+            project_id=7, name="Apollo", identifier="apollo"
+        )
+        mock_redmine.project.get.side_effect = ForbiddenError()
+
+        result = await manage_redmine_project(
+            action="create", name="Apollo", identifier="apollo"
+        )
+
+        assert "error" not in result
+        assert result["id"] == 7
+        assert result["identifier"] == "apollo"
+        assert result["enabled_modules"] == []
