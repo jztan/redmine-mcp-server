@@ -81,7 +81,7 @@ Tools live under `src/redmine_mcp_server/tools/`, one file per Redmine resource;
 | `tools/issues.py` | Issues, search, copy, delete, relations, watchers, notes, categories, subtasks, private notes (13 tools) |
 | `tools/time_tracking.py` | Time entries, activities, bulk import (4 tools) |
 | `tools/wiki.py` | Wiki page CRUD + rename (1 tool, 6 actions) |
-| `tools/files.py` | File upload/download/delete + attachment URLs (4 tools, plus `cleanup_attachment_files` admin-gated) |
+| `tools/files.py` | File upload/download/delete, attachment URLs, ticketed upload staging (5 tools, plus `cleanup_attachment_files` admin-gated) |
 | `tools/enumeration.py` | Trackers, statuses, priorities, users, queries (6 tools) |
 | `tools/search.py` | Global search across resources (1 tool) |
 | `tools/checklists.py` | RedmineUP Checklists plugin (3 tools, gated) |

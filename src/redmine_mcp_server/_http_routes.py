@@ -260,6 +260,13 @@ async def serve_attachment(request):
         with open(metadata_file, "r", encoding="utf-8") as f:
             metadata = json.load(f)
 
+        # A staged upload shares this directory layout but not this route's
+        # threat model: its id travels in the upload URL and so reaches proxy
+        # logs, while a downloaded attachment's id is only ever handed to the
+        # caller. Serving one here would turn a logged id into the file.
+        if metadata.get("kind") == "upload":
+            raise HTTPException(status_code=404, detail="File not found or expired")
+
         # Check expiry with proper timezone-aware datetime comparison
         expires_at_str = metadata.get("expires_at", "")
         if expires_at_str:
@@ -328,9 +335,12 @@ async def receive_upload(request):
     not reach these Starlette routes. The ticket buys exactly one upload of
     a bounded size and nothing else.
 
-    Body is the raw file: ``application/octet-stream`` (or anything else --
-    the body is read as-is), or ``multipart/form-data`` with a single
-    ``file`` part. The ticket goes in ``X-Upload-Ticket``.
+    Body is the raw file, whatever the content type says -- it is streamed
+    to disk and checked against the cap as it arrives. Multipart is
+    deliberately not accepted: Starlette's ``request.form()`` reads the
+    whole body to disk before anything can look at its size, so the cap
+    would not hold on that path. ``curl --data-binary @file`` covers it.
+    The ticket goes in ``X-Upload-Ticket``.
     """
     from starlette.responses import JSONResponse
 
@@ -353,48 +363,22 @@ async def receive_upload(request):
 
     digest = hashlib.sha256()
     size = 0
-    content_type = request.headers.get("content-type", "")
 
     try:
-        if content_type.startswith("multipart/form-data"):
-            form = await request.form()
-            part = form.get("file")
-            if part is None or not hasattr(part, "read"):
-                _upload_store.discard(upload_id)
-                return JSONResponse(
-                    {"error": "multipart body needs a single 'file' part."},
-                    status_code=400,
-                )
-            with open(temp, "wb") as fh:
-                while True:
-                    chunk = await part.read(65536)
-                    if not chunk:
-                        break
-                    size += len(chunk)
-                    if size > max_bytes:
-                        fh.close()
-                        _upload_store.discard(upload_id)
-                        return JSONResponse(
-                            {"error": f"Upload exceeds the {max_bytes}-byte limit."},
-                            status_code=413,
-                        )
-                    digest.update(chunk)
-                    fh.write(chunk)
-        else:
-            with open(temp, "wb") as fh:
-                async for chunk in request.stream():
-                    if not chunk:
-                        continue
-                    size += len(chunk)
-                    if size > max_bytes:
-                        fh.close()
-                        _upload_store.discard(upload_id)
-                        return JSONResponse(
-                            {"error": f"Upload exceeds the {max_bytes}-byte limit."},
-                            status_code=413,
-                        )
-                    digest.update(chunk)
-                    fh.write(chunk)
+        with open(temp, "wb") as fh:
+            async for chunk in request.stream():
+                if not chunk:
+                    continue
+                size += len(chunk)
+                if size > max_bytes:
+                    fh.close()
+                    _upload_store.discard(upload_id)
+                    return JSONResponse(
+                        {"error": f"Upload exceeds the {max_bytes}-byte limit."},
+                        status_code=413,
+                    )
+                digest.update(chunk)
+                fh.write(chunk)
     except OSError as exc:
         _upload_store.discard(upload_id)
         logger.warning("Staging upload %s failed: %s", upload_id, exc)

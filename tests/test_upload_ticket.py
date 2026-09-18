@@ -74,6 +74,35 @@ class TestTicketStore:
         assert ticket["filename"] == "passwd"
         assert ".." not in ticket["filename"]
 
+    def test_dotdot_filename_cannot_escape_the_attachments_dir(
+        self, attachments_dir
+    ):
+        """``os.path.basename("..")`` is ``".."`` -- a directory, not a file.
+
+        Left alone it resolves the staged path to the *parent* of
+        ATTACHMENTS_DIR, so the upload lands outside the tree the cleanup
+        manager sweeps and stays there.
+        """
+        ticket = _upload_store.create_ticket(filename="..")
+
+        assert ticket["filename"] == f"upload_{ticket['upload_id']}"
+
+        record = _upload_store._read_record(ticket["upload_id"])
+        staged = _upload_store.staged_path(record).resolve()
+        assert staged.parent == (attachments_dir / ticket["upload_id"]).resolve()
+
+    def test_dot_filename_does_not_land_on_the_directory_itself(
+        self, attachments_dir
+    ):
+        ticket = _upload_store.create_ticket(filename=".")
+
+        assert ticket["filename"] == f"upload_{ticket['upload_id']}"
+
+        record = _upload_store._read_record(ticket["upload_id"])
+        staged = _upload_store.staged_path(record).resolve()
+        assert staged != (attachments_dir / ticket["upload_id"]).resolve()
+        assert staged.parent == (attachments_dir / ticket["upload_id"]).resolve()
+
     def test_wrong_ticket_and_unknown_id_are_indistinguishable(self, attachments_dir):
         issued = _upload_store.create_ticket(filename="a.txt")
 
@@ -137,7 +166,13 @@ class TestUploadRoute:
         assert name == "blob.bin"
 
     @pytest.mark.asyncio
-    async def test_multipart_body_is_accepted(self, app, attachments_dir):
+    async def test_multipart_is_not_treated_as_a_form(self, app, attachments_dir):
+        """Starlette's form() buffers the whole body before the cap can look.
+
+        So there is no multipart branch: a multipart body is stored as the
+        raw bytes it is, and the caller gets a file it did not mean to send
+        rather than an unbounded write.
+        """
         issued = _upload_store.create_ticket(filename="note.txt")
 
         async with _client(app) as client:
@@ -150,7 +185,9 @@ class TestUploadRoute:
         assert response.status_code == 200
         staged, _, error = _upload_store.read_staged(issued["upload_id"])
         assert error is None
-        assert staged == b"hello world"
+        # The MIME envelope, not the part -- nothing unwrapped it.
+        assert staged != b"hello world"
+        assert b"hello world" in staged
 
     @pytest.mark.asyncio
     async def test_wrong_ticket_is_refused_and_stores_nothing(
@@ -227,6 +264,31 @@ class TestUploadRoute:
             )
 
         assert response.status_code == 404
+
+
+@pytest.mark.unit
+class TestStagedUploadsAreNotServed:
+    @pytest.mark.asyncio
+    async def test_files_route_refuses_a_staged_upload(self, app, attachments_dir):
+        """A staged upload must not be downloadable by its upload_id.
+
+        Both live in the same UUID directories, but the ids do not carry the
+        same weight: an upload_id travels in the upload URL and so reaches
+        proxy logs, while a downloaded attachment's id is only ever handed to
+        the caller.
+        """
+        issued = _upload_store.create_ticket(filename="secret.png")
+        async with _client(app) as client:
+            posted = await client.post(
+                f"/uploads/{issued['upload_id']}",
+                content=b"the staged bytes",
+                headers={"X-Upload-Ticket": issued["ticket"]},
+            )
+            served = await client.get(f"/files/{issued['upload_id']}")
+
+        assert posted.status_code == 200
+        assert served.status_code == 404
+        assert b"the staged bytes" not in served.content
 
 
 @pytest.mark.unit

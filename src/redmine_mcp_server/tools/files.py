@@ -691,8 +691,9 @@ async def create_upload_ticket(
 
            curl -sS -H "X-Upload-Ticket: TICKET" --data-binary @file.png URL
 
-       ``multipart/form-data`` with a single ``file`` part works too. The
-       response carries ``upload_id``, ``size`` and ``sha256``.
+       The response carries ``upload_id``, ``size`` and ``sha256``.
+       Multipart is deliberately not accepted: the whole body would be
+       buffered before its size could be checked.
     3. Name that ``upload_id`` as the content source: in ``uploads`` on
        ``create_redmine_issue`` / ``update_redmine_issue`` /
        ``manage_redmine_wiki_page``, or on ``upload_file``.

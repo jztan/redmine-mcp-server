@@ -40,7 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   caller's own machine can now reach `uploads` without its bytes passing
   through the model. The tool reserves a slot and returns `upload_url`,
   `ticket` and `expires_at`; the caller sends the file in one HTTP request
-  with the ticket in `X-Upload-Ticket`; the resulting `upload_id` is accepted
+  with the ticket in `X-Upload-Ticket` and the raw file as the body
+  (multipart is deliberately refused: the whole body would be buffered
+  before its size could be checked); the resulting `upload_id` is accepted
   as a fourth content source by `create_redmine_issue`,
   `update_redmine_issue`, `manage_redmine_wiki_page` and `upload_file`.
   There is no way to pipe a file into a tool argument, so a `content_base64`
@@ -75,9 +77,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Against the usual remote deployment that reads as the first thing to try,
   and it can never work. `content_base64` is now described as what it is
   good for, content the caller generated and that is small, rather than as
-  the way to send "a file the caller holds" ([#303](https://github.com/jztan/redmine-mcp-server/issues/303),
-  [#305](https://github.com/jztan/redmine-mcp-server/issues/305)). This overlaps with [#304](https://github.com/jztan/redmine-mcp-server/pull/304);
-  whichever merges second rebases to nothing.
+  the way to send "a file the caller holds"
+  ([#303](https://github.com/jztan/redmine-mcp-server/issues/303),
+  [#305](https://github.com/jztan/redmine-mcp-server/issues/305)).
 
 ### Fixed
 - `legacy-per-user` mode no longer runs a wrong or reset

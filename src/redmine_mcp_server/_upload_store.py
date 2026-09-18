@@ -108,9 +108,33 @@ def _is_expired(record: Dict[str, Any]) -> bool:
 
 
 def _safe_filename(filename: Optional[str], upload_id: str) -> str:
-    """Basename only, and never empty -- this becomes a path segment."""
+    """Reduce a caller's filename to something safe to use as a path segment.
+
+    A basename is not enough on its own: ``os.path.basename("..")`` is ``".."``
+    and ``os.path.basename(".")`` is ``"."``, and both name a directory rather
+    than a file. ``".."`` would resolve the staged path to the *parent* of
+    ``ATTACHMENTS_DIR``, putting the temporary file outside the tree the
+    cleanup manager sweeps; ``"."`` would land it at the top of the upload's
+    own directory. Both fall back to the generated name instead.
+    """
     candidate = os.path.basename((filename or "").strip())
-    return candidate or f"upload_{upload_id}"
+    if candidate in ("", ".", ".."):
+        return f"upload_{upload_id}"
+    return candidate
+
+
+def _staged_target(upload_id: str, name: str) -> Path:
+    """Where the staged bytes go, verified to stay inside the upload's own dir.
+
+    ``_safe_filename`` already refuses the two names that escape, so this is
+    belt and braces -- but the path is built from caller input and ends up in
+    an ``open()``, which is not the place to rely on one check.
+    """
+    uuid_dir = (_attachments_dir() / upload_id).resolve()
+    target = (uuid_dir / name).resolve()
+    if target.parent != uuid_dir:
+        target = uuid_dir / f"upload_{upload_id}"
+    return target
 
 
 def create_ticket(
@@ -137,7 +161,7 @@ def create_ticket(
             "original_filename": name,
             # AttachmentFileManager expects this key; the file is not there
             # yet, and its cleanup guards on existence.
-            "file_path": str((_attachments_dir() / upload_id / name).resolve()),
+            "file_path": str(_staged_target(upload_id, name)),
             "content_type": content_type or "application/octet-stream",
             "size": 0,
             "created_at": now.isoformat(),
