@@ -20,8 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unnarrowed. Registered keys are now passed through untouched, registered
   filter names are accepted, and a filter's companion parameters (Easy's
   `set_filter=1`) are merged only when that filter is in the call and never
-  over a value the caller set. Both read the registry per call, so a family's
-  flag decides them like it decides its tools, and a collision with Redmine's
+  over a value the caller set, and may not be a filter name themselves, since
+  one riding along unasked would narrow a query the caller never narrowed.
+  Registered attributes reach Redmine on `create_redmine_issue` as well as on
+  an update: both write paths share the step that reads an unknown name as a
+  custom field's. Both tables are read from the registry per call, so a
+  family's flag decides them like it decides its tools, and a collision with Redmine's
   own names, with another extension, or with a parameter the tool owns fails
   startup like every other registration conflict.
 

@@ -308,7 +308,10 @@ hold for them:
   attributes `update_redmine_issue` writes rather than treating as custom
   field names, and the filter names `list_redmine_issues` accepts, with the
   query parameters those filters need. Values are validated as they are for
-  any other filter.
+  any other filter, and a companion parameter may not itself be a filter
+  name, so one cannot narrow a query the caller did not narrow. Registered
+  attributes reach Redmine on `create_redmine_issue` too: both write paths
+  share the step that would otherwise read the name as a custom field's.
 
 Two of this server's guarantees are not middleware, so an extension applies
 them in its own tools exactly as the built-in ones do.

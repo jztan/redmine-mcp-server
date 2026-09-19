@@ -210,7 +210,9 @@ class ExtensionSpec:
             stripped, so an attribute named ``easy_sprint_id`` collides
             with a custom field called "Easy Sprint ID" and the value
             lands in the wrong place. Names here are passed through
-            untouched instead, and never reach label matching.
+            untouched instead, and never reach label matching. Both write
+            paths share that step, so a registered name is passed through
+            on ``create_redmine_issue`` as well as on an update.
         issue_query_filters: Filter name -> the query parameters that have
             to ride along for the server to honour it, usually ``{}``.
             ``list_redmine_issues`` refuses a filter name it does not know,
@@ -440,6 +442,11 @@ def _check_issue_seams(spec: ExtensionSpec) -> None:
     where = f"Extension family '{spec.family}'"
     update_keys = set(spec.issue_update_keys)
     filters = dict(spec.issue_query_filters)
+    # Names a companion parameter may not take: a filter narrows the query,
+    # and one sent unasked is a filter the caller did not write.
+    filter_names = set(_ISSUE_QUERY_FILTER_NAMES) | set(filters)
+    for registered in REGISTERED_EXTENSIONS:
+        filter_names |= set(registered.issue_query_filters)
 
     taken = sorted(update_keys & _STANDARD_ISSUE_UPDATE_FIELDS)
     if taken:
@@ -492,6 +499,16 @@ def _check_issue_seams(spec: ExtensionSpec) -> None:
                 f"has issue_query_filters[{name!r}] setting "
                 f"{', '.join(owned)}, which list_redmine_issues owns: they "
                 "carry the caller's paging, sorting and includes.",
+            )
+        as_filter = sorted(set(params) & filter_names)
+        if as_filter:
+            _reject(
+                where,
+                f"has issue_query_filters[{name!r}] setting "
+                f"{', '.join(as_filter)}, which is itself a filter name. A "
+                "companion parameter rides along unasked, so this would "
+                "narrow every call that uses the filter -- silently, since "
+                "the caller never wrote it.",
             )
 
 

@@ -165,8 +165,10 @@ them the key is taken for a custom field *label*, and labels are matched with
 every non-alphanumeric stripped -- so `acme_sprint_id` and a custom field named
 "Acme Sprint ID" normalize to one string, and the value is written to whichever
 the lookup found. Registered names are passed through untouched and never reach
-label matching; they also spare the update path the project custom-field lookup
-it would otherwise need to rule the name out.
+label matching; they also spare the write path the project custom-field lookup it
+would otherwise need to rule the name out. `create_redmine_issue` and
+`update_redmine_issue` share that step, so a registered name reaches Redmine on
+both.
 
 **`issue_query_filters`** are filter names `list_redmine_issues` accepts, each
 mapped to the query parameters that have to accompany it -- `{}` when it needs
@@ -205,6 +207,9 @@ serving a surface that does not match what the module declared:
 - A companion parameter that Redmine reads as the query's own filter definition
   (`fields`, `f`, `query_id`), or one `list_redmine_issues` owns (`limit`,
   `offset`, `sort`, `include`).
+- A companion parameter that is itself a filter name -- Redmine's own, the
+  spec's, or another family's. It would ride along unasked and narrow every call
+  that uses the filter, without the caller having written it.
 
 **A per-action scope map is checked against the tool's `action` parameter.** When a
 `tool_scopes` entry is a dict keyed by action, that parameter has to be annotated

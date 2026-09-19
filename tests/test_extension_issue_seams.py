@@ -20,7 +20,9 @@ decides them the same way it decides its tools.
 
 import os
 import sys
+from types import SimpleNamespace
 from typing import Any, Dict, List
+from unittest.mock import patch
 
 import pytest
 from fastmcp import Client
@@ -50,6 +52,7 @@ from redmine_mcp_server.extensions import (  # noqa: E402
 from redmine_mcp_server.oauth_scopes import TOOL_SCOPES  # noqa: E402
 from redmine_mcp_server.tools.issues import (  # noqa: E402
     _reject_issue_filters,
+    create_redmine_issue,
     list_redmine_issues,
 )
 
@@ -164,6 +167,26 @@ class TestCollisions:
         with pytest.raises(RuntimeError, match="list_redmine_issues owns"):
             registry(issue_query_filters={"acme_sprint_id": {key: 1}})
 
+    def test_a_companion_parameter_may_not_be_a_built_in_filter(self, registry):
+        """It rides along unasked, so it would narrow every call that uses
+        the filter -- and the caller never wrote it."""
+        with pytest.raises(RuntimeError, match="itself a filter name"):
+            registry(issue_query_filters={"acme_sprint_id": {"status_id": "open"}})
+
+    def test_a_companion_parameter_may_not_be_the_specs_own_filter(self, registry):
+        with pytest.raises(RuntimeError, match="itself a filter name"):
+            registry(
+                issue_query_filters={
+                    "acme_sprint_id": {"acme_mode": 1},
+                    "acme_mode": {},
+                }
+            )
+
+    def test_a_companion_parameter_may_not_be_another_familys_filter(self, registry):
+        registry(issue_query_filters={"acme_mode": {}})
+        with pytest.raises(RuntimeError, match="itself a filter name"):
+            registry(issue_query_filters={"acme_sprint_id": {"acme_mode": 1}})
+
     def test_a_rejected_spec_registers_nothing(self, registry):
         before = list(REGISTERED_EXTENSIONS)
         with pytest.raises(RuntimeError):
@@ -253,6 +276,67 @@ class TestUpdateKeys:
         }
 
 
+class TestCreatePath:
+    """The predicate is shared with the create path, so a registered
+    attribute reaches Redmine on a create as much as on an update."""
+
+    @staticmethod
+    def _issue_stub():
+        return SimpleNamespace(
+            id=42,
+            project=SimpleNamespace(id=1, name="Test"),
+            tracker=SimpleNamespace(id=1, name="Bug"),
+            status=SimpleNamespace(id=1, name="New"),
+            priority=SimpleNamespace(id=1, name="Normal"),
+            author=SimpleNamespace(id=1, name="Test User"),
+            subject="X",
+            description="",
+            created_on=None,
+            updated_on=None,
+            custom_fields=[],
+        )
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_a_registered_attribute_is_created_as_an_attribute(
+        self, mock_redmine, registry
+    ):
+        registry(issue_update_keys=("acme_sprint_id",))
+        mock_redmine.project.get.return_value = SimpleNamespace(
+            issue_custom_fields=[SimpleNamespace(id=7, name="Acme Sprint ID")]
+        )
+        mock_redmine.issue.create.return_value = self._issue_stub()
+
+        result = await create_redmine_issue(
+            project_id=1, subject="X", fields={"acme_sprint_id": 12}
+        )
+
+        assert "error" not in result, result
+        assert mock_redmine.issue.create.call_args.kwargs["acme_sprint_id"] == 12
+        assert "custom_fields" not in mock_redmine.issue.create.call_args.kwargs
+        # Nothing to rule out, so the project's custom fields are not fetched.
+        mock_redmine.project.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_without_the_registration_the_custom_field_wins(self, mock_redmine):
+        """The same collision the update path has, on create: the label
+        "Acme Sprint ID" normalizes to the attribute's own name."""
+        mock_redmine.project.get.return_value = SimpleNamespace(
+            issue_custom_fields=[SimpleNamespace(id=7, name="Acme Sprint ID")]
+        )
+        mock_redmine.issue.create.return_value = self._issue_stub()
+
+        result = await create_redmine_issue(
+            project_id=1, subject="X", fields={"acme_sprint_id": 12}
+        )
+
+        assert "error" not in result, result
+        kwargs = mock_redmine.issue.create.call_args.kwargs
+        assert "acme_sprint_id" not in kwargs
+        assert kwargs["custom_fields"] == [{"id": 7, "value": 12}]
+
+
 class TestQueryFilters:
     def test_an_unregistered_filter_is_still_refused(self):
         assert _reject_issue_filters({"acme_sprint_id": 5})
@@ -289,25 +373,6 @@ class TestQueryFilters:
 
         assert not isinstance(result, dict) or "error" not in result, result
         assert "set_filter" not in sent[0]
-
-    @pytest.mark.asyncio
-    async def test_the_caller_keeps_the_last_word(self, registry, sent):
-        """Merged with setdefault: a parameter the caller set stays theirs,
-        which matters when the extension registers it as a filter of its own.
-        """
-        registry(
-            issue_query_filters={
-                "acme_sprint_id": {"acme_mode": 1},
-                "acme_mode": {},
-            }
-        )
-
-        result = await list_redmine_issues(
-            filters={"acme_sprint_id": 5, "acme_mode": 2}
-        )
-
-        assert not isinstance(result, dict) or "error" not in result, result
-        assert sent[0]["acme_mode"] == 2
 
     @pytest.mark.asyncio
     async def test_a_stock_server_sends_what_it_always_sent(self, sent):
