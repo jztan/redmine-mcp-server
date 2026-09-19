@@ -304,6 +304,11 @@ hold for them:
   loaded, before the HTTP app is built.
 - Each registered family gets its own key in the `plugin_flags` dict
   `get_mcp_server_info` returns, next to the built-in ones.
+- A family can also widen two of the issue tools while it is enabled: the
+  attributes `update_redmine_issue` writes rather than treating as custom
+  field names, and the filter names `list_redmine_issues` accepts, with the
+  query parameters those filters need. Values are validated as they are for
+  any other filter.
 
 Two of this server's guarantees are not middleware, so an extension applies
 them in its own tools exactly as the built-in ones do.

@@ -86,6 +86,7 @@ private module layout, is what it depends on.
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import NoReturn
 
 from . import _client
@@ -102,7 +103,7 @@ from ._extension_registry import REGISTERED_EXTENSIONS
 from ._offload import in_thread, offloaded
 from ._plugin_visibility import PLUGIN_FLAGS, plugin_tag
 from ._serialization import wrap_insecure_content
-from ._validation import _is_positive_int
+from ._validation import _is_positive_int, _reject_non_scalar_filter_values
 from .oauth_scopes import TOOL_SCOPES, ToolScopeEntry
 from .server import mcp
 
@@ -202,6 +203,24 @@ class ExtensionSpec:
             advertise a scope per letter.
         advertised_write_scopes: The same, and additionally suppressed in
             read-only mode.
+        issue_update_keys: Issue attributes ``update_redmine_issue`` may
+            write while the family is enabled, in addition to Redmine's
+            own. A key it does not know is taken for a custom field
+            *label*, and the labels are matched with the non-alphanumerics
+            stripped, so an attribute named ``easy_sprint_id`` collides
+            with a custom field called "Easy Sprint ID" and the value
+            lands in the wrong place. Names here are passed through
+            untouched instead, and never reach label matching.
+        issue_query_filters: Filter name -> the query parameters that have
+            to ride along for the server to honour it, usually ``{}``.
+            ``list_redmine_issues`` refuses a filter name it does not know,
+            because Redmine drops an unregistered filter and answers 200
+            with the collection unnarrowed -- which a caller cannot tell
+            apart from a filter that matched everything. Registering here
+            widens that list while the family is enabled, without opening
+            it. The parameters are merged into the request only when that
+            filter is part of the call, and never over a value the caller
+            set, so a request that names none of them is unchanged.
     """
 
     family: str
@@ -210,6 +229,8 @@ class ExtensionSpec:
     tool_scopes: Mapping[str, ToolScopeEntry]
     advertised_read_scopes: Sequence[str] = ()
     advertised_write_scopes: Sequence[str] = ()
+    issue_update_keys: Sequence[str] = ()
+    issue_query_filters: Mapping[str, Mapping[str, object]] = MappingProxyType({})
 
 
 def _reject(where: str, problem: str) -> NoReturn:
@@ -257,6 +278,70 @@ def _check_scope_sequence(where: str, field: str, value: object) -> None:
                 where,
                 f"has an entry in {field} that is not a non-empty str: "
                 f"{scope!r}. Each one is the name of a Redmine permission.",
+            )
+
+
+def _check_issue_update_keys(where: str, value: object) -> None:
+    """Issue attributes to pass through: an ordered sequence of names."""
+    if isinstance(value, str):
+        _reject(
+            where,
+            f"passes a bare str as issue_update_keys: {value!r}. A str is a "
+            "sequence of its own characters, so this would declare one "
+            f"single-letter attribute per letter. Pass a one-tuple: ({value!r},).",
+        )
+    if not isinstance(value, Sequence):
+        _reject(
+            where,
+            f"maps issue_update_keys to {value!r}, which is not a sequence.",
+        )
+    for key in value:
+        if not isinstance(key, str) or not key:
+            _reject(
+                where,
+                f"has an entry in issue_update_keys that is not a non-empty "
+                f"str: {key!r}. Each one is the name of an issue attribute as "
+                "the Redmine API spells it.",
+            )
+
+
+def _check_issue_query_filters(where: str, value: object) -> None:
+    """Filter names mapped to the query parameters that ride with them."""
+    if not isinstance(value, Mapping):
+        _reject(
+            where,
+            f"maps issue_query_filters to {value!r}, which is not a mapping. "
+            "It is filter name -> the parameters that have to accompany it, "
+            "so a filter needing none maps to an empty dict.",
+        )
+    for name, params in value.items():
+        if not isinstance(name, str) or not name:
+            _reject(
+                where,
+                f"has a key in issue_query_filters that is not a non-empty "
+                f"str: {name!r}. The key is the filter name a caller passes "
+                "to list_redmine_issues.",
+            )
+        if not isinstance(params, Mapping):
+            _reject(
+                where,
+                f"maps issue_query_filters[{name!r}] to {params!r}, which is "
+                "not a mapping. Pass {} when the filter needs no companion "
+                "parameters.",
+            )
+        for key in params:
+            if not isinstance(key, str) or not key:
+                _reject(
+                    where,
+                    f"has a parameter name in issue_query_filters[{name!r}] "
+                    f"that is not a non-empty str: {key!r}.",
+                )
+        problem = _reject_non_scalar_filter_values(dict(params))
+        if problem:
+            _reject(
+                where,
+                f"has a value in issue_query_filters[{name!r}] that cannot go "
+                f"on the wire as a query parameter. {problem}",
             )
 
 
@@ -328,6 +413,87 @@ def _validate_spec(spec: ExtensionSpec) -> None:
     for field in ("advertised_read_scopes", "advertised_write_scopes"):
         _check_scope_sequence(where, field, getattr(spec, field))
 
+    _check_issue_update_keys(where, spec.issue_update_keys)
+    _check_issue_query_filters(where, spec.issue_query_filters)
+
+
+def _check_issue_seams(spec: ExtensionSpec) -> None:
+    """Refuse an issue attribute or filter that is already spoken for.
+
+    The two tables this widens are read per call rather than merged into a
+    module constant, so a duplicate would not overwrite anything -- it would
+    simply be silent, and silence is what both seams exist to remove. A name
+    Redmine already defines usually means the built-in support caught up with
+    the extension, which is worth being told about rather than carrying
+    forever.
+
+    The imports are local: ``tools.issues`` reaches the whole tool tree, and
+    an extension module importing this one during ``main``'s import loop must
+    not drag that in a second time through a different path. By then
+    ``main.py`` has imported ``tools`` already, so both modules are in
+    ``sys.modules`` and the lookup is free.
+    """
+    from ._custom_fields import _STANDARD_ISSUE_UPDATE_FIELDS
+    from ._validation import _RESERVED_QUERY_KEYS
+    from .tools.issues import _ISSUE_QUERY_FILTER_NAMES, _ISSUE_REQUEST_PARAM_KEYS
+
+    where = f"Extension family '{spec.family}'"
+    update_keys = set(spec.issue_update_keys)
+    filters = dict(spec.issue_query_filters)
+
+    taken = sorted(update_keys & _STANDARD_ISSUE_UPDATE_FIELDS)
+    if taken:
+        _reject(
+            where,
+            f"declares issue_update_keys Redmine itself defines: "
+            f"{', '.join(taken)}. They are passed through already, so drop "
+            "them from the spec rather than declaring them twice.",
+        )
+
+    taken = sorted(name for name in filters if name in _ISSUE_QUERY_FILTER_NAMES)
+    if taken:
+        _reject(
+            where,
+            f"declares issue_query_filters Redmine itself registers: "
+            f"{', '.join(taken)}. list_redmine_issues accepts them already.",
+        )
+
+    for other in REGISTERED_EXTENSIONS:
+        clash = sorted(update_keys & set(other.issue_update_keys))
+        if clash:
+            _reject(
+                where,
+                f"declares issue_update_keys already claimed by family "
+                f"'{other.family}': {', '.join(clash)}. An attribute has one "
+                "meaning on the wire, so two families cannot own it.",
+            )
+        clash = sorted(set(filters) & set(other.issue_query_filters))
+        if clash:
+            _reject(
+                where,
+                f"declares issue_query_filters already claimed by family "
+                f"'{other.family}': {', '.join(clash)}. Whichever registered "
+                "last would decide the parameters sent with it.",
+            )
+
+    for name, params in filters.items():
+        reserved = sorted(set(params) & _RESERVED_QUERY_KEYS)
+        if reserved:
+            _reject(
+                where,
+                f"has issue_query_filters[{name!r}] setting {', '.join(reserved)}. "
+                "Redmine reads those as the query's own filter definition and "
+                "discards every filter built from the rest of the request.",
+            )
+        owned = sorted(set(params) & _ISSUE_REQUEST_PARAM_KEYS)
+        if owned:
+            _reject(
+                where,
+                f"has issue_query_filters[{name!r}] setting "
+                f"{', '.join(owned)}, which list_redmine_issues owns: they "
+                "carry the caller's paging, sorting and includes.",
+            )
+
 
 def register_extension(spec: ExtensionSpec) -> None:
     """Merge one extension's entries into the server's tables.
@@ -393,6 +559,8 @@ def register_extension(spec: ExtensionSpec) -> None:
                 f"in {table_name}: {', '.join(taken)}. A tool name is global "
                 "on the MCP surface, so pick names of your own."
             )
+
+    _check_issue_seams(spec)
 
     PLUGIN_FLAGS[spec.family] = spec.enabled
     TOOL_KINDS.update(kinds)
