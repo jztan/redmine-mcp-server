@@ -1029,11 +1029,9 @@ def _create_redmine_project_action(
     #
     # Deliberately outside the try above, and never fatal: the project exists
     # by this point, so answering with an error would invite a retry and a
-    # duplicate -- the failure mode of #146. Redmine adds the creator as a
-    # member only when a default role is configured
-    # (Project#add_default_member), so a non-admin creator on an instance
-    # without one can create a project and then be refused projects#show. The
-    # POST's own body is the honest fallback: everything but the includes.
+    # duplicate -- the failure mode of #146. The POST's own body is the honest
+    # fallback: everything but the includes, which it never carried, so those
+    # come back as None ("unknown") rather than [] ("nothing enabled").
     try:
         return _project_to_dict(_read_project_back(client, created.id))
     except Exception:
@@ -1042,7 +1040,9 @@ def _create_redmine_project_action(
             "creation response, which carries no include= arrays",
             getattr(created, "id", identifier),
         )
-        return _project_to_dict(created)
+        result = _project_to_dict(created)
+        result.update(dict.fromkeys(_PROJECT_INCLUDES))
+        return result
 
 
 @offloaded

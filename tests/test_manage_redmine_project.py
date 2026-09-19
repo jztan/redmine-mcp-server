@@ -752,11 +752,9 @@ class TestCreateReadBackFailure:
         """The project exists by then; reporting an error would invite a
         retry and a duplicate -- the failure mode of #146.
 
-        Redmine adds the creator as a member only when a default role is
-        configured (Project#add_default_member), so a non-admin creator on an
-        instance without one can create a project and then be refused
-        projects#show. Fall back to the POST's own body, which carries
-        everything except the three include arrays.
+        Fall back to the POST's own body, which carries everything except the
+        three include arrays. Those come back as None, not [], because [] would
+        claim nothing is enabled when the response simply does not know (#309).
         """
         from redmine_mcp_server.tools.projects import manage_redmine_project
 
@@ -772,4 +770,6 @@ class TestCreateReadBackFailure:
         assert "error" not in result
         assert result["id"] == 7
         assert result["identifier"] == "apollo"
-        assert result["enabled_modules"] == []
+        assert result["enabled_modules"] is None
+        assert result["trackers"] is None
+        assert result["issue_custom_fields"] is None
