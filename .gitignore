@@ -42,3 +42,6 @@ logs/
 
 # Local build/preview artifacts (demo page screenshots, etc.)
 .preview/
+
+# Release-notes drafts (scripts/release.py --dry-run)
+release_notes_v*.md

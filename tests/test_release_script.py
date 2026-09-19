@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-
 _RELEASE_PATH = Path(__file__).resolve().parent.parent / "scripts" / "release.py"
 _spec = importlib.util.spec_from_file_location("release_script", _RELEASE_PATH)
 release_script = importlib.util.module_from_spec(_spec)
@@ -297,3 +296,131 @@ def test_unparsable_contributors_section_raises(tmp_path):
 
     with pytest.raises(ValueError, match="Contributors"):
         release_script.extract_changelog_section(tmp_path, "1.0.0")
+
+
+def test_release_run_syncs_the_readme_contributors():
+    """The bump path must regenerate the README line it stages. The call once
+    lived only in an unused helper, so releases committed a stale README and
+    CI failed on the first new credit until --sync-contributors was run."""
+    import inspect
+
+    assert "update_readme_contributors(" in inspect.getsource(release_script.main)
+
+
+def test_notes_generation_runs_with_an_empty_context():
+    import inspect
+
+    source = inspect.getsource(release_script.generate_release_notes)
+    assert "*NOTES_CONTEXT_FLAGS" in source
+    assert release_script.NOTES_CONTEXT_FLAGS == [
+        "--setting-sources",
+        "",
+        "--strict-mcp-config",
+        "--mcp-config",
+        '{"mcpServers":{}}',
+    ]
+
+
+_ACK = "Thanks to **@alice** for contributing:\n- a fix\n\n" + (
+    "Thanks to **RedmineUP** for contributing:\n- a licence"
+)
+
+
+def _notes(tmp_path: Path, title: str, body: str) -> Path:
+    path = tmp_path / "notes.md"
+    release_script.write_notes_file(path, title, body)
+    return path
+
+
+def test_approved_notes_round_trip(tmp_path):
+    path = _notes(tmp_path, "v1.2.0: Big release", "## Highlights\n\n" + _ACK)
+
+    title, body = release_script.load_approved_notes(path, "1.2.0", _ACK)
+
+    assert title == "v1.2.0: Big release"
+    assert body.startswith("## Highlights")
+
+
+def test_approved_notes_bare_tag_title_is_accepted(tmp_path):
+    path = _notes(tmp_path, "v1.2.0", "body")
+
+    assert release_script.load_approved_notes(path, "1.2.0", "")[0] == "v1.2.0"
+
+
+@pytest.mark.parametrize("title", ["v1.2.1: Wrong bump", "v1.2.01", "Big release"])
+def test_approved_notes_for_another_version_are_refused(tmp_path, title):
+    path = _notes(tmp_path, title, "body")
+
+    with pytest.raises(release_script.NotesFileError, match="this release is v1.2.0"):
+        release_script.load_approved_notes(path, "1.2.0", "")
+
+
+def test_approved_notes_dropping_a_credit_are_refused(tmp_path):
+    path = _notes(tmp_path, "v1.2.0: x", "Thanks to **@alice** only")
+
+    with pytest.raises(release_script.NotesFileError, match="RedmineUP"):
+        release_script.load_approved_notes(path, "1.2.0", _ACK)
+
+
+def test_approved_notes_missing_or_empty_are_refused(tmp_path):
+    with pytest.raises(release_script.NotesFileError, match="not found"):
+        release_script.load_approved_notes(tmp_path / "nope.md", "1.2.0", "")
+
+    empty = tmp_path / "empty.md"
+    empty.write_text("<!-- title: v1.2.0 -->\n\n", encoding="utf-8")
+    with pytest.raises(release_script.NotesFileError, match="empty body"):
+        release_script.load_approved_notes(empty, "1.2.0", "")
+
+
+def _preview_root(tmp_path: Path) -> Path:
+    (tmp_path / "CHANGELOG.md").write_text(
+        "# Changelog\n\n## [Unreleased]\n### Added\n- thing\n\n"
+        "### Contributors\n- @alice did it ([#1](url))\n\n"
+        "## [1.1.0] - 2026-01-01\n### Added\n- seed\n",
+        encoding="utf-8",
+    )
+    return tmp_path
+
+
+def test_dry_run_saves_a_draft_the_real_run_accepts(tmp_path, monkeypatch):
+    root = _preview_root(tmp_path)
+    monkeypatch.setattr(
+        release_script,
+        "generate_release_notes",
+        lambda version, body, steering=None: ("v1.2.0: Things", "## Highlights"),
+    )
+    config = release_script.ReleaseConfig("minor", True, root)
+    notes_path = release_script.notes_file_path(root, "1.2.0")
+
+    release_script.preview_release_notes(config, "1.2.0", notes_path)
+
+    _, ack = release_script.extract_unreleased_section(root)
+    title, body = release_script.load_approved_notes(notes_path, "1.2.0", ack)
+    assert title == "v1.2.0: Things"
+    assert "**@alice**" in body
+
+
+def test_dry_run_never_overwrites_an_edited_draft(tmp_path, monkeypatch):
+    root = _preview_root(tmp_path)
+    notes_path = release_script.notes_file_path(root, "1.2.0")
+    release_script.write_notes_file(notes_path, "v1.2.0: Mine", "hand edited")
+
+    def boom(*args, **kwargs):
+        raise AssertionError("must not regenerate over an existing draft")
+
+    monkeypatch.setattr(release_script, "generate_release_notes", boom)
+    config = release_script.ReleaseConfig("minor", True, root)
+
+    release_script.preview_release_notes(config, "1.2.0", notes_path)
+
+    assert release_script.read_notes_file(notes_path) == ("v1.2.0: Mine", "hand edited")
+
+
+def test_notes_drafts_are_gitignored():
+    """A dry-run draft left in the tree would fail the real run's
+    clean-tree preflight."""
+    repo = Path(__file__).resolve().parent.parent
+    result = subprocess.run(
+        ["git", "check-ignore", "-q", "release_notes_v9.9.9.md"], cwd=repo
+    )
+    assert result.returncode == 0

@@ -16,7 +16,12 @@ Gitflow:
     1. Start from develop branch
     2. Pre-flight: clean tree, tests pass, dependency audit clean
     3. Create release/vX.Y.Z branch and bump versions
-    4. Draft + approve release notes via claude -p (persisted for recovery)
+    4. Draft + approve release notes via claude -p (persisted for recovery).
+       To edit the notes in any app instead of mid-release: `--dry-run`
+       saves the draft to release_notes_vX.Y.Z.md, and the real run
+       publishes that file as approved (or pass `--notes-file PATH`). It is
+       checked for the right version and every contributor credit before
+       anything is branched.
     5. Merge to master, push tag (triggers publish-pypi.yml)
     6. Wait for publish-pypi workflow to finish (poll gh run status)
     7. Wait for the version to appear on PyPI (JSON API)
@@ -603,25 +608,6 @@ def create_release_branch(new_version: str, dry_run: bool) -> str:
     return branch_name
 
 
-def bump_version(config: ReleaseConfig) -> tuple[str, str]:
-    """Update version in all files."""
-    print("\n=== Version Bump ===\n")
-
-    current_version = get_current_version(config.project_root)
-    new_version = calculate_new_version(current_version, config.bump_type)
-
-    print(f"Version: {current_version} -> {new_version}")
-    print()
-
-    update_pyproject_toml(config.project_root, new_version, config.dry_run)
-    update_server_json(config.project_root, new_version, config.dry_run)
-    update_changelog(config.project_root, new_version, config.dry_run)
-    update_readme_contributors(config.project_root, config.dry_run)
-    update_uv_lock(config.project_root, config.dry_run)
-
-    return current_version, new_version
-
-
 def commit_version_bump(config: ReleaseConfig, new_version: str) -> None:
     """Commit version bump changes on release branch."""
     print("\n=== Commit Version Bump ===\n")
@@ -741,6 +727,18 @@ NOTES_GENERATION_TIMEOUT = 120
 # transform needs none). The prompt also instructs it not to use tools.
 NOTES_DENIED_TOOLS = "Bash,Read,Write,Edit,Glob,Grep,WebFetch,WebSearch,Task,TodoWrite"
 
+# Without these, every `claude -p` call also loads both CLAUDE.md files and
+# every configured MCP server's tool schemas on top of the prompt, which
+# dwarfs the changelog it is actually rewriting. No --system-prompt: a
+# custom one busts the shared cache prefix and bills more, not less.
+NOTES_CONTEXT_FLAGS = [
+    "--setting-sources",
+    "",
+    "--strict-mcp-config",
+    "--mcp-config",
+    '{"mcpServers":{}}',
+]
+
 # .format() template -- must contain no literal braces (a brace-containing
 # example added later would raise KeyError at release time). No em dashes in
 # the output contract (project writing rule).
@@ -810,7 +808,13 @@ def generate_release_notes(
 
     try:
         result = subprocess.run(
-            ["claude", "-p", "--disallowedTools", NOTES_DENIED_TOOLS],
+            [
+                "claude",
+                "-p",
+                "--disallowedTools",
+                NOTES_DENIED_TOOLS,
+                *NOTES_CONTEXT_FLAGS,
+            ],
             input=prompt,
             capture_output=True,
             text=True,
@@ -848,6 +852,44 @@ def read_notes_file(path: Path) -> tuple[str | None, str]:
     if match:
         return match.group(1), content[match.end() :].strip()
     return None, content.strip()
+
+
+class NotesFileError(ValueError):
+    """A pre-written notes file cannot be published for this version."""
+
+
+def load_approved_notes(
+    path: Path, new_version: str, acknowledgements: str
+) -> tuple[str, str]:
+    """Validate a maintainer-approved notes file; return (title, body).
+
+    Runs before anything is branched or tagged, so a wrong file stops the
+    release while it is still free to stop. The checks catch the two ways a
+    hand-edited or reused draft goes wrong: it was drafted for another
+    version (a patch/minor mix-up, or a leftover from a burned version), or
+    editing dropped a contributor credit.
+    """
+    tag = f"v{new_version}"
+    if not path.is_file():
+        raise NotesFileError(f"notes file not found: {path}")
+    title, body = read_notes_file(path)
+    if not body:
+        raise NotesFileError(f"notes file {path} has an empty body")
+    if title is None or not (title == tag or title.startswith(f"{tag}:")):
+        raise NotesFileError(
+            f"notes file {path} is titled {title!r}; this release is {tag}. "
+            f"The first line must be `<!-- title: {tag}: <headline> -->`."
+        )
+    missing = [
+        name
+        for name in re.findall(r"^Thanks to \*\*(.+?)\*\*", acknowledgements, re.M)
+        if name not in body
+    ]
+    if missing:
+        raise NotesFileError(
+            f"notes file {path} drops contributor credits: {', '.join(missing)}"
+        )
+    return title, body
 
 
 def _edit_notes_in_editor(path: Path) -> None:
@@ -950,9 +992,21 @@ def approve_release_notes(
             print("  Please answer y, e, r, or f.")
 
 
-def preview_release_notes(config: ReleaseConfig, new_version: str) -> None:
-    """Dry-run: draft real notes from [Unreleased] and print them."""
+def preview_release_notes(
+    config: ReleaseConfig, new_version: str, notes_path: Path
+) -> None:
+    """Dry-run: draft real notes from [Unreleased], print, and save them.
+
+    The draft lands at notes_path (gitignored) for the maintainer to edit in
+    any app; the real run then publishes it as approved instead of
+    regenerating. An existing draft is never overwritten: it may hold edits,
+    so delete it to get a fresh one.
+    """
     print("\n=== Release Notes (Preview) ===\n")
+    if notes_path.exists():
+        print(f"  [DRY-RUN] Keeping the existing draft at {notes_path}")
+        print("  [DRY-RUN] (delete it to generate a fresh one)")
+        return
     body, acknowledgements = extract_unreleased_section(config.project_root)
     try:
         title, generated = generate_release_notes(new_version, body)
@@ -964,6 +1018,9 @@ def preview_release_notes(config: ReleaseConfig, new_version: str) -> None:
     print(f"  [DRY-RUN] Title: {title}")
     print("  [DRY-RUN] Notes preview:\n")
     print(final)
+    write_notes_file(notes_path, title, final)
+    print(f"\n  ✓ Draft saved to {notes_path}")
+    print("    Edit it in any app; the real run publishes it as written.")
 
 
 def create_github_release(config: ReleaseConfig, new_version: str) -> None:
@@ -1307,6 +1364,11 @@ Examples:
   python scripts/release.py patch --dry-run # Preview changes
   python scripts/release.py --sync-contributors  # Refresh README credits only
 
+Release notes, edited outside the terminal:
+  python scripts/release.py minor --dry-run # saves release_notes_vX.Y.Z.md
+  # edit that file in any app, then:
+  python scripts/release.py minor           # publishes the edited draft
+
 Gitflow:
   develop -> release/vX.Y.Z -> master (tagged) -> merge back to develop
         """,
@@ -1321,12 +1383,20 @@ Gitflow:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Preview changes without executing",
+        help="Preview changes without executing; saves a release-notes draft",
     )
     parser.add_argument(
         "--hotfix",
         action="store_true",
         help="Finish the current hotfix/* branch (patch bump implied)",
+    )
+    parser.add_argument(
+        "--notes-file",
+        type=Path,
+        help=(
+            "Publish this pre-approved notes file instead of generating one. "
+            "Defaults to the draft a --dry-run saved, when it exists."
+        ),
     )
     parser.add_argument(
         "--sync-contributors",
@@ -1380,6 +1450,20 @@ Gitflow:
     current_version = get_current_version(config.project_root)
     new_version = calculate_new_version(current_version, config.bump_type)
 
+    # Step 2b: A pre-approved notes file (explicit, or the draft a dry run
+    # saved) is validated now, before anything is branched or tagged.
+    notes_path = notes_file_path(config.project_root, new_version)
+    notes_source = args.notes_file or (notes_path if notes_path.exists() else None)
+    approved: tuple[str, str] | None = None
+    if notes_source is not None:
+        _, acknowledgements = extract_unreleased_section(config.project_root)
+        try:
+            approved = load_approved_notes(notes_source, new_version, acknowledgements)
+        except NotesFileError as exc:
+            print(f"Error: {exc}")
+            sys.exit(1)
+        print(f"\nUsing approved release notes from {notes_source}")
+
     # Step 3: Create release branch (skipped in hotfix mode)
     if config.hotfix:
         result = run_command(["git", "rev-parse", "--abbrev-ref", "HEAD"])
@@ -1399,6 +1483,7 @@ Gitflow:
     update_pyproject_toml(config.project_root, new_version, config.dry_run)
     update_server_json(config.project_root, new_version, config.dry_run)
     update_changelog(config.project_root, new_version, config.dry_run)
+    update_readme_contributors(config.project_root, config.dry_run)
     update_uv_lock(config.project_root, config.dry_run)
 
     # Step 5: Commit version bump on release branch
@@ -1406,9 +1491,16 @@ Gitflow:
 
     # Step 5b: Draft + approve release notes NOW, so the long unattended
     # waits (publish workflow, PyPI) happen after the human interaction.
-    notes_path = notes_file_path(config.project_root, new_version)
-    if config.dry_run:
-        preview_release_notes(config, new_version)
+    if approved is not None:
+        title, body = approved
+        print("\n=== Release Notes ===\n")
+        print(f"  Title: {title}")
+        if not config.dry_run:
+            # Normalise into the recovery path the later steps read.
+            write_notes_file(notes_path, title, body)
+        print(f"  ✓ Using approved notes from {notes_source}")
+    elif config.dry_run:
+        preview_release_notes(config, new_version, notes_path)
     else:
         print("\n=== Release Notes ===\n")
         body, acknowledgements = extract_changelog_section(
