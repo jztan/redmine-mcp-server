@@ -32,6 +32,7 @@ from .._decorators import ActionMode, action_dispatch
 from .._env import _is_agile_enabled, _is_read_only_mode, _is_tags_enabled
 from .._errors import _READ_ONLY_ERROR, _handle_redmine_error
 from .._offload import in_thread, offloaded
+from .. import _upload_store
 from .._serialization import (
     _attachment_to_dict,
     _custom_fields_to_list,
@@ -2002,6 +2003,35 @@ def _apply_text_edits(
     return text, None
 
 
+def _text_from_staged_upload(
+    upload_id: str, label: str
+) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
+    """Read a staged upload as the new text for a long field (#314).
+
+    The counterpart to patching. Where the whole text really is new, the
+    caller writes it to a file, sends it with the ticket route from #306, and
+    names the ``upload_id`` here -- so the field's content travels from disk
+    to this server instead of being written out into a tool argument. That
+    also composes with how an oversized read already comes back: the client
+    spills it to a file the caller can edit in place, and this is the way
+    back.
+
+    Returns ``(text, None)`` or ``(None, {"error": ...})``.
+    """
+    content_bytes, _, staged_error = _upload_store.read_staged(upload_id)
+    if staged_error is not None:
+        return None, staged_error
+    try:
+        return content_bytes.decode("utf-8"), None
+    except UnicodeDecodeError as exc:
+        return None, {
+            "error": (
+                f"The file staged for {label} is not valid UTF-8 ({exc}). "
+                f"A {label} is text; upload it encoded as UTF-8."
+            )
+        }
+
+
 @mcp.tool()
 async def update_redmine_issue(
     issue_id: int,
@@ -2009,6 +2039,7 @@ async def update_redmine_issue(
     uploads: Optional[List[Dict[str, Any]]] = None,
     description_edits: Optional[List[Dict[str, str]]] = None,
     description_expected_sha256: Optional[str] = None,
+    description_upload_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Update an existing Redmine issue.
 
@@ -2097,6 +2128,11 @@ async def update_redmine_issue(
             refuses the call rather than overwriting whatever changed in
             between. Worth passing whenever the read and the write are not
             in the same breath.
+        description_upload_id: Take the whole description from a file staged
+            with ``create_upload_ticket``, decoded as UTF-8. For when the
+            text really is all new rather than edited: the content travels
+            from disk to this server instead of through the conversation.
+            Mutually exclusive with the other two ways of setting it.
     """
 
     if _is_read_only_mode():
@@ -2118,16 +2154,36 @@ async def update_redmine_issue(
 
     update_fields = dict(fields)
 
-    # Patch the description server-side rather than having the whole text
-    # written out into a tool argument (#314).
+    # Two ways to set a long description without writing it out into a tool
+    # argument: patch what changed, or point at a file already staged on this
+    # server (#314). Both are exclusive with a literal ``description``.
+    description_sources = [
+        name
+        for name, given in (
+            ("description in fields", "description" in update_fields),
+            ("description_edits", description_edits is not None),
+            ("description_upload_id", bool(description_upload_id)),
+        )
+        if given
+    ]
+    if len(description_sources) > 1:
+        return {
+            "error": (
+                "Set the description one way at a time; got "
+                + ", ".join(description_sources)
+                + "."
+            )
+        }
+
+    if description_upload_id:
+        staged_text, staged_error = _text_from_staged_upload(
+            description_upload_id, "description"
+        )
+        if staged_error is not None:
+            return staged_error
+        update_fields["description"] = staged_text
+
     if description_edits is not None:
-        if "description" in update_fields:
-            return {
-                "error": (
-                    "Pass either description_edits or a full description in "
-                    "fields, not both."
-                )
-            }
 
         def _read_description() -> Any:
             return _get_redmine_client().issue.get(issue_id)

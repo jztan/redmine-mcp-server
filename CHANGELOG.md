@@ -20,7 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   passage that changed. Each `find` must occur exactly once in the text as
   it stands after the preceding edits; zero matches or several refuse the
   whole call and leave the issue untouched, since a half-applied patch is
-  worse than none ([#314](https://github.com/jztan/redmine-mcp-server/issues/314)).
+  worse than none. Where the text really is all new rather than edited,
+  `description_upload_id` takes it from a file staged with
+  `create_upload_ticket`, decoded as UTF-8, so it travels from disk to the
+  server the way an attachment does. The three ways of setting a
+  description are mutually exclusive and passing more than one is refused
+  ([#314](https://github.com/jztan/redmine-mcp-server/issues/314)).
 
 ## [2.16.0] - 2026-09-19
 ### Added

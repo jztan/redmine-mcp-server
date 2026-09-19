@@ -1327,6 +1327,10 @@ update_redmine_issue(
 
 A failed edit is reported with the index of the pair that failed and leaves the issue untouched — a half-applied patch is worse than none.
 
+**Replacing a long description wholesale:** where the text really is all new rather than edited, `description_upload_id` takes it from a file staged with [`create_upload_ticket`](#create_upload_ticket), decoded as UTF-8. The content then travels from disk to the server instead of through the conversation, the same way an attachment does. This composes with how an oversized read already comes back — the client writes it to a file the caller can edit in place, and this is the way back.
+
+`description`, `description_edits` and `description_upload_id` are mutually exclusive; passing more than one is refused, naming which were given.
+
 **Returns:** Updated issue dictionary. When `uploads` is provided and at least one attachment succeeds, the response includes:
 - `attachments` (list): Metadata for each attached file (id, filename, filesize, content_url, etc.).
 - `journal_id` (integer): ID of the journal entry the attachments were placed on.

@@ -253,7 +253,7 @@ class TestThroughTheTool:
         )
 
         assert "error" in result
-        assert "not both" in result["error"]
+        assert "one way at a time" in result["error"]
         mock_redmine.issue.update.assert_not_called()
 
     @pytest.mark.asyncio
@@ -275,3 +275,97 @@ class TestThroughTheTool:
 
         assert "error" in result
         mock_redmine.issue.update.assert_not_called()
+
+
+@pytest.mark.unit
+class TestStagedUploadAsTheSource:
+    """The other half of #314: the text is all new, so send it as a file."""
+
+    @pytest.fixture
+    def attachments_dir(self, tmp_path, monkeypatch):
+        path = tmp_path / "attachments"
+        path.mkdir()
+        monkeypatch.setenv("ATTACHMENTS_DIR", str(path))
+        return path
+
+    def _stage(self, text):
+        from redmine_mcp_server import _upload_store
+
+        issued = _upload_store.create_ticket(filename="description.html")
+        record, reason = _upload_store.redeem_ticket(
+            issued["upload_id"], issued["ticket"]
+        )
+        assert reason is None
+        _upload_store.staged_path(record).write_bytes(text)
+        _upload_store.mark_ready(issued["upload_id"], record, len(text), "x")
+        return issued["upload_id"]
+
+    def test_the_staged_text_becomes_the_description(self, attachments_dir):
+        from redmine_mcp_server.tools.issues import _text_from_staged_upload
+
+        upload_id = self._stage("<p>Ein neuer Text mit Ümläuten.</p>".encode("utf-8"))
+
+        text, error = _text_from_staged_upload(upload_id, "description")
+
+        assert error is None
+        assert text == "<p>Ein neuer Text mit Ümläuten.</p>"
+
+    def test_non_utf8_is_reported_rather_than_mangled(self, attachments_dir):
+        from redmine_mcp_server.tools.issues import _text_from_staged_upload
+
+        upload_id = self._stage(bytes([0xFF, 0xFE]) + b" not text")
+
+        text, error = _text_from_staged_upload(upload_id, "description")
+
+        assert text is None
+        assert "not valid UTF-8" in error["error"]
+
+    def test_an_unknown_upload_is_reported(self, attachments_dir):
+        import uuid
+
+        from redmine_mcp_server.tools.issues import _text_from_staged_upload
+
+        text, error = _text_from_staged_upload(str(uuid.uuid4()), "description")
+
+        assert text is None
+        assert "error" in error
+
+    @pytest.mark.asyncio
+    async def test_two_sources_at_once_are_refused(self, attachments_dir, monkeypatch):
+        from unittest.mock import patch
+
+        from redmine_mcp_server.tools.issues import update_redmine_issue
+
+        monkeypatch.delenv("REDMINE_MCP_READ_ONLY", raising=False)
+        upload_id = self._stage(b"<p>neu</p>")
+
+        with patch("redmine_mcp_server._client.redmine") as mock_redmine:
+            result = await update_redmine_issue(
+                issue_id=7,
+                fields={},
+                description_edits=[{"find": "x", "replace": "y"}],
+                description_upload_id=upload_id,
+            )
+
+            assert "error" in result
+            assert "one way at a time" in result["error"]
+            mock_redmine.issue.update.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_the_upload_reaches_redmine_as_the_description(
+        self, attachments_dir, monkeypatch
+    ):
+        from unittest.mock import patch
+
+        from redmine_mcp_server.tools.issues import update_redmine_issue
+
+        monkeypatch.delenv("REDMINE_MCP_READ_ONLY", raising=False)
+        upload_id = self._stage("<p>die neue Fassung</p>".encode("utf-8"))
+
+        with patch("redmine_mcp_server._client.redmine") as mock_redmine:
+            await update_redmine_issue(
+                issue_id=7, fields={}, description_upload_id=upload_id
+            )
+
+            sent = mock_redmine.issue.update.call_args
+            assert sent.kwargs["description"] == "<p>die neue Fassung</p>"
