@@ -187,6 +187,23 @@ class TestCollisions:
         with pytest.raises(RuntimeError, match="itself a filter name"):
             registry(issue_query_filters={"acme_sprint_id": {"acme_mode": 1}})
 
+    @pytest.mark.parametrize("key", ["cf_3", "cf_3.due_date", "author.cf_3"])
+    def test_a_companion_parameter_may_not_be_a_custom_field_filter(
+        self, registry, key
+    ):
+        """cf_<id> is not in any name set -- those filters are registered per
+        custom field -- but list_redmine_issues accepts them, and they narrow
+        a query like any other filter."""
+        with pytest.raises(RuntimeError, match="custom field filter"):
+            registry(issue_query_filters={"acme_sprint_id": {key: "x"}})
+
+    def test_a_filter_another_family_sends_as_a_companion_is_refused(self, registry):
+        """The check runs both ways: B cannot turn A's companion into a
+        filter either, or A would narrow every call B's callers make."""
+        registry(issue_query_filters={"acme_sprint_id": {"acme_mode": 1}})
+        with pytest.raises(RuntimeError, match="companion parameter"):
+            registry(issue_query_filters={"acme_mode": {}})
+
     def test_a_rejected_spec_registers_nothing(self, registry):
         before = list(REGISTERED_EXTENSIONS)
         with pytest.raises(RuntimeError):

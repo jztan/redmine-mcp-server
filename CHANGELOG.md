@@ -20,8 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unnarrowed. Registered keys are now passed through untouched, registered
   filter names are accepted, and a filter's companion parameters (Easy's
   `set_filter=1`) are merged only when that filter is in the call and never
-  over a value the caller set, and may not be a filter name themselves, since
-  one riding along unasked would narrow a query the caller never narrowed.
+  over a value the caller set, and may not be a filter name themselves --
+  Redmine's own, another family's, or a `cf_<id>` custom field spelling --
+  since one riding along unasked would narrow a query the caller never
+  narrowed. The check runs in both directions, so a filter name another
+  family already sends as a companion is refused too.
   Registered attributes reach Redmine on `create_redmine_issue` as well as on
   an update: both write paths share the step that reads an unknown name as a
   custom field's. Both tables are read from the registry per call, so a

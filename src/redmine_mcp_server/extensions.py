@@ -87,7 +87,7 @@ private module layout, is what it depends on.
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import NoReturn
+from typing import Dict, NoReturn
 
 from . import _client
 from ._annotations import TOOL_KINDS, ToolKind
@@ -436,8 +436,12 @@ def _check_issue_seams(spec: ExtensionSpec) -> None:
     ``sys.modules`` and the lookup is free.
     """
     from ._custom_fields import _STANDARD_ISSUE_UPDATE_FIELDS
-    from ._validation import _RESERVED_QUERY_KEYS
-    from .tools.issues import _ISSUE_QUERY_FILTER_NAMES, _ISSUE_REQUEST_PARAM_KEYS
+    from ._validation import _RESERVED_QUERY_KEYS, _is_custom_field_filter
+    from .tools.issues import (
+        _ISSUE_QUERY_ASSOCIATIONS,
+        _ISSUE_QUERY_FILTER_NAMES,
+        _ISSUE_REQUEST_PARAM_KEYS,
+    )
 
     where = f"Extension family '{spec.family}'"
     update_keys = set(spec.issue_update_keys)
@@ -445,8 +449,25 @@ def _check_issue_seams(spec: ExtensionSpec) -> None:
     # Names a companion parameter may not take: a filter narrows the query,
     # and one sent unasked is a filter the caller did not write.
     filter_names = set(_ISSUE_QUERY_FILTER_NAMES) | set(filters)
+    # And the other direction: a name an already registered family sends as a
+    # companion cannot become a filter, or that family would start narrowing
+    # whatever the new filter's callers ask for.
+    companion_of: Dict[str, str] = {}
     for registered in REGISTERED_EXTENSIONS:
         filter_names |= set(registered.issue_query_filters)
+        for sent in registered.issue_query_filters.values():
+            for key in sent:
+                companion_of.setdefault(key, registered.family)
+
+    clash = sorted(name for name in filters if name in companion_of)
+    if clash:
+        named = ", ".join(f"{name} (family '{companion_of[name]}')" for name in clash)
+        _reject(
+            where,
+            f"declares issue_query_filters that another family already sends "
+            f"as a companion parameter: {named}. Whoever used the filter "
+            "would get that family's value merged in as well.",
+        )
 
     taken = sorted(update_keys & _STANDARD_ISSUE_UPDATE_FIELDS)
     if taken:
@@ -499,6 +520,20 @@ def _check_issue_seams(spec: ExtensionSpec) -> None:
                 f"has issue_query_filters[{name!r}] setting "
                 f"{', '.join(owned)}, which list_redmine_issues owns: they "
                 "carry the caller's paging, sorting and includes.",
+            )
+        custom_field = sorted(
+            key
+            for key in params
+            if _is_custom_field_filter(key, _ISSUE_QUERY_ASSOCIATIONS)
+        )
+        if custom_field:
+            _reject(
+                where,
+                f"has issue_query_filters[{name!r}] setting "
+                f"{', '.join(custom_field)}, a custom field filter spelling "
+                "list_redmine_issues accepts. Those are registered per custom "
+                "field rather than by name, so they narrow a query as much as "
+                "any other filter does.",
             )
         as_filter = sorted(set(params) & filter_names)
         if as_filter:

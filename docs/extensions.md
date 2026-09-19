@@ -208,8 +208,13 @@ serving a surface that does not match what the module declared:
   (`fields`, `f`, `query_id`), or one `list_redmine_issues` owns (`limit`,
   `offset`, `sort`, `include`).
 - A companion parameter that is itself a filter name -- Redmine's own, the
-  spec's, or another family's. It would ride along unasked and narrow every call
-  that uses the filter, without the caller having written it.
+  spec's, or another family's, including the `cf_<id>`, `cf_<id>.due_date` and
+  `<association>.cf_<id>` spellings, which are registered per custom field
+  rather than by name. It would ride along unasked and narrow every call that
+  uses the filter, without the caller having written it.
+- A filter name that an already registered family sends as a companion
+  parameter. That is the same collision from the other side: the older family's
+  value would be merged into every call the new filter appears in.
 
 **A per-action scope map is checked against the tool's `action` parameter.** When a
 `tool_scopes` entry is a dict keyed by action, that parameter has to be annotated
