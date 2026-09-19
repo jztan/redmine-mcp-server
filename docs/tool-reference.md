@@ -1310,6 +1310,23 @@ Updates an existing issue with the provided fields. Blocked when `REDMINE_MCP_RE
   - `content_type` (string, optional): MIME type override (e.g. `"application/pdf"`).
   - `description` (string, optional): Human-readable description for the attachment.
 
+
+**Patching a long description (#314):** Redmine has no patch endpoint, so passing `description` means sending the finished text — every character of it written into the tool argument. For a long field that is slow (the text is generated one token at a time) and unreliable (a long transcription drops text). Send the change instead:
+
+```python
+update_redmine_issue(
+    issue_id=123,
+    fields={},
+    description_edits=[{"find": "runs on two nodes", "replace": "runs on four nodes"}],
+    description_expected_sha256="<digest of the description as it was read>",
+)
+```
+
+- `description_edits` (list, optional): `{find, replace}` pairs, applied in order on the server. Each `find` must occur **exactly once** in the text as it stands after the preceding edits; zero matches or several refuse the whole call and change nothing, so include enough surrounding text to be unambiguous. Mutually exclusive with a `description` in `fields`.
+- `description_expected_sha256` (string, optional): the digest the description had when it was read. Checked before any edit is applied; a mismatch refuses the call instead of overwriting whatever changed in between. Worth passing whenever the read and the write are not in the same breath.
+
+A failed edit is reported with the index of the pair that failed and leaves the issue untouched — a half-applied patch is worse than none.
+
 **Returns:** Updated issue dictionary. When `uploads` is provided and at least one attachment succeeds, the response includes:
 - `attachments` (list): Metadata for each attached file (id, filename, filesize, content_url, etc.).
 - `journal_id` (integer): ID of the journal entry the attachments were placed on.
