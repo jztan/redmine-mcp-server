@@ -74,6 +74,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   registers first: a key a family writes is one its callers read back here,
   so hiding it would make the attribute write-only
   ([#331](https://github.com/jztan/redmine-mcp-server/issues/331), [#332](https://github.com/jztan/redmine-mcp-server/pull/332)).
+- `send_helpdesk_email_reply` emails a reply to a RedmineUP Helpdesk ticket's
+  customer, optionally setting the ticket status, the same as "Send Note" in
+  the web UI. A plain `update_redmine_issue` note never reaches the customer.
+  Opt in with `REDMINE_HELPDESK_ENABLED=true`
+  ([#301](https://github.com/jztan/redmine-mcp-server/issues/301)).
 
 ### Changed
 - Journal field changes no longer repeat a long before/after text. Redmine
@@ -140,6 +145,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `issue_payload_skip_keys` seam
   ([#331](https://github.com/jztan/redmine-mcp-server/issues/331),
   [#332](https://github.com/jztan/redmine-mcp-server/pull/332)).
+- @goizper requested Helpdesk email replies and captured the endpoint's real
+  request and response shapes from a Helpdesk 4.2.9 install
+  ([#301](https://github.com/jztan/redmine-mcp-server/issues/301))
 
 ## [2.16.0] - 2026-09-19
 ### Added

@@ -94,6 +94,10 @@ TOOL_KINDS: Dict[str, ToolKind] = {
     "get_checklist": ToolKind.READ,
     "create_checklist_item": ToolKind.WRITE_ADDITIVE,
     "update_checklist_item": ToolKind.WRITE_DESTRUCTIVE_IDEMPOTENT,
+    # --- helpdesk (plugin) ---
+    # Destructive, not additive: the customer email cannot be recalled,
+    # and status_id can change the ticket's status.
+    "send_helpdesk_email_reply": ToolKind.WRITE_DESTRUCTIVE,
     # --- wiki ---
     "manage_redmine_wiki_page": ToolKind.WRITE_DESTRUCTIVE,
     # --- documents ---
