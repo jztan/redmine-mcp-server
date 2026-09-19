@@ -35,7 +35,7 @@ class TestScopeEnforcementFlag:
 
 class TestToolScopesMap:
     @pytest.mark.asyncio
-    async def test_every_registered_tool_is_mapped(self):
+    async def test_every_registered_tool_is_mapped(self, all_plugin_tools_visible):
         """Anti-drift guard: a new @mcp.tool() must get a TOOL_SCOPES entry."""
         from redmine_mcp_server.server import mcp
         import redmine_mcp_server.tools  # noqa: F401  triggers registration

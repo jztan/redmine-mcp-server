@@ -7,6 +7,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `send_helpdesk_email_reply` emails a reply to a RedmineUP Helpdesk ticket's
+  customer, optionally setting the ticket status, the same as "Send Note" in
+  the web UI. A plain `update_redmine_issue` note never reaches the customer.
+  Opt in with `REDMINE_HELPDESK_ENABLED=true`
+  ([#301](https://github.com/jztan/redmine-mcp-server/issues/301)).
+
+### Contributors
+- @goizper requested Helpdesk email replies and captured the endpoint's real
+  request and response shapes from a Helpdesk 4.2.9 install
+  ([#301](https://github.com/jztan/redmine-mcp-server/issues/301))
 
 ## [2.16.0] - 2026-09-19
 ### Added

@@ -20,6 +20,7 @@ from ._env import (
     _is_crm_enabled,
     _is_deals_enabled,
     _is_dmsf_enabled,
+    _is_helpdesk_enabled,
     _is_products_enabled,
 )
 
@@ -30,6 +31,7 @@ PLUGIN_FLAGS: Dict[str, Callable[[], bool]] = {
     "deals": _is_deals_enabled,
     "products": _is_products_enabled,
     "dmsf": _is_dmsf_enabled,
+    "helpdesk": _is_helpdesk_enabled,
     # Tools spanning contacts and deals (notes, saved queries): either flag
     # exposes them.
     "crm-shared": lambda: _is_crm_enabled() or _is_deals_enabled(),

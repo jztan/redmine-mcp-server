@@ -27,6 +27,11 @@ API and covered by unit tests, but have never run against a real install. If you
 either, a bug report with the raw JSON from the plugin endpoint is worth more than a
 description of what went wrong.
 
+`REDMINE_HELPDESK_ENABLED` (RedmineUP Helpdesk) is not in the table either: the
+sandboxes have no Helpdesk install. Its request and response shapes come from a
+Helpdesk 4.2.9 / Redmine 6.1.2 install, captured by the user who asked for the
+tool.
+
 Redmine distributions and forks such as Easy Redmine and Easy8 are not tested at all.
 They add and remove top-level fields relative to stock Redmine, so a tool may return
 less than your instance actually holds. Open an issue with a redacted raw response
@@ -207,6 +212,7 @@ When enabled, the following tools return an error instead of executing
 - `manage_redmine_news`: all actions (`create`, `update`)
 - `delete_redmine_news`
 - `add_deal_product` (also requires `REDMINE_DEALS_ENABLED=true` and `REDMINE_PRODUCTS_ENABLED=true`)
+- `send_helpdesk_email_reply` (also requires `REDMINE_HELPDESK_ENABLED=true`)
 
 **Partially blocked (read actions still work):**
 - `manage_redmine_wiki_page` — `create`, `update`, `delete`, `rename` blocked; `list`, `get` allowed
@@ -3298,6 +3304,38 @@ manage_document(
 
 ---
 
+## Helpdesk (RedmineUP Helpdesk plugin)
+
+This section requires the **RedmineUP Helpdesk** plugin installed on the Redmine server and `REDMINE_HELPDESK_ENABLED=true`.
+
+### `send_helpdesk_email_reply`
+
+Email a reply to the customer of a Helpdesk ticket. This is what the web UI's "Send Note" checkbox does. `update_redmine_issue(notes=...)` only adds an internal journal, which the customer never receives.
+
+This is a **write operation** and is blocked in read-only mode. The email cannot be recalled once sent.
+
+**Parameters:**
+- `issue_id` (integer, required): the Helpdesk ticket (issue) to reply on
+- `content` (string, required): the email body; must not be blank
+- `status_id` (integer, optional): status to set on the ticket after the reply is sent
+
+**Returns:** `{success, issue_id, journal_id, to_address, message_date, customer, status_id}`, where `journal_id` is the journal that records the reply on the ticket, `to_address` is the recipient, and `customer` is `{id, name}` (`name` wrapped in `<insecure-content>` tags) or `null`. On failure, `{"error": ...}`; an unknown `issue_id` comes back as a validation error (the plugin answers 422, not 404). A 404 means the endpoint is missing, and the error says to check that the Helpdesk plugin is installed.
+
+**Example:**
+```python
+send_helpdesk_email_reply(
+    issue_id=1234,
+    content="Thanks for the report. The fix is deployed, please try again.",
+    status_id=4,
+)
+```
+
+**Notes:**
+- Calls `POST /helpdesk/email_note.json`. The plugin documents only the `.xml` form, but the JSON form accepts and returns the same fields.
+- Under OAuth, the tool requires the `add_issue_notes` scope. The plugin's own permission checks stay with Redmine.
+
+---
+
 ## Meta
 
 ### `get_mcp_server_info`
@@ -3311,7 +3349,7 @@ Return the MCP server's version, enabled-feature flags, and the identity of the 
 - `read_only_mode` (boolean): whether `REDMINE_MCP_READ_ONLY` is enabled. When `True`, all write tools refuse with the standard read-only error.
 - `auth_mode` (string): `"oauth"` or `"legacy"`.
 - `current_user` (dict or null): `{id, login, name}` for the authenticated Redmine user behind the configured API key. `null` when the server cannot reach Redmine (check `/health` for connectivity status). Use this to confirm who `assigned_to_id="me"` resolves to, which matters when a shared or robot API key is in use.
-- `plugin_flags` (dict): which plugin-gated tool families are enabled. Keys: `agile`, `checklists`, `products`, `crm`, `deals`, `dmsf`, `tags`, plus one per family registered by an [extension](extensions.md). `True` means the family's tools are listed and routable and will reach the underlying plugin endpoints (for `tags`, that `get_redmine_issue` returns a `tags` array); `False` means they are hidden from `tools/list` (calling them by name returns "Unknown tool"), except for `agile` and `tags`, which only add fields to core tools and are never hidden (for `tags`, the field is simply omitted).
+- `plugin_flags` (dict): which plugin-gated tool families are enabled. Keys: `agile`, `checklists`, `products`, `crm`, `deals`, `dmsf`, `helpdesk`, `tags`, plus one per family registered by an [extension](extensions.md). `True` means the family's tools are listed and routable and will reach the underlying plugin endpoints (for `tags`, that `get_redmine_issue` returns a `tags` array); `False` means they are hidden from `tools/list` (calling them by name returns "Unknown tool"), except for `agile` and `tags`, which only add fields to core tools and are never hidden (for `tags`, the field is simply omitted).
 
 The response intentionally excludes credentials, internal hostnames, file-system paths, and any other operator config that a caller doesn't need to know to choose its call shape. Only flags that change *call shape* are surfaced.
 

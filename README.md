@@ -25,7 +25,7 @@ A Model Context Protocol (MCP) server that connects AI assistants to Redmine. It
 
 ## Features
 
-- **51 MCP tools on a stock Redmine, 64 with the RedmineUP and DMSF plugins** (plus 1 operator tool gated by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`): Issues, projects, news, time tracking, wiki, Gantt, file operations, membership management, products, contacts and deals (CRM), DMSF documents, and more
+- **51 MCP tools on a stock Redmine, 65 with the RedmineUP and DMSF plugins** (plus 1 operator tool gated by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`): Issues, projects, news, time tracking, wiki, Gantt, file operations, membership management, products, contacts and deals (CRM), DMSF documents, Helpdesk email replies, and more
 - **Interactive Kanban Board**: `show_triage_board` renders a live, drag-and-drop issue board right in the chat via the MCP Apps extension
 - **Flexible Authentication**: API key, username/password, OAuth2 per-user tokens, or a browser login with each user's own API key on Redmines without OAuth
 - **Prompt Injection Protection**: User-controlled content wrapped in boundary tags for safe LLM consumption
@@ -173,6 +173,7 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `REDMINE_CRM_EDITION` | No | `light` | Which build of the CRM plugin the Redmine server runs: `light` or `pro`. The two register different contact query filters — the Pro build registers the contact fields, the Light build registers only `tags` — and Redmine ignores an unregistered filter parameter without erroring, answering with the whole collection instead. So `manage_contact` refuses `first_name`, `last_name`, `middle_name`, `company`, `job_title`, `email`, `phone` and `author_id` on `list` unless this is `pro`, rather than returning a silently unfiltered list. The build cannot be detected: Redmine exposes plugin versions only through `admin/plugins`, which is HTML and admin-only. |
 | `REDMINE_DEALS_ENABLED` | No | `false` | Enable RedmineUP CRM **deals** support: `manage_deal` (action=list/get/create/update/delete), `list_deal_statuses`, `manage_deal_category`, `manage_crm_note` (notes on deals), `list_crm_queries` and, together with `REDMINE_PRODUCTS_ENABLED`, `add_deal_product`. Separate from `REDMINE_CRM_ENABLED` because the CRM plugin's Light edition ships no deals and defines none of the deal permissions, so advertising them there would make consent fail. Requires the CRM plugin's **Pro** edition, the `deals` project module enabled on the project, and the `view_deals` permission, plus `add_deals` / `edit_deals` / `delete_deals` for the write actions. |
 | `REDMINE_DMSF_ENABLED` | No | `false` | Enable DMSF document-management plugin support: `manage_document` (action=list/get/create/update). Requires `redmine_dmsf` plugin on the Redmine server. |
+| `REDMINE_HELPDESK_ENABLED` | No | `false` | Enable RedmineUP Helpdesk plugin support: `send_helpdesk_email_reply` (emails a reply to the ticket's customer). Requires the Helpdesk plugin on the Redmine server. |
 | `REDMINE_TAGS_ENABLED` | No | `false` | Enable AlphaNodes additional_tags plugin support: `get_redmine_issue` returns a `tags` array, and `create_redmine_issue`/`update_redmine_issue` accept a `tag_list`. Requires the `additional_tags` plugin and the `view_issue_tags` / `create_issue_tags` / `edit_issue_tags` permissions on the Redmine server. |
 | `REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS` | No | `false` | Enable one retry for issue creation by filling missing required custom fields |
 | `REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS` | No | `{}` | JSON object mapping required custom field names to fallback values used when creating issues |
@@ -626,10 +627,11 @@ Plugin tools appear in the client's tool list only when their env var is set; wi
 | [CRM](https://www.redmineup.com/pages/plugins/crm) | RedmineUP | `REDMINE_CRM_ENABLED` | 2 tools: `manage_contact`, `list_contact_tags`; plus the 2 shared CRM tools `manage_crm_note` and `list_crm_queries`, which either CRM flag enables (adds the `*_contacts` and note scopes to OAuth discovery when enabled) |
 | [CRM deals](https://www.redmineup.com/pages/plugins/crm) | RedmineUP (Pro) | `REDMINE_DEALS_ENABLED` | 3 tools: `manage_deal`, `list_deal_statuses`, `manage_deal_category`; plus the 2 shared CRM tools above, and `add_deal_product` when `REDMINE_PRODUCTS_ENABLED` is also set (adds the `*_deals` and note scopes to OAuth discovery when enabled). Same plugin as CRM, but the Light edition has no deals |
 | [DMSF](https://github.com/danmunn/redmine_dmsf) | danmunn (open source) | `REDMINE_DMSF_ENABLED` | 1 tool: `manage_document` |
+| [Helpdesk](https://www.redmineup.com/pages/plugins/helpdesk) | RedmineUP | `REDMINE_HELPDESK_ENABLED` | 1 tool: `send_helpdesk_email_reply` |
 | [Additional Tags](https://github.com/alphanodes/additional_tags) | AlphaNodes (open source) | `REDMINE_TAGS_ENABLED` | `get_redmine_issue` returns a `tags` array; `create_redmine_issue` / `update_redmine_issue` accept `tag_list` |
 
 Agile and Additional Tags add fields to tools you already have, so they
-register no new tools. The other five bring their own, which appear in
+register no new tools. The other six bring their own, which appear in
 `tools/list` either way but return a feature-disabled error until you set the
 flag. Tags also needs the `view_issue_tags`, `create_issue_tags`, and
 `edit_issue_tags` permissions on the Redmine server.
@@ -640,11 +642,11 @@ Tools for a Redmine plugin written in house can be added from a separate package
 
 A deployment can expose a subset of these with `REDMINE_MCP_ALLOW_TOOLS`; everything else disappears from `tools/list` and is refused by `call_tool`.
 
-This MCP server provides 51 core tools for interacting with Redmine, plus 13 plugin tools that are listed only when the matching `REDMINE_*_ENABLED` flag is set (64 in total), and 1 operator tool exposed by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true` (maximum of 65). A client connected to a vanilla Redmine sees just the 51 core tools. For full documentation of every tool, see the [Tool Reference](./docs/tool-reference.md).
+This MCP server provides 51 core tools for interacting with Redmine, plus 14 plugin tools that are listed only when the matching `REDMINE_*_ENABLED` flag is set (65 in total), and 1 operator tool exposed by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true` (maximum of 66). A client connected to a vanilla Redmine sees just the 51 core tools. For full documentation of every tool, see the [Tool Reference](./docs/tool-reference.md).
 
 **Core tools (51, always available):** Project Management (10), Issue Operations (13), Time Tracking (4), Discovery / Enumeration (7), Search & Wiki (2), News (4), File Operations (5), Gantt (1), Interactive Apps (4), Meta (1).
 
-**Plugin-gated tools (13, listed only when their flag is set):** Checklists (3), Products (1), Contacts / CRM (2), Deals / CRM (3), shared CRM notes and saved queries (2, either CRM flag), deal product lines (1, deals plus products), Documents / DMSF (1). Each requires the matching Redmine plugin installed **and** its env flag set; with the flag off the tools are not registered on the MCP surface.
+**Plugin-gated tools (14, listed only when their flag is set):** Checklists (3), Products (1), Contacts / CRM (2), Deals / CRM (3), shared CRM notes and saved queries (2, either CRM flag), deal product lines (1, deals plus products), Documents / DMSF (1), Helpdesk (1). Each requires the matching Redmine plugin installed **and** its env flag set; with the flag off the tools are not registered on the MCP surface.
 
 **Operator tools (1, admin-gated):** `cleanup_attachment_files`, registered only when `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`.
 
@@ -727,7 +729,7 @@ These tools require only a Redmine instance and credentials, with no extra plugi
 - **Meta** (1 tool)
   - [`get_mcp_server_info`](docs/tool-reference.md#get_mcp_server_info) - Report server version, auth mode, read-only state, the authenticated user (`current_user`), and which plugin-gated tool families are enabled. Use to detect deployment lag before relying on a recently-shipped fix, or to confirm who `assigned_to_id="me"` resolves to.
 
-### Plugin-gated tools (13, opt in via env var)
+### Plugin-gated tools (14, opt in via env var)
 
 These tools require a corresponding Redmine plugin installed on the server **and** the matching environment variable set to `true` on the MCP server. They are listed in `tools/list` only when their flag is set; with the flag off they are not registered on the MCP surface (and a direct call still returns a feature-disabled error).
 
@@ -757,6 +759,9 @@ These tools require a corresponding Redmine plugin installed on the server **and
 
 - **Documents (DMSF)** (1 tool): set `REDMINE_DMSF_ENABLED=true`; requires the [`redmine_dmsf` plugin](https://github.com/danmunn/redmine_dmsf)
   - [`manage_document`](docs/tool-reference.md#manage_document) - List, get, create (upload), or update (new revision) DMSF documents
+
+- **Helpdesk** (1 tool): set `REDMINE_HELPDESK_ENABLED=true`; requires the [RedmineUP Helpdesk plugin](https://www.redmineup.com/pages/plugins/helpdesk)
+  - [`send_helpdesk_email_reply`](docs/tool-reference.md#send_helpdesk_email_reply) - Email a reply to a Helpdesk ticket's customer, optionally changing the ticket status
 
 ### Operator tools (1, admin-gated)
 
