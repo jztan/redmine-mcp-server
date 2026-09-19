@@ -193,6 +193,7 @@ When enabled, the following tools return an error instead of executing
 - `delete_redmine_issue`
 - `copy_issue`
 - `upload_file`
+- `create_upload_ticket`
 - `delete_file`
 - `import_time_entries`
 - `update_checklist_item` (also requires `REDMINE_CHECKLISTS_ENABLED=true`)
@@ -203,6 +204,8 @@ When enabled, the following tools return an error instead of executing
 - `manage_time_entry` — all actions
 - `manage_redmine_version` — all actions (`create`, `update`, `delete`)
 - `manage_redmine_project` — all actions (`create`, `update`, `close`, `reopen`)
+- `manage_redmine_news`: all actions (`create`, `update`)
+- `delete_redmine_news`
 - `add_deal_product` (also requires `REDMINE_DEALS_ENABLED=true` and `REDMINE_PRODUCTS_ENABLED=true`)
 
 **Partially blocked (read actions still work):**
