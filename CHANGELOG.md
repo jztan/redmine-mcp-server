@@ -8,6 +8,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- `manage_redmine_project` creates a project, edits its settings, or closes and
+  reopens it -- the first tool that writes a project record rather than
+  something inside one. Takes Redmine's own `Project` safe attributes (`name`,
+  `identifier`, `description`, `homepage`, `is_public`, `parent_id`,
+  `inherit_members`, `enabled_module_names`, `tracker_ids`,
+  `issue_custom_field_ids`, `default_assigned_to_id`, `default_version_id`,
+  `default_issue_query_id`, `custom_fields`); `identifier` is create-only,
+  because Redmine freezes it once the project exists. Every write reads the
+  project back with `include=enabled_modules,trackers,issue_custom_fields`,
+  since Redmine answers these endpoints with `204 No Content` and those arrays
+  are the only way to see that a field the caller lacks the permission for was
+  dropped rather than applied.
+  Archiving is not offered (Redmine gates it on administrator rights, and
+  `admin` is never advertised) and neither is deletion, which would cascade to
+  every issue, wiki page and file in the project and its subprojects
+  ([#307](https://github.com/jztan/redmine-mcp-server/issues/307),
+  [#308](https://github.com/jztan/redmine-mcp-server/pull/308)).
+
+  **Upgrading in an OAuth mode needs a Redmine-side change first.** Six
+  permissions are newly advertised -- `add_project`, `add_subprojects`,
+  `edit_project`, `close_project`, `select_project_publicity` and
+  `select_project_modules` (Create project, Create subprojects, Edit project,
+  Close / reopen the project, Set project public or private, Select project
+  modules). Tick them on the Redmine OAuth Application **before** starting the
+  upgraded server, or new authorizations fail with `invalid_scope`; tokens
+  already issued keep working either way. The last two gate a safe attribute
+  rather than an endpoint, so they are advertised but not required: a token
+  without them still edits every field except `is_public` and
+  `enabled_module_names`.
 - `REDMINE_AUTH_MODE=api-key-login` gives every user their own Redmine identity
   on a Redmine without OAuth, such as Easy Redmine or any Redmine older than 6.1.
   The server acts as its own OAuth authorization server, so MCP clients connect

@@ -77,7 +77,7 @@ Tools live under `src/redmine_mcp_server/tools/`, one file per Redmine resource;
 
 | File | Tools |
 |---|---|
-| `tools/projects.py` | Project listing, versions, members, roles, modules (10 tools) |
+| `tools/projects.py` | Project records, listing, versions, members, roles, modules (11 tools) |
 | `tools/issues.py` | Issues, search, copy, delete, relations, watchers, notes, categories, subtasks, private notes (13 tools) |
 | `tools/time_tracking.py` | Time entries, activities, bulk import (4 tools) |
 | `tools/wiki.py` | Wiki page CRUD + rename (1 tool, 6 actions) |
@@ -96,7 +96,7 @@ Tools live under `src/redmine_mcp_server/tools/`, one file per Redmine resource;
 | `apps/triage_board.py` | Interactive Kanban triage board MCP App (2 tools) |
 | `apps/project_dashboard.py` | Interactive project dashboard MCP App (2 tools) |
 
-Total: **49 core MCP tools** always registered, **13 plugin-gated** tools registered with a family tag and listed only when their `REDMINE_*_ENABLED` flag is set (62 with every plugin on), **plus 1 admin-gated** (`cleanup_attachment_files`, enabled by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`) for a maximum of 63.
+Total: **51 core MCP tools** always registered, **13 plugin-gated** tools registered with a family tag and listed only when their `REDMINE_*_ENABLED` flag is set (64 with every plugin on), **plus 1 admin-gated** (`cleanup_attachment_files`, enabled by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`) for a maximum of 65.
 
 Each `tools/<resource>.py` also owns its resource-specific serializers (`_X_to_dict` helpers).
 
@@ -666,7 +666,7 @@ redmine-mcp-server/
 ├── src/redmine_mcp_server/
 │   ├── main.py              # Entry point; build_authenticated_app() mounts the MCP app + discovery routes (oauth / oauth-proxy / api-key-login)
 │   ├── server.py            # Owns the shared `mcp = FastMCP(...)` instance; _select_auth_provider() picks the auth provider
-│   ├── tools/               # 17 per-resource tool modules (49 core + 13 plugin-gated + 1 admin-gated)
+│   ├── tools/               # 17 per-resource tool modules (51 core + 13 plugin-gated + 1 admin-gated)
 │   ├── apps/                # Interactive MCP Apps: triage board + project dashboard (4 tools)
 │   ├── _auth.py             # RedmineAuthProvider (introspection + AS-metadata + revoke), oauth mode
 │   ├── _oauth_proxy.py      # OAuthProxy factory (DCR + authorize/token/revoke proxy), oauth-proxy mode

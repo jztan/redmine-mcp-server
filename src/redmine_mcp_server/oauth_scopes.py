@@ -93,6 +93,26 @@ WRITE_SCOPES: list[str] = [
     # no separate create/edit/delete split for news
     "manage_files",  # upload_file, delete_file
     "manage_members",  # manage_project_member
+    # --- the project record itself: manage_redmine_project ---
+    "add_project",  # manage_redmine_project(action=create)
+    "add_subprojects",  # manage_redmine_project(action=create) with parent_id;
+    # Redmine gates a subproject on the parent's
+    # add_subprojects rather than on add_project
+    "edit_project",  # manage_redmine_project(action=update)
+    "close_project",  # manage_redmine_project(action=close|reopen)
+    # The two permissions below gate a *safe attribute*, not an endpoint:
+    # Project's safe_attributes blocks require select_project_publicity for
+    # is_public and select_project_modules for enabled_module_names. Redmine
+    # silently drops an attribute the caller may not set instead of refusing
+    # the request, so a token without them still edits every other field.
+    # Advertised so a token can carry them, and deliberately not required in
+    # TOOL_SCOPES -- advertised is not the same as required.
+    "select_project_publicity",  # manage_redmine_project is_public
+    "select_project_modules",  # manage_redmine_project enabled_module_names
+    # archive/unarchive are absent by design: Redmine gates
+    # ProjectsController#archive and #unarchive on require_admin, and admin is
+    # never advertised (see the module docstring). delete_project is absent
+    # because no tool deletes a project.
 ]
 
 # RedmineUP Agile plugin permissions, advertised only when the agile
@@ -355,6 +375,16 @@ TOOL_SCOPES: Dict[str, ToolScopeEntry] = {
     # Redmine gates GET /projects/.../versions.json on view_issues.
     "list_redmine_versions": frozenset({"view_issues"}),
     "manage_redmine_version": frozenset({"manage_versions"}),
+    # Each action's own endpoint gate, and nothing more. add_subprojects is
+    # argument-conditional (create with a parent_id), and the two
+    # select_project_* permissions gate individual fields, so both stay with
+    # Redmine's own checks per the boundary stated above.
+    "manage_redmine_project": {
+        "create": frozenset({"add_project"}),
+        "update": frozenset({"edit_project"}),
+        "close": frozenset({"close_project"}),
+        "reopen": frozenset({"close_project"}),
+    },
     # --- issues ---
     "list_redmine_issues": frozenset({"view_issues"}),
     "get_redmine_issue": frozenset({"view_issues"}),
