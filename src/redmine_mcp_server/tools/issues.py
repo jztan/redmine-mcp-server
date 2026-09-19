@@ -4,6 +4,7 @@ relations, watchers, notes, and categories.
 
 import json
 import logging
+import os
 from typing import Annotated, Any, Dict, List, Literal, Optional, Set, Union
 
 from pydantic import Field
@@ -842,7 +843,32 @@ def _detail_value_is_free_text(property_name: Any, field_name: Any) -> bool:
     return False
 
 
-def _journal_details_to_list(journal: Any) -> List[Dict[str, Any]]:
+# Above this many characters, a journal detail's before/after text is
+# reported by length rather than in full. Redmine journals a description
+# change with both the old and the new text, so a ticket whose description
+# is edited repeatedly carries several copies of it in its change log --
+# measured at 94% of an 879k-character issue response, against 0.5% of
+# actual comment text (#313). The current values live on the issue itself;
+# what a reader needs from a field change is that it happened, when, and by
+# whom.
+_JOURNAL_VALUE_MAX_CHARS_DEFAULT = 500
+
+
+def _journal_value_max_chars() -> int:
+    """Threshold for eliding a journal detail's values. ``0`` disables it."""
+    raw = os.getenv("REDMINE_MCP_JOURNAL_VALUE_MAX_CHARS")
+    if raw is None or raw.strip() == "":
+        return _JOURNAL_VALUE_MAX_CHARS_DEFAULT
+    try:
+        value = int(raw)
+    except ValueError:
+        return _JOURNAL_VALUE_MAX_CHARS_DEFAULT
+    return max(value, 0)
+
+
+def _journal_details_to_list(
+    journal: Any, include_values: bool = False
+) -> List[Dict[str, Any]]:
     """Convert a journal's raw ``details`` (list of dicts) to a serializable list.
 
     python-redmine exposes journal field-changes as plain dicts with keys
@@ -853,6 +879,13 @@ def _journal_details_to_list(journal: Any) -> List[Dict[str, Any]]:
     attachment filenames) are passed through ``wrap_insecure_content`` so that
     field-change history cannot smuggle prompt-injection payloads past the same
     protection applied to journal notes.
+
+    A value longer than ``REDMINE_MCP_JOURNAL_VALUE_MAX_CHARS`` is replaced by
+    its length unless ``include_values`` asks for the text (#313). The item
+    then carries ``old_value_length`` / ``new_value_length`` and
+    ``elided: True``; the value keys stay present and hold ``None``, so a
+    caller reading them does not get a ``KeyError`` and can tell an elided
+    value from an empty one by the flag.
     """
     raw = getattr(journal, "details", None)
     if not raw:
@@ -863,11 +896,26 @@ def _journal_details_to_list(journal: Any) -> List[Dict[str, Any]]:
     except TypeError:
         return []
     keys = ("property", "name", "old_value", "new_value")
+    limit = 0 if include_values else _journal_value_max_chars()
     for d in iterator:
         if isinstance(d, dict):
             item = {k: d.get(k) for k in keys}
         else:
             item = {k: getattr(d, k, None) for k in keys}
+
+        elided = False
+        if limit:
+            for key in ("old_value", "new_value"):
+                value = item[key]
+                if isinstance(value, str) and len(value) > limit:
+                    item[f"{key}_length"] = len(value)
+                    item[key] = None
+                    elided = True
+        if elided:
+            item["elided"] = True
+
+        # Wrap what survives. Measuring before wrapping keeps the reported
+        # length the field's own, not the boundary tags'.
         if _detail_value_is_free_text(item["property"], item["name"]):
             item["old_value"] = wrap_insecure_content(item["old_value"])
             item["new_value"] = wrap_insecure_content(item["new_value"])
@@ -875,7 +923,9 @@ def _journal_details_to_list(journal: Any) -> List[Dict[str, Any]]:
     return details
 
 
-def _journals_to_list(issue: Any) -> List[Dict[str, Any]]:
+def _journals_to_list(
+    issue: Any, include_journal_values: bool = False
+) -> List[Dict[str, Any]]:
     """Convert journals on an issue object to a list of dicts."""
     raw_journals = getattr(issue, "journals", None)
     if raw_journals is None:
@@ -889,7 +939,7 @@ def _journals_to_list(issue: Any) -> List[Dict[str, Any]]:
 
     for journal in iterator:
         notes = getattr(journal, "notes", "")
-        details = _journal_details_to_list(journal)
+        details = _journal_details_to_list(journal, include_journal_values)
         # Keep journals that have a note OR field-change details. Entries with
         # neither carry no information and are skipped.
         if not notes and not details:
@@ -958,7 +1008,11 @@ def _issue_category_to_dict(category: Any) -> Dict[str, Any]:
     }
 
 
-def _journal_to_dict(journal: Any, include_private_flag: bool = True) -> Dict[str, Any]:
+def _journal_to_dict(
+    journal: Any,
+    include_private_flag: bool = True,
+    include_journal_values: bool = False,
+) -> Dict[str, Any]:
     """Convert a python-redmine IssueJournal to a serializable dict.
 
     Unlike `_journals_to_list`, this helper preserves empty-notes entries
@@ -976,7 +1030,7 @@ def _journal_to_dict(journal: Any, include_private_flag: bool = True) -> Dict[st
         ),
         "notes": wrap_insecure_content(notes) if notes else "",
         "created_on": _safe_isoformat(getattr(journal, "created_on", None)),
-        "details": _journal_details_to_list(journal),
+        "details": _journal_details_to_list(journal, include_journal_values),
     }
     if include_private_flag:
         entry["private_notes"] = bool(getattr(journal, "private_notes", False))
@@ -994,6 +1048,7 @@ async def get_redmine_issue(
     include_watchers: bool = False,
     include_relations: bool = False,
     include_children: bool = False,
+    include_journal_values: bool = False,
 ) -> Dict[str, Any]:
     """Retrieve a specific Redmine issue by ID. Fetch issue details,
     view a ticket, show a bug report, get issue with comments,
@@ -1028,6 +1083,16 @@ async def get_redmine_issue(
         include_children: Whether to include the issue's direct children,
             returned under ``children`` as ``[{"id", "subject", "tracker"},
             ...]``. Defaults to ``False``.
+        include_journal_values: Return the before/after text of field
+            changes in full instead of by length. Defaults to ``False``,
+            because Redmine journals a description edit with both the old
+            and the new text: a ticket edited repeatedly carries several
+            copies of its description in its change log, and that is
+            usually the bulk of the response. A detail whose value was
+            left out carries ``old_value_length`` / ``new_value_length``
+            and ``elided: True``; the current values are on the issue
+            itself. Set this only when the *previous* text is the thing
+            being asked for.
 
     Returns:
         A dictionary containing issue details, including the standard fields
@@ -1078,7 +1143,7 @@ async def get_redmine_issue(
 
             result = _issue_to_dict(issue, include_custom_fields=include_custom_fields)
             if include_journals:
-                all_journals = _journals_to_list(issue)
+                all_journals = _journals_to_list(issue, include_journal_values)
                 if journal_limit is not None:
                     total = len(all_journals)
                     offset = journal_offset
@@ -2838,7 +2903,9 @@ async def manage_issue_note(
 
 @mcp.tool()
 @offloaded
-def get_private_notes(issue_id: int) -> List[Dict[str, Any]]:
+def get_private_notes(
+    issue_id: int, include_journal_values: bool = False
+) -> List[Dict[str, Any]]:
     """Retrieve only the private notes/journals of a Redmine issue.
 
     Fetches the issue's journals and filters for entries where
@@ -2847,6 +2914,9 @@ def get_private_notes(issue_id: int) -> List[Dict[str, Any]]:
 
     Args:
         issue_id: ID of the issue.
+        include_journal_values: Return the before/after text of any field
+            changes on these journals in full rather than by length. See
+            ``get_redmine_issue`` for why the default is ``False``.
 
     Returns:
         List of private journal dictionaries, each containing ``id``,
@@ -2869,7 +2939,13 @@ def get_private_notes(issue_id: int) -> List[Dict[str, Any]]:
             # Skip entries with no notes body (private detail-only records).
             if not getattr(journal, "notes", ""):
                 continue
-            private.append(_journal_to_dict(journal, include_private_flag=True))
+            private.append(
+                _journal_to_dict(
+                    journal,
+                    include_private_flag=True,
+                    include_journal_values=include_journal_values,
+                )
+            )
         return private
     except Exception as e:
         return [

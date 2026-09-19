@@ -898,9 +898,20 @@ Retrieve detailed information about a specific Redmine issue.
 - `include_watchers` (boolean, optional): Include watcher list. Default: `false`
 - `include_relations` (boolean, optional): Include issue relations. Default: `false`. Requires only `view_issues`. Each entry is `{id, issue_id, issue_to_id, relation_type, delay}`.
 - `include_children` (boolean, optional): Include child issues. Default: `false`
+- `include_journal_values` (boolean, optional): Return the before/after text of field changes in full instead of by length. Default: `false` — see **Journal field changes** below.
 
 
 **Returns:** Issue dictionary with details, journals, and attachments. Standard fields include `category`, `fixed_version` (target version), and `parent` (each `{id, ...}` or `None`), plus `start_date`, `due_date`, `closed_on` (ISO-8601 or `None`), `done_ratio`, `estimated_hours`, `spent_hours`, `total_estimated_hours`, `total_spent_hours` (the last two include subtasks), and `is_private`. Each is `None` when not set on the issue. When `REDMINE_AGILE_ENABLED=true`, also includes `story_points`, `agile_sprint_id`, and `agile_position` from the RedmineUP Agile plugin. Top-level keys the standard Redmine API does not define (added by a distribution or plugin, e.g. Easy Redmine's `easy_sprint` and `easy_story_points`) are passed through under `unmapped_fields`; the key is omitted when there are none. Null values are dropped, every string inside is wrapped in the same `<insecure-content-...>` boundary tags as `description` (nested ones included), and a value longer than 1000 characters once wrapped and serialized is skipped -- the cap is measured after wrapping because that is the size that reaches the client. The cap is a size rule, not a name list, so plugin rendering data such as Easy Redmine's `css_classes` still comes through when it is short enough.
+
+**Journal field changes (#313):** a journal's `details` entries describe field changes as `{property, name, old_value, new_value}`. Redmine records a description edit with the **full old and new text**, so a ticket whose description is edited repeatedly carries several copies of it in its change log — on one real ticket that was 827 KB of an 879 KB response, against 4.7 KB of actual comment text. Values longer than `REDMINE_MCP_JOURNAL_VALUE_MAX_CHARS` (default 500) are therefore reported by length:
+
+```json
+{"property": "attr", "name": "description",
+ "old_value": null, "new_value": null,
+ "old_value_length": 26917, "new_value_length": 51857, "elided": true}
+```
+
+The value keys stay present and hold `null`, so a caller reading them gets no `KeyError` and can tell an elided value from an empty one by the `elided` flag. Each value is judged on its own, so a short `old_value` survives beside a long `new_value`. The current values are on the issue itself, not in the details — pass `include_journal_values=true` only when the *previous* text is what is being asked for, or set the environment variable to `0` to switch eliding off entirely.
 
 **Attachment URLs (#110, #118):** each entry under `attachments` carries the canonical shape `{id, filename, filesize, content_type, description, content_url, author, created_on}` — identical to what `manage_redmine_wiki_page(action="get", include_attachments=True)` returns. When `REDMINE_PUBLIC_URL` is set, any `content_url` whose scheme+host+port matches `REDMINE_URL`'s origin is rewritten to use the public origin (preserving path, query, fragment, and any reverse-proxy subpath). When unset, the raw URL Redmine echoes back is returned — callers can fall back to [`get_redmine_attachment`](#get_redmine_attachment) for a sandbox-safe download URL via the MCP server's proxy.
 
@@ -1656,6 +1667,7 @@ Retrieve only the private notes (journals with `private_notes=true`) of an issue
 
 **Parameters:**
 - `issue_id` (integer, required): ID of the issue.
+- `include_journal_values` (boolean, optional): Return the before/after text of any field changes on these journals in full rather than by length. Default: `false`, as for `get_redmine_issue`.
 
 **Returns:** List of journal dictionaries where `private_notes` is `true`. Journals with empty note bodies are omitted.
 
