@@ -111,6 +111,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [#305](https://github.com/jztan/redmine-mcp-server/issues/305)).
 
 ### Fixed
+- `manage_redmine_project(action="create")` no longer reports
+  `enabled_modules`, `trackers` and `issue_custom_fields` as empty when the
+  new project cannot be read back. The fallback response now returns them as
+  `None`, since the creation response never carries them, instead of `[]`,
+  which read as "nothing enabled"
+  ([#309](https://github.com/jztan/redmine-mcp-server/issues/309)).
 - `legacy-per-user` mode no longer runs a wrong or reset
   `X-Redmine-API-Key` as the anonymous user. Redmine serves an unknown key as
   anonymous on anything anonymous may read, so a mistyped key used to return
