@@ -8,143 +8,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
-- `manage_redmine_project` creates a project, edits its settings, or closes and
-  reopens it -- the first tool that writes a project record rather than
-  something inside one. Takes Redmine's own `Project` safe attributes (`name`,
-  `identifier`, `description`, `homepage`, `is_public`, `parent_id`,
-  `inherit_members`, `enabled_module_names`, `tracker_ids`,
-  `issue_custom_field_ids`, `default_assigned_to_id`, `default_version_id`,
-  `default_issue_query_id`, `custom_fields`); `identifier` is create-only,
-  because Redmine freezes it once the project exists. Every write reads the
-  project back with `include=enabled_modules,trackers,issue_custom_fields`,
-  since Redmine answers these endpoints with `204 No Content` and those arrays
-  are the only way to see that a field the caller lacks the permission for was
-  dropped rather than applied.
-  Archiving is not offered (Redmine gates it on administrator rights, and
-  `admin` is never advertised) and neither is deletion, which would cascade to
-  every issue, wiki page and file in the project and its subprojects
-  ([#307](https://github.com/jztan/redmine-mcp-server/issues/307),
-  [#308](https://github.com/jztan/redmine-mcp-server/pull/308)).
-
-  **Upgrading in an OAuth mode needs a Redmine-side change first.** Six
-  permissions are newly advertised -- `add_project`, `add_subprojects`,
-  `edit_project`, `close_project`, `select_project_publicity` and
-  `select_project_modules` (Create project, Create subprojects, Edit project,
-  Close / reopen the project, Set project public or private, Select project
-  modules). Tick them on the Redmine OAuth Application **before** starting the
-  upgraded server, or new authorizations fail with `invalid_scope`; tokens
-  already issued keep working either way. The last two gate a safe attribute
-  rather than an endpoint, so they are advertised but not required: a token
-  without them still edits every field except `is_public` and
-  `enabled_module_names`.
-- `REDMINE_AUTH_MODE=api-key-login` gives every user their own Redmine identity
-  on a Redmine without OAuth, such as Easy Redmine or any Redmine older than 6.1.
-  The server acts as its own OAuth authorization server, so MCP clients connect
-  with nothing but its URL (discovery, dynamic client registration, PKCE, refresh
-  tokens). On first use the user pastes their personal Redmine API key into a
-  login page this server serves; the key is checked with Redmine, stored
-  encrypted below `FASTMCP_HOME/api-key-login/` under a key derived from
-  `REDMINE_MCP_JWT_SIGNING_KEY`, and every tool call then runs as that user.
-  Passwords are never accepted. Administrator keys are refused unless
-  `REDMINE_API_KEY_LOGIN_ALLOW_ADMIN=true`, a login works only in the browser
-  that started it, and a key reset in Redmine ends the user's sessions at the
-  next 401 or token refresh, within an hour. OAuth scopes in this mode are a
-  narrowing the client asks for, not Redmine permissions. Setup, security model
-  and session rules: [docs/api-key-login-auth.md](docs/api-key-login-auth.md)
-  ([#261](https://github.com/jztan/redmine-mcp-server/issues/261),
-  [#286](https://github.com/jztan/redmine-mcp-server/pull/286),
-  [#287](https://github.com/jztan/redmine-mcp-server/pull/287)).
-- `REDMINE_API_KEY_LOGIN_BINDING_CRYPTO=token-derived` keeps stored Redmine API
-  keys out of reach of anyone holding both the store and
-  `REDMINE_MCP_JWT_SIGNING_KEY`, at the cost of any server-side read of a stored
-  key. The default stays `server-secret`; switching a running deployment signs
-  everyone out. Trade-offs and switchover:
-  [docs/api-key-login-auth.md](docs/api-key-login-auth.md#binding-protection)
-  ([#299](https://github.com/jztan/redmine-mcp-server/pull/299)).
-- `REDMINE_MCP_EXTENSIONS` imports named Python modules at startup, so a separate
-  package can add tools for a Redmine plugin written in house. The hook is
-  provisional: [docs/extensions.md](docs/extensions.md)
-  ([#294](https://github.com/jztan/redmine-mcp-server/issues/294)).
-- `create_upload_ticket` and `POST /uploads/{upload_id}`: a file on the
-  caller's own machine can now reach `uploads` without its bytes passing
-  through the model. The tool reserves a slot and returns `upload_url`,
-  `ticket` and `expires_at`; the caller sends the file in one HTTP request
-  with the ticket in `X-Upload-Ticket` and the raw file as the body
-  (multipart is deliberately refused: the whole body would be buffered
-  before its size could be checked); the resulting `upload_id` is accepted
-  as a fourth content source by `create_redmine_issue`,
-  `update_redmine_issue`, `manage_redmine_wiki_page` and `upload_file`.
-  There is no way to pipe a file into a tool argument, so a `content_base64`
-  payload is written out character by character by the model -- observed
-  losing 32 characters out of 4312 in a repetitive stretch, which attached a
-  PNG missing its `IEND` chunk and reported success. The ticket is
-  single-use, minutes long and bounded by `REDMINE_MCP_UPLOAD_MAX_BYTES`; it
-  authorises nothing else, which is why it can be handed to a model at all.
-  Staged files live in the same UUID directories under `ATTACHMENTS_DIR` as
-  downloaded attachments and are swept by the same cleanup manager, so a
-  failed attach can be retried without sending the file again. The route is
-  guarded by the ticket rather than by the MCP session's auth, matching how
-  `/files/{file_id}` already guards downloads ([#305](https://github.com/jztan/redmine-mcp-server/issues/305)).
-- Optional `sha256` and `size_bytes` per `uploads` item, verified once the
-  content is resolved and refused before anything reaches Redmine. A
-  checksum is 64 characters and survives being copied where a
-  multi-kilobyte payload does not, so a mangled `content_base64` upload now
-  fails loudly instead of attaching a corrupt file. Accepted on every
-  source, and on `upload_file` directly ([#305](https://github.com/jztan/redmine-mcp-server/issues/305)).
-- `REDMINE_MCP_CONTENT_BASE64_MAX_BYTES` caps that one source specifically.
-  Unset, the ordinary upload limit applies and nothing that works today
-  stops working; operators who would rather refuse a large base64 payload
-  than risk a silent corruption can lower it, and the error names the
-  upload route ([#305](https://github.com/jztan/redmine-mcp-server/issues/305)).
-
-### Changed
-- The `uploads` sources are documented caller-first: `upload_id`, then
-  `source_url`, then `content_base64`, then `file_path`. The old order led
-  with `file_path` and recommended it for "a file that is already there",
-  with the qualifier -- that it is only the caller's files when the server
-  runs on the caller's machine -- trailing a condition no model can check.
-  Against the usual remote deployment that reads as the first thing to try,
-  and it can never work. `content_base64` is now described as what it is
-  good for, content the caller generated and that is small, rather than as
-  the way to send "a file the caller holds"
-  ([#303](https://github.com/jztan/redmine-mcp-server/issues/303),
-  [#305](https://github.com/jztan/redmine-mcp-server/issues/305)).
+- `manage_redmine_project` creates, edits, closes and reopens projects, taking
+  Redmine's own `Project` safe attributes (`identifier` is create-only). Every
+  write reads the project back, so a field Redmine dropped for lack of
+  permission shows up instead of looking applied. Archiving and deletion are
+  not offered ([#307](https://github.com/jztan/redmine-mcp-server/issues/307), [#308](https://github.com/jztan/redmine-mcp-server/pull/308)).
+  **OAuth deployments: before starting the upgraded server, tick six new
+  permissions on the Redmine OAuth Application** (`add_project`,
+  `add_subprojects`, `edit_project`, `close_project`,
+  `select_project_publicity`, `select_project_modules`), or new authorizations
+  fail with `invalid_scope`. Existing tokens keep working. The last two are
+  optional: without them only `is_public` and `enabled_module_names` cannot be
+  edited.
+- `REDMINE_AUTH_MODE=api-key-login` gives each user their own Redmine identity
+  on a Redmine without OAuth, such as Easy Redmine or Redmine before 6.1. MCP
+  clients connect with just the server URL; on first use the user pastes their
+  Redmine API key into a login page, and it is stored encrypted and used for
+  their tool calls. Passwords are never accepted and administrator keys are
+  refused by default. `REDMINE_API_KEY_LOGIN_BINDING_CRYPTO=token-derived`
+  optionally keeps stored keys unreadable even to someone holding both the
+  store and the signing key. Setup and security model:
+  [docs/api-key-login-auth.md](docs/api-key-login-auth.md)
+  ([#261](https://github.com/jztan/redmine-mcp-server/issues/261), [#286](https://github.com/jztan/redmine-mcp-server/pull/286), [#287](https://github.com/jztan/redmine-mcp-server/pull/287),
+  [#299](https://github.com/jztan/redmine-mcp-server/pull/299)).
+- `REDMINE_MCP_EXTENSIONS` imports named Python modules at startup, so a
+  separate package can add tools, for example for an in-house Redmine plugin.
+  The hook is provisional: [docs/extensions.md](docs/extensions.md)
+  ([#294](https://github.com/jztan/redmine-mcp-server/issues/294), [#295](https://github.com/jztan/redmine-mcp-server/pull/295)).
+- A file on the caller's machine can reach `uploads` without passing through
+  the model. `create_upload_ticket` returns a single-use upload URL and ticket;
+  the caller sends the file in one HTTP request to `POST /uploads/{upload_id}`
+  and passes the returned `upload_id` to any tool that takes `uploads`.
+  Previously such a file could only arrive as `content_base64` retyped by the
+  model, which was seen to corrupt a PNG and still report success. Each
+  `uploads` item also accepts optional `sha256` and `size_bytes`, checked before
+  anything reaches Redmine, and `REDMINE_MCP_CONTENT_BASE64_MAX_BYTES` lets
+  operators cap base64 payloads. The docs now list the sources caller-first:
+  `upload_id`, `source_url`, `content_base64`, `file_path`
+  ([#303](https://github.com/jztan/redmine-mcp-server/issues/303), [#305](https://github.com/jztan/redmine-mcp-server/issues/305), [#306](https://github.com/jztan/redmine-mcp-server/pull/306)).
 
 ### Fixed
-- `manage_redmine_project(action="create")` no longer reports
-  `enabled_modules`, `trackers` and `issue_custom_fields` as empty when the
-  new project cannot be read back. The fallback response now returns them as
-  `None`, since the creation response never carries them, instead of `[]`,
-  which read as "nothing enabled"
-  ([#309](https://github.com/jztan/redmine-mcp-server/issues/309)).
-- `legacy-per-user` mode no longer runs a wrong or reset
-  `X-Redmine-API-Key` as the anonymous user. Redmine serves an unknown key as
-  anonymous on anything anonymous may read, so a mistyped key used to return
-  the public view (fewer projects, "no issues") with no error. Each distinct
-  key is now checked once with `GET /users/current.json` and refused with
-  `PER_USER_AUTH` when Redmine answers 401. The result is cached in memory
-  (accepted for 5 minutes, rejected for 60 seconds, at most 1024 keys, stored
-  as digests), so a key reset inside that window can still see the anonymous
-  view until its entry expires. A 403, 5xx or unreachable Redmine lets the
-  request through instead of blaming the key. Redmine's "Authentication
-  required" setting removes the anonymous fallback entirely
-  ([#290](https://github.com/jztan/redmine-mcp-server/issues/290)).
-- Expired OAuth state is now deleted from `FASTMCP_HOME` in `oauth-proxy` and
-  `api-key-login` modes. FastMCP's file store stops serving an expired record
-  but never removes the file, and unauthenticated `/register` and `/authorize`
-  requests write them, so the directory could grow without bound. The cleanup
-  task now sweeps expired files every `CLEANUP_INTERVAL_MINUTES`, starts when
-  the server boots in those modes, and runs even with `AUTO_CLEANUP_ENABLED`
-  off. Records without a TTL, such as `oauth-proxy` client registrations, are
-  kept ([#289](https://github.com/jztan/redmine-mcp-server/issues/289)).
-- `AUTO_CLEANUP_ENABLED` now defaults to `true`, as the README, `server.json`
-  and the `.env` examples have always said. The code read an unset variable as
-  `false`, so the background cleanup never ran unless the variable was set
-  explicitly, and an expired download was only removed if someone requested
-  it again. Set `AUTO_CLEANUP_ENABLED=false` to keep the old
-  behavior. If `ATTACHMENTS_DIR` cannot be created, the server now logs a
-  warning and skips attachment cleanup instead of failing the tool call that
-  started the task ([#296](https://github.com/jztan/redmine-mcp-server/issues/296)).
+- `legacy-per-user` mode refuses a wrong or reset `X-Redmine-API-Key` with
+  `PER_USER_AUTH` instead of silently running as the anonymous user. Accepted
+  keys are cached for 5 minutes, so a key reset within that window can still
+  see the anonymous view; Redmine's "Authentication required" setting closes
+  the gap ([#290](https://github.com/jztan/redmine-mcp-server/issues/290)).
+- `AUTO_CLEANUP_ENABLED` now defaults to `true`, as documented. The code read
+  an unset variable as `false`, so cleanup never ran unless it was set. Set it
+  to `false` to keep the old behavior
+  ([#296](https://github.com/jztan/redmine-mcp-server/issues/296)).
+- Expired OAuth state files are now deleted from `FASTMCP_HOME` in
+  `oauth-proxy` and `api-key-login` modes. Unauthenticated requests write them,
+  so the directory could grow without bound ([#289](https://github.com/jztan/redmine-mcp-server/issues/289)).
 
 ### Contributors
 - @andilem proposed the `api-key-login` mode and proved it against a production
