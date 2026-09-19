@@ -14,7 +14,7 @@ surface an extension depends on, so an extension has no reason to import
 this module.
 """
 
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING, Any, Dict, FrozenSet, List
 
 from ._env import _is_read_only_mode
 
@@ -47,3 +47,38 @@ def extension_advertised_scopes() -> list[str]:
         if not read_only:
             scopes += list(spec.advertised_write_scopes)
     return scopes
+
+
+def extension_issue_update_keys() -> FrozenSet[str]:
+    """Issue update keys the enabled extensions add to the standard set.
+
+    ``update_redmine_issue`` treats a key it does not recognize as a custom
+    field *label*, so an attribute a distribution adds to the issue has to be
+    named here or it never reaches the PUT. Read at call time, per call: the
+    flag behind ``enabled()`` is an environment variable the tests flip
+    between calls, and a set taken once at import would outlive it.
+    """
+    keys: set[str] = set()
+    for spec in REGISTERED_EXTENSIONS:
+        if spec.enabled():
+            keys.update(spec.issue_update_keys)
+    return frozenset(keys)
+
+
+def extension_issue_query_filters() -> Dict[str, Dict[str, Any]]:
+    """Issue query filters the enabled extensions add, with their parameters.
+
+    Maps each filter name to the query parameters that have to ride along for
+    the server to honour it -- Easy Redmine's ``set_filter=1``, for instance,
+    which is what engages its query engine. The mapping is empty for the usual
+    case of a filter that needs nothing but itself, and
+    ``list_redmine_issues`` merges a filter's parameters only when that filter
+    is actually part of the call.
+    """
+    filters: Dict[str, Dict[str, Any]] = {}
+    for spec in REGISTERED_EXTENSIONS:
+        if not spec.enabled():
+            continue
+        for name, params in spec.issue_query_filters.items():
+            filters[name] = dict(params)
+    return filters
