@@ -154,7 +154,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and implemented it
   ([#286](https://github.com/jztan/redmine-mcp-server/pull/286),
   [#287](https://github.com/jztan/redmine-mcp-server/pull/287),
-  [#299](https://github.com/jztan/redmine-mcp-server/pull/299)).
+  [#299](https://github.com/jztan/redmine-mcp-server/pull/299)). They also
+  reported that `uploads` steered agents to `file_path` and that a local file
+  could only arrive by being retyped by the model
+  ([#303](https://github.com/jztan/redmine-mcp-server/issues/303),
+  [#305](https://github.com/jztan/redmine-mcp-server/issues/305)), and built the
+  upload-ticket route that fixes it
+  ([#306](https://github.com/jztan/redmine-mcp-server/pull/306)).
+- @mmahmed proposed and implemented the `REDMINE_MCP_EXTENSIONS` extension point
+  ([#294](https://github.com/jztan/redmine-mcp-server/issues/294),
+  [#295](https://github.com/jztan/redmine-mcp-server/pull/295)) and the
+  `manage_redmine_project` tool
+  ([#307](https://github.com/jztan/redmine-mcp-server/issues/307),
+  [#308](https://github.com/jztan/redmine-mcp-server/pull/308)).
 
 ## [2.15.0] - 2026-09-12
 ### Added
