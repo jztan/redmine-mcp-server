@@ -1664,9 +1664,12 @@ Edit text or toggle privacy of a Redmine journal entry (issue note). `get_privat
 
 **Parameters:**
 - `action` (string, required): Allowed: `edit`, `set_private`
-- `journal_id` (integer, required): ID of the journal entry (from `get_redmine_issue` with `include_journals=true`)
+- `journal_id` (integer, required): ID of the journal entry (from `get_redmine_issue` with `include_journals=true`). Each journal in that response also carries `notes_sha256`, the digest of its raw notes, for `notes_expected_sha256`
 - `notes` (string): New notes text (may be empty to clear). For `action="edit"`, one of `notes` or `notes_upload_id` is required and they are mutually exclusive
 - `notes_upload_id` (string, optional): Take the new note from a file staged with [`create_upload_ticket`](#create_upload_ticket), decoded as UTF-8. **Prefer this for a long note** — the text goes from disk to the server instead of being written out into the tool argument, which is slow for a long one and drops characters. The response then carries `notes_length` and `notes_sha256` instead of the note itself, since echoing it back would put the whole thing in the conversation anyway
+- `notes_edits` (list, optional): Change part of a long note in place: `{find, replace}` pairs applied in order on the server. Each `find` must occur **exactly once** in the note as it stands after the preceding edits; zero matches or several refuse the whole call and write nothing. **Requires `issue_id`.** Mutually exclusive with `notes` and `notes_upload_id`
+- `notes_expected_sha256` (string, optional): the digest the note had when it was read. **Echo back the `notes_sha256` each journal carries** — do not hash the `notes` you read, they are wrapped in boundary tags whose id changes per call. Checked before any edit; a mismatch refuses the call rather than overwriting whatever changed in between
+- `issue_id` (integer, optional): the issue the journal belongs to. **Required with `notes_edits` and ignored otherwise** — patching reads the note first, and Redmine offers no endpoint for a single journal, so it can only be read through its issue. A `journal_id` that is not among that issue's visible journals is refused and nothing is written
 - `private_notes` (boolean, optional): Optionally toggle the private flag during `edit`
 - `is_private` (boolean): Required for `action="set_private"` — `true` to mark private, `false` to make public
 
