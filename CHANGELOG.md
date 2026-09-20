@@ -131,6 +131,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   depending on the account behind the key -- and the documented behaviour,
   oldest first, held only for accounts with the default setting
   ([#318](https://github.com/jztan/redmine-mcp-server/issues/318)).
+- `manage_redmine_wiki_page(action="update")` takes `expected_version`, the
+  `version` the page had when the caller read it. A text update sent no
+  version at all, so an edit made by someone else in the meantime was
+  overwritten without an error; with `expected_version` Redmine answers 409
+  and the tool reports an edit conflict. `rename` had the same window between
+  its read of the body and the write that echoes it back, and now sends the
+  version it read, so it can return an edit conflict where it used to revert
+  the other edit ([#324](https://github.com/jztan/redmine-mcp-server/issues/324)).
 
 ### Contributors
 - @andilem reported, with measurements from a production ticket, that journal
@@ -162,6 +170,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#319](https://github.com/jztan/redmine-mcp-server/issues/319)) and
   implemented `fields`
   ([#321](https://github.com/jztan/redmine-mcp-server/pull/321)).
+- @andilem reported that a wiki text update sends no version, so a
+  concurrent edit is overwritten
+  ([#324](https://github.com/jztan/redmine-mcp-server/issues/324)).
 
 ## [2.16.0] - 2026-09-19
 ### Added

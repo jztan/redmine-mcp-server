@@ -2285,6 +2285,7 @@ List, get, create, update, delete, or rename a Redmine wiki page. Replaces `list
   - `sha256` (string, optional) / `size_bytes` (integer, optional): what the caller meant to send. Checked after the content is resolved and before anything reaches Redmine; a mismatch refuses the whole call. Worth passing with `content_base64`, whose payload is written out by the model and can arrive mangled.
   - `content_type` (string, optional): MIME type override (e.g. `"application/xml"`).
   - `description` (string, optional): Human-readable description for the attachment.
+- `expected_version` (integer, optional): The `version` the page had when the caller read it, for `update` with `text`. Redmine answers a stale one with an edit conflict, where the write would otherwise overwrite the other edit silently. Pass it whenever the new text was derived from a page read earlier. Ignored without `text` and by the other actions: Redmine checks the version only when the text changes, and an attachment-only `update` and a `rename` already send the version they read along with the text they echo back.
 
 **Returns:**
 - `list`: array of page metadata dicts (`title`, `version`, `parent_title` if present, `created_on`, `updated_on`) — no body text

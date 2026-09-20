@@ -101,6 +101,9 @@ class TestManageRedmineWikiPageRename:
             project_id="proj",
             title="New",
             text="Body",
+            # The version read with the body, so an edit that lands in
+            # between is a 409 and not a silent revert (#324).
+            version=1,
             redirect_existing_links="1",
         )
 
