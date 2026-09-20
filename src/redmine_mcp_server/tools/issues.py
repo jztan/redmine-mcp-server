@@ -1086,6 +1086,14 @@ async def get_redmine_issue(
                 issue = _get_redmine_client().issue.get(issue_id)
 
             result = _issue_to_dict(issue, include_custom_fields=include_custom_fields)
+            # The digest is of the *raw* description, not of what sits in
+            # ``description`` above it: ``wrap_insecure_content`` adds boundary
+            # tags with a fresh random id on every call, so a caller hashing
+            # what it read could never match the stored text. Echo this back as
+            # ``description_expected_sha256`` to patch safely (#314).
+            result["description_sha256"] = hashlib.sha256(
+                (getattr(issue, "description", "") or "").encode("utf-8")
+            ).hexdigest()
             if include_journals:
                 all_journals = _journals_to_list(issue)
                 if journal_limit is not None:
@@ -1943,6 +1951,11 @@ async def create_redmine_issue(
     return await in_thread(_run)
 
 
+def _normalized_newlines(text: str) -> str:
+    """Collapse CRLF and lone CR to LF, for comparison only."""
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
 def _apply_text_edits(
     current: str,
     edits: Any,
@@ -1965,6 +1978,12 @@ def _apply_text_edits(
     ambiguous and could land in the wrong place. Both refuse the whole call,
     because a half-applied patch is worse than none.
 
+    Matching is done with line endings normalized. Redmine's web UI saves
+    CRLF, and a caller writing a multi-line ``find`` with plain newlines
+    would otherwise never match text it is looking straight at. The stored
+    convention is restored on the way out, so patching a field does not
+    silently rewrite every line ending in it.
+
     Returns ``(new_text, None)`` or ``(None, {"error": ...})``.
     """
     if expected_sha256:
@@ -1977,14 +1996,17 @@ def _apply_text_edits(
                     f"{label} has changed since it was read: expected sha256 "
                     f"{expected_sha256.strip().lower()}, found {actual}. Read "
                     "it again and rebase the edits, rather than overwriting "
-                    "someone else's change."
+                    f"someone else's change -- {actual} is the digest the "
+                    "rebased call should carry, and get_redmine_issue returns "
+                    "it as description_sha256."
                 )
             }
 
     if not isinstance(edits, list) or not edits:
         return None, {"error": f"{label}_edits must be a non-empty list."}
 
-    text = current
+    had_crlf = "\r\n" in current
+    text = _normalized_newlines(current)
     for index, edit in enumerate(edits):
         if not isinstance(edit, dict):
             return None, {"error": f"{label}_edits[{index}] must be an object."}
@@ -1999,6 +2021,8 @@ def _apply_text_edits(
                 "error": f"{label}_edits[{index}]: 'replace' must be a string."
             }
 
+        find = _normalized_newlines(find)
+        replace = _normalized_newlines(replace)
         occurrences = text.count(find)
         if occurrences == 0:
             return None, {
@@ -2018,6 +2042,8 @@ def _apply_text_edits(
             }
         text = text.replace(find, replace, 1)
 
+    if had_crlf:
+        text = text.replace("\n", "\r\n")
     return text, None
 
 
@@ -2142,10 +2168,14 @@ async def update_redmine_issue(
             include enough surrounding text to be unambiguous. Mutually
             exclusive with a ``description`` in ``fields``.
         description_expected_sha256: The hex digest the description had when
-            it was read. Verified before any edit is applied, and a mismatch
+            it was read -- **echo back the ``description_sha256`` that
+            ``get_redmine_issue`` returns**; do not hash what you read, since
+            the description is wrapped in boundary tags whose id changes on
+            every call. Verified before any edit is applied, and a mismatch
             refuses the call rather than overwriting whatever changed in
-            between. Worth passing whenever the read and the write are not
-            in the same breath.
+            between, naming the current digest so the retry can carry it.
+            Worth passing whenever the read and the write are not in the
+            same breath.
         description_upload_id: Take the whole description from a file staged
             with ``create_upload_ticket``, decoded as UTF-8. For when the
             text really is all new rather than edited: the content travels

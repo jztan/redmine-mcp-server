@@ -369,3 +369,154 @@ class TestStagedUploadAsTheSource:
 
             sent = mock_redmine.issue.update.call_args
             assert sent.kwargs["description"] == "<p>die neue Fassung</p>"
+
+
+@pytest.mark.unit
+class TestDigestComesFromTheReadTool:
+    """#316 review: a caller cannot hash what it read.
+
+    `get_redmine_issue` wraps the description in `<insecure-content-...>`
+    tags whose id is random per call, so a digest taken from the response
+    text could never match the stored description. The tool hands the digest
+    over instead.
+    """
+
+    @pytest.fixture
+    def mock_redmine(self):
+        from unittest.mock import patch
+
+        with patch("redmine_mcp_server._client.redmine") as mock:
+            yield mock
+
+    def _issue(self, description):
+        from unittest.mock import MagicMock
+
+        issue = MagicMock()
+        issue.id = 7
+        issue.description = description
+        issue.journals = []
+        issue.attachments = []
+        return issue
+
+    @pytest.mark.asyncio
+    async def test_the_read_tool_reports_a_digest_of_the_raw_description(
+        self, mock_redmine
+    ):
+        from redmine_mcp_server.tools.issues import get_redmine_issue
+
+        mock_redmine.issue.get.return_value = self._issue(DOC)
+
+        result = await get_redmine_issue(issue_id=7, include_journals=False)
+
+        assert result["description_sha256"] == _sha(DOC)
+        # And emphatically not of what the caller can see.
+        assert result["description_sha256"] != _sha(result["description"])
+        assert "insecure-content" in result["description"]
+
+    @pytest.mark.asyncio
+    async def test_echoing_that_digest_back_is_accepted(self, mock_redmine):
+        from redmine_mcp_server.tools.issues import (
+            get_redmine_issue,
+            update_redmine_issue,
+        )
+
+        mock_redmine.issue.get.return_value = self._issue(DOC)
+
+        read = await get_redmine_issue(issue_id=7, include_journals=False)
+        result = await update_redmine_issue(
+            issue_id=7,
+            fields={},
+            description_edits=[{"find": "zwei Knoten", "replace": "vier Knoten"}],
+            description_expected_sha256=read["description_sha256"],
+        )
+
+        assert "error" not in result
+        assert (
+            "vier Knoten" in mock_redmine.issue.update.call_args.kwargs["description"]
+        )
+
+    def test_the_mismatch_error_names_the_digest_to_retry_with(self):
+        error = _apply_text_edits(
+            DOC,
+            [{"find": "zwei Knoten", "replace": "x"}],
+            _sha("something else"),
+            "description",
+        )[1]
+
+        assert _sha(DOC) in error["error"]
+        assert "description_sha256" in error["error"]
+
+
+@pytest.mark.unit
+class TestLineEndings:
+    """#316 review: Redmine's web UI saves CRLF."""
+
+    CRLF_DOC = DOC.replace("\n", "\r\n")
+
+    def test_a_plain_newline_find_matches_crlf_text(self):
+        new, error = _apply_text_edits(
+            self.CRLF_DOC,
+            [
+                {
+                    "find": "<h2>Ziel</h2>\n<p>Der Dienst",
+                    "replace": "<h2>Neu</h2>\n<p>Der Dienst",
+                }
+            ],
+            None,
+            "description",
+        )
+
+        assert error is None
+        assert "<h2>Neu</h2>" in new
+
+    def test_the_stored_convention_survives_the_edit(self):
+        new, error = _apply_text_edits(
+            self.CRLF_DOC,
+            [{"find": "zwei Knoten", "replace": "vier Knoten"}],
+            None,
+            "description",
+        )
+
+        assert error is None
+        assert "\r\n" in new
+        assert "\n" not in new.replace("\r\n", "")
+        # Including inside text the caller supplied with plain newlines.
+        assert new.count("\r\n") == self.CRLF_DOC.count("\r\n")
+
+    def test_a_multiline_replace_adopts_the_stored_convention(self):
+        new, error = _apply_text_edits(
+            self.CRLF_DOC,
+            [
+                {
+                    "find": "<p>Der Dienst laeuft auf zwei Knoten.</p>",
+                    "replace": "<p>Zeile eins.</p>\n<p>Zeile zwei.</p>",
+                }
+            ],
+            None,
+            "description",
+        )
+
+        assert error is None
+        assert "<p>Zeile eins.</p>\r\n<p>Zeile zwei.</p>" in new
+
+    def test_an_lf_document_stays_lf(self):
+        new, error = _apply_text_edits(
+            DOC,
+            [{"find": "zwei Knoten", "replace": "vier Knoten"}],
+            None,
+            "description",
+        )
+
+        assert error is None
+        assert "\r" not in new
+
+    def test_the_digest_is_still_of_the_stored_text(self):
+        """Normalisation is for matching only -- the guard sees the raw text."""
+        new, error = _apply_text_edits(
+            self.CRLF_DOC,
+            [{"find": "zwei Knoten", "replace": "vier"}],
+            _sha(self.CRLF_DOC),
+            "description",
+        )
+
+        assert error is None
