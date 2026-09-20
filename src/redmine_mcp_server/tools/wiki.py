@@ -10,6 +10,7 @@ from .._decorators import ActionMode, action_dispatch
 from .._errors import _handle_redmine_error
 from .._offload import in_thread, offloaded
 from .files import _build_upload_descriptors
+from .issues import _apply_text_edits, _text_from_staged_upload
 from .._serialization import (
     _attachment_to_dict,
     _iter_capped,
@@ -180,6 +181,30 @@ def _get_wiki_page_action(
         )
 
 
+def _text_sources_error(**given: bool) -> Optional[Dict[str, Any]]:
+    """Refuse a call that names the page text more than one way (#325)."""
+    sources = [name for name, is_given in given.items() if is_given]
+    if len(sources) > 1:
+        return {
+            "error": ("Set the text one way at a time; got " + ", ".join(sources) + ".")
+        }
+    return None
+
+
+def _without_text(page: Dict[str, Any], text: str) -> Dict[str, Any]:
+    """Report a page written from a file or a patch by length, not in full.
+
+    The caller never wrote that text out, so echoing it back would put the
+    whole page in the conversation after all -- the cost these routes exist
+    to avoid (#325).
+    """
+    if "error" in page:
+        return page
+    page.pop("text", None)
+    page["text_length"] = len(text)
+    return page
+
+
 async def _create_wiki_page_action(
     project_id: Optional[Union[str, int]] = None,
     wiki_page_title: Optional[str] = None,
@@ -187,13 +212,33 @@ async def _create_wiki_page_action(
     comments: Optional[str] = None,
     parent_title: Optional[str] = None,
     uploads: Optional[List[Dict[str, Any]]] = None,
+    text_edits: Optional[List[Dict[str, str]]] = None,
+    text_upload_id: Optional[str] = None,
     **_: Any,
 ) -> Dict[str, Any]:
     title_error = _require_wiki_page_title("create", wiki_page_title)
     if title_error is not None:
         return {"error": title_error}
+    if text_edits is not None:
+        return {
+            "error": (
+                "text_edits changes a page that exists; on 'create' there is "
+                "nothing to patch. Pass text, or text_upload_id for a long page."
+            )
+        }
+    sources_error = _text_sources_error(
+        text=text is not None, text_upload_id=bool(text_upload_id)
+    )
+    if sources_error is not None:
+        return sources_error
+
+    from_upload = bool(text_upload_id)
+    if from_upload:
+        text, staged_error = _text_from_staged_upload(text_upload_id, "text")
+        if staged_error is not None:
+            return staged_error
     if text is None:
-        return {"error": "text is required for action 'create'"}
+        return {"error": "text is required for action 'create' (or text_upload_id)"}
 
     upload_descriptors = None
     if uploads:
@@ -218,7 +263,8 @@ async def _create_wiki_page_action(
     def _run():
         try:
             wiki_page = _get_redmine_client().wiki_page.create(**create_kwargs)
-            return _wiki_page_to_dict(wiki_page)
+            page = _wiki_page_to_dict(wiki_page)
+            return _without_text(page, text) if from_upload else page
         except Exception as e:
             hint = _blank_validation_parent_hint(e, parent_title)
             if hint is not None:
@@ -240,17 +286,34 @@ async def _update_wiki_page_action(
     parent_title: Optional[str] = None,
     uploads: Optional[List[Dict[str, Any]]] = None,
     expected_version: Optional[int] = None,
+    text_edits: Optional[List[Dict[str, str]]] = None,
+    text_upload_id: Optional[str] = None,
     **_: Any,
 ) -> Dict[str, Any]:
     title_error = _require_wiki_page_title("update", wiki_page_title)
     if title_error is not None:
         return {"error": title_error}
-    if text is None and not uploads:
+    sources_error = _text_sources_error(
+        text=text is not None,
+        text_edits=text_edits is not None,
+        text_upload_id=bool(text_upload_id),
+    )
+    if sources_error is not None:
+        return sources_error
+    from_edits = text_edits is not None
+    from_upload = bool(text_upload_id)
+    if text is None and not from_edits and not from_upload and not uploads:
         return {
             "error": (
-                "text is required for action 'update' unless uploads is provided."
+                "text is required for action 'update' (or text_edits, or "
+                "text_upload_id) unless uploads is provided."
             )
         }
+
+    if from_upload:
+        text, staged_error = _text_from_staged_upload(text_upload_id, "text")
+        if staged_error is not None:
+            return staged_error
 
     existing_text = None
     existing_version = None
@@ -280,6 +343,27 @@ async def _update_wiki_page_action(
                 f"updating wiki page '{wiki_page_title}' in project {project_id}",
                 {"resource_type": "wiki page", "resource_id": wiki_page_title},
             )
+
+    if from_edits:
+        # The page as read above is what gets patched, and its version goes
+        # out with the write below, so an edit landing in between is a 409.
+        # When the caller says which version its edits were written against,
+        # a page that has moved on is refused here, before anything is sent.
+        if expected_version is not None and expected_version != existing_version:
+            return {
+                "error": (
+                    "Edit conflict: this wiki page is at version "
+                    f"{existing_version}, not the {expected_version} it was "
+                    "read at. Re-read it and rebase the edits. Nothing was "
+                    "changed."
+                )
+            }
+        text, patch_error = _apply_text_edits(
+            existing_text or "", text_edits, None, "text"
+        )
+        if patch_error is not None:
+            return patch_error
+        expected_version = existing_version
 
     upload_descriptors = None
     if uploads:
@@ -320,7 +404,10 @@ async def _update_wiki_page_action(
                     update_kwargs["version"] = expected_version
             client.wiki_page.update(wiki_page_title, **update_kwargs)
             wiki_page = client.wiki_page.get(wiki_page_title, project_id=project_id)
-            return _wiki_page_to_dict(wiki_page)
+            page = _wiki_page_to_dict(wiki_page)
+            if from_edits or from_upload:
+                return _without_text(page, text)
+            return page
         except Exception as e:
             hint = _blank_validation_parent_hint(e, parent_title)
             if hint is not None:
@@ -450,6 +537,8 @@ async def manage_redmine_wiki_page(
     redirect_existing_links: bool = True,
     uploads: Optional[List[Dict[str, Any]]] = None,
     expected_version: Annotated[Optional[int], Field(ge=1)] = None,
+    text_edits: Optional[List[Dict[str, str]]] = None,
+    text_upload_id: Optional[str] = None,
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """List, get, create, update, delete, or rename a Redmine wiki page.
 
@@ -502,13 +591,32 @@ async def manage_redmine_wiki_page(
             conflict when the page has moved on since, where it would
             otherwise overwrite the other edit silently. Optional; pass it
             whenever the new text was derived from a page read earlier.
-            Ignored without ``text`` and by the other actions.
+            With ``text_edits`` a page that has moved on is refused before
+            anything is sent. Ignored on an attachment-only ``update`` and
+            by the other actions.
+        text_edits: Change part of a long page in place, for ``update``: a
+            list of ``{"find": ..., "replace": ...}`` applied in order on
+            this server. **Prefer this to ``text`` for a long page**, which
+            would otherwise have to be written out in full into the
+            argument. Each ``find`` must occur exactly once in the page as
+            it stands after the preceding edits; zero matches or several
+            refuse the whole call and change nothing. The write carries the
+            version that was patched, so an edit landing in between is an
+            edit conflict. Mutually exclusive with ``text`` and
+            ``text_upload_id``.
+        text_upload_id: Take the whole page from a file staged with
+            ``create_upload_ticket``, decoded as UTF-8, for ``create`` and
+            ``update``. For a long page that really is all new. Mutually
+            exclusive with ``text`` and ``text_edits``.
 
     Returns:
         ``list``: list of page metadata dicts (no body text).
         ``get`` / ``create`` / ``update``: wiki page dict, carrying
         ``parent_title`` when the page has a parent and omitting the
-        key when it sits at the wiki root.
+        key when it sits at the wiki root. A write made with
+        ``text_edits`` or ``text_upload_id`` reports ``text_length`` in
+        place of ``text``, since echoing the page would put it in the
+        conversation after all.
         ``delete``: ``{"success": True, "title": ..., "message": ...}``.
         ``rename``: ``{"success": True, ...}`` with the renamed page's
         metadata to confirm the title change actually applied.

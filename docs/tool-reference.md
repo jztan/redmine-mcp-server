@@ -2285,11 +2285,14 @@ List, get, create, update, delete, or rename a Redmine wiki page. Replaces `list
   - `sha256` (string, optional) / `size_bytes` (integer, optional): what the caller meant to send. Checked after the content is resolved and before anything reaches Redmine; a mismatch refuses the whole call. Worth passing with `content_base64`, whose payload is written out by the model and can arrive mangled.
   - `content_type` (string, optional): MIME type override (e.g. `"application/xml"`).
   - `description` (string, optional): Human-readable description for the attachment.
-- `expected_version` (integer, optional): The `version` the page had when the caller read it, for `update` with `text`. Redmine answers a stale one with an edit conflict, where the write would otherwise overwrite the other edit silently. Pass it whenever the new text was derived from a page read earlier. Ignored without `text` and by the other actions: Redmine checks the version only when the text changes, and an attachment-only `update` and a `rename` already send the version they read along with the text they echo back.
+- `expected_version` (integer, optional): The `version` the page had when the caller read it, for an `update` that changes the text. Redmine answers a stale one with an edit conflict, where the write would otherwise overwrite the other edit silently. Pass it whenever the new text was derived from a page read earlier. With `text_edits` a page that has moved on is refused before anything is sent. Ignored on an attachment-only `update` and by the other actions: Redmine checks the version only when the text changes, and an attachment-only `update` and a `rename` already send the version they read along with the text they echo back.
+- `text_edits` (list, optional): Change part of a long page in place, for `update`: `{"find": ..., "replace": ...}` pairs applied in order on the server. **Prefer this to `text` for a long page**, which would otherwise be written out in full into the tool argument. Each `find` must occur exactly once in the page as it stands after the preceding edits; zero matches or several refuse the whole call and change nothing. Line endings are normalized for matching and the page's own convention is restored on the way out. The write carries the version that was patched, so an edit landing in between is an edit conflict. Mutually exclusive with `text` and `text_upload_id`.
+- `text_upload_id` (string, optional): Take the whole page from a file staged with [`create_upload_ticket`](#create_upload_ticket), decoded as UTF-8, for `create` and `update`. For a long page that really is all new. Mutually exclusive with `text` and `text_edits`.
 
 **Returns:**
 - `list`: array of page metadata dicts (`title`, `version`, `parent_title` if present, `created_on`, `updated_on`) — no body text
 - `get`/`create`/`update`: full wiki page dict (`title`, `text`, `version`, `created_on`, `updated_on`, `author`, `project`, `parent_title`, `attachments` when applicable). `project` is only returned by Redmine 7.0+; earlier versions omit the key. `parent_title` is a plain string and is present only when the page has a parent, matching the key `list` already returns; a page at the wiki root omits it
+- `create`/`update` with `text_edits` or `text_upload_id`: the same dict with `text_length` in place of `text`, since echoing the page back would put it in the conversation after all
 - `delete`: `{"success": true, "title": ..., "message": ...}`
 - `rename`: `{"success": true, ...}` plus the renamed page's metadata
 - Error: `{"error": "..."}`
@@ -2571,7 +2574,7 @@ Reserve a slot for a file on the caller's own machine and return the URL to send
 **Flow:**
 1. Call `create_upload_ticket`.
 2. Send the file to `upload_url` in one HTTP request, ticket in the `X-Upload-Ticket` header, the raw file as the body. The response carries `upload_id`, `size` and `sha256`. Multipart is deliberately not accepted — Starlette's `request.form()` buffers the whole body before its size can be checked, so the cap would not hold.
-3. Name that `upload_id` as the content source — in `uploads` on `create_redmine_issue`, `update_redmine_issue` or `manage_redmine_wiki_page`, or on `upload_file`. A staged file can also *be* a long text field rather than an attachment: `description_upload_id` on `create_redmine_issue` and `update_redmine_issue`, and `notes_upload_id` on `manage_issue_note`.
+3. Name that `upload_id` as the content source — in `uploads` on `create_redmine_issue`, `update_redmine_issue` or `manage_redmine_wiki_page`, or on `upload_file`. A staged file can also *be* a long text field rather than an attachment: `description_upload_id` on `create_redmine_issue` and `update_redmine_issue`, `notes_upload_id` on `manage_issue_note`, and `text_upload_id` on `manage_redmine_wiki_page`.
 
 ```bash
 curl -sS -H "X-Upload-Ticket: $TICKET" --data-binary @mockup.png "$UPLOAD_URL"
