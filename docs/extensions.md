@@ -142,6 +142,44 @@ The `plugin:<family>` tag on each tool is what ties it to its family: a tool
 carrying it is listed only while that family's `enabled()` is true, exactly as the
 vendor plugin tools follow their own `REDMINE_*_ENABLED` flag.
 
+## Extending the issue tools
+
+A distribution that adds attributes or filters to the issue itself -- Easy
+Redmine's sprint fields, say -- registers two more entries rather than tools of
+its own. Both apply only while the family's `enabled()` is true, so a stock
+server sends and accepts exactly what it does today.
+
+```python
+register_extension(ExtensionSpec(
+    family="acme",
+    enabled=lambda: is_true_env("REDMINE_ACME_ENABLED"),
+    tool_kinds={...},
+    tool_scopes={...},
+    issue_update_keys=("acme_sprint_id", "acme_story_points"),
+    issue_query_filters={"acme_sprint_id": {"set_filter": 1}},
+))
+```
+
+**`issue_update_keys`** are attributes `update_redmine_issue` may write. Without
+them the key is taken for a custom field *label*, and labels are matched with
+every non-alphanumeric stripped -- so `acme_sprint_id` and a custom field named
+"Acme Sprint ID" normalize to one string, and the value is written to whichever
+the lookup found. Registered names are passed through untouched and never reach
+label matching; they also spare the write path the project custom-field lookup it
+would otherwise need to rule the name out. `create_redmine_issue` and
+`update_redmine_issue` share that step, so a registered name reaches Redmine on
+both.
+
+**`issue_query_filters`** are filter names `list_redmine_issues` accepts, each
+mapped to the query parameters that have to accompany it -- `{}` when it needs
+none, and something like `{"set_filter": 1}` when the server honours the filter
+only with a companion. The names are registered rather than accepted freely
+because Redmine drops a filter it does not know and answers 200 with the
+collection unnarrowed, which a caller cannot tell apart from a filter that
+matched everything. Parameters are merged into the request only when that filter
+is part of the call, and never over a value the caller set. Filter *values* face
+the same rules as any other filter's.
+
 ## What is checked at startup
 
 Loading an extension fails closed. Every one of these stops the server rather than
@@ -162,6 +200,21 @@ serving a surface that does not match what the module declared:
   with what it declared.
 - The auth provider is one this server does not recognize while an extension has
   scopes to advertise.
+- An `issue_update_keys` entry that Redmine itself defines, or that another
+  extension already claims.
+- An `issue_query_filters` name that Redmine itself registers, or that another
+  extension already claims.
+- A companion parameter that Redmine reads as the query's own filter definition
+  (`fields`, `f`, `query_id`), or one `list_redmine_issues` owns (`limit`,
+  `offset`, `sort`, `include`).
+- A companion parameter that is itself a filter name -- Redmine's own, the
+  spec's, or another family's, including the `cf_<id>`, `cf_<id>.due_date` and
+  `<association>.cf_<id>` spellings, which are registered per custom field
+  rather than by name. It would ride along unasked and narrow every call that
+  uses the filter, without the caller having written it.
+- A filter name that an already registered family sends as a companion
+  parameter. That is the same collision from the other side: the older family's
+  value would be merged into every call the new filter appears in.
 
 **A per-action scope map is checked against the tool's `action` parameter.** When a
 `tool_scopes` entry is a dict keyed by action, that parameter has to be annotated
