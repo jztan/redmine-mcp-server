@@ -446,6 +446,15 @@ class TestDigestComesFromTheReadTool:
         assert _sha(DOC) in error["error"]
         assert "description_sha256" in error["error"]
 
+    def test_the_mismatch_message_follows_the_label(self):
+        """It has to fit notes too, once #317 lands."""
+        error = _apply_text_edits(
+            "some note", [{"find": "x", "replace": "y"}], _sha("other"), "notes"
+        )[1]
+
+        assert "notes_sha256" in error["error"]
+        assert "description" not in error["error"]
+
 
 @pytest.mark.unit
 class TestLineEndings:

@@ -2087,8 +2087,8 @@ def _apply_text_edits(
                     f"{expected_sha256.strip().lower()}, found {actual}. Read "
                     "it again and rebase the edits, rather than overwriting "
                     f"someone else's change -- {actual} is the digest the "
-                    "rebased call should carry, and get_redmine_issue returns "
-                    "it as description_sha256."
+                    f"rebased call should carry, and it is reported as "
+                    f"{label}_sha256 on the read."
                 )
             }
 
@@ -3071,23 +3071,55 @@ def _edit_issue_note_action(
     journal_id: Optional[int] = None,
     notes: Optional[str] = None,
     private_notes: Optional[bool] = None,
+    notes_upload_id: Optional[str] = None,
     **_: Any,
 ) -> Dict[str, Any]:
-    if notes is None:
-        return {"error": "notes is required for action 'edit'"}
+    sources = [
+        name
+        for name, given in (
+            ("notes", notes is not None),
+            ("notes_upload_id", bool(notes_upload_id)),
+        )
+        if given
+    ]
+    if not sources:
+        return {
+            "error": (
+                "action 'edit' needs the new text: either notes, or "
+                "notes_upload_id for a note staged with create_upload_ticket."
+            )
+        }
+    if len(sources) > 1:
+        return {"error": "Pass either notes or notes_upload_id, not both."}
+
+    from_upload = bool(notes_upload_id)
+    if from_upload:
+        staged, staged_error = _text_from_staged_upload(notes_upload_id, "notes")
+        if staged_error is not None:
+            return staged_error
+        notes = staged
+
     try:
         params: Dict[str, Any] = {"notes": notes}
         if private_notes is not None:
             params["private_notes"] = bool(private_notes)
         _get_redmine_client().issue_journal.update(journal_id, **params)
-        return {
+        result: Dict[str, Any] = {
             "success": True,
             "journal_id": journal_id,
-            "notes": notes,
             "private_notes": (
                 bool(private_notes) if private_notes is not None else None
             ),
         }
+        if from_upload:
+            # A note that arrived as a file is one the caller never wrote out,
+            # so echoing it back would put the whole thing in the conversation
+            # after all -- the cost this route exists to avoid (#317).
+            result["notes_length"] = len(notes)
+            result["notes_sha256"] = hashlib.sha256(notes.encode("utf-8")).hexdigest()
+        else:
+            result["notes"] = notes
+        return result
     except Exception as e:
         return _handle_redmine_error(
             e,
@@ -3134,6 +3166,7 @@ async def manage_issue_note(
     notes: Optional[str] = None,
     private_notes: Optional[bool] = None,
     is_private: Optional[bool] = None,
+    notes_upload_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Edit text or toggle privacy of a Redmine journal (issue note).
 
@@ -3142,15 +3175,26 @@ async def manage_issue_note(
     Args:
         action: One of: ``edit``, ``set_private``.
         journal_id: ID of the journal entry (required for both actions).
-        notes: New notes text for ``edit`` (required; may be empty string
-            to clear the note).
+        notes: New notes text for ``edit``; may be an empty string to clear
+            the note. Mutually exclusive with ``notes_upload_id``, and one
+            of the two is required.
+        notes_upload_id: Take the new note from a file staged with
+            ``create_upload_ticket``, decoded as UTF-8. **Prefer this for a
+            long note**: the text travels from disk to this server instead
+            of being written out into this argument, which is slow for a
+            long one and drops characters. The response then reports
+            ``notes_length`` and ``notes_sha256`` rather than echoing the
+            note back, since echoing it would put the whole thing in the
+            conversation after all.
         private_notes: Optionally toggle private flag during ``edit``.
         is_private: Required for ``set_private`` -- ``True`` to mark
             private, ``False`` to make public.
 
     Returns:
         ``edit``: ``{"success": True, "journal_id": ..., "notes": ...,
-        "private_notes": ...}``.
+        "private_notes": ...}``, or with ``notes_upload_id``
+        ``{"success": True, "journal_id": ..., "notes_length": ...,
+        "notes_sha256": ..., "private_notes": ...}``.
         ``set_private``: ``{"success": True, "journal_id": ...,
         "private_notes": <bool>}``.
         On error: ``{"error": "..."}``.

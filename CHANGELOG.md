@@ -62,6 +62,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `journal_offset = total - journal_limit` -- so the caller has to fetch
   everything to learn `total`, which is the request it was trying to avoid.
   `journal_pagination` echoes the order back ([#318](https://github.com/jztan/redmine-mcp-server/issues/318)).
+- `manage_issue_note(action="edit")` takes `notes_upload_id`, so a long note
+  can be replaced from a file staged with `create_upload_ticket` instead of
+  being written out into the tool argument -- the same problem #316 solved
+  for descriptions, and the same route. The response then reports
+  `notes_length` and `notes_sha256` rather than echoing the note, since
+  echoing it would put the text in the conversation after all. A plain
+  `notes` call is unchanged ([#317](https://github.com/jztan/redmine-mcp-server/issues/317)).
 
 ### Changed
 - Journal field changes no longer repeat a long before/after text. Redmine
