@@ -65,6 +65,20 @@ def extension_issue_update_keys() -> FrozenSet[str]:
     return frozenset(keys)
 
 
+def extension_issue_payload_skip_keys() -> FrozenSet[str]:
+    """Top-level issue keys the enabled extensions keep out of the response.
+
+    For a fork's own presentation keys, which `unmapped_fields` would
+    otherwise pass through on every issue. Read at call time for the same
+    reason as the update keys: the flag is an environment variable.
+    """
+    keys: set[str] = set()
+    for spec in REGISTERED_EXTENSIONS:
+        if spec.enabled():
+            keys.update(spec.issue_payload_skip_keys)
+    return frozenset(keys)
+
+
 def extension_issue_query_filters() -> Dict[str, Dict[str, Any]]:
     """Issue query filters the enabled extensions add, with their parameters.
 

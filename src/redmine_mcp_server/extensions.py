@@ -223,6 +223,17 @@ class ExtensionSpec:
             it. The parameters are merged into the request only when that
             filter is part of the call, and never over a value the caller
             set, so a request that names none of them is unchanged.
+        issue_payload_skip_keys: Top-level issue keys to leave out of
+            ``unmapped_fields`` while the family is enabled. For the keys a
+            distribution adds for its own renderer rather than for a
+            reader: Easy Redmine's ``css_classes`` is a CSS class list for
+            its issue grid, present on every issue, and it answers nothing
+            the issue's own fields do not answer better. The size cap that
+            catches a plugin's long text does not reach it -- it is about a
+            fifth of the cap -- and a cap low enough would drop real data
+            instead. This repository cannot know which of a fork's keys are
+            presentation, so the fork says so here. A name that is not in
+            the payload is simply never matched.
     """
 
     family: str
@@ -233,6 +244,7 @@ class ExtensionSpec:
     advertised_write_scopes: Sequence[str] = ()
     issue_update_keys: Sequence[str] = ()
     issue_query_filters: Mapping[str, Mapping[str, object]] = MappingProxyType({})
+    issue_payload_skip_keys: Sequence[str] = ()
 
 
 def _reject(where: str, problem: str) -> NoReturn:
@@ -304,6 +316,30 @@ def _check_issue_update_keys(where: str, value: object) -> None:
                 f"has an entry in issue_update_keys that is not a non-empty "
                 f"str: {key!r}. Each one is the name of an issue attribute as "
                 "the Redmine API spells it.",
+            )
+
+
+def _check_issue_payload_skip_keys(where: str, value: object) -> None:
+    """Payload keys to hide: an ordered sequence of names, like the above."""
+    if isinstance(value, str):
+        _reject(
+            where,
+            f"passes a bare str as issue_payload_skip_keys: {value!r}. A str "
+            "is a sequence of its own characters, so this would hide one "
+            f"single-letter key per letter. Pass a one-tuple: ({value!r},).",
+        )
+    if not isinstance(value, Sequence):
+        _reject(
+            where,
+            f"maps issue_payload_skip_keys to {value!r}, which is not a " "sequence.",
+        )
+    for key in value:
+        if not isinstance(key, str) or not key:
+            _reject(
+                where,
+                f"has an entry in issue_payload_skip_keys that is not a "
+                f"non-empty str: {key!r}. Each one is a top-level key of the "
+                "issue payload as the server spells it.",
             )
 
 
@@ -417,6 +453,33 @@ def _validate_spec(spec: ExtensionSpec) -> None:
 
     _check_issue_update_keys(where, spec.issue_update_keys)
     _check_issue_query_filters(where, spec.issue_query_filters)
+    _check_issue_payload_skip_keys(where, spec.issue_payload_skip_keys)
+
+    if spec.issue_payload_skip_keys:
+        # Imported here rather than at module level: this is the public
+        # contract module, and a tool module at its top would pull the whole
+        # issue surface into anyone who imports it. By the time a spec is
+        # registered, main.py has imported the built-in tools already.
+        #
+        # Only this direction is checked. A key another *family* wants kept
+        # cannot be: nothing declares the keys a family reads, so there is no
+        # table to check against, and a guard that checks nothing would only
+        # read as though it did. What is checkable is a name the standard
+        # serializer already emits -- that entry does nothing at all, which
+        # is worth saying at startup rather than leaving to be discovered.
+        from .tools.issues import _ISSUE_MAPPED_KEYS
+
+        pointless = sorted(set(spec.issue_payload_skip_keys) & _ISSUE_MAPPED_KEYS)
+        if pointless:
+            _reject(
+                where,
+                "declares issue_payload_skip_keys that the issue serializer "
+                f"emits as fields of its own: {', '.join(pointless)}. Those "
+                "never reach unmapped_fields, so the entry would do nothing. "
+                "Drop it, or -- if the intent was to hide a standard field "
+                "from the response -- that is the caller's `fields` argument "
+                "and not an extension's to decide.",
+            )
 
 
 def _check_issue_seams(spec: ExtensionSpec) -> None:

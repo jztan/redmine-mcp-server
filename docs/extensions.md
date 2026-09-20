@@ -145,9 +145,9 @@ vendor plugin tools follow their own `REDMINE_*_ENABLED` flag.
 ## Extending the issue tools
 
 A distribution that adds attributes or filters to the issue itself -- Easy
-Redmine's sprint fields, say -- registers two more entries rather than tools of
-its own. Both apply only while the family's `enabled()` is true, so a stock
-server sends and accepts exactly what it does today.
+Redmine's sprint fields, say -- registers three more entries rather than tools
+of its own. All three apply only while the family's `enabled()` is true, so a
+stock server sends, accepts and returns exactly what it does today.
 
 ```python
 register_extension(ExtensionSpec(
@@ -157,6 +157,7 @@ register_extension(ExtensionSpec(
     tool_scopes={...},
     issue_update_keys=("acme_sprint_id", "acme_story_points"),
     issue_query_filters={"acme_sprint_id": {"set_filter": 1}},
+    issue_payload_skip_keys=("acme_css_classes",),
 ))
 ```
 
@@ -179,6 +180,22 @@ collection unnarrowed, which a caller cannot tell apart from a filter that
 matched everything. Parameters are merged into the request only when that filter
 is part of the call, and never over a value the caller set. Filter *values* face
 the same rules as any other filter's.
+
+**`issue_payload_skip_keys`** are top-level keys to leave out of
+`unmapped_fields`. That key passes a distribution's own fields through, filtered
+by size, and size is the right general filter -- but it cannot reach what is
+short, useless and on every issue. Easy Redmine's `css_classes` is a CSS class
+list for its issue grid: measured across a page of 25 issues it ran 99 to 144
+characters, about a fifth of the cap, and it answers nothing the issue's own
+fields do not answer better (`status-11` beside `status`, `overdue` beside
+`due_date`). A cap low enough to catch it would drop a one-paragraph plugin text
+field instead. This repository cannot know which of a fork's keys are
+presentation, so the fork names them here.
+
+Use it for a fork's *own* keys, and only for presentation. Per-user state such
+as `is_favorited` is something a caller can reasonably want; the seam is not a
+way to trim `unmapped_fields` to taste. A name that is not in the payload is
+never matched, so listing one the server stops sending costs nothing.
 
 ## What is checked at startup
 
@@ -204,6 +221,13 @@ serving a surface that does not match what the module declared:
   extension already claims.
 - An `issue_query_filters` name that Redmine itself registers, or that another
   extension already claims.
+- An `issue_payload_skip_keys` entry that the issue serializer emits as a field
+  of its own. It never reaches `unmapped_fields`, so the entry would do nothing.
+  Two families naming the *same* key is not an error: both want it gone, and
+  agreeing is not a conflict. Nor is there a check in the other direction --
+  nothing declares the keys a family *reads*, so there is no table to check a
+  skip against, and a guard that checked nothing would only read as though it
+  did.
 - A companion parameter that Redmine reads as the query's own filter definition
   (`fields`, `f`, `query_id`), or one `list_redmine_issues` owns (`limit`,
   `offset`, `sort`, `include`).

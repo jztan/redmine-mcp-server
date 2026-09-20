@@ -41,6 +41,7 @@ from redmine_mcp_server._custom_fields import (  # noqa: E402
 )
 from redmine_mcp_server._extension_registry import (  # noqa: E402
     REGISTERED_EXTENSIONS,
+    extension_issue_payload_skip_keys,
     extension_issue_query_filters,
     extension_issue_update_keys,
 )
@@ -51,6 +52,8 @@ from redmine_mcp_server.extensions import (  # noqa: E402
 )
 from redmine_mcp_server.oauth_scopes import TOOL_SCOPES  # noqa: E402
 from redmine_mcp_server.tools.issues import (  # noqa: E402
+    _issue_to_dict,
+    _issue_to_dict_selective,
     _reject_issue_filters,
     create_redmine_issue,
     list_redmine_issues,
@@ -413,3 +416,96 @@ class TestQueryFilters:
 
         assert not result.is_error, result
         assert sent[0]["set_filter"] == 1
+
+
+class TestPayloadSkipKeys:
+    """The third seam (#331): a fork's own presentation keys.
+
+    `unmapped_fields` passes a distribution's top-level keys through, capped
+    by size. Easy Redmine's `css_classes` -- a CSS class list for its issue
+    grid -- measured 99 to 144 characters across a page of 25 issues, about
+    a fifth of the cap, on every issue. Size cannot tell that from a short
+    and useful value, and this repository cannot know which of a fork's keys
+    are presentation. So the fork names them.
+    """
+
+    @staticmethod
+    def _issue(**extra):
+        payload = dict(id=1, subject="s", **extra)
+        issue = SimpleNamespace(**payload)
+        issue.raw = lambda: dict(payload)
+        return issue
+
+    def test_a_named_key_stays_out_of_unmapped_fields(self, registry):
+        registry(issue_payload_skip_keys=("css_classes",))
+
+        result = _issue_to_dict(self._issue(css_classes="issue status-8", acme_x=1))
+
+        assert "css_classes" not in result["unmapped_fields"]
+        assert result["unmapped_fields"]["acme_x"] == 1
+
+    def test_without_the_seam_it_comes_through(self):
+        """The behaviour this changes, stated rather than assumed."""
+        result = _issue_to_dict(self._issue(css_classes="issue status-8"))
+
+        assert "css_classes" in result["unmapped_fields"]
+
+    def test_the_flag_decides(self, registry, monkeypatch):
+        registry(issue_payload_skip_keys=("css_classes",))
+        monkeypatch.setenv(FLAG, "false")
+
+        result = _issue_to_dict(self._issue(css_classes="issue status-8"))
+
+        assert "css_classes" in result["unmapped_fields"]
+
+    def test_the_selective_serializer_honours_it_too(self, registry):
+        registry(issue_payload_skip_keys=("css_classes",))
+
+        result = _issue_to_dict_selective(
+            self._issue(css_classes="issue status-8", acme_x=1),
+            ["id", "unmapped_fields"],
+        )
+
+        assert result["unmapped_fields"] == {"acme_x": 1}
+
+    def test_a_key_that_is_not_there_is_simply_not_matched(self, registry):
+        registry(issue_payload_skip_keys=("never_sent",))
+
+        result = _issue_to_dict(self._issue(acme_x=1))
+
+        assert result["unmapped_fields"] == {"acme_x": 1}
+
+    def test_two_families_may_name_the_same_key(self, registry):
+        """Both want it gone; agreeing is not a conflict."""
+        registry(issue_payload_skip_keys=("css_classes",))
+        registry(issue_payload_skip_keys=("css_classes",))
+
+        result = _issue_to_dict(self._issue(css_classes="issue status-8"))
+
+        assert "unmapped_fields" not in result
+
+    def test_a_bare_string_is_refused(self, registry):
+        with pytest.raises(RuntimeError, match="bare str"):
+            registry(issue_payload_skip_keys="css_classes")
+
+    def test_a_non_sequence_is_refused(self, registry):
+        with pytest.raises(RuntimeError, match=r"not a\s+sequence"):
+            registry(issue_payload_skip_keys=42)
+
+    def test_an_empty_name_is_refused(self, registry):
+        with pytest.raises(RuntimeError, match="non-empty"):
+            registry(issue_payload_skip_keys=("",))
+
+    def test_naming_a_standard_field_is_refused(self, registry):
+        """It would do nothing -- the serializer emits `subject` itself, so
+        it never reaches unmapped_fields. Worth failing at startup rather
+        than leaving someone to wonder why the entry has no effect."""
+        with pytest.raises(RuntimeError, match="emits as fields of its own"):
+            registry(issue_payload_skip_keys=("subject",))
+
+    def test_the_registry_reads_it_per_call(self, registry, monkeypatch):
+        registry(issue_payload_skip_keys=("css_classes",))
+
+        assert extension_issue_payload_skip_keys() == frozenset({"css_classes"})
+        monkeypatch.setenv(FLAG, "false")
+        assert extension_issue_payload_skip_keys() == frozenset()
