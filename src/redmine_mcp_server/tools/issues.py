@@ -2062,8 +2062,8 @@ def _apply_text_edits(
                     f"{expected_sha256.strip().lower()}, found {actual}. Read "
                     "it again and rebase the edits, rather than overwriting "
                     f"someone else's change -- {actual} is the digest the "
-                    "rebased call should carry, and get_redmine_issue returns "
-                    "it as description_sha256."
+                    f"rebased call should carry, and it is reported as "
+                    f"{label}_sha256 on the read."
                 )
             }
 
