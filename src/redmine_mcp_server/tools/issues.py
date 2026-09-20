@@ -1054,6 +1054,7 @@ async def get_redmine_issue(
     include_custom_fields: bool = True,
     journal_limit: Annotated[Optional[int], Field(ge=1, le=1000)] = None,
     journal_offset: Annotated[int, Field(ge=0)] = 0,
+    journal_order: Literal["asc", "desc"] = "asc",
     include_watchers: bool = False,
     include_relations: bool = False,
     include_children: bool = False,
@@ -1081,8 +1082,18 @@ async def get_redmine_issue(
         journal_limit: Maximum number of journals to return. When set,
             enables journal pagination and adds ``journal_pagination``
             metadata to the response.
-        journal_offset: Number of journals to skip (used with
-            ``journal_limit``). Defaults to ``0``.
+        journal_offset: Number of journals to skip, counted from whichever
+            end ``journal_order`` selects (used with ``journal_limit``).
+            Defaults to ``0``.
+        journal_order: ``"asc"`` (default, oldest first) or ``"desc"``
+            (newest first). Journals are sorted by id before either is
+            applied, so the order does not depend on the "display comments
+            in reverse chronological order" setting of the account behind
+            the API key. **``"desc"`` is what answers "the last few
+            comments"**: with ``"asc"``, a ``journal_limit`` returns the
+            oldest ones, and reaching the newest needs ``journal_offset =
+            total - journal_limit``, which means fetching everything first
+            to learn ``total``.
         include_watchers: Whether to include the issue's watchers, returned
             under ``watchers`` as ``[{"id", "name"}, ...]``. Defaults to
             ``False``.
@@ -1161,6 +1172,18 @@ async def get_redmine_issue(
             ).hexdigest()
             if include_journals:
                 all_journals = _journals_to_list(issue, include_journal_values)
+
+                # Sort rather than trust what Redmine sent. IssuesController
+                # reverses the journals for an API user who has "display
+                # comments in reverse chronological order" set, so the order
+                # -- and with it which journals a `journal_limit` returns --
+                # depends on the account behind the key. Journal ids are
+                # assigned in creation order, so sorting by id makes `asc`
+                # and `desc` mean the same thing for everyone (#318).
+                all_journals.sort(key=lambda entry: entry.get("id") or 0)
+                if journal_order == "desc":
+                    all_journals.reverse()
+
                 if journal_limit is not None:
                     total = len(all_journals)
                     offset = journal_offset
@@ -1172,6 +1195,8 @@ async def get_redmine_issue(
                         "limit": journal_limit,
                         "count": len(paginated),
                         "has_more": (offset + journal_limit) < total,
+                        # Which end `offset` counts from.
+                        "order": journal_order,
                     }
                 else:
                     result["journals"] = all_journals
