@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- `manage_issue_note(action="edit")` can patch a note instead of replacing
+  it: `notes_edits` takes `{find, replace}` pairs applied on the server,
+  `notes_expected_sha256` refuses the call when the note changed since it
+  was read, and every journal now carries `notes_sha256` -- the digest of
+  its raw notes, which is what the guard echoes back. Patching needs the
+  current text, and Redmine serves no endpoint for a single journal, so
+  `notes_edits` also requires `issue_id`; a `journal_id` that is not among
+  that issue's visible journals is refused without writing, in wording that
+  allows for a private note the caller cannot see rather than claiming the
+  journal does not exist. The response reports `notes_length` and
+  `notes_sha256` rather than echoing the note ([#317](https://github.com/jztan/redmine-mcp-server/issues/317)).
 - `manage_issue_note(action="edit")` takes `notes_upload_id`, so a long note
   can be replaced from a file staged with `create_upload_ticket` instead of
   being written out into the tool argument -- the same problem #316 solved

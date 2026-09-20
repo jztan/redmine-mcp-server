@@ -128,7 +128,7 @@ class TestTheTwoSources:
         )
 
         assert "error" in result
-        assert "not both" in result["error"]
+        assert "one way at a time" in result["error"]
         mock_redmine.issue_journal.update.assert_not_called()
 
     @pytest.mark.asyncio
