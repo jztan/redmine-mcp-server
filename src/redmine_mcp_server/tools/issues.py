@@ -1810,6 +1810,7 @@ async def create_redmine_issue(
     fields: Optional[Union[Dict[str, Any], str]] = None,
     extra_fields: Optional[Union[Dict[str, Any], str]] = None,
     uploads: Optional[List[Dict[str, Any]]] = None,
+    description_upload_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Create a new issue in Redmine. Open a ticket, file a bug,
     submit a feature request, log a support case, or report a task.
@@ -1838,7 +1839,19 @@ async def create_redmine_issue(
     Args:
         project_id: Project the issue belongs to (numeric ID).
         subject: The issue's title.
-        description: The issue's description. Optional.
+        description: The issue's description. Optional. Mutually exclusive
+            with ``description_upload_id``.
+        description_upload_id: Take the whole description from a file staged
+            with ``create_upload_ticket``, decoded as UTF-8, instead of
+            writing it out here. **The way to open an issue with a long
+            description.** At creation the text is new by definition, and a
+            long one written into this argument is produced a token at a
+            time with nothing to check it against -- the same failure
+            ``content_base64`` has for attachments. The staged file travels
+            from disk to this server in one request. No checksum goes with
+            it: there is no prior text to guard, and the bytes never passed
+            through the conversation. Mutually exclusive with
+            ``description``.
         fields: Standard and custom fields, as an object or a JSON object
             string. Attachments do not go here -- see ``uploads``.
         extra_fields: Further fields, merged into ``fields``. Object or JSON
@@ -1909,6 +1922,32 @@ async def create_redmine_issue(
                 "'fields' or 'extra_fields'."
             )
         }
+
+    # The same two ways of setting a long description the update path has,
+    # minus the one that has no meaning here: at creation there is no prior
+    # text to patch (#326). Checked before the uploads are resolved, since
+    # an argument error costs nothing to report and that step does I/O.
+    #
+    # Truthiness rather than "was it passed": ``description`` is a string
+    # with a default of ``""``, so an empty one is indistinguishable from an
+    # omitted one and refusing it would only reject a harmless call.
+    if description and description_upload_id:
+        return {
+            "error": (
+                "Set the description one way at a time; got description, "
+                "description_upload_id."
+            )
+        }
+
+    if description_upload_id:
+        staged_text, staged_error = _text_from_staged_upload(
+            description_upload_id, "description"
+        )
+        if staged_error is not None:
+            return staged_error
+        # Read into the parameter the create call already closes over, so
+        # both the first attempt and the required-custom-field retry send it.
+        description = staged_text
 
     upload_descriptors: List[Dict[str, Any]] = []
     if uploads:

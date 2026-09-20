@@ -1216,7 +1216,8 @@ Creates a new issue in the specified project. Blocked when `REDMINE_MCP_READ_ONL
 **Parameters:**
 - `project_id` (integer, required): Target project ID
 - `subject` (string, required): Issue subject/title
-- `description` (string, optional): Issue description. Default: `""`
+- `description` (string, optional): Issue description. Default: `""`. Mutually exclusive with `description_upload_id`.
+- `description_upload_id` (string, optional): Take the whole description from a file staged with [`create_upload_ticket`](#create_upload_ticket), decoded as UTF-8. **The way to open an issue with a long description.**
 - `fields` (object|string, optional): Additional Redmine fields as:
   - an object (`{"priority_id": 3, "tracker_id": 1}`), or
   - a serialized JSON object string (for MCP clients that pass string payloads)
@@ -1233,6 +1234,18 @@ Creates a new issue in the specified project. Blocked when `REDMINE_MCP_READ_ONL
   - `sha256` (string, optional) / `size_bytes` (integer, optional): what the caller meant to send. Checked after the content is resolved and before anything reaches Redmine; a mismatch refuses the whole call. Worth passing with `content_base64`, whose payload is written out by the model and can arrive mangled.
   - `content_type` (string, optional): MIME type override (e.g. `"application/pdf"`).
   - `description` (string, optional): Human-readable description for the attachment.
+
+**A long description (#326):** at creation the whole text is new by definition, so there is nothing to patch and no prior version to guard — `description_upload_id` is the only alternative to writing it out into the tool argument, and it takes no checksum. Write the text to a file, send it with the ticket route, and name the `upload_id` here. A description written into `description` is produced a token at a time with nothing to check it against, which is the same failure `content_base64` has for attachments; it stays right for a short one.
+
+```python
+# ticket = create_upload_ticket(filename="description.html")
+# curl -sS -H "X-Upload-Ticket: $TICKET" --data-binary @description.html "$UPLOAD_URL"
+create_redmine_issue(
+    project_id=1,
+    subject="Cleanup-Review",
+    description_upload_id="6f1e...",
+)
+```
 
 **Returns:** Created issue dictionary. When `uploads` is provided and at least one attachment succeeds, the response includes:
 - `attachments` (list): Metadata for each attached file (id, filename, filesize, content_url, etc.).
@@ -2556,7 +2569,7 @@ Reserve a slot for a file on the caller's own machine and return the URL to send
 **Flow:**
 1. Call `create_upload_ticket`.
 2. Send the file to `upload_url` in one HTTP request, ticket in the `X-Upload-Ticket` header, the raw file as the body. The response carries `upload_id`, `size` and `sha256`. Multipart is deliberately not accepted — Starlette's `request.form()` buffers the whole body before its size can be checked, so the cap would not hold.
-3. Name that `upload_id` as the content source — in `uploads` on `create_redmine_issue`, `update_redmine_issue` or `manage_redmine_wiki_page`, or on `upload_file`.
+3. Name that `upload_id` as the content source — in `uploads` on `create_redmine_issue`, `update_redmine_issue` or `manage_redmine_wiki_page`, or on `upload_file`. A staged file can also *be* a long text field rather than an attachment: `description_upload_id` on `create_redmine_issue` and `update_redmine_issue`, and `notes_upload_id` on `manage_issue_note`.
 
 ```bash
 curl -sS -H "X-Upload-Ticket: $TICKET" --data-binary @mockup.png "$UPLOAD_URL"

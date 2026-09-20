@@ -80,6 +80,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   allows for a private note the caller cannot see rather than claiming the
   journal does not exist. The response reports `notes_length` and
   `notes_sha256` rather than echoing the note ([#317](https://github.com/jztan/redmine-mcp-server/issues/317)).
+- `create_redmine_issue` takes `description_upload_id`, so an issue can be
+  opened with a long description without writing it out into the tool
+  argument. #316 gave the update path that route and creation did not get
+  it, which is the wrong way round: at creation the whole text is new by
+  definition, which is exactly the case the staged upload exists for, while
+  patching has no meaning. The issue that prompted #313 carries a
+  42,561-character description and was created through this tool, every
+  character of it produced a token at a time with nothing to check it
+  against. Same semantics as on the update path -- resolved through the
+  same helper, non-UTF-8 reported rather than mangled, mutually exclusive
+  with `description` -- and no checksum parameter, since there is no prior
+  text to guard and the bytes never passed through the conversation
+  ([#326](https://github.com/jztan/redmine-mcp-server/issues/326)).
 
 ### Changed
 - Journal field changes no longer repeat a long before/after text. Redmine
