@@ -1157,6 +1157,18 @@ async def get_redmine_issue(
         try:
             # python-redmine is synchronous, so this whole block runs in a
             # worker thread via in_thread() rather than on the event loop.
+
+            # Naming `custom_fields` or `relations` in `fields` implies the
+            # matching flag, as it does in `list_redmine_issues` (#319).
+            # `want_relations` is decided here, above the include list,
+            # rather than at the serializer: relations only reach us when
+            # `include=relations` is on the request, so building the list
+            # from `include_relations` alone told the serializer to emit a
+            # key Redmine had never been asked to fill.
+            selected = fields if isinstance(fields, (list, tuple)) else []
+            want_custom_fields = include_custom_fields or "custom_fields" in selected
+            want_relations = include_relations or "relations" in selected
+
             includes = []
             if include_journals:
                 includes.append("journals")
@@ -1164,7 +1176,7 @@ async def get_redmine_issue(
                 includes.append("attachments")
             if include_watchers:
                 includes.append("watchers")
-            if include_relations:
+            if want_relations:
                 includes.append("relations")
             if include_children:
                 includes.append("children")
@@ -1180,16 +1192,11 @@ async def get_redmine_issue(
             # same helper, so the two read tools narrow identically: `None`,
             # `["*"]` and `["all"]` mean everything, and a name the
             # serializer does not know is skipped rather than refused.
-            # Naming `custom_fields` or `relations` implies the matching
-            # flag, as it does there (#319).
-            selected = fields if isinstance(fields, (list, tuple)) else []
             result = _issue_to_dict_selective(
                 issue,
                 fields,
-                include_custom_fields=(
-                    include_custom_fields or "custom_fields" in selected
-                ),
-                include_relations=include_relations or "relations" in selected,
+                include_custom_fields=want_custom_fields,
+                include_relations=want_relations,
             )
             # The digest is of the *raw* description, not of what sits in
             # ``description`` above it: ``wrap_insecure_content`` adds boundary
@@ -1235,7 +1242,7 @@ async def get_redmine_issue(
             if include_watchers:
                 raw = getattr(issue, "watchers", None) or []
                 result["watchers"] = [{"id": w.id, "name": w.name} for w in raw]
-            if include_relations:
+            if want_relations:
                 # From the include= payload, not the lazy issue.relations
                 # attribute -- see _included_list.
                 result["relations"] = _issue_relations_to_list(issue)

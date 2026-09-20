@@ -139,6 +139,123 @@ class TestWhatFieldsDoesNotReach:
 
 
 @pytest.mark.unit
+class TestRelationsNeedTheRequest:
+    """`relations` is the one name that also has to reach Redmine.
+
+    Custom field values come back unconditionally, so implying that flag is
+    a serializer decision. Relations do not: they arrive only when
+    `include=relations` was on the request, and `_included_list` reports a
+    key that was never included as empty rather than fetching it. Deciding
+    `want_relations` after the include list was built therefore returned an
+    empty `relations` on an issue that has them.
+    """
+
+    @staticmethod
+    def _issue_honouring_include(include):
+        """An issue that carries relations only if they were asked for.
+
+        This is what Redmine does, and the reason the bug was invisible to a
+        mock that always returns them.
+        """
+        issue = _issue()
+        parts = (include or "").split(",")
+        payload = {"id": 43376}
+        if "relations" in parts:
+            payload["relations"] = [
+                {
+                    "id": 991,
+                    "issue_id": 43376,
+                    "issue_to_id": 43377,
+                    "relation_type": "copied_to",
+                }
+            ]
+        issue.raw.return_value = payload
+        return issue
+
+    @pytest.mark.asyncio
+    async def test_naming_relations_in_fields_puts_it_on_the_request(
+        self, mock_redmine
+    ):
+        mock_redmine.issue.get.side_effect = (
+            lambda issue_id, **kwargs: self._issue_honouring_include(
+                kwargs.get("include")
+            )
+        )
+
+        await get_redmine_issue(
+            issue_id=43376,
+            fields=["id", "relations"],
+            include_relations=False,
+            include_journals=False,
+            include_attachments=False,
+            include_custom_fields=False,
+        )
+
+        include = mock_redmine.issue.get.call_args.kwargs["include"]
+        assert "relations" in include.split(",")
+
+    @pytest.mark.asyncio
+    async def test_and_the_relations_actually_come_back(self, mock_redmine):
+        mock_redmine.issue.get.side_effect = (
+            lambda issue_id, **kwargs: self._issue_honouring_include(
+                kwargs.get("include")
+            )
+        )
+
+        result = await get_redmine_issue(
+            issue_id=43376,
+            fields=["id", "relations"],
+            include_relations=False,
+            include_journals=False,
+            include_attachments=False,
+            include_custom_fields=False,
+        )
+
+        assert [rel["id"] for rel in result["relations"]] == [991]
+        assert result["relations"][0]["relation_type"] == "copied_to"
+
+    @pytest.mark.asyncio
+    async def test_the_flag_still_works_without_naming_it(self, mock_redmine):
+        mock_redmine.issue.get.side_effect = (
+            lambda issue_id, **kwargs: self._issue_honouring_include(
+                kwargs.get("include")
+            )
+        )
+
+        result = await get_redmine_issue(
+            issue_id=43376,
+            fields=["id"],
+            include_relations=True,
+            include_journals=False,
+            include_attachments=False,
+            include_custom_fields=False,
+        )
+
+        assert [rel["id"] for rel in result["relations"]] == [991]
+
+    @pytest.mark.asyncio
+    async def test_naming_neither_leaves_relations_off_the_request(self, mock_redmine):
+        """The include is not free -- it must not ride along unasked."""
+        mock_redmine.issue.get.side_effect = (
+            lambda issue_id, **kwargs: self._issue_honouring_include(
+                kwargs.get("include")
+            )
+        )
+
+        result = await get_redmine_issue(
+            issue_id=43376,
+            fields=["id", "subject"],
+            include_journals=False,
+            include_attachments=False,
+            include_custom_fields=False,
+        )
+
+        include = mock_redmine.issue.get.call_args.kwargs.get("include", "")
+        assert "relations" not in include.split(",")
+        assert "relations" not in result
+
+
+@pytest.mark.unit
 class TestImpliedFlags:
     @pytest.mark.asyncio
     async def test_naming_custom_fields_implies_the_flag(self, mock_redmine):
