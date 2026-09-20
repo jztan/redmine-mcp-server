@@ -1665,12 +1665,13 @@ Edit text or toggle privacy of a Redmine journal entry (issue note). `get_privat
 **Parameters:**
 - `action` (string, required): Allowed: `edit`, `set_private`
 - `journal_id` (integer, required): ID of the journal entry (from `get_redmine_issue` with `include_journals=true`)
-- `notes` (string): New notes text (may be empty to clear). Required for `action="edit"`
+- `notes` (string): New notes text (may be empty to clear). For `action="edit"`, one of `notes` or `notes_upload_id` is required and they are mutually exclusive
+- `notes_upload_id` (string, optional): Take the new note from a file staged with [`create_upload_ticket`](#create_upload_ticket), decoded as UTF-8. **Prefer this for a long note** — the text goes from disk to the server instead of being written out into the tool argument, which is slow for a long one and drops characters. The response then carries `notes_length` and `notes_sha256` instead of the note itself, since echoing it back would put the whole thing in the conversation anyway
 - `private_notes` (boolean, optional): Optionally toggle the private flag during `edit`
 - `is_private` (boolean): Required for `action="set_private"` — `true` to mark private, `false` to make public
 
 **Returns:**
-- `edit`: `{"success": true, "journal_id": ..., "notes": ..., "private_notes": ...}`
+- `edit`: `{"success": true, "journal_id": ..., "notes": ..., "private_notes": ...}`, or with `notes_upload_id` `{"success": true, "journal_id": ..., "notes_length": ..., "notes_sha256": ..., "private_notes": ...}`
 - `set_private`: `{"success": true, "journal_id": ..., "private_notes": <bool>}`
 - Error: `{"error": "..."}`
 
