@@ -124,6 +124,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#318](https://github.com/jztan/redmine-mcp-server/issues/318)) and
   implemented `journal_order` and the sort by id
   ([#320](https://github.com/jztan/redmine-mcp-server/pull/320)).
+- @andilem reported that editing a long note forces the model to retype it
+  ([#317](https://github.com/jztan/redmine-mcp-server/issues/317)) and
+  implemented `notes_upload_id`
+  ([#322](https://github.com/jztan/redmine-mcp-server/pull/322)) and
+  `notes_edits`
+  ([#323](https://github.com/jztan/redmine-mcp-server/pull/323)).
 
 ## [2.16.0] - 2026-09-19
 ### Added
