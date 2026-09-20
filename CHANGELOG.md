@@ -103,6 +103,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   -- so a cheap read names all four. `description_sha256` is returned
   whether or not `description` is, since it is what lets a caller patch the
   text without reading it ([#319](https://github.com/jztan/redmine-mcp-server/issues/319)).
+- `manage_redmine_wiki_page` can change a long page without the model writing
+  it out. `text_edits` takes `{find, replace}` pairs applied on the server
+  for `update`, each `find` required to match exactly once, and
+  `text_upload_id` takes the whole page from a file staged with
+  `create_upload_ticket` for `create` and `update`. The guard is Redmine's
+  own page `version`, not a checksum: a patch goes out with the version it
+  was applied to, and with `expected_version` a page that has moved on is
+  refused before anything is sent. Both report `text_length` in place of
+  the page text ([#325](https://github.com/jztan/redmine-mcp-server/issues/325)).
 
 ### Changed
 - Journal field changes no longer repeat a long before/after text. Redmine
@@ -172,7 +181,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#321](https://github.com/jztan/redmine-mcp-server/pull/321)).
 - @andilem reported that a wiki text update sends no version, so a
   concurrent edit is overwritten
-  ([#324](https://github.com/jztan/redmine-mcp-server/issues/324)).
+  ([#324](https://github.com/jztan/redmine-mcp-server/issues/324))
+  and that a wiki page could only be replaced whole
+  ([#325](https://github.com/jztan/redmine-mcp-server/issues/325)).
 
 ## [2.16.0] - 2026-09-19
 ### Added
