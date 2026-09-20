@@ -8,181 +8,101 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- A long description, note or wiki page can be changed without the model
+  writing it out. Redmine has no patch endpoint, so an edit meant putting the
+  whole text into the tool argument, which is slow and drops characters at
+  length (the failure [#305](https://github.com/jztan/redmine-mcp-server/issues/305) measured on base64). Two routes replace
+  that. `{find, replace}` edits are applied on the server: `description_edits`
+  on `update_redmine_issue`, `notes_edits` on `manage_issue_note` (with
+  `issue_id`, since Redmine serves no endpoint for a single journal) and
+  `text_edits` on `manage_redmine_wiki_page`. Each `find` must match exactly
+  once or nothing is written, and line endings are normalized for matching and
+  restored on write. Where the text is all new, it comes from a file staged
+  with `create_upload_ticket`: `description_upload_id` on
+  `create_redmine_issue` and `update_redmine_issue`, `notes_upload_id` on
+  `manage_issue_note`, and `text_upload_id` on `manage_redmine_wiki_page`.
+  A concurrent edit is refused instead of overwritten:
+  `description_expected_sha256` and `notes_expected_sha256` take the
+  `description_sha256` and `notes_sha256` that `get_redmine_issue` and
+  `get_private_notes` now return (digests of the raw text, because what a read
+  returns is wrapped in boundary tags), and a wiki page uses Redmine's own
+  `version` through `expected_version`. The ways of setting one text are
+  mutually exclusive. A note or wiki page written through an edit or an upload
+  is reported by length, not echoed back
+  ([#314](https://github.com/jztan/redmine-mcp-server/issues/314), [#316](https://github.com/jztan/redmine-mcp-server/pull/316),
+  [#317](https://github.com/jztan/redmine-mcp-server/issues/317), [#322](https://github.com/jztan/redmine-mcp-server/pull/322), [#323](https://github.com/jztan/redmine-mcp-server/pull/323),
+  [#326](https://github.com/jztan/redmine-mcp-server/issues/326), [#328](https://github.com/jztan/redmine-mcp-server/pull/328),
+  [#325](https://github.com/jztan/redmine-mcp-server/issues/325), [#330](https://github.com/jztan/redmine-mcp-server/pull/330)).
+- `get_redmine_issue` takes `fields`, with the meaning it has on
+  `list_redmine_issues`, so a caller that wants the status does not pay for a
+  long description. It does not reach journals, attachments or custom fields,
+  whose `include_*` switches default to `True`, so a cheap read sets those to
+  `False` as well. `description_sha256` is returned either way. It also takes
+  `journal_order`: with `"desc"` the newest journals come first and
+  `journal_offset` counts from that end, so "the last five comments" is one
+  call, and `journal_pagination` echoes the order
+  ([#318](https://github.com/jztan/redmine-mcp-server/issues/318), [#320](https://github.com/jztan/redmine-mcp-server/pull/320),
+  [#319](https://github.com/jztan/redmine-mcp-server/issues/319), [#321](https://github.com/jztan/redmine-mcp-server/pull/321)).
 - `ExtensionSpec` gains `issue_update_keys` and `issue_query_filters`, so an
-  extension can widen the issue tools instead of shipping parallel ones. A
-  distribution that adds attributes to the issue (Easy Redmine's
-  `easy_sprint_id` and friends) could not write them: an unknown update key is
-  taken for a custom field *label*, and labels are matched with the
-  non-alphanumerics stripped, so `easy_sprint_id` collides with a custom field
-  called "Easy Sprint ID" and the value lands there. Nor could it filter on
-  them: `list_redmine_issues` refuses an unregistered filter name, and rightly,
-  since Redmine drops one it does not know and answers 200 with the collection
-  unnarrowed. Registered keys are now passed through untouched, registered
-  filter names are accepted, and a filter's companion parameters (Easy's
-  `set_filter=1`) are merged only when that filter is in the call and never
-  over a value the caller set, and may not be a filter name themselves --
-  Redmine's own, another family's, or a `cf_<id>` custom field spelling --
-  since one riding along unasked would narrow a query the caller never
-  narrowed. The check runs in both directions, so a filter name another
-  family already sends as a companion is refused too.
-  Registered attributes reach Redmine on `create_redmine_issue` as well as on
-  an update: both write paths share the step that reads an unknown name as a
-  custom field's. Both tables are read from the registry per call, so a
-  family's flag decides them like it decides its tools, and a collision with Redmine's
-  own names, with another extension, or with a parameter the tool owns fails
-  startup like every other registration conflict.
-- `update_redmine_issue` can patch a description instead of replacing it:
-  `description_edits` takes `{find, replace}` pairs applied in order on the
-  server, and `description_expected_sha256` refuses the call when the text
-  has changed since it was read. Redmine has no patch endpoint, so passing
-  `description` means the whole field is written out into the tool argument
-  -- for the 50-100k-character descriptions this was reported from, that is
-  slow, because the text is generated one token at a time, and unreliable,
-  because a long transcription drops text (the same failure as
-  [#305](https://github.com/jztan/redmine-mcp-server/issues/305), an order of magnitude up). A patch sends the
-  passage that changed. Each `find` must occur exactly once in the text as
-  it stands after the preceding edits; zero matches or several refuse the
-  whole call and leave the issue untouched, since a half-applied patch is
-  worse than none. `get_redmine_issue` now returns `description_sha256`, the
-  digest of the *raw* description, because the `description` it returns is
-  wrapped in boundary tags with a fresh random id per call and a digest of
-  that could never match; the caller echoes it back rather than computing
-  it. `find` and `replace` are matched with line endings normalized, since
-  Redmine's web UI saves CRLF, and the stored convention is restored on
-  write. Where the text really is all new rather than edited,
-  `description_upload_id` takes it from a file staged with
-  `create_upload_ticket`, decoded as UTF-8, so it travels from disk to the
-  server the way an attachment does. The three ways of setting a
-  description are mutually exclusive and passing more than one is refused
-  ([#314](https://github.com/jztan/redmine-mcp-server/issues/314)).
-- `get_redmine_issue` takes `journal_order`, `"asc"` (default) or `"desc"`.
-  With `"desc"` the newest journals come first and `journal_offset` counts
-  from that end, which is what answers "the last few comments": with `"asc"`
-  a `journal_limit` returns the *oldest* ones, and reaching the newest needs
-  `journal_offset = total - journal_limit` -- so the caller has to fetch
-  everything to learn `total`, which is the request it was trying to avoid.
-  `journal_pagination` echoes the order back ([#318](https://github.com/jztan/redmine-mcp-server/issues/318)).
-- `manage_issue_note(action="edit")` takes `notes_upload_id`, so a long note
-  can be replaced from a file staged with `create_upload_ticket` instead of
-  being written out into the tool argument -- the same problem #316 solved
-  for descriptions, and the same route. The response then reports
-  `notes_length` and `notes_sha256` rather than echoing the note, since
-  echoing it would put the text in the conversation after all. A plain
-  `notes` call is unchanged ([#317](https://github.com/jztan/redmine-mcp-server/issues/317)).
-- `manage_issue_note(action="edit")` can patch a note instead of replacing
-  it: `notes_edits` takes `{find, replace}` pairs applied on the server,
-  `notes_expected_sha256` refuses the call when the note changed since it
-  was read, and every journal now carries `notes_sha256` -- the digest of
-  its raw notes, which is what the guard echoes back. Patching needs the
-  current text, and Redmine serves no endpoint for a single journal, so
-  `notes_edits` also requires `issue_id`; a `journal_id` that is not among
-  that issue's visible journals is refused without writing, in wording that
-  allows for a private note the caller cannot see rather than claiming the
-  journal does not exist. The response reports `notes_length` and
-  `notes_sha256` rather than echoing the note ([#317](https://github.com/jztan/redmine-mcp-server/issues/317)).
-- `create_redmine_issue` takes `description_upload_id`, so an issue can be
-  opened with a long description without writing it out into the tool
-  argument. #316 gave the update path that route and creation did not get
-  it, which is the wrong way round: at creation the whole text is new by
-  definition, which is exactly the case the staged upload exists for, while
-  patching has no meaning. The issue that prompted #313 carries a
-  42,561-character description and was created through this tool, every
-  character of it produced a token at a time with nothing to check it
-  against. Same semantics as on the update path -- resolved through the
-  same helper, non-UTF-8 reported rather than mangled, mutually exclusive
-  with `description` -- and no checksum parameter, since there is no prior
-  text to guard and the bytes never passed through the conversation
-  ([#326](https://github.com/jztan/redmine-mcp-server/issues/326)).
-- `get_redmine_issue` takes `fields`, the same narrowing
-  `list_redmine_issues` has and through the same helper. After #315 stopped
-  the journals echoing past descriptions, the *current* description became
-  the bulk of a read: 42,561 of the ~54,900 characters left on the ticket
-  #313 measured, 78% of the response, paid by every caller that only wanted
-  the status. `fields` does not reach journals, attachments or custom
-  fields -- those switches stay independent and all three default to `True`
-  -- so a cheap read names all four. `description_sha256` is returned
-  whether or not `description` is, since it is what lets a caller patch the
-  text without reading it ([#319](https://github.com/jztan/redmine-mcp-server/issues/319)).
-- `manage_redmine_wiki_page` can change a long page without the model writing
-  it out. `text_edits` takes `{find, replace}` pairs applied on the server
-  for `update`, each `find` required to match exactly once, and
-  `text_upload_id` takes the whole page from a file staged with
-  `create_upload_ticket` for `create` and `update`. The guard is Redmine's
-  own page `version`, not a checksum: a patch goes out with the version it
-  was applied to, and with `expected_version` a page that has moved on is
-  refused before anything is sent. Both report `text_length` in place of
-  the page text ([#325](https://github.com/jztan/redmine-mcp-server/issues/325)).
+  extension can let the issue tools write and filter on attributes a
+  distribution adds (Easy Redmine's `easy_sprint_id`), on create as well as
+  update. Before, an unknown update key was read as a custom field label and
+  an unregistered filter name was refused. A filter's companion parameters
+  (Easy's `set_filter=1`) are sent only when that filter is in the call, never
+  over a value the caller set, and may not be filter names themselves. A
+  collision with Redmine's own names, another extension or a tool parameter
+  fails startup
+  ([#311](https://github.com/jztan/redmine-mcp-server/issues/311), [#312](https://github.com/jztan/redmine-mcp-server/pull/312)).
 
 ### Changed
 - Journal field changes no longer repeat a long before/after text. Redmine
-  records a description edit with the full old *and* new value, so a ticket
-  whose description is edited repeatedly carries several copies of it in its
-  change log: on one real ticket `get_redmine_issue(include_journals=True)`
-  returned 879,251 characters, of which 827,044 were past descriptions
-  echoed in `journal_details` and 4,704 were the comments anyone had
-  actually written. That is paid as input tokens on every read of the
-  ticket, and it grows with every further edit. A value longer than
-  `REDMINE_MCP_JOURNAL_VALUE_MAX_CHARS` (default 500) is now reported as
-  `old_value_length` / `new_value_length` with `elided: True`; the value
-  keys stay present and hold `None`, so a caller reading them gets no
-  `KeyError` and can tell an elided value from an empty one. Each value is
-  judged on its own. `get_redmine_issue` and `get_private_notes` take
-  `include_journal_values=True` to get the text back, and the environment
-  variable set to `0` switches it off entirely. The current values are on
-  the issue itself, not in the details, so nothing a caller normally reads
-  is lost ([#313](https://github.com/jztan/redmine-mcp-server/issues/313)).
+  journals a description edit with the full old and new value, and on one real
+  ticket 827,044 of the 879,251 characters `get_redmine_issue` returned were
+  past descriptions. A value longer than `REDMINE_MCP_JOURNAL_VALUE_MAX_CHARS`
+  (default 500, `0` switches it off) is now reported as `old_value_length` /
+  `new_value_length` with `elided: True`, and the value keys stay present as
+  `None`. `get_redmine_issue` and `get_private_notes` take
+  `include_journal_values=True` to get the text back
+  ([#313](https://github.com/jztan/redmine-mcp-server/issues/313), [#315](https://github.com/jztan/redmine-mcp-server/pull/315)).
 
 ### Fixed
-- Journals are sorted by id before `journal_limit` slices them, instead of
-  being taken in the order Redmine sent. `IssuesController#show` reverses
-  them for an API user who has "display comments in reverse chronological
-  order" set, so the same `journal_limit` returned *different* journals
-  depending on the account behind the key -- and the documented behaviour,
-  oldest first, held only for accounts with the default setting
-  ([#318](https://github.com/jztan/redmine-mcp-server/issues/318)).
-- `manage_redmine_wiki_page(action="update")` takes `expected_version`, the
-  `version` the page had when the caller read it. A text update sent no
-  version at all, so an edit made by someone else in the meantime was
-  overwritten without an error; with `expected_version` Redmine answers 409
-  and the tool reports an edit conflict. `rename` had the same window between
-  its read of the body and the write that echoes it back, and now sends the
-  version it read, so it can return an edit conflict where it used to revert
-  the other edit ([#324](https://github.com/jztan/redmine-mcp-server/issues/324)).
+- Journals are sorted by id before `journal_limit` slices them. Redmine
+  reverses them for an API user who has "display comments in reverse
+  chronological order" set, so the same `journal_limit` returned different
+  journals depending on the account behind the key
+  ([#318](https://github.com/jztan/redmine-mcp-server/issues/318), [#320](https://github.com/jztan/redmine-mcp-server/pull/320)).
+- A wiki text update sent no `version`, so an edit someone else made in the
+  meantime was overwritten without an error. `update` now takes
+  `expected_version` and reports an edit conflict when it is stale, and
+  `rename` sends the version it read
+  ([#324](https://github.com/jztan/redmine-mcp-server/issues/324), [#329](https://github.com/jztan/redmine-mcp-server/pull/329)).
 
 ### Contributors
 - @andilem reported, with measurements from a production ticket, that journal
   details echo every past description
-  ([#313](https://github.com/jztan/redmine-mcp-server/issues/313)) and that
-  editing a long description forces the model to retype it
-  ([#314](https://github.com/jztan/redmine-mcp-server/issues/314)), and
-  implemented both fixes
+  ([#313](https://github.com/jztan/redmine-mcp-server/issues/313)), that editing
+  a long description or note forces the model to retype it
+  ([#314](https://github.com/jztan/redmine-mcp-server/issues/314),
+  [#317](https://github.com/jztan/redmine-mcp-server/issues/317)), that
+  `create_redmine_issue` could not take a staged description
+  ([#326](https://github.com/jztan/redmine-mcp-server/issues/326)), that
+  `journal_limit` returns the oldest journals
+  ([#318](https://github.com/jztan/redmine-mcp-server/issues/318)) and that
+  `get_redmine_issue` had no field selection
+  ([#319](https://github.com/jztan/redmine-mcp-server/issues/319)), and
+  implemented all of them
   ([#315](https://github.com/jztan/redmine-mcp-server/pull/315),
-  [#316](https://github.com/jztan/redmine-mcp-server/pull/316)); also added the
-  issue extension seams
-  ([#312](https://github.com/jztan/redmine-mcp-server/pull/312)).
-- @andilem reported that `journal_limit` returns the oldest journals
-  ([#318](https://github.com/jztan/redmine-mcp-server/issues/318)) and
-  implemented `journal_order` and the sort by id
-  ([#320](https://github.com/jztan/redmine-mcp-server/pull/320)).
-- @andilem reported that editing a long note forces the model to retype it
-  ([#317](https://github.com/jztan/redmine-mcp-server/issues/317)) and
-  implemented `notes_upload_id`
-  ([#322](https://github.com/jztan/redmine-mcp-server/pull/322)) and
-  `notes_edits`
-  ([#323](https://github.com/jztan/redmine-mcp-server/pull/323)).
-- @andilem reported that `create_redmine_issue` could not take a staged
-  description
-  ([#326](https://github.com/jztan/redmine-mcp-server/issues/326)) and
-  implemented `description_upload_id` there
-  ([#328](https://github.com/jztan/redmine-mcp-server/pull/328)).
-- @andilem reported that `get_redmine_issue` had no field selection
-  ([#319](https://github.com/jztan/redmine-mcp-server/issues/319)) and
-  implemented `fields`
-  ([#321](https://github.com/jztan/redmine-mcp-server/pull/321)).
-- @andilem reported that a wiki text update sends no version, so a
-  concurrent edit is overwritten
-  ([#324](https://github.com/jztan/redmine-mcp-server/issues/324))
-  and that a wiki page could only be replaced whole
+  [#316](https://github.com/jztan/redmine-mcp-server/pull/316),
+  [#320](https://github.com/jztan/redmine-mcp-server/pull/320),
+  [#321](https://github.com/jztan/redmine-mcp-server/pull/321),
+  [#322](https://github.com/jztan/redmine-mcp-server/pull/322),
+  [#323](https://github.com/jztan/redmine-mcp-server/pull/323),
+  [#328](https://github.com/jztan/redmine-mcp-server/pull/328)). They also added
+  the issue extension seams
+  ([#312](https://github.com/jztan/redmine-mcp-server/pull/312)) and reported the
+  two wiki gaps: a text update that sends no version
+  ([#324](https://github.com/jztan/redmine-mcp-server/issues/324)) and a page
+  that could only be replaced whole
   ([#325](https://github.com/jztan/redmine-mcp-server/issues/325)).
 
 ## [2.16.0] - 2026-09-19
