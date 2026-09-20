@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- `get_redmine_issue` takes `journal_order`, `"asc"` (default) or `"desc"`.
+  With `"desc"` the newest journals come first and `journal_offset` counts
+  from that end, which is what answers "the last few comments": with `"asc"`
+  a `journal_limit` returns the *oldest* ones, and reaching the newest needs
+  `journal_offset = total - journal_limit` -- so the caller has to fetch
+  everything to learn `total`, which is the request it was trying to avoid.
+  `journal_pagination` echoes the order back ([#318](https://github.com/jztan/redmine-mcp-server/issues/318)).
+
+### Fixed
+- Journals are sorted by id before `journal_limit` slices them, instead of
+  being taken in the order Redmine sent. `IssuesController#show` reverses
+  them for an API user who has "display comments in reverse chronological
+  order" set, so the same `journal_limit` returned *different* journals
+  depending on the account behind the key -- and the documented behaviour,
+  oldest first, held only for accounts with the default setting
+  ([#318](https://github.com/jztan/redmine-mcp-server/issues/318)).
+### Added
 - `ExtensionSpec` gains `issue_update_keys` and `issue_query_filters`, so an
   extension can widen the issue tools instead of shipping parallel ones. A
   distribution that adds attributes to the issue (Easy Redmine's

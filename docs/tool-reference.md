@@ -903,7 +903,8 @@ Retrieve detailed information about a specific Redmine issue.
 - `include_attachments` (boolean, optional): Include attachments metadata. Default: `true`
 - `include_custom_fields` (boolean, optional): Include custom fields in result. Default: `true`
 - `journal_limit` (integer, optional): Maximum number of journals to return. When set, enables journal pagination and adds `journal_pagination` metadata. Default: `null` (all journals)
-- `journal_offset` (integer, optional): Number of journals to skip (used with `journal_limit`). Default: `0`
+- `journal_offset` (integer, optional): Number of journals to skip, counted from whichever end `journal_order` selects (used with `journal_limit`). Default: `0`
+- `journal_order` (string, optional): `"asc"` (default, oldest first) or `"desc"` (newest first). **`"desc"` is what answers "the last few comments"** — with `"asc"`, a `journal_limit` returns the *oldest* ones and reaching the newest needs `journal_offset = total - journal_limit`, which means fetching everything first to learn `total`. Journals are sorted by id before either order is applied, so the result does not depend on the "display comments in reverse chronological order" setting of the account behind the API key. Echoed back as `order` in `journal_pagination`.
 - `include_watchers` (boolean, optional): Include watcher list. Default: `false`
 - `include_relations` (boolean, optional): Include issue relations. Default: `false`. Requires only `view_issues`. Each entry is `{id, issue_id, issue_to_id, relation_type, delay}`.
 - `include_children` (boolean, optional): Include child issues. Default: `false`
