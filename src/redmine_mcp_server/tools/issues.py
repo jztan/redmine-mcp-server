@@ -2,6 +2,7 @@
 relations, watchers, notes, and categories.
 """
 
+import hashlib
 import json
 import logging
 import os
@@ -33,6 +34,7 @@ from .._env import _is_agile_enabled, _is_read_only_mode, _is_tags_enabled
 from .._errors import _READ_ONLY_ERROR, _handle_redmine_error
 from .._extension_registry import extension_issue_query_filters
 from .._offload import in_thread, offloaded
+from .. import _upload_store
 from .._serialization import (
     _attachment_to_dict,
     _custom_fields_to_list,
@@ -1149,6 +1151,14 @@ async def get_redmine_issue(
                 issue = _get_redmine_client().issue.get(issue_id)
 
             result = _issue_to_dict(issue, include_custom_fields=include_custom_fields)
+            # The digest is of the *raw* description, not of what sits in
+            # ``description`` above it: ``wrap_insecure_content`` adds boundary
+            # tags with a fresh random id on every call, so a caller hashing
+            # what it read could never match the stored text. Echo this back as
+            # ``description_expected_sha256`` to patch safely (#314).
+            result["description_sha256"] = hashlib.sha256(
+                (getattr(issue, "description", "") or "").encode("utf-8")
+            ).hexdigest()
             if include_journals:
                 all_journals = _journals_to_list(issue, include_journal_values)
                 if journal_limit is not None:
@@ -2006,11 +2016,139 @@ async def create_redmine_issue(
     return await in_thread(_run)
 
 
+def _normalized_newlines(text: str) -> str:
+    """Collapse CRLF and lone CR to LF, for comparison only."""
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _apply_text_edits(
+    current: str,
+    edits: Any,
+    expected_sha256: Optional[str],
+    label: str,
+) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
+    """Apply ``{find, replace}`` pairs to a text, server-side (#314).
+
+    Redmine replaces a long field wholesale -- there is no patch endpoint --
+    so the finished text has to come from somewhere. Having the *model*
+    produce it means writing out every character of, say, a 50 KB
+    description: slow, because output is generated sequentially, and lossy,
+    because a long transcription drops text (the same failure as #305, an
+    order of magnitude up). Sending the edits instead keeps the payload to
+    the passage that actually changed.
+
+    Each ``find`` must match exactly once in the text as it stands *after*
+    the preceding edits. Zero matches means the caller is working from a
+    different version than it thinks; more than one means the edit is
+    ambiguous and could land in the wrong place. Both refuse the whole call,
+    because a half-applied patch is worse than none.
+
+    Matching is done with line endings normalized. Redmine's web UI saves
+    CRLF, and a caller writing a multi-line ``find`` with plain newlines
+    would otherwise never match text it is looking straight at. The stored
+    convention is restored on the way out, so patching a field does not
+    silently rewrite every line ending in it.
+
+    Returns ``(new_text, None)`` or ``(None, {"error": ...})``.
+    """
+    if expected_sha256:
+        if not isinstance(expected_sha256, str):
+            return None, {"error": f"{label}_expected_sha256 must be a hex string."}
+        actual = hashlib.sha256(current.encode("utf-8")).hexdigest()
+        if actual != expected_sha256.strip().lower():
+            return None, {
+                "error": (
+                    f"{label} has changed since it was read: expected sha256 "
+                    f"{expected_sha256.strip().lower()}, found {actual}. Read "
+                    "it again and rebase the edits, rather than overwriting "
+                    f"someone else's change -- {actual} is the digest the "
+                    "rebased call should carry, and get_redmine_issue returns "
+                    "it as description_sha256."
+                )
+            }
+
+    if not isinstance(edits, list) or not edits:
+        return None, {"error": f"{label}_edits must be a non-empty list."}
+
+    had_crlf = "\r\n" in current
+    text = _normalized_newlines(current)
+    for index, edit in enumerate(edits):
+        if not isinstance(edit, dict):
+            return None, {"error": f"{label}_edits[{index}] must be an object."}
+        find = edit.get("find")
+        replace = edit.get("replace")
+        if not isinstance(find, str) or find == "":
+            return None, {
+                "error": f"{label}_edits[{index}]: 'find' must be a non-empty string."
+            }
+        if not isinstance(replace, str):
+            return None, {
+                "error": f"{label}_edits[{index}]: 'replace' must be a string."
+            }
+
+        find = _normalized_newlines(find)
+        replace = _normalized_newlines(replace)
+        occurrences = text.count(find)
+        if occurrences == 0:
+            return None, {
+                "error": (
+                    f"{label}_edits[{index}]: 'find' does not occur in the "
+                    f"current {label}. Nothing was changed. Read the current "
+                    "text and base the edit on it."
+                )
+            }
+        if occurrences > 1:
+            return None, {
+                "error": (
+                    f"{label}_edits[{index}]: 'find' occurs {occurrences} times, "
+                    "so the edit is ambiguous. Nothing was changed. Include "
+                    "enough surrounding text to make it unique."
+                )
+            }
+        text = text.replace(find, replace, 1)
+
+    if had_crlf:
+        text = text.replace("\n", "\r\n")
+    return text, None
+
+
+def _text_from_staged_upload(
+    upload_id: str, label: str
+) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
+    """Read a staged upload as the new text for a long field (#314).
+
+    The counterpart to patching. Where the whole text really is new, the
+    caller writes it to a file, sends it with the ticket route from #306, and
+    names the ``upload_id`` here -- so the field's content travels from disk
+    to this server instead of being written out into a tool argument. That
+    also composes with how an oversized read already comes back: the client
+    spills it to a file the caller can edit in place, and this is the way
+    back.
+
+    Returns ``(text, None)`` or ``(None, {"error": ...})``.
+    """
+    content_bytes, _, staged_error = _upload_store.read_staged(upload_id)
+    if staged_error is not None:
+        return None, staged_error
+    try:
+        return content_bytes.decode("utf-8"), None
+    except UnicodeDecodeError as exc:
+        return None, {
+            "error": (
+                f"The file staged for {label} is not valid UTF-8 ({exc}). "
+                f"A {label} is text; upload it encoded as UTF-8."
+            )
+        }
+
+
 @mcp.tool()
 async def update_redmine_issue(
     issue_id: int,
     fields: Dict[str, Any],
     uploads: Optional[List[Dict[str, Any]]] = None,
+    description_edits: Optional[List[Dict[str, str]]] = None,
+    description_expected_sha256: Optional[str] = None,
+    description_upload_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Update an existing Redmine issue.
 
@@ -2082,6 +2220,32 @@ async def update_redmine_issue(
 
             An attachment referenced from the description or a note as
             ``attachment:"name.png"`` is rendered inline by Redmine.
+        description_edits: Change the description by naming what to replace,
+            instead of sending the whole text. A list of
+            ``{"find": ..., "replace": ...}``, applied in order on this
+            server. **Prefer this for anything long.** Redmine has no patch
+            endpoint, so a full ``description`` means writing every
+            character of it into this argument: slow, because that text is
+            generated one token at a time, and unreliable, because a long
+            transcription drops text. Each ``find`` must occur exactly once
+            in the text as it stands after the preceding edits -- zero
+            matches or several refuse the whole call and change nothing, so
+            include enough surrounding text to be unambiguous. Mutually
+            exclusive with a ``description`` in ``fields``.
+        description_expected_sha256: The hex digest the description had when
+            it was read -- **echo back the ``description_sha256`` that
+            ``get_redmine_issue`` returns**; do not hash what you read, since
+            the description is wrapped in boundary tags whose id changes on
+            every call. Verified before any edit is applied, and a mismatch
+            refuses the call rather than overwriting whatever changed in
+            between, naming the current digest so the retry can carry it.
+            Worth passing whenever the read and the write are not in the
+            same breath.
+        description_upload_id: Take the whole description from a file staged
+            with ``create_upload_ticket``, decoded as UTF-8. For when the
+            text really is all new rather than edited: the content travels
+            from disk to this server instead of through the conversation.
+            Mutually exclusive with the other two ways of setting it.
     """
 
     if _is_read_only_mode():
@@ -2102,6 +2266,59 @@ async def update_redmine_issue(
             return upload_error
 
     update_fields = dict(fields)
+
+    # Two ways to set a long description without writing it out into a tool
+    # argument: patch what changed, or point at a file already staged on this
+    # server (#314). Both are exclusive with a literal ``description``.
+    description_sources = [
+        name
+        for name, given in (
+            ("description in fields", "description" in update_fields),
+            ("description_edits", description_edits is not None),
+            ("description_upload_id", bool(description_upload_id)),
+        )
+        if given
+    ]
+    if len(description_sources) > 1:
+        return {
+            "error": (
+                "Set the description one way at a time; got "
+                + ", ".join(description_sources)
+                + "."
+            )
+        }
+
+    if description_upload_id:
+        staged_text, staged_error = _text_from_staged_upload(
+            description_upload_id, "description"
+        )
+        if staged_error is not None:
+            return staged_error
+        update_fields["description"] = staged_text
+
+    if description_edits is not None:
+
+        def _read_description() -> Any:
+            return _get_redmine_client().issue.get(issue_id)
+
+        try:
+            current_issue = await in_thread(_read_description)
+        except Exception as exc:  # noqa: BLE001 - surfaced as an error dict
+            return _handle_redmine_error(
+                exc,
+                f"reading issue {issue_id} to patch its description",
+                {"resource_type": "issue", "resource_id": issue_id},
+            )
+
+        patched, patch_error = _apply_text_edits(
+            getattr(current_issue, "description", "") or "",
+            description_edits,
+            description_expected_sha256,
+            "description",
+        )
+        if patch_error is not None:
+            return patch_error
+        update_fields["description"] = patched
 
     # Extract agile fields — python-redmine's core update does not understand
     # ``agile_data_attributes``, so they must be routed to the RedmineUP Agile

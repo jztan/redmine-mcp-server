@@ -31,6 +31,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   family's flag decides them like it decides its tools, and a collision with Redmine's
   own names, with another extension, or with a parameter the tool owns fails
   startup like every other registration conflict.
+- `update_redmine_issue` can patch a description instead of replacing it:
+  `description_edits` takes `{find, replace}` pairs applied in order on the
+  server, and `description_expected_sha256` refuses the call when the text
+  has changed since it was read. Redmine has no patch endpoint, so passing
+  `description` means the whole field is written out into the tool argument
+  -- for the 50-100k-character descriptions this was reported from, that is
+  slow, because the text is generated one token at a time, and unreliable,
+  because a long transcription drops text (the same failure as
+  [#305](https://github.com/jztan/redmine-mcp-server/issues/305), an order of magnitude up). A patch sends the
+  passage that changed. Each `find` must occur exactly once in the text as
+  it stands after the preceding edits; zero matches or several refuse the
+  whole call and leave the issue untouched, since a half-applied patch is
+  worse than none. `get_redmine_issue` now returns `description_sha256`, the
+  digest of the *raw* description, because the `description` it returns is
+  wrapped in boundary tags with a fresh random id per call and a digest of
+  that could never match; the caller echoes it back rather than computing
+  it. `find` and `replace` are matched with line endings normalized, since
+  Redmine's web UI saves CRLF, and the stored convention is restored on
+  write. Where the text really is all new rather than edited,
+  `description_upload_id` takes it from a file staged with
+  `create_upload_ticket`, decoded as UTF-8, so it travels from disk to the
+  server the way an attachment does. The three ways of setting a
+  description are mutually exclusive and passing more than one is refused
+  ([#314](https://github.com/jztan/redmine-mcp-server/issues/314)).
+
 
 ### Changed
 - Journal field changes no longer repeat a long before/after text. Redmine

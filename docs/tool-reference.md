@@ -910,7 +910,7 @@ Retrieve detailed information about a specific Redmine issue.
 - `include_journal_values` (boolean, optional): Return the before/after text of field changes in full instead of by length. Default: `false` — see **Journal field changes** below.
 
 
-**Returns:** Issue dictionary with details, journals, and attachments. Standard fields include `category`, `fixed_version` (target version), and `parent` (each `{id, ...}` or `None`), plus `start_date`, `due_date`, `closed_on` (ISO-8601 or `None`), `done_ratio`, `estimated_hours`, `spent_hours`, `total_estimated_hours`, `total_spent_hours` (the last two include subtasks), and `is_private`. Each is `None` when not set on the issue. When `REDMINE_AGILE_ENABLED=true`, also includes `story_points`, `agile_sprint_id`, and `agile_position` from the RedmineUP Agile plugin. Top-level keys the standard Redmine API does not define (added by a distribution or plugin, e.g. Easy Redmine's `easy_sprint` and `easy_story_points`) are passed through under `unmapped_fields`; the key is omitted when there are none. Null values are dropped, every string inside is wrapped in the same `<insecure-content-...>` boundary tags as `description` (nested ones included), and a value longer than 1000 characters once wrapped and serialized is skipped -- the cap is measured after wrapping because that is the size that reaches the client. The cap is a size rule, not a name list, so plugin rendering data such as Easy Redmine's `css_classes` still comes through when it is short enough.
+**Returns:** Issue dictionary with details, journals, and attachments, plus `description_sha256` — the digest of the raw description, for `update_redmine_issue`'s `description_expected_sha256`. Standard fields include `category`, `fixed_version` (target version), and `parent` (each `{id, ...}` or `None`), plus `start_date`, `due_date`, `closed_on` (ISO-8601 or `None`), `done_ratio`, `estimated_hours`, `spent_hours`, `total_estimated_hours`, `total_spent_hours` (the last two include subtasks), and `is_private`. Each is `None` when not set on the issue. When `REDMINE_AGILE_ENABLED=true`, also includes `story_points`, `agile_sprint_id`, and `agile_position` from the RedmineUP Agile plugin. Top-level keys the standard Redmine API does not define (added by a distribution or plugin, e.g. Easy Redmine's `easy_sprint` and `easy_story_points`) are passed through under `unmapped_fields`; the key is omitted when there are none. Null values are dropped, every string inside is wrapped in the same `<insecure-content-...>` boundary tags as `description` (nested ones included), and a value longer than 1000 characters once wrapped and serialized is skipped -- the cap is measured after wrapping because that is the size that reaches the client. The cap is a size rule, not a name list, so plugin rendering data such as Easy Redmine's `css_classes` still comes through when it is short enough.
 
 **Journal field changes (#313):** a journal's `details` entries describe field changes as `{property, name, old_value, new_value}`. Redmine records a description edit with the **full old and new text**, so a ticket whose description is edited repeatedly carries several copies of it in its change log — on one real ticket that was 827 KB of an 879 KB response, against 4.7 KB of actual comment text. Values longer than `REDMINE_MCP_JOURNAL_VALUE_MAX_CHARS` (default 500) are therefore reported by length:
 
@@ -1329,6 +1329,29 @@ Updates an existing issue with the provided fields. Blocked when `REDMINE_MCP_RE
   - `sha256` (string, optional) / `size_bytes` (integer, optional): what the caller meant to send. Checked after the content is resolved and before anything reaches Redmine; a mismatch refuses the whole call. Worth passing with `content_base64`, whose payload is written out by the model and can arrive mangled.
   - `content_type` (string, optional): MIME type override (e.g. `"application/pdf"`).
   - `description` (string, optional): Human-readable description for the attachment.
+
+
+**Patching a long description (#314):** Redmine has no patch endpoint, so passing `description` means sending the finished text — every character of it written into the tool argument. For a long field that is slow (the text is generated one token at a time) and unreliable (a long transcription drops text). Send the change instead:
+
+```python
+update_redmine_issue(
+    issue_id=123,
+    fields={},
+    description_edits=[{"find": "runs on two nodes", "replace": "runs on four nodes"}],
+    description_expected_sha256="<digest of the description as it was read>",
+)
+```
+
+- `description_edits` (list, optional): `{find, replace}` pairs, applied in order on the server. Each `find` must occur **exactly once** in the text as it stands after the preceding edits; zero matches or several refuse the whole call and change nothing, so include enough surrounding text to be unambiguous. Mutually exclusive with a `description` in `fields`.
+- `description_expected_sha256` (string, optional): the digest the description had when it was read. **Echo back the `description_sha256` that `get_redmine_issue` returns** — do not hash the `description` you read, because it is wrapped in `<insecure-content-...>` tags whose id changes on every call, so your digest would never match. Checked before any edit is applied; a mismatch refuses the call instead of overwriting whatever changed in between, and names the current digest so the retry can carry it. Worth passing whenever the read and the write are not in the same breath.
+
+`find` and `replace` are matched with line endings normalized, since Redmine's web UI saves CRLF and a multi-line `find` written with plain newlines would otherwise never match text it is looking straight at. The stored convention is restored on write, so patching does not rewrite every line ending in the field.
+
+A failed edit is reported with the index of the pair that failed and leaves the issue untouched — a half-applied patch is worse than none.
+
+**Replacing a long description wholesale:** where the text really is all new rather than edited, `description_upload_id` takes it from a file staged with [`create_upload_ticket`](#create_upload_ticket), decoded as UTF-8. The content then travels from disk to the server instead of through the conversation, the same way an attachment does. This composes with how an oversized read already comes back — the client writes it to a file the caller can edit in place, and this is the way back.
+
+`description`, `description_edits` and `description_upload_id` are mutually exclusive; passing more than one is refused, naming which were given.
 
 **Returns:** Updated issue dictionary. When `uploads` is provided and at least one attachment succeeds, the response includes:
 - `attachments` (list): Metadata for each attached file (id, filename, filesize, content_url, etc.).
