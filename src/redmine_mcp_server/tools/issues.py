@@ -966,6 +966,14 @@ def _journals_to_list(
                     else None
                 ),
                 "notes": wrap_insecure_content(notes) if notes else "",
+                # Of the *raw* notes, not of what sits in ``notes`` above:
+                # ``wrap_insecure_content`` adds boundary tags with a fresh
+                # random id per call, so a caller hashing what it read could
+                # never match. Echo this back as ``notes_expected_sha256``
+                # to patch safely (#317).
+                "notes_sha256": hashlib.sha256(
+                    (notes or "").encode("utf-8")
+                ).hexdigest(),
                 "created_on": _safe_isoformat(getattr(journal, "created_on", None)),
                 "private_notes": bool(getattr(journal, "private_notes", False)),
                 "details": details,
@@ -1038,6 +1046,8 @@ def _journal_to_dict(
             else None
         ),
         "notes": wrap_insecure_content(notes) if notes else "",
+        # See ``_journals_to_list``: the digest is of the raw notes (#317).
+        "notes_sha256": hashlib.sha256((notes or "").encode("utf-8")).hexdigest(),
         "created_on": _safe_isoformat(getattr(journal, "created_on", None)),
         "details": _journal_details_to_list(journal, include_journal_values),
     }
@@ -3111,6 +3121,9 @@ def _edit_issue_note_action(
     notes: Optional[str] = None,
     private_notes: Optional[bool] = None,
     notes_upload_id: Optional[str] = None,
+    notes_edits: Optional[List[Dict[str, str]]] = None,
+    notes_expected_sha256: Optional[str] = None,
+    issue_id: Optional[int] = None,
     **_: Any,
 ) -> Dict[str, Any]:
     sources = [
@@ -3118,18 +3131,22 @@ def _edit_issue_note_action(
         for name, given in (
             ("notes", notes is not None),
             ("notes_upload_id", bool(notes_upload_id)),
+            ("notes_edits", notes_edits is not None),
         )
         if given
     ]
     if not sources:
         return {
             "error": (
-                "action 'edit' needs the new text: either notes, or "
-                "notes_upload_id for a note staged with create_upload_ticket."
+                "action 'edit' needs the new text: notes, notes_upload_id "
+                "for a note staged with create_upload_ticket, or notes_edits "
+                "to change part of a long one in place."
             )
         }
     if len(sources) > 1:
-        return {"error": "Pass either notes or notes_upload_id, not both."}
+        return {
+            "error": ("Set the note one way at a time; got " + ", ".join(sources) + ".")
+        }
 
     from_upload = bool(notes_upload_id)
     if from_upload:
@@ -3137,6 +3154,57 @@ def _edit_issue_note_action(
         if staged_error is not None:
             return staged_error
         notes = staged
+
+    from_edits = notes_edits is not None
+    if from_edits:
+        # Patching needs the note as it stands, and Redmine serves no endpoint
+        # for a single journal -- `GET /issues/:id?include=journals` is the
+        # only way to read one. Hence the extra id, asked for only here (#317).
+        if issue_id is None:
+            return {
+                "error": (
+                    "notes_edits needs issue_id as well: patching reads the "
+                    "note first, and Redmine offers no endpoint for a single "
+                    "journal -- it can only be read through its issue."
+                )
+            }
+        try:
+            issue = _get_redmine_client().issue.get(issue_id, include="journals")
+        except Exception as exc:  # noqa: BLE001 - surfaced as an error dict
+            return _handle_redmine_error(
+                exc,
+                f"reading issue {issue_id} to patch journal {journal_id}",
+                {"resource_type": "issue", "resource_id": issue_id},
+            )
+
+        current = None
+        for journal in getattr(issue, "journals", None) or []:
+            if getattr(journal, "id", None) == journal_id:
+                current = getattr(journal, "notes", "") or ""
+                break
+        if current is None:
+            # Covers "no such journal" and "not on this issue" alike, and
+            # deliberately does not claim the journal does not exist: a
+            # private note is absent from this response entirely without the
+            # "View private notes" permission, so a real id can still be
+            # missing here.
+            return {
+                "error": (
+                    f"Journal {journal_id} is not among the journals of issue "
+                    f"{issue_id} that are visible to you, so nothing was "
+                    "changed. Check that both ids belong together -- and note "
+                    "that a private note does not appear at all without the "
+                    "'View private notes' permission, so a journal that "
+                    "exists can still be unreachable here."
+                )
+            }
+
+        patched, patch_error = _apply_text_edits(
+            current, notes_edits, notes_expected_sha256, "notes"
+        )
+        if patch_error is not None:
+            return patch_error
+        notes = patched
 
     try:
         params: Dict[str, Any] = {"notes": notes}
@@ -3150,8 +3218,9 @@ def _edit_issue_note_action(
                 bool(private_notes) if private_notes is not None else None
             ),
         }
-        if from_upload:
-            # A note that arrived as a file is one the caller never wrote out,
+        if from_upload or from_edits:
+            # A note that arrived as a file, or was changed in place, is one
+            # the caller never wrote out,
             # so echoing it back would put the whole thing in the conversation
             # after all -- the cost this route exists to avoid (#317).
             result["notes_length"] = len(notes)
@@ -3206,6 +3275,9 @@ async def manage_issue_note(
     private_notes: Optional[bool] = None,
     is_private: Optional[bool] = None,
     notes_upload_id: Optional[str] = None,
+    notes_edits: Optional[List[Dict[str, str]]] = None,
+    notes_expected_sha256: Optional[str] = None,
+    issue_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Edit text or toggle privacy of a Redmine journal (issue note).
 
@@ -3225,13 +3297,34 @@ async def manage_issue_note(
             ``notes_length`` and ``notes_sha256`` rather than echoing the
             note back, since echoing it would put the whole thing in the
             conversation after all.
+        notes_edits: Change part of a long note in place instead of
+            sending the whole thing: a list of ``{"find": ..., "replace":
+            ...}``, applied in order on this server. Each ``find`` must
+            occur exactly once in the note as it stands after the preceding
+            edits; zero matches or several refuse the whole call and change
+            nothing. Requires ``issue_id``, and is mutually exclusive with
+            ``notes`` and ``notes_upload_id``.
+        notes_expected_sha256: The hex digest the note had when it was read
+            -- echo back the ``notes_sha256`` that ``get_redmine_issue``
+            and ``get_private_notes`` report on each journal; do not hash
+            the ``notes`` you read, since they are wrapped in boundary tags
+            whose id changes on every call. Checked before any edit is
+            applied, and a mismatch refuses the call instead of overwriting
+            whatever changed in between.
+        issue_id: The issue the journal belongs to. **Required with
+            ``notes_edits`` and ignored otherwise**: patching reads the note
+            first, and Redmine offers no endpoint for a single journal, so
+            it can only be read through its issue. A ``journal_id`` that is
+            not among that issue's visible journals is refused and nothing
+            is written.
         private_notes: Optionally toggle private flag during ``edit``.
         is_private: Required for ``set_private`` -- ``True`` to mark
             private, ``False`` to make public.
 
     Returns:
         ``edit``: ``{"success": True, "journal_id": ..., "notes": ...,
-        "private_notes": ...}``, or with ``notes_upload_id``
+        "private_notes": ...}``, or with ``notes_upload_id`` or
+        ``notes_edits``
         ``{"success": True, "journal_id": ..., "notes_length": ...,
         "notes_sha256": ..., "private_notes": ...}``.
         ``set_private``: ``{"success": True, "journal_id": ...,

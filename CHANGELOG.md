@@ -69,6 +69,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `notes_length` and `notes_sha256` rather than echoing the note, since
   echoing it would put the text in the conversation after all. A plain
   `notes` call is unchanged ([#317](https://github.com/jztan/redmine-mcp-server/issues/317)).
+- `manage_issue_note(action="edit")` can patch a note instead of replacing
+  it: `notes_edits` takes `{find, replace}` pairs applied on the server,
+  `notes_expected_sha256` refuses the call when the note changed since it
+  was read, and every journal now carries `notes_sha256` -- the digest of
+  its raw notes, which is what the guard echoes back. Patching needs the
+  current text, and Redmine serves no endpoint for a single journal, so
+  `notes_edits` also requires `issue_id`; a `journal_id` that is not among
+  that issue's visible journals is refused without writing, in wording that
+  allows for a private note the caller cannot see rather than claiming the
+  journal does not exist. The response reports `notes_length` and
+  `notes_sha256` rather than echoing the note ([#317](https://github.com/jztan/redmine-mcp-server/issues/317)).
 - `create_redmine_issue` takes `description_upload_id`, so an issue can be
   opened with a long description without writing it out into the tool
   argument. #316 gave the update path that route and creation did not get
