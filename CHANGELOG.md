@@ -76,6 +76,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `expected_version` and reports an edit conflict when it is stale, and
   `rename` sends the version it read
   ([#324](https://github.com/jztan/redmine-mcp-server/issues/324), [#329](https://github.com/jztan/redmine-mcp-server/pull/329)).
+- A `description` passed inside `fields` to `create_redmine_issue` was
+  dropped for the default of the parameter of the same name, and the issue
+  was created empty with nothing in the result saying so.
+  `update_redmine_issue` has no such parameter and takes the description in
+  its `fields`, so the habit carries over easily. It is now refused the way a
+  misplaced `uploads` is
+  ([#333](https://github.com/jztan/redmine-mcp-server/issues/333)).
 
 ### Contributors
 - @andilem reported, with measurements from a production ticket, that journal

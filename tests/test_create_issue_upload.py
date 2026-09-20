@@ -185,6 +185,54 @@ class TestABadUploadIsReportedNotGuessed:
 
 
 @pytest.mark.unit
+class TestADescriptionInTheFieldsPayload:
+    """#333: it used to be dropped for the parameter's default, and the issue
+    was created empty with nothing said about it. update_redmine_issue takes
+    its description in fields, so the habit carries over easily."""
+
+    @pytest.mark.asyncio
+    async def test_it_is_refused_without_creating(self, attachments_dir):
+        with patch("redmine_mcp_server._client.redmine") as mock_redmine:
+            result = await create_redmine_issue(
+                project_id=1,
+                subject="Neu",
+                fields={"tracker_id": 3, "description": "<p>geht verloren</p>"},
+            )
+
+            assert "description" in result["error"]
+            mock_redmine.issue.create.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_extra_fields_is_refused_the_same_way(self, attachments_dir):
+        with patch("redmine_mcp_server._client.redmine") as mock_redmine:
+            result = await create_redmine_issue(
+                project_id=1,
+                subject="Neu",
+                extra_fields={"description": "<p>geht verloren</p>"},
+            )
+
+            assert "description" in result["error"]
+            mock_redmine.issue.create.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_an_empty_one_loses_nothing_and_is_allowed(self, attachments_dir):
+        with patch("redmine_mcp_server._client.redmine") as mock_redmine:
+            mock_redmine.issue.create.return_value = _created_issue()
+
+            result = await create_redmine_issue(
+                project_id=1,
+                subject="Neu",
+                description="<p>kurz</p>",
+                fields={"description": "", "tracker_id": 3},
+            )
+
+            assert "error" not in result
+            sent = mock_redmine.issue.create.call_args
+            assert sent.kwargs["description"] == "<p>kurz</p>"
+            assert sent.kwargs["tracker_id"] == 3
+
+
+@pytest.mark.unit
 class TestTheOrdinaryCallIsUnchanged:
     @pytest.mark.asyncio
     async def test_a_plain_description_still_works(self, attachments_dir):
