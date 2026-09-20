@@ -1,7 +1,8 @@
 """Wiki page tool: list/get/create/update/delete/rename actions."""
 
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 
+from pydantic import Field
 from redminelib.exceptions import ValidationError
 
 from .._client import _get_redmine_client
@@ -238,6 +239,7 @@ async def _update_wiki_page_action(
     comments: Optional[str] = None,
     parent_title: Optional[str] = None,
     uploads: Optional[List[Dict[str, Any]]] = None,
+    expected_version: Optional[int] = None,
     **_: Any,
 ) -> Dict[str, Any]:
     title_error = _require_wiki_page_title("update", wiki_page_title)
@@ -308,6 +310,14 @@ async def _update_wiki_page_action(
                 update_kwargs["version"] = existing_version
             else:
                 update_kwargs["text"] = text
+                if expected_version is not None:
+                    # New text was derived from a copy the caller read some
+                    # time ago; its version lets Redmine answer 409 when the
+                    # page has moved on, where it would otherwise overwrite
+                    # the other edit silently (#324). Only this branch needs
+                    # it: Redmine checks the version only when the text
+                    # changes, and the branch above echoes text it just read.
+                    update_kwargs["version"] = expected_version
             client.wiki_page.update(wiki_page_title, **update_kwargs)
             wiki_page = client.wiki_page.get(wiki_page_title, project_id=project_id)
             return _wiki_page_to_dict(wiki_page)
@@ -377,6 +387,12 @@ def _rename_wiki_page_action(
             "project_id": project_id,
             "title": new_title,
             "text": existing_text,
+            # Echoing the body back would revert an edit that landed after
+            # the read above. With the version on the request Redmine
+            # answers 409 instead (#324). The caller's `expected_version` is
+            # no use here: Redmine checks the version only when the text
+            # changes, and this text is never the caller's.
+            "version": getattr(existing, "version", None),
         }
         if redirect_existing_links:
             update_kwargs["redirect_existing_links"] = "1"
@@ -433,6 +449,7 @@ async def manage_redmine_wiki_page(
     new_title: Optional[str] = None,
     redirect_existing_links: bool = True,
     uploads: Optional[List[Dict[str, Any]]] = None,
+    expected_version: Annotated[Optional[int], Field(ge=1)] = None,
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     """List, get, create, update, delete, or rename a Redmine wiki page.
 
@@ -480,6 +497,12 @@ async def manage_redmine_wiki_page(
             ``filename`` (required with ``content_base64``), ``sha256``,
             ``size_bytes``, ``content_type``, ``description``. Ignored by
             the other actions.
+        expected_version: The ``version`` the page had when the caller read
+            it, for ``update``. Redmine refuses the write with an edit
+            conflict when the page has moved on since, where it would
+            otherwise overwrite the other edit silently. Optional; pass it
+            whenever the new text was derived from a page read earlier.
+            Ignored without ``text`` and by the other actions.
 
     Returns:
         ``list``: list of page metadata dicts (no body text).
