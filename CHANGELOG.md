@@ -8,30 +8,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
-- `get_redmine_issue` takes `journal_order`, `"asc"` (default) or `"desc"`.
-  With `"desc"` the newest journals come first and `journal_offset` counts
-  from that end, which is what answers "the last few comments": with `"asc"`
-  a `journal_limit` returns the *oldest* ones, and reaching the newest needs
-  `journal_offset = total - journal_limit` -- so the caller has to fetch
-  everything to learn `total`, which is the request it was trying to avoid.
-  `journal_pagination` echoes the order back ([#318](https://github.com/jztan/redmine-mcp-server/issues/318)).
-
-### Fixed
-- Journals are sorted by id before `journal_limit` slices them, instead of
-  being taken in the order Redmine sent. `IssuesController#show` reverses
-  them for an API user who has "display comments in reverse chronological
-  order" set, so the same `journal_limit` returned *different* journals
-  depending on the account behind the key -- and the documented behaviour,
-  oldest first, held only for accounts with the default setting
-  ([#318](https://github.com/jztan/redmine-mcp-server/issues/318)).
-### Added
-- `manage_issue_note(action="edit")` takes `notes_upload_id`, so a long note
-  can be replaced from a file staged with `create_upload_ticket` instead of
-  being written out into the tool argument -- the same problem #316 solved
-  for descriptions, and the same route. The response then reports
-  `notes_length` and `notes_sha256` rather than echoing the note, since
-  echoing it would put the text in the conversation after all. A plain
-  `notes` call is unchanged ([#317](https://github.com/jztan/redmine-mcp-server/issues/317)).
 - `ExtensionSpec` gains `issue_update_keys` and `issue_query_filters`, so an
   extension can widen the issue tools instead of shipping parallel ones. A
   distribution that adds attributes to the issue (Easy Redmine's
@@ -79,7 +55,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   server the way an attachment does. The three ways of setting a
   description are mutually exclusive and passing more than one is refused
   ([#314](https://github.com/jztan/redmine-mcp-server/issues/314)).
-
+- `get_redmine_issue` takes `journal_order`, `"asc"` (default) or `"desc"`.
+  With `"desc"` the newest journals come first and `journal_offset` counts
+  from that end, which is what answers "the last few comments": with `"asc"`
+  a `journal_limit` returns the *oldest* ones, and reaching the newest needs
+  `journal_offset = total - journal_limit` -- so the caller has to fetch
+  everything to learn `total`, which is the request it was trying to avoid.
+  `journal_pagination` echoes the order back ([#318](https://github.com/jztan/redmine-mcp-server/issues/318)).
+- `manage_issue_note(action="edit")` takes `notes_upload_id`, so a long note
+  can be replaced from a file staged with `create_upload_ticket` instead of
+  being written out into the tool argument -- the same problem #316 solved
+  for descriptions, and the same route. The response then reports
+  `notes_length` and `notes_sha256` rather than echoing the note, since
+  echoing it would put the text in the conversation after all. A plain
+  `notes` call is unchanged ([#317](https://github.com/jztan/redmine-mcp-server/issues/317)).
 
 ### Changed
 - Journal field changes no longer repeat a long before/after text. Redmine
@@ -100,6 +89,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the issue itself, not in the details, so nothing a caller normally reads
   is lost ([#313](https://github.com/jztan/redmine-mcp-server/issues/313)).
 
+### Fixed
+- Journals are sorted by id before `journal_limit` slices them, instead of
+  being taken in the order Redmine sent. `IssuesController#show` reverses
+  them for an API user who has "display comments in reverse chronological
+  order" set, so the same `journal_limit` returned *different* journals
+  depending on the account behind the key -- and the documented behaviour,
+  oldest first, held only for accounts with the default setting
+  ([#318](https://github.com/jztan/redmine-mcp-server/issues/318)).
+
 ### Contributors
 - @andilem reported, with measurements from a production ticket, that journal
   details echo every past description
@@ -111,6 +109,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [#316](https://github.com/jztan/redmine-mcp-server/pull/316)); also added the
   issue extension seams
   ([#312](https://github.com/jztan/redmine-mcp-server/pull/312)).
+- @andilem reported that `journal_limit` returns the oldest journals
+  ([#318](https://github.com/jztan/redmine-mcp-server/issues/318)) and
+  implemented `journal_order` and the sort by id
+  ([#320](https://github.com/jztan/redmine-mcp-server/pull/320)).
 
 ## [2.16.0] - 2026-09-19
 ### Added
