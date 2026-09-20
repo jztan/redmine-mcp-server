@@ -32,6 +32,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   own names, with another extension, or with a parameter the tool owns fails
   startup like every other registration conflict.
 
+### Changed
+- Journal field changes no longer repeat a long before/after text. Redmine
+  records a description edit with the full old *and* new value, so a ticket
+  whose description is edited repeatedly carries several copies of it in its
+  change log: on one real ticket `get_redmine_issue(include_journals=True)`
+  returned 879,251 characters, of which 827,044 were past descriptions
+  echoed in `journal_details` and 4,704 were the comments anyone had
+  actually written. That is paid as input tokens on every read of the
+  ticket, and it grows with every further edit. A value longer than
+  `REDMINE_MCP_JOURNAL_VALUE_MAX_CHARS` (default 500) is now reported as
+  `old_value_length` / `new_value_length` with `elided: True`; the value
+  keys stay present and hold `None`, so a caller reading them gets no
+  `KeyError` and can tell an elided value from an empty one. Each value is
+  judged on its own. `get_redmine_issue` and `get_private_notes` take
+  `include_journal_values=True` to get the text back, and the environment
+  variable set to `0` switches it off entirely. The current values are on
+  the issue itself, not in the details, so nothing a caller normally reads
+  is lost ([#313](https://github.com/jztan/redmine-mcp-server/issues/313)).
+
+
 ## [2.16.0] - 2026-09-19
 ### Added
 - `manage_redmine_project` creates, edits, closes and reopens projects, taking
