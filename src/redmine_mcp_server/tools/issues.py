@@ -31,6 +31,7 @@ from .._custom_fields import (
 from .._decorators import ActionMode, action_dispatch
 from .._env import _is_agile_enabled, _is_read_only_mode, _is_tags_enabled
 from .._errors import _READ_ONLY_ERROR, _handle_redmine_error
+from .._extension_registry import extension_issue_query_filters
 from .._offload import in_thread, offloaded
 from .._serialization import (
     _attachment_to_dict,
@@ -345,9 +346,15 @@ def _reject_issue_filters(filters: Any) -> Optional[str]:
     )
     if reserved:
         return reserved
+    # A registered extension's filters join the accepted names while its
+    # family is enabled. Widening the list rather than opening it keeps what
+    # the check is for: Redmine drops a filter it does not know and answers
+    # 200 with the collection unnarrowed, which reads exactly like a filter
+    # that matched everything.
+    registered = _ISSUE_QUERY_FILTER_NAMES | frozenset(extension_issue_query_filters())
     unregistered = _reject_unregistered_filter_keys(
         {k: v for k, v in filters.items() if k not in _ISSUE_REQUEST_PARAM_KEYS},
-        _ISSUE_QUERY_FILTER_NAMES,
+        registered,
         _ISSUE_QUERY_ASSOCIATIONS,
     )
     if unregistered:
@@ -1381,6 +1388,17 @@ async def list_redmine_issues(
             # Merge additional arbitrary Redmine filters if provided
             if filters:
                 redmine_api_filters.update(filters)
+
+            # A registered extension's filter can need a companion parameter
+            # to be honoured at all -- Easy Redmine's set_filter=1 is what
+            # engages its query engine. Merged only when that filter is in
+            # this call, and never over a value the caller set, so a request
+            # naming none of them goes out exactly as it does today.
+            for name, params in extension_issue_query_filters().items():
+                if name not in redmine_api_filters:
+                    continue
+                for key, value in params.items():
+                    redmine_api_filters.setdefault(key, value)
 
             # Naming either in `fields` implies the flag, so a caller does not
             # have to set both and get an empty key for their trouble.

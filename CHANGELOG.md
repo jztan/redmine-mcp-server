@@ -7,6 +7,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `ExtensionSpec` gains `issue_update_keys` and `issue_query_filters`, so an
+  extension can widen the issue tools instead of shipping parallel ones. A
+  distribution that adds attributes to the issue (Easy Redmine's
+  `easy_sprint_id` and friends) could not write them: an unknown update key is
+  taken for a custom field *label*, and labels are matched with the
+  non-alphanumerics stripped, so `easy_sprint_id` collides with a custom field
+  called "Easy Sprint ID" and the value lands there. Nor could it filter on
+  them: `list_redmine_issues` refuses an unregistered filter name, and rightly,
+  since Redmine drops one it does not know and answers 200 with the collection
+  unnarrowed. Registered keys are now passed through untouched, registered
+  filter names are accepted, and a filter's companion parameters (Easy's
+  `set_filter=1`) are merged only when that filter is in the call and never
+  over a value the caller set, and may not be a filter name themselves --
+  Redmine's own, another family's, or a `cf_<id>` custom field spelling --
+  since one riding along unasked would narrow a query the caller never
+  narrowed. The check runs in both directions, so a filter name another
+  family already sends as a companion is refused too.
+  Registered attributes reach Redmine on `create_redmine_issue` as well as on
+  an update: both write paths share the step that reads an unknown name as a
+  custom field's. Both tables are read from the registry per call, so a
+  family's flag decides them like it decides its tools, and a collision with Redmine's
+  own names, with another extension, or with a parameter the tool owns fails
+  startup like every other registration conflict.
+
 ### Changed
 - Journal field changes no longer repeat a long before/after text. Redmine
   records a description edit with the full old *and* new value, so a ticket
@@ -25,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   variable set to `0` switches it off entirely. The current values are on
   the issue itself, not in the details, so nothing a caller normally reads
   is lost ([#313](https://github.com/jztan/redmine-mcp-server/issues/313)).
+
 
 ## [2.16.0] - 2026-09-19
 ### Added

@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, Set, Union
 
 from ._client import _get_redmine_client
 from ._env import _is_true_env
+from ._extension_registry import extension_issue_update_keys
 
 logger = logging.getLogger("redmine_mcp_server")
 
@@ -481,8 +482,18 @@ def _project_issue_custom_fields_by_project_id(
 
 
 def _is_standard_issue_update_key(field_name: str) -> bool:
-    """Return True when a field name should be passed through unchanged."""
-    return field_name in _STANDARD_ISSUE_UPDATE_FIELDS
+    """Return True when a field name should be passed through unchanged.
+
+    A registered extension's issue attributes count as standard while its
+    family is enabled. They have to: the alternative is the label matching
+    below, which strips every non-alphanumeric before comparing, so the
+    attribute ``easy_sprint_id`` and a custom field named "Easy Sprint ID"
+    normalize to the same string and the value would be written to whichever
+    the lookup found.
+    """
+    if field_name in _STANDARD_ISSUE_UPDATE_FIELDS:
+        return True
+    return field_name in extension_issue_update_keys()
 
 
 def _resolve_named_custom_fields(
