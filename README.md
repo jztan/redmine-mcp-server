@@ -154,6 +154,7 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `AUTO_CLEANUP_ENABLED` | No | `true` | Toggle automatic cleanup of expired attachments |
 | `CLEANUP_INTERVAL_MINUTES` | No | `10` | Interval for cleanup task (also deletes expired OAuth state in `oauth-proxy` and `api-key-login` modes) |
 | `ATTACHMENT_EXPIRES_MINUTES` | No | `60` | Expiry window for generated download URLs |
+| `REDMINE_MCP_JOURNAL_VALUE_MAX_CHARS` | No | `500` | Above this many characters, a journal field-change reports its before/after text as `old_value_length` / `new_value_length` with `elided: true` instead of in full. Redmine records a description edit with both texts, so a repeatedly edited ticket otherwise returns several copies of its description. `0` disables eliding; `get_redmine_issue` and `get_private_notes` take `include_journal_values=true` per call. |
 | `REDMINE_MCP_EXPOSE_ADMIN_TOOLS` | No | `false` | Expose operator/admin tools on the MCP surface. Currently gates `cleanup_attachment_files`. The background cleanup task runs regardless of this flag. |
 | `REDMINE_SSL_VERIFY` | No | `true` | Enable/disable SSL certificate verification |
 | `REDMINE_SSL_CERT` | No | – | Path to custom CA certificate file |
