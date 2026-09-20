@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- `get_redmine_issue` takes `fields`, the same narrowing
+  `list_redmine_issues` has and through the same helper. After #315 stopped
+  the journals echoing past descriptions, the *current* description became
+  the bulk of a read: 42,561 of the ~54,900 characters left on the ticket
+  #313 measured, 78% of the response, paid by every caller that only wanted
+  the status. `fields` does not reach journals, attachments or custom
+  fields -- those switches stay independent and all three default to `True`
+  -- so a cheap read names all four. `description_sha256` is returned
+  whether or not `description` is, since it is what lets a caller patch the
+  text without reading it ([#319](https://github.com/jztan/redmine-mcp-server/issues/319)).
 - `get_redmine_issue` takes `journal_order`, `"asc"` (default) or `"desc"`.
   With `"desc"` the newest journals come first and `journal_offset` counts
   from that end, which is what answers "the last few comments": with `"asc"`

@@ -1059,6 +1059,7 @@ async def get_redmine_issue(
     include_relations: bool = False,
     include_children: bool = False,
     include_journal_values: bool = False,
+    fields: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Retrieve a specific Redmine issue by ID. Fetch issue details,
     view a ticket, show a bug report, get issue with comments,
@@ -1103,6 +1104,20 @@ async def get_redmine_issue(
         include_children: Whether to include the issue's direct children,
             returned under ``children`` as ``[{"id", "subject", "tracker"},
             ...]``. Defaults to ``False``.
+        fields: Narrow the issue's own keys, with the same meaning
+            ``list_redmine_issues`` gives it: ``None``, ``["*"]`` or
+            ``["all"]`` return everything, and a name the serializer does
+            not know is skipped rather than refused. Naming
+            ``custom_fields`` or ``relations`` implies the matching flag.
+            **This does not reach the journals, attachments or custom
+            fields**, whose ``include_*`` switches stay independent and all
+            three default to ``True`` -- so ``fields=["id", "status"]`` on
+            its own still returns every journal, attachment and custom
+            field. A genuinely cheap read is ``fields=[...]`` together with
+            ``include_journals=False``, ``include_attachments=False`` and
+            ``include_custom_fields=False``. ``description_sha256`` is
+            returned either way, since it is what lets a caller patch the
+            description without reading it.
         include_journal_values: Return the before/after text of field
             changes in full instead of by length. Defaults to ``False``,
             because Redmine journals a description edit with both the old
@@ -1161,7 +1176,21 @@ async def get_redmine_issue(
             else:
                 issue = _get_redmine_client().issue.get(issue_id)
 
-            result = _issue_to_dict(issue, include_custom_fields=include_custom_fields)
+            # Same field selection `list_redmine_issues` has, through the
+            # same helper, so the two read tools narrow identically: `None`,
+            # `["*"]` and `["all"]` mean everything, and a name the
+            # serializer does not know is skipped rather than refused.
+            # Naming `custom_fields` or `relations` implies the matching
+            # flag, as it does there (#319).
+            selected = fields if isinstance(fields, (list, tuple)) else []
+            result = _issue_to_dict_selective(
+                issue,
+                fields,
+                include_custom_fields=(
+                    include_custom_fields or "custom_fields" in selected
+                ),
+                include_relations=include_relations or "relations" in selected,
+            )
             # The digest is of the *raw* description, not of what sits in
             # ``description`` above it: ``wrap_insecure_content`` adds boundary
             # tags with a fresh random id on every call, so a caller hashing
