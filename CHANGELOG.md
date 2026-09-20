@@ -76,6 +76,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the issue itself, not in the details, so nothing a caller normally reads
   is lost ([#313](https://github.com/jztan/redmine-mcp-server/issues/313)).
 
+### Contributors
+- @andilem reported, with measurements from a production ticket, that journal
+  details echo every past description
+  ([#313](https://github.com/jztan/redmine-mcp-server/issues/313)) and that
+  editing a long description forces the model to retype it
+  ([#314](https://github.com/jztan/redmine-mcp-server/issues/314)), and
+  implemented both fixes
+  ([#315](https://github.com/jztan/redmine-mcp-server/pull/315),
+  [#316](https://github.com/jztan/redmine-mcp-server/pull/316)); also added the
+  issue extension seams
+  ([#312](https://github.com/jztan/redmine-mcp-server/pull/312)).
 
 ## [2.16.0] - 2026-09-19
 ### Added
