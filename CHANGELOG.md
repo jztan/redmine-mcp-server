@@ -158,6 +158,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#326](https://github.com/jztan/redmine-mcp-server/issues/326)) and
   implemented `description_upload_id` there
   ([#328](https://github.com/jztan/redmine-mcp-server/pull/328)).
+- @andilem reported that `get_redmine_issue` had no field selection
+  ([#319](https://github.com/jztan/redmine-mcp-server/issues/319)) and
+  implemented `fields`
+  ([#321](https://github.com/jztan/redmine-mcp-server/pull/321)).
 
 ## [2.16.0] - 2026-09-19
 ### Added
