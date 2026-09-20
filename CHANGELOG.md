@@ -143,6 +143,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#322](https://github.com/jztan/redmine-mcp-server/pull/322)) and
   `notes_edits`
   ([#323](https://github.com/jztan/redmine-mcp-server/pull/323)).
+- @andilem reported that `create_redmine_issue` could not take a staged
+  description
+  ([#326](https://github.com/jztan/redmine-mcp-server/issues/326)) and
+  implemented `description_upload_id` there
+  ([#328](https://github.com/jztan/redmine-mcp-server/pull/328)).
 
 ## [2.16.0] - 2026-09-19
 ### Added
