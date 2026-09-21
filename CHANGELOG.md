@@ -78,7 +78,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   customer, optionally setting the ticket status, the same as "Send Note" in
   the web UI. A plain `update_redmine_issue` note never reaches the customer.
   Opt in with `REDMINE_HELPDESK_ENABLED=true`
-  ([#301](https://github.com/jztan/redmine-mcp-server/issues/301)).
+  ([#301](https://github.com/jztan/redmine-mcp-server/issues/301), [#342](https://github.com/jztan/redmine-mcp-server/pull/342)).
 
 ### Changed
 - Journal field changes no longer repeat a long before/after text. Redmine
