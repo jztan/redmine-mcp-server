@@ -32,7 +32,10 @@ from .._custom_fields import (
 from .._decorators import ActionMode, action_dispatch
 from .._env import _is_agile_enabled, _is_read_only_mode, _is_tags_enabled
 from .._errors import _READ_ONLY_ERROR, _handle_redmine_error
-from .._extension_registry import extension_issue_query_filters
+from .._extension_registry import (
+    extension_issue_payload_skip_keys,
+    extension_issue_query_filters,
+)
 from .._offload import in_thread, offloaded
 from .. import _upload_store
 from .._serialization import (
@@ -558,6 +561,11 @@ def _issue_unmapped_fields(issue: Any) -> Dict[str, Any]:
         # (`_issue_tags_to_list`); with it disabled the key is just another
         # unmapped plugin field.
         skip = skip | {"tags"}
+    # A fork's own presentation keys, named by the extension that owns them.
+    # The size cap below is the general filter and stays the general filter;
+    # this is for what is short, useless and on every single issue, which
+    # size cannot tell from a short and useful value (#331).
+    skip = skip | extension_issue_payload_skip_keys()
 
     unmapped: Dict[str, Any] = {}
     for key, value in payload.items():

@@ -223,6 +223,17 @@ class ExtensionSpec:
             it. The parameters are merged into the request only when that
             filter is part of the call, and never over a value the caller
             set, so a request that names none of them is unchanged.
+        issue_payload_skip_keys: Top-level issue keys to leave out of
+            ``unmapped_fields`` while the family is enabled. For the keys a
+            distribution adds for its own renderer rather than for a
+            reader: Easy Redmine's ``css_classes`` is a CSS class list for
+            its issue grid, present on every issue, and it answers nothing
+            the issue's own fields do not answer better. The size cap that
+            catches a plugin's long text does not reach it -- it is about a
+            fifth of the cap -- and a cap low enough would drop real data
+            instead. This repository cannot know which of a fork's keys are
+            presentation, so the fork says so here. A name that is not in
+            the payload is simply never matched.
     """
 
     family: str
@@ -233,6 +244,7 @@ class ExtensionSpec:
     advertised_write_scopes: Sequence[str] = ()
     issue_update_keys: Sequence[str] = ()
     issue_query_filters: Mapping[str, Mapping[str, object]] = MappingProxyType({})
+    issue_payload_skip_keys: Sequence[str] = ()
 
 
 def _reject(where: str, problem: str) -> NoReturn:
@@ -304,6 +316,30 @@ def _check_issue_update_keys(where: str, value: object) -> None:
                 f"has an entry in issue_update_keys that is not a non-empty "
                 f"str: {key!r}. Each one is the name of an issue attribute as "
                 "the Redmine API spells it.",
+            )
+
+
+def _check_issue_payload_skip_keys(where: str, value: object) -> None:
+    """Payload keys to hide: an ordered sequence of names, like the above."""
+    if isinstance(value, str):
+        _reject(
+            where,
+            f"passes a bare str as issue_payload_skip_keys: {value!r}. A str "
+            "is a sequence of its own characters, so this would hide one "
+            f"single-letter key per letter. Pass a one-tuple: ({value!r},).",
+        )
+    if not isinstance(value, Sequence):
+        _reject(
+            where,
+            f"maps issue_payload_skip_keys to {value!r}, which is not a " "sequence.",
+        )
+    for key in value:
+        if not isinstance(key, str) or not key:
+            _reject(
+                where,
+                f"has an entry in issue_payload_skip_keys that is not a "
+                f"non-empty str: {key!r}. Each one is a top-level key of the "
+                "issue payload as the server spells it.",
             )
 
 
@@ -417,10 +453,11 @@ def _validate_spec(spec: ExtensionSpec) -> None:
 
     _check_issue_update_keys(where, spec.issue_update_keys)
     _check_issue_query_filters(where, spec.issue_query_filters)
+    _check_issue_payload_skip_keys(where, spec.issue_payload_skip_keys)
 
 
 def _check_issue_seams(spec: ExtensionSpec) -> None:
-    """Refuse an issue attribute or filter that is already spoken for.
+    """Refuse an issue attribute, filter or hidden key already spoken for.
 
     The two tables this widens are read per call rather than merged into a
     module constant, so a duplicate would not overwrite anything -- it would
@@ -438,6 +475,7 @@ def _check_issue_seams(spec: ExtensionSpec) -> None:
     from ._custom_fields import _STANDARD_ISSUE_UPDATE_FIELDS
     from ._validation import _RESERVED_QUERY_KEYS, _is_custom_field_filter
     from .tools.issues import (
+        _ISSUE_PAYLOAD_SKIP_KEYS,
         _ISSUE_QUERY_ASSOCIATIONS,
         _ISSUE_QUERY_FILTER_NAMES,
         _ISSUE_REQUEST_PARAM_KEYS,
@@ -446,6 +484,7 @@ def _check_issue_seams(spec: ExtensionSpec) -> None:
     where = f"Extension family '{spec.family}'"
     update_keys = set(spec.issue_update_keys)
     filters = dict(spec.issue_query_filters)
+    skip_keys = set(spec.issue_payload_skip_keys)
     # Names a companion parameter may not take: a filter narrows the query,
     # and one sent unasked is a filter the caller did not write.
     filter_names = set(_ISSUE_QUERY_FILTER_NAMES) | set(filters)
@@ -486,6 +525,35 @@ def _check_issue_seams(spec: ExtensionSpec) -> None:
             f"{', '.join(taken)}. list_redmine_issues accepts them already.",
         )
 
+    # The whole skip set, not just the mapped fields: `journals`, `watchers`
+    # and the rest of the includes and relations never reach
+    # `unmapped_fields` either, so naming one is the same do-nothing entry.
+    pointless = sorted(skip_keys & _ISSUE_PAYLOAD_SKIP_KEYS)
+    if pointless:
+        _reject(
+            where,
+            f"declares issue_payload_skip_keys unmapped_fields never carries: "
+            f"{', '.join(pointless)}. The serializer emits them as fields of "
+            "its own, or they are an include or a relation it handles, so the "
+            "entry would do nothing. Drop it, or -- if the intent was to hide "
+            "a standard field from the response -- that is the caller's "
+            "`fields` argument and not an extension's to decide.",
+        )
+
+    # A key a family declares as writable is one a caller reads back: it
+    # writes `acme_sprint_id`, then looks for what came of it. Hiding it
+    # makes the attribute write-only, so the two cannot name the same key --
+    # within one spec or across two, whichever registers first.
+    own_clash = sorted(skip_keys & update_keys)
+    if own_clash:
+        _reject(
+            where,
+            f"declares issue_payload_skip_keys it also declares as "
+            f"issue_update_keys: {', '.join(own_clash)}. A caller writes an "
+            "attribute and reads it back through unmapped_fields; hiding it "
+            "makes it write-only.",
+        )
+
     for other in REGISTERED_EXTENSIONS:
         clash = sorted(update_keys & set(other.issue_update_keys))
         if clash:
@@ -502,6 +570,25 @@ def _check_issue_seams(spec: ExtensionSpec) -> None:
                 f"declares issue_query_filters already claimed by family "
                 f"'{other.family}': {', '.join(clash)}. Whichever registered "
                 "last would decide the parameters sent with it.",
+            )
+        clash = sorted(skip_keys & set(other.issue_update_keys))
+        if clash:
+            _reject(
+                where,
+                f"declares issue_payload_skip_keys that family "
+                f"'{other.family}' writes as issue_update_keys: "
+                f"{', '.join(clash)}. That family's callers write the "
+                "attribute and read it back through unmapped_fields; hiding "
+                "it here would make it write-only for them.",
+            )
+        clash = sorted(update_keys & set(other.issue_payload_skip_keys))
+        if clash:
+            _reject(
+                where,
+                f"declares issue_update_keys that family '{other.family}' "
+                f"hides as issue_payload_skip_keys: {', '.join(clash)}. The "
+                "same conflict the other way round, caught whichever of the "
+                "two registers first.",
             )
 
     for name, params in filters.items():

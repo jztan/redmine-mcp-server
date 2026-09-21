@@ -53,6 +53,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   collision with Redmine's own names, another extension or a tool parameter
   fails startup
   ([#311](https://github.com/jztan/redmine-mcp-server/issues/311), [#312](https://github.com/jztan/redmine-mcp-server/pull/312)).
+- `ExtensionSpec` gains `issue_payload_skip_keys`, so a distribution can
+  keep its own presentation keys out of `unmapped_fields`. That key passes
+  a fork's top-level issue fields through, filtered by size, and size is
+  the right general filter -- but it cannot reach what is short, useless
+  and on every issue. Easy Redmine's `css_classes` is a CSS class list for
+  its issue grid: across a page of 25 issues it measured 99 to 144
+  characters, about a fifth of `_UNMAPPED_VALUE_MAX_CHARS`, 202 characters
+  on the wire per issue and 5,062 for one default listing. It answers
+  nothing the issue's own fields do not answer better -- `status-11` beside
+  `status`, `overdue` beside `due_date` -- and a cap low enough to catch it
+  would drop a one-paragraph plugin text field instead. The list is the
+  extension's rather than this repository's, which is the difference from
+  the per-plugin name list the cap's comment rightly rejected: the package
+  that owns `css_classes` knows it is presentation, and a server with no
+  extensions behaves exactly as before. Read per call, so the family's flag
+  decides it like the other two issue seams. Registration refuses a name
+  `unmapped_fields` never carries anyway, since that entry would do nothing,
+  and a name any family declares in `issue_update_keys`, whichever of the two
+  registers first: a key a family writes is one its callers read back here,
+  so hiding it would make the attribute write-only
+  ([#331](https://github.com/jztan/redmine-mcp-server/issues/331)).
 
 ### Changed
 - Journal field changes no longer repeat a long before/after text. Redmine
