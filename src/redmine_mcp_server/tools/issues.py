@@ -1945,7 +1945,25 @@ async def create_redmine_issue(
     if parsed_extra_fields:
         issue_fields.update(parsed_extra_fields)
 
-    # Prevent callers from overriding explicit positional parameters.
+    # A description in the payload would be dropped for the default of the
+    # parameter below, and the issue would be created empty with nothing said
+    # about it (#333). update_redmine_issue has no such parameter and takes the
+    # description in its fields, so carrying that habit over here is easy to do.
+    # Refused the way a misplaced "uploads" is, rather than silently discarded.
+    #
+    # Truthiness rather than "was it passed": an empty one carries no text, and
+    # refusing it would only reject a call that loses nothing.
+    if issue_fields.get("description"):
+        return {
+            "error": (
+                "Put the description in the dedicated 'description' parameter, "
+                "not in 'fields' or 'extra_fields'."
+            )
+        }
+
+    # Prevent callers from overriding explicit positional parameters. Unlike the
+    # description, these carry no text of their own: both are required
+    # positionally, so the value that wins is present either way.
     issue_fields.pop("project_id", None)
     issue_fields.pop("subject", None)
     issue_fields.pop("description", None)
