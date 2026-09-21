@@ -68,8 +68,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the per-plugin name list the cap's comment rightly rejected: the package
   that owns `css_classes` knows it is presentation, and a server with no
   extensions behaves exactly as before. Read per call, so the family's flag
-  decides it like the other two issue seams. Registration refuses a name the
-  serializer emits itself, since that entry would do nothing
+  decides it like the other two issue seams. Registration refuses a name
+  `unmapped_fields` never carries anyway, since that entry would do nothing,
+  and a name any family declares in `issue_update_keys`, whichever of the two
+  registers first: a key a family writes is one its callers read back here,
+  so hiding it would make the attribute write-only
   ([#331](https://github.com/jztan/redmine-mcp-server/issues/331)).
 
 ### Changed

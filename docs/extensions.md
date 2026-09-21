@@ -195,7 +195,9 @@ presentation, so the fork names them here.
 Use it for a fork's *own* keys, and only for presentation. Per-user state such
 as `is_favorited` is something a caller can reasonably want; the seam is not a
 way to trim `unmapped_fields` to taste. A name that is not in the payload is
-never matched, so listing one the server stops sending costs nothing.
+never matched, so listing one the server stops sending costs nothing -- but a
+name any family declares in `issue_update_keys` is refused at startup, because
+a caller writes that attribute and reads it back here.
 
 ## What is checked at startup
 
@@ -221,13 +223,15 @@ serving a surface that does not match what the module declared:
   extension already claims.
 - An `issue_query_filters` name that Redmine itself registers, or that another
   extension already claims.
-- An `issue_payload_skip_keys` entry that the issue serializer emits as a field
-  of its own. It never reaches `unmapped_fields`, so the entry would do nothing.
-  Two families naming the *same* key is not an error: both want it gone, and
-  agreeing is not a conflict. Nor is there a check in the other direction --
-  nothing declares the keys a family *reads*, so there is no table to check a
-  skip against, and a guard that checked nothing would only read as though it
-  did.
+- An `issue_payload_skip_keys` entry `unmapped_fields` never carries anyway --
+  a field the serializer emits itself, or one of the includes and relations it
+  handles. The entry would do nothing.
+- An `issue_payload_skip_keys` entry that any family declares in
+  `issue_update_keys`, whichever of the two registers first. A key a family
+  writes is one its callers read back through `unmapped_fields`; hiding it
+  would make the attribute write-only, and from a family that never asked.
+  Two families naming the same *skip* key is not an error: both want it gone,
+  and agreeing is not a conflict.
 - A companion parameter that Redmine reads as the query's own filter definition
   (`fields`, `f`, `query_id`), or one `list_redmine_issues` owns (`limit`,
   `offset`, `sort`, `include`).

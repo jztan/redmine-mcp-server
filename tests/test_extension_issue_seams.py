@@ -496,12 +496,48 @@ class TestPayloadSkipKeys:
         with pytest.raises(RuntimeError, match="non-empty"):
             registry(issue_payload_skip_keys=("",))
 
-    def test_naming_a_standard_field_is_refused(self, registry):
-        """It would do nothing -- the serializer emits `subject` itself, so
-        it never reaches unmapped_fields. Worth failing at startup rather
-        than leaving someone to wonder why the entry has no effect."""
-        with pytest.raises(RuntimeError, match="emits as fields of its own"):
-            registry(issue_payload_skip_keys=("subject",))
+    @pytest.mark.parametrize("name", ["subject", "journals", "watchers", "title"])
+    def test_a_key_unmapped_fields_never_carries_is_refused(self, registry, name):
+        """Checked against the whole skip set, not just the mapped fields.
+
+        `subject` is one the serializer emits itself; `journals` and
+        `watchers` are includes and `title` a search-result key, and none of
+        the four ever reaches unmapped_fields. All four are the same
+        do-nothing entry, and worth failing at startup rather than leaving
+        someone to wonder why it has no effect.
+        """
+        with pytest.raises(RuntimeError, match="never carries"):
+            registry(issue_payload_skip_keys=(name,))
+
+    def test_hiding_a_key_the_same_spec_writes_is_refused(self, registry):
+        """A caller writes the attribute and reads it back through
+        unmapped_fields. Hiding it makes it write-only."""
+        with pytest.raises(RuntimeError, match="makes it write-only"):
+            registry(
+                issue_update_keys=("acme_sprint_id",),
+                issue_payload_skip_keys=("acme_sprint_id",),
+            )
+
+    def test_hiding_a_key_another_family_writes_is_refused(self, registry):
+        registry(family="acme_a", issue_update_keys=("acme_sprint_id",))
+
+        with pytest.raises(RuntimeError, match="write-only for them"):
+            registry(family="acme_b", issue_payload_skip_keys=("acme_sprint_id",))
+
+    def test_and_the_same_conflict_the_other_way_round(self, registry):
+        """Whichever of the two registers first -- the hider here."""
+        registry(family="acme_a", issue_payload_skip_keys=("acme_sprint_id",))
+
+        with pytest.raises(RuntimeError, match="hides as issue_payload_skip_keys"):
+            registry(family="acme_b", issue_update_keys=("acme_sprint_id",))
+
+    def test_two_families_writing_and_hiding_different_keys_is_fine(self, registry):
+        registry(family="acme_a", issue_update_keys=("acme_sprint_id",))
+        registry(family="acme_b", issue_payload_skip_keys=("acme_css",))
+
+        result = _issue_to_dict(self._issue(acme_css="x", acme_sprint_id=1))
+
+        assert result["unmapped_fields"] == {"acme_sprint_id": 1}
 
     def test_the_registry_reads_it_per_call(self, registry, monkeypatch):
         registry(issue_payload_skip_keys=("css_classes",))

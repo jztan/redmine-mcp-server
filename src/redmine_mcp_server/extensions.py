@@ -455,35 +455,9 @@ def _validate_spec(spec: ExtensionSpec) -> None:
     _check_issue_query_filters(where, spec.issue_query_filters)
     _check_issue_payload_skip_keys(where, spec.issue_payload_skip_keys)
 
-    if spec.issue_payload_skip_keys:
-        # Imported here rather than at module level: this is the public
-        # contract module, and a tool module at its top would pull the whole
-        # issue surface into anyone who imports it. By the time a spec is
-        # registered, main.py has imported the built-in tools already.
-        #
-        # Only this direction is checked. A key another *family* wants kept
-        # cannot be: nothing declares the keys a family reads, so there is no
-        # table to check against, and a guard that checks nothing would only
-        # read as though it did. What is checkable is a name the standard
-        # serializer already emits -- that entry does nothing at all, which
-        # is worth saying at startup rather than leaving to be discovered.
-        from .tools.issues import _ISSUE_MAPPED_KEYS
-
-        pointless = sorted(set(spec.issue_payload_skip_keys) & _ISSUE_MAPPED_KEYS)
-        if pointless:
-            _reject(
-                where,
-                "declares issue_payload_skip_keys that the issue serializer "
-                f"emits as fields of its own: {', '.join(pointless)}. Those "
-                "never reach unmapped_fields, so the entry would do nothing. "
-                "Drop it, or -- if the intent was to hide a standard field "
-                "from the response -- that is the caller's `fields` argument "
-                "and not an extension's to decide.",
-            )
-
 
 def _check_issue_seams(spec: ExtensionSpec) -> None:
-    """Refuse an issue attribute or filter that is already spoken for.
+    """Refuse an issue attribute, filter or hidden key already spoken for.
 
     The two tables this widens are read per call rather than merged into a
     module constant, so a duplicate would not overwrite anything -- it would
@@ -501,6 +475,7 @@ def _check_issue_seams(spec: ExtensionSpec) -> None:
     from ._custom_fields import _STANDARD_ISSUE_UPDATE_FIELDS
     from ._validation import _RESERVED_QUERY_KEYS, _is_custom_field_filter
     from .tools.issues import (
+        _ISSUE_PAYLOAD_SKIP_KEYS,
         _ISSUE_QUERY_ASSOCIATIONS,
         _ISSUE_QUERY_FILTER_NAMES,
         _ISSUE_REQUEST_PARAM_KEYS,
@@ -509,6 +484,7 @@ def _check_issue_seams(spec: ExtensionSpec) -> None:
     where = f"Extension family '{spec.family}'"
     update_keys = set(spec.issue_update_keys)
     filters = dict(spec.issue_query_filters)
+    skip_keys = set(spec.issue_payload_skip_keys)
     # Names a companion parameter may not take: a filter narrows the query,
     # and one sent unasked is a filter the caller did not write.
     filter_names = set(_ISSUE_QUERY_FILTER_NAMES) | set(filters)
@@ -549,6 +525,35 @@ def _check_issue_seams(spec: ExtensionSpec) -> None:
             f"{', '.join(taken)}. list_redmine_issues accepts them already.",
         )
 
+    # The whole skip set, not just the mapped fields: `journals`, `watchers`
+    # and the rest of the includes and relations never reach
+    # `unmapped_fields` either, so naming one is the same do-nothing entry.
+    pointless = sorted(skip_keys & _ISSUE_PAYLOAD_SKIP_KEYS)
+    if pointless:
+        _reject(
+            where,
+            f"declares issue_payload_skip_keys unmapped_fields never carries: "
+            f"{', '.join(pointless)}. The serializer emits them as fields of "
+            "its own, or they are an include or a relation it handles, so the "
+            "entry would do nothing. Drop it, or -- if the intent was to hide "
+            "a standard field from the response -- that is the caller's "
+            "`fields` argument and not an extension's to decide.",
+        )
+
+    # A key a family declares as writable is one a caller reads back: it
+    # writes `acme_sprint_id`, then looks for what came of it. Hiding it
+    # makes the attribute write-only, so the two cannot name the same key --
+    # within one spec or across two, whichever registers first.
+    own_clash = sorted(skip_keys & update_keys)
+    if own_clash:
+        _reject(
+            where,
+            f"declares issue_payload_skip_keys it also declares as "
+            f"issue_update_keys: {', '.join(own_clash)}. A caller writes an "
+            "attribute and reads it back through unmapped_fields; hiding it "
+            "makes it write-only.",
+        )
+
     for other in REGISTERED_EXTENSIONS:
         clash = sorted(update_keys & set(other.issue_update_keys))
         if clash:
@@ -565,6 +570,25 @@ def _check_issue_seams(spec: ExtensionSpec) -> None:
                 f"declares issue_query_filters already claimed by family "
                 f"'{other.family}': {', '.join(clash)}. Whichever registered "
                 "last would decide the parameters sent with it.",
+            )
+        clash = sorted(skip_keys & set(other.issue_update_keys))
+        if clash:
+            _reject(
+                where,
+                f"declares issue_payload_skip_keys that family "
+                f"'{other.family}' writes as issue_update_keys: "
+                f"{', '.join(clash)}. That family's callers write the "
+                "attribute and read it back through unmapped_fields; hiding "
+                "it here would make it write-only for them.",
+            )
+        clash = sorted(update_keys & set(other.issue_payload_skip_keys))
+        if clash:
+            _reject(
+                where,
+                f"declares issue_update_keys that family '{other.family}' "
+                f"hides as issue_payload_skip_keys: {', '.join(clash)}. The "
+                "same conflict the other way round, caught whichever of the "
+                "two registers first.",
             )
 
     for name, params in filters.items():
