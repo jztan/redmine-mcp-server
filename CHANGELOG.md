@@ -82,7 +82,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `update_redmine_issue` has no such parameter and takes the description in
   its `fields`, so the habit carries over easily. It is now refused the way a
   misplaced `uploads` is
-  ([#333](https://github.com/jztan/redmine-mcp-server/issues/333)).
+  ([#333](https://github.com/jztan/redmine-mcp-server/issues/333), [#334](https://github.com/jztan/redmine-mcp-server/pull/334)).
 
 ### Contributors
 - @andilem reported, with measurements from a production ticket, that journal
@@ -110,7 +110,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   two wiki gaps: a text update that sends no version
   ([#324](https://github.com/jztan/redmine-mcp-server/issues/324)) and a page
   that could only be replaced whole
-  ([#325](https://github.com/jztan/redmine-mcp-server/issues/325)).
+  ([#325](https://github.com/jztan/redmine-mcp-server/issues/325)). They
+  reported and fixed the `description` that `create_redmine_issue` dropped
+  from `fields`
+  ([#333](https://github.com/jztan/redmine-mcp-server/issues/333),
+  [#334](https://github.com/jztan/redmine-mcp-server/pull/334)).
 
 ## [2.16.0] - 2026-09-19
 ### Added
