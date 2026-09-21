@@ -3386,7 +3386,7 @@ This is a **write operation** and is blocked in read-only mode. The email cannot
 - `content` (string, required): the email body; must not be blank
 - `status_id` (integer, optional): status to set on the ticket after the reply is sent
 
-**Returns:** `{success, issue_id, journal_id, to_address, message_date, customer, status_id}`, where `journal_id` is the journal that records the reply on the ticket, `to_address` is the recipient, and `customer` is `{id, name}` (`name` wrapped in `<insecure-content>` tags) or `null`. On failure, `{"error": ...}`; an unknown `issue_id` comes back as a validation error (the plugin answers 422, not 404). A 404 means the endpoint is missing, and the error says to check that the Helpdesk plugin is installed.
+**Returns:** `{success, issue_id, journal_id, to_address, message_date, customer, status_id}`, where `journal_id` is the journal that records the reply on the ticket, `to_address` is the recipient, and `customer` is `{id, name}` (`name` wrapped in `<insecure-content>` tags) or `null`. On failure, `{"error": ...}`; an unknown `issue_id` comes back as a validation error (the plugin answers 422, not 404), and an issue with no Helpdesk customer attached comes back as "not a Helpdesk ticket". A 404 means the endpoint is missing, and the error says to check that the Helpdesk plugin is installed.
 
 **Example:**
 ```python
@@ -3399,7 +3399,8 @@ send_helpdesk_email_reply(
 
 **Notes:**
 - Calls `POST /helpdesk/email_note.json`. The plugin documents only the `.xml` form, but the JSON form accepts and returns the same fields.
-- Under OAuth, the tool requires the `add_issue_notes` scope. The plugin's own permission checks stay with Redmine.
+- Works only on a Helpdesk ticket, meaning an issue with a customer attached.
+- Under OAuth, the tool requires the `add_issue_notes` scope. The plugin's endpoint itself checks no project role or permission (per a reading of the Helpdesk 4.2.9 controller in [#301](https://github.com/jztan/redmine-mcp-server/issues/301)), so with an API key any authenticated Redmine user can send through it. `REDMINE_HELPDESK_ENABLED` and read-only mode are the server-side gates.
 
 ---
 

@@ -105,6 +105,19 @@ class TestSendHelpdeskEmailReply:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.redmine")
+    async def test_issue_without_customer_is_named_as_not_a_ticket(self, mock_redmine):
+        # Also a 422, told apart from the unknown issue only by its wording.
+        mock_redmine.engine.request.side_effect = ValidationError(
+            "Issue with ID: 307 should be present and relate to customer"
+        )
+        with patch.dict(os.environ, _ON):
+            result = await send_helpdesk_email_reply(issue_id=307, content="Hi")
+        assert "not a Helpdesk ticket" in result["error"]
+        assert "update_redmine_issue" in result["error"]
+        assert "relate to customer" in result["error"]
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
     async def test_missing_endpoint_is_not_reported_as_missing_issue(
         self, mock_redmine
     ):

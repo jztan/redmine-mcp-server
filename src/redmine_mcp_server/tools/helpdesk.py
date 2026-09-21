@@ -13,11 +13,15 @@ so this uses JSON like every other call the server makes.
 import json
 from typing import Any, Dict, Optional
 
-from redminelib.exceptions import ResourceNotFoundError
+from redminelib.exceptions import ResourceNotFoundError, ValidationError
 
 from .._client import _get_redmine_client
 from .._env import _is_helpdesk_enabled, _is_read_only_mode
-from .._errors import _READ_ONLY_ERROR, _handle_redmine_error
+from .._errors import (
+    _READ_ONLY_ERROR,
+    _handle_redmine_error,
+    _scrub_error_message,
+)
 from .._offload import offloaded
 from .._serialization import wrap_insecure_content
 from .._validation import _is_positive_int
@@ -31,6 +35,9 @@ _HELPDESK_DISABLED_ERROR = {
         "Requires the RedmineUP Helpdesk plugin."
     )
 }
+
+# What Helpdesk 4.2.9 says, in a 422, for an issue with no customer attached.
+_NO_CUSTOMER_MARKER = "relate to customer"
 
 
 def _send_email_note_api(payload: Dict[str, Any]) -> Any:
@@ -64,6 +71,11 @@ def send_helpdesk_email_reply(
     journal, this sends ``content`` as an outgoing email to the ticket's
     requester and records it on the ticket. The email cannot be recalled
     once sent, so confirm the wording before calling.
+
+    Works only on a Helpdesk ticket, meaning an issue with a customer
+    attached. The plugin's endpoint checks no project role or permission
+    (per a reading of its 4.2.9 controller in #301), so any authenticated
+    Redmine user can send through it.
 
     Requires the RedmineUP Helpdesk plugin and
     ``REDMINE_HELPDESK_ENABLED=true``. This is a write operation and is
@@ -112,6 +124,18 @@ def send_helpdesk_email_reply(
             )
         }
     except Exception as e:
+        # An issue with no Helpdesk customer answers 422 like an unknown one
+        # does (#301), and only the plugin's wording tells them apart. If that
+        # wording changes, the plugin's own message still goes through below.
+        if isinstance(e, ValidationError) and _NO_CUSTOMER_MARKER in str(e):
+            return {
+                "error": (
+                    f"Issue {issue_id} is not a Helpdesk ticket: it has no "
+                    "customer to email. Use update_redmine_issue to add an "
+                    "internal note instead. Helpdesk said: "
+                    f"{_scrub_error_message(str(e))}"
+                )
+            }
         return _handle_redmine_error(
             e,
             f"sending Helpdesk email reply on issue {issue_id}",
