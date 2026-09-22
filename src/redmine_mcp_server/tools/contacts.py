@@ -67,6 +67,10 @@ _CONTACT_OWNED_QUERY_KEYS = frozenset(
         # it ignores and hand the caller a bare list they asked to be an
         # envelope -- back to paging blind, with nothing saying so.
         "include_pagination_info",
+        # The same, and the same reason: through `filters` it would reach
+        # Redmine as an unregistered key, be ignored there, and leave the
+        # caller with the full rows they asked to do without.
+        "include_custom_fields",
     }
 )
 
@@ -181,7 +185,9 @@ def _contact_tag_names(raw: Any) -> List[str]:
     return _normalize_tag_list(raw)
 
 
-def _contact_to_dict(contact: Dict[str, Any]) -> Dict[str, Any]:
+def _contact_to_dict(
+    contact: Dict[str, Any], include_custom_fields: bool = False
+) -> Dict[str, Any]:
     """Serialize a RedmineUP CRM API response into a stable dict.
 
     User-controlled fields are wrapped in ``<insecure-content>`` boundary
@@ -222,9 +228,6 @@ def _contact_to_dict(contact: Dict[str, Any]) -> Dict[str, Any]:
     )
     raw_tags = contact.get("tag_list") or contact.get("tags")
 
-    # ``custom_fields`` is unconditional here, unlike ``_issue_to_dict`` where
-    # it sits behind ``include_custom_fields``: ``manage_contact`` has no
-    # output-field selector, so there is no way for a caller to ask for it.
     result: Dict[str, Any] = {
         "id": contact.get("id"),
         "first_name": contact.get("first_name", ""),
@@ -249,10 +252,34 @@ def _contact_to_dict(contact: Dict[str, Any]) -> Dict[str, Any]:
         "visibility": contact.get("visibility"),
         "assigned_to": _named_ref(assigned) if assigned else None,
         "author": _named_ref(author) if author else None,
-        "custom_fields": _custom_fields_to_list(contact),
         "created_on": _safe_isoformat(contact.get("created_on")),
         "updated_on": _safe_isoformat(contact.get("updated_on")),
     }
+    # The CRM API renders every custom field on every contact whether or not
+    # it carries a value (``render_api_custom_values`` is unconditional in the
+    # plugin's ``contacts/index.api.rsb``), so a list read that wants one
+    # attribute pays for the whole set on every row. Reading them costs no
+    # request -- the payload already carries them -- but returning them is the
+    # larger half of a contact row, so the collection does not return them
+    # unasked.
+    #
+    # Elided the way #315 elides a long journal value, rather than by dropping
+    # the key: ``custom_fields`` stays present holding ``None``, so a caller
+    # reading it gets no ``KeyError`` and can tell "not requested" from "this
+    # contact has none" (``[]``). ``custom_fields_count`` is the ``_length``
+    # of that idiom -- what was withheld, so a caller can decide whether to
+    # ask again. The ``elided: True`` flag that goes with it there is NOT
+    # copied, and deliberately: a journal detail needs it because ``None`` is
+    # a real ``old_value``, so the flag is the only thing separating elided
+    # from genuinely empty. Here ``None`` is never a real value for a
+    # list-valued key, so it carries that meaning by itself and a flag would
+    # only restate it.
+    custom_fields = _custom_fields_to_list(contact)
+    if include_custom_fields:
+        result["custom_fields"] = custom_fields
+    else:
+        result["custom_fields"] = None
+        result["custom_fields_count"] = len(custom_fields)
     if "projects" in contact:
         raw_projects = contact["projects"]
         result["projects"] = (
@@ -310,6 +337,7 @@ def _list_contacts_action(
     limit: int = 100,
     offset: int = 0,
     include_pagination_info: bool = False,
+    include_custom_fields: bool = False,
     first_name: Optional[str] = None,
     last_name: Optional[str] = None,
     middle_name: Optional[str] = None,
@@ -442,7 +470,10 @@ def _list_contacts_action(
         payload = client.engine.request("get", url, params=params)
         envelope = payload if isinstance(payload, dict) else {}
         raw = envelope.get("contacts", [])
-        contacts = [_contact_to_dict(c) for c in raw[:limit]]
+        contacts = [
+            _contact_to_dict(c, include_custom_fields=include_custom_fields)
+            for c in raw[:limit]
+        ]
         if not include_pagination_info:
             return contacts
         return {
@@ -477,7 +508,9 @@ def _get_contact_action(
         contact = payload.get("contact", {}) if isinstance(payload, dict) else {}
         if not contact:
             return {"error": f"Contact {contact_id} not found."}
-        return _contact_to_dict(contact)
+        # A single-contact read keeps every custom field, the way
+        # `get_redmine_issue` does. The collection is where the cost is.
+        return _contact_to_dict(contact, include_custom_fields=True)
     except Exception as e:
         return _handle_redmine_error(
             e,
@@ -542,7 +575,11 @@ def _create_contact_action(
             data=json.dumps({"contact": body}),
         )
         contact = payload.get("contact", {}) if isinstance(payload, dict) else {}
-        return _contact_to_dict(contact) if contact else {"success": True}
+        return (
+            _contact_to_dict(contact, include_custom_fields=True)
+            if contact
+            else {"success": True}
+        )
     except Exception as e:
         return _handle_redmine_error(
             e, "creating contact", {"resource_type": "contact"}
@@ -732,6 +769,7 @@ async def manage_contact(
     limit: Annotated[int, Field(ge=1, le=100)] = 100,
     offset: Annotated[int, Field(ge=0)] = 0,
     include_pagination_info: bool = False,
+    include_custom_fields: bool = False,
     contact_id: Optional[int] = None,
     include: Optional[str] = None,
     first_name: Optional[str] = None,
@@ -786,6 +824,17 @@ async def manage_contact(
             contact. Needs ``REDMINE_CRM_EDITION=pro``.
         limit: ``list`` only. Contacts per call, capped at 100 by Redmine.
         offset: ``list`` only. Contacts to skip, for paging past the first 100.
+        include_custom_fields: ``list`` only. Return each contact's
+            ``custom_fields`` values (default: False). Costs no extra request
+            -- the CRM API sends them whether or not they are asked for -- but
+            it is the larger half of a contact row, because every custom field
+            the instance defines is rendered on every contact, carrying a
+            value or not. Without it a listed contact still carries
+            ``custom_fields``, holding ``None``, beside
+            ``custom_fields_count`` saying how many were withheld: ``None``
+            means "not requested" and ``[]`` means "this contact has none".
+            A ``get`` returns the values always, so read one contact in full
+            rather than turning this on to see one field.
         include_pagination_info: ``list`` only. Return
             ``{"contacts": [...], "pagination": {...}}`` rather than a bare
             list (default: False), with the keys ``list_redmine_issues``
@@ -839,7 +888,11 @@ async def manage_contact(
         ``list`` a list of contact dicts -- or, with
         ``include_pagination_info=True``, a dict of ``contacts`` and
         ``pagination`` -- ``get`` / ``create`` one contact dict, the remaining
-        actions a status dict, and ``{"error": ...}`` on failure.
+        actions a status dict, and ``{"error": ...}`` on failure. A listed
+        contact carries ``custom_fields`` values only under
+        ``include_custom_fields``, and otherwise ``None`` plus
+        ``custom_fields_count``; ``get`` and ``create`` always carry the
+        values.
     """
     if not _is_crm_enabled():
         return dict(_CRM_DISABLED_ERROR)
@@ -853,6 +906,7 @@ async def manage_contact(
         limit=limit,
         offset=offset,
         include_pagination_info=include_pagination_info,
+        include_custom_fields=include_custom_fields,
         contact_id=contact_id,
         include=include,
         first_name=first_name,
