@@ -132,6 +132,39 @@ class TestGetRedmineIssueTags:
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.redmine")
+    async def test_tags_requested_via_include_when_enabled(self, mock_redmine):
+        # Regression: the plugin only injects `tags` into the response when
+        # `include=tags` is on the request. Setting the mock's `tags`
+        # attribute directly (as the tests above do) would pass even if the
+        # code never asked Redmine for it -- so this asserts the actual
+        # `include=` string sent to `redmine.issue.get`.
+        mock_redmine.issue.get.return_value = _make_minimal_issue(
+            1, tags=[{"id": 3, "name": "fast-track"}]
+        )
+
+        with patch.dict(os.environ, {"REDMINE_TAGS_ENABLED": "true"}):
+            await get_redmine_issue(
+                1, include_journals=False, include_attachments=False
+            )
+
+        include_str = mock_redmine.issue.get.call_args.kwargs.get("include", "")
+        assert "tags" in include_str.split(",")
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_tags_not_requested_via_include_when_disabled(self, mock_redmine):
+        mock_redmine.issue.get.return_value = _make_minimal_issue(1, tags=None)
+
+        with patch.dict(os.environ, {"REDMINE_TAGS_ENABLED": "false"}):
+            await get_redmine_issue(
+                1, include_journals=False, include_attachments=False
+            )
+
+        call_kwargs = mock_redmine.issue.get.call_args.kwargs
+        assert "tags" not in call_kwargs.get("include", "")
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
     async def test_no_tags_key_when_disabled(self, mock_redmine):
         mock_redmine.issue.get.return_value = _make_minimal_issue(
             1, tags=[{"id": 3, "name": "fast-track"}]
