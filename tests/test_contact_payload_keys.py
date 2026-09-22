@@ -63,7 +63,7 @@ def _api_contact(**overrides) -> dict:
 
 class TestSerializerReadsWhatTheApiSends:
     def test_custom_fields_are_returned(self):
-        result = _contact_to_dict(_api_contact())
+        result = _contact_to_dict(_api_contact(), include_custom_fields=True)
         assert result["custom_fields"] == [
             {"id": 447, "name": "Account Owner", "value": "Bob Owner"},
             {"id": 440, "name": "ARR", "value": "147518"},
@@ -72,7 +72,25 @@ class TestSerializerReadsWhatTheApiSends:
     def test_custom_fields_empty_when_absent(self):
         payload = _api_contact()
         del payload["custom_fields"]
-        assert _contact_to_dict(payload)["custom_fields"] == []
+        assert (
+            _contact_to_dict(payload, include_custom_fields=True)["custom_fields"] == []
+        )
+
+    def test_custom_fields_are_elided_unless_asked_for(self):
+        # Present and None, not absent: the key never disappears, so a caller
+        # reading it gets no KeyError, and None ("not requested") is a
+        # different claim from [] ("this contact has none").
+        result = _contact_to_dict(_api_contact())
+        assert result["custom_fields"] is None
+        assert result["custom_fields_count"] == 2
+
+    def test_an_elided_none_is_distinguishable_from_an_empty_set(self):
+        payload = _api_contact(custom_fields=[])
+        assert _contact_to_dict(payload)["custom_fields"] is None
+        assert _contact_to_dict(payload)["custom_fields_count"] == 0
+        asked = _contact_to_dict(payload, include_custom_fields=True)
+        assert asked["custom_fields"] == []
+        assert "custom_fields_count" not in asked
 
     def test_author_is_returned(self):
         assert _contact_to_dict(_api_contact())["author"] == {
@@ -407,16 +425,19 @@ class TestSerializerEdgeCases:
 
     def test_scalar_custom_fields_are_not_iterated_as_characters(self):
         assert (
-            _contact_to_dict(_api_contact(custom_fields="oops"))["custom_fields"] == []
+            _contact_to_dict(
+                _api_contact(custom_fields="oops"), include_custom_fields=True
+            )["custom_fields"]
+            == []
         )
 
     def test_non_dict_custom_field_entries_are_skipped(self):
         payload = _api_contact(
             custom_fields=[None, 5, {"id": 1, "name": "x", "value": "v"}]
         )
-        assert _contact_to_dict(payload)["custom_fields"] == [
-            {"id": 1, "name": "x", "value": "v"}
-        ]
+        assert _contact_to_dict(payload, include_custom_fields=True)[
+            "custom_fields"
+        ] == [{"id": 1, "name": "x", "value": "v"}]
 
     def test_non_dict_projects_are_dropped_not_faked(self):
         payload = _api_contact(projects=[1, "x", None, {"id": 7, "name": "p"}])
@@ -531,3 +552,115 @@ class TestTheProOnlyFiltersAreGated:
             await manage_contact(action="list", company="Acme Industries")
         params = mock_redmine.engine.request.call_args.kwargs["params"]
         assert params["company"] == "Acme Industries"
+
+
+class TestOutputFieldSelection:
+    """``include_custom_fields`` on ``list``, the tool's one output selector.
+
+    The CRM API renders every custom field on every contact whether or not it
+    carries a value -- ``render_api_custom_values`` is unconditional in the
+    plugin's ``contacts/index.api.rsb`` -- so the saving is in what the tool
+    returns, not in what it fetches.
+
+    Unlike ``list_redmine_issues`` and ``list_redmine_projects``, whose flags
+    were purely additive, this one narrows a response callers already get, so
+    the key is elided the way #315 elides a long journal value rather than
+    dropped: ``custom_fields`` stays present as ``None`` beside
+    ``custom_fields_count``.
+    """
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_a_listed_contact_elides_custom_fields_by_default(self, mock_redmine):
+        mock_redmine.engine.request.return_value = {"contacts": [_api_contact()]}
+        with patch.dict(os.environ, CRM_ON):
+            result = await manage_contact(action="list")
+        assert result[0]["custom_fields"] is None
+        assert result[0]["custom_fields_count"] == 2
+        # Everything else the row carried is still there.
+        assert result[0]["id"] == 55
+        assert result[0]["job_title"] == "Education"
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_the_flag_adds_them_back(self, mock_redmine):
+        mock_redmine.engine.request.return_value = {"contacts": [_api_contact()]}
+        with patch.dict(os.environ, CRM_ON):
+            result = await manage_contact(action="list", include_custom_fields=True)
+        assert result[0]["custom_fields"] == [
+            {"id": 447, "name": "Account Owner", "value": "Bob Owner"},
+            {"id": 440, "name": "ARR", "value": "147518"},
+        ]
+        # The count is the elision's companion, so it goes when the values come.
+        assert "custom_fields_count" not in result[0]
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_the_flag_is_not_sent_to_redmine(self, mock_redmine):
+        """It selects the response shape; Redmine has no such parameter and
+        would ignore it, so sending it would only be noise on the wire."""
+        mock_redmine.engine.request.return_value = {"contacts": []}
+        with patch.dict(os.environ, CRM_ON):
+            await manage_contact(action="list", include_custom_fields=True)
+        params = mock_redmine.engine.request.call_args.kwargs["params"]
+        assert "include_custom_fields" not in params
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_the_flag_costs_no_second_request(self, mock_redmine):
+        mock_redmine.engine.request.return_value = {"contacts": [_api_contact()]}
+        with patch.dict(os.environ, CRM_ON):
+            await manage_contact(action="list", include_custom_fields=True)
+        assert mock_redmine.engine.request.call_count == 1
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_filters_may_not_carry_it(self, mock_redmine):
+        """Through ``filters`` it would reach Redmine as an unregistered key,
+        be ignored there, and leave the caller with the rows they asked to do
+        without -- so it is refused and named."""
+        mock_redmine.engine.request.return_value = {"contacts": []}
+        with patch.dict(os.environ, CRM_ON):
+            result = await manage_contact(
+                action="list", filters={"include_custom_fields": True}
+            )
+        assert "include_custom_fields" in result["error"]
+        mock_redmine.engine.request.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_a_single_contact_read_is_unchanged(self, mock_redmine):
+        """``get`` carries them always, the way ``get_redmine_issue`` does:
+        the collection is where the cost is, and reading one contact in full
+        is the answer to wanting one field off it."""
+        mock_redmine.engine.request.return_value = {"contact": _api_contact()}
+        with patch.dict(os.environ, CRM_ON):
+            result = await manage_contact(action="get", contact_id=55)
+        assert result["custom_fields"] == [
+            {"id": 447, "name": "Account Owner", "value": "Bob Owner"},
+            {"id": 440, "name": "ARR", "value": "147518"},
+        ]
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_the_pagination_envelope_still_carries_the_narrowed_rows(
+        self, mock_redmine
+    ):
+        mock_redmine.engine.request.return_value = {
+            "contacts": [_api_contact()],
+            "total_count": 1,
+            "limit": 100,
+            "offset": 0,
+        }
+        with patch.dict(os.environ, CRM_ON):
+            result = await manage_contact(action="list", include_pagination_info=True)
+        assert result["contacts"][0]["custom_fields"] is None
+        assert result["contacts"][0]["custom_fields_count"] == 2
+        assert result["pagination"]["total"] == 1

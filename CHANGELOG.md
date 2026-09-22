@@ -74,6 +74,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   registers first: a key a family writes is one its callers read back here,
   so hiding it would make the attribute write-only
   ([#331](https://github.com/jztan/redmine-mcp-server/issues/331), [#332](https://github.com/jztan/redmine-mcp-server/pull/332)).
+- `manage_contact` takes `include_custom_fields` on `list`. The CRM API
+  renders every custom field on every contact whether or not it carries a
+  value, so a list read that needs one attribute was paying for the whole set
+  on every row; on a 21-field instance that is about 3.3x the response. The
+  values are elided rather than dropped, the way a long journal value is:
+  `custom_fields` is `None` and `custom_fields_count` says how many were
+  withheld, so the key never disappears and `None` ("not requested") stays
+  distinguishable from `[]` ("this contact has none"). `get` and `create`
+  return the values always, so only the collection's default shape moves
+  ([#344](https://github.com/jztan/redmine-mcp-server/issues/344)).
 
 ### Changed
 - Journal field changes no longer repeat a long before/after text. Redmine
