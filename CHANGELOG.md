@@ -90,6 +90,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `None`. `get_redmine_issue` and `get_private_notes` take
   `include_journal_values=True` to get the text back
   ([#313](https://github.com/jztan/redmine-mcp-server/issues/313), [#315](https://github.com/jztan/redmine-mcp-server/pull/315)).
+- `manage_contact(action="list")` no longer returns every custom field on
+  every contact. The CRM API renders them all whether or not they carry a
+  value, so a list read that needs one attribute was paying for the whole set
+  on every row; on a 21-field instance that is about 3.3x the response. The
+  values are elided rather than dropped, the way a long journal value is:
+  `custom_fields` is `None` and `custom_fields_count` says how many were
+  withheld, so the key never disappears and `None` ("not requested") stays
+  distinguishable from `[]` ("this contact has none").
+  `include_custom_fields=True` gets them back, and `get` and `create` return
+  them always, so only the collection's default shape moves
+  ([#344](https://github.com/jztan/redmine-mcp-server/issues/344), [#345](https://github.com/jztan/redmine-mcp-server/pull/345)).
 
 ### Fixed
 - Journals are sorted by id before `journal_limit` slices them. Redmine
@@ -148,6 +159,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - @goizper requested Helpdesk email replies and captured the endpoint's real
   request and response shapes from a Helpdesk 4.2.9 install
   ([#301](https://github.com/jztan/redmine-mcp-server/issues/301))
+- @mmahmed reported that a contact list read had no way to ask for fewer
+  custom fields, measured the cost against the CRM plugin's own serializer,
+  and implemented the `include_custom_fields` flag
+  ([#344](https://github.com/jztan/redmine-mcp-server/issues/344),
+  [#345](https://github.com/jztan/redmine-mcp-server/pull/345)).
 
 ## [2.16.0] - 2026-09-19
 ### Added
