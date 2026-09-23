@@ -22,6 +22,7 @@ PLUGIN_TOOLS = {
     "deals": {"manage_deal", "list_deal_statuses", "manage_deal_category"},
     "products": {"manage_product"},
     "dmsf": {"manage_document"},
+    "helpdesk": {"send_helpdesk_email_reply"},
     "crm-shared": {"manage_crm_note", "list_crm_queries"},
     "deal-products": {"add_deal_product"},
 }
@@ -32,6 +33,7 @@ FLAG_ENV = {
     "deals": "REDMINE_DEALS_ENABLED",
     "products": "REDMINE_PRODUCTS_ENABLED",
     "dmsf": "REDMINE_DMSF_ENABLED",
+    "helpdesk": "REDMINE_HELPDESK_ENABLED",
 }
 ALL_OFF = {var: "false" for var in FLAG_ENV.values()}
 

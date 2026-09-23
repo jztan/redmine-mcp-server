@@ -168,6 +168,7 @@ def test_main_applies_plugin_visibility_from_flags():
         "deals",
         "products",
         "dmsf",
+        "helpdesk",
     }
 
     with patch.dict(os.environ, {"REDMINE_DEALS_ENABLED": "false"}):

@@ -488,6 +488,11 @@ TOOL_SCOPES: Dict[str, ToolScopeEntry] = {
     "get_checklist": frozenset({"view_issues"}),
     "create_checklist_item": frozenset({"edit_issues"}),
     "update_checklist_item": frozenset({"edit_issues"}),
+    # --- helpdesk (RedmineUP plugin; the reply is recorded as an issue
+    # journal, so gate on add_issue_notes. The plugin's endpoint checks no
+    # permission of its own (#301), so this scope is the only one in play;
+    # a status_id change is left to Redmine) ---
+    "send_helpdesk_email_reply": frozenset({"add_issue_notes"}),
     # --- products / CRM (RedmineUP plugins; Redmine enforces its own
     # plugin permissions, so these stay unrequired here. CRM scopes ARE
     # advertised when REDMINE_CRM_ENABLED is set, so the token can reach
