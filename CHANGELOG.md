@@ -103,6 +103,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#344](https://github.com/jztan/redmine-mcp-server/issues/344), [#345](https://github.com/jztan/redmine-mcp-server/pull/345)).
 
 ### Fixed
+- `get_redmine_issue` never requested `tags` in the `include=` list sent to
+  Redmine, so with `REDMINE_TAGS_ENABLED=true` the AlphaNodes
+  `additional_tags` plugin never had a reason to inject the array, and the
+  `tags` key came back empty regardless of whether the issue actually had
+  tags. `include=tags` is now added whenever tags are enabled.
 - Journals are sorted by id before `journal_limit` slices them. Redmine
   reverses them for an API user who has "display comments in reverse
   chronological order" set, so the same `journal_limit` returned different

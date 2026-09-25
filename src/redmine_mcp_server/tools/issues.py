@@ -1273,6 +1273,8 @@ async def get_redmine_issue(
                 includes.append("relations")
             if include_children:
                 includes.append("children")
+            if _is_tags_enabled():
+                includes.append("tags")
 
             if includes:
                 issue = _get_redmine_client().issue.get(
