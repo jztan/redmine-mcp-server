@@ -1825,6 +1825,33 @@ Backend data source for the dashboard's Refresh action. Returns the same
 payload as `show_project_dashboard` without a UI resource. App-only; called
 by the dashboard's iframe, not normally invoked directly.
 
+### `show_project_timeline`
+
+Render a project's schedule as an interactive timeline (MCP Apps): issue bars
+from start and due dates, grouped by target version, a milestone diamond on
+each version's due date, a Today line, and a Done section for work closed in
+the window. Click a bar or milestone for details. Prefer `get_gantt_chart` for
+raw timeline data or dependency analysis. Read-only. Requires a client that
+supports MCP Apps rendering.
+
+An issue with no due date ends at its version's due date, and a closed issue
+with no due date ends on the day it closed. Issues with no dates at all are
+counted as unscheduled. Dates use the server's UTC day.
+
+**Parameters:**
+- `project_id` (int | str, required): project to display.
+- `start_date` (str, optional): window start, `YYYY-MM-DD`. Without dates the window fits the data, within about 3 months of today; with one date the other is set 90 days away.
+- `end_date` (str, optional): window end, `YYYY-MM-DD`, at most 366 days after `start_date`.
+- `filters` (dict, optional): extra Redmine filters, same as `list_redmine_issues`. `project_id`, `status_id`, `closed_on`, `sort`, `limit` and `offset` are refused.
+
+Fetches up to 250 open and 250 closed issues; the view says so when a project has more.
+
+### `get_project_timeline_data`
+
+Backend data source for the timeline's Refresh action. Returns the same
+payload as `show_project_timeline` without a UI resource. App-only; called by
+the timeline's iframe, not normally invoked directly.
+
 ---
 
 ## Time Tracking

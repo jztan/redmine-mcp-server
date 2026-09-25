@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="light dark" />
 
 <title>redmine-mcp-server · Your AI doesn't just read tickets. It works them.</title>
-<meta name="description" content="Self-hosted MCP server that gives AI agents 51 tools to work a Redmine instance, 65 with RedmineUP and DMSF plugins,: issues, wikis, time tracking, Gantt, files, plus a Kanban board and project dashboard rendered in the chat. Tested on Redmine 6.1 and 7.0. MIT licensed." />
+<meta name="description" content="Self-hosted MCP server that gives AI agents 53 tools to work a Redmine instance, 67 with RedmineUP and DMSF plugins,: issues, wikis, time tracking, Gantt, files, plus a Kanban board, project dashboard, and timeline rendered in the chat. Tested on Redmine 6.1 and 7.0. MIT licensed." />
 
 <link rel="canonical" href="https://redmine-mcp-server.jztan.com/" />
 
@@ -101,7 +101,7 @@
       "name": "Do I need to install Redmine plugins?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "No. All 51 core tools work against a stock Redmine with no plugins at all. Fourteen more are plugin-gated (65 in total) and need both the plugin installed and a matching environment variable: checklists, products, the RedmineUP CRM (contacts, deals, notes, tags, saved queries, deal categories, and product lines), DMSF documents, and Helpdesk email replies. Plugin tools are not even listed to the agent until their flag is set. RedmineUP Agile and AlphaNodes Additional Tags add fields to tools you already have rather than new tools, so sprint, story point, and tag support appears automatically when those plugins are present."
+        "text": "No. All 53 core tools work against a stock Redmine with no plugins at all. Fourteen more are plugin-gated (67 in total) and need both the plugin installed and a matching environment variable: checklists, products, the RedmineUP CRM (contacts, deals, notes, tags, saved queries, deal categories, and product lines), DMSF documents, and Helpdesk email replies. Plugin tools are not even listed to the agent until their flag is set. RedmineUP Agile and AlphaNodes Additional Tags add fields to tools you already have rather than new tools, so sprint, story point, and tag support appears automatically when those plugins are present."
       }
     },
     {
@@ -786,7 +786,7 @@
 <section class="hero">
   <div class="inner">
     <p class="hero-title">Your AI shouldn't just read tickets. It should work them.</p>
-    <p class="hero-sub"><code>redmine-mcp-server</code> gives AI agents 51 tools to triage, update, comment on, and close Redmine issues, the way a project manager would.</p>
+    <p class="hero-sub"><code>redmine-mcp-server</code> gives AI agents 53 tools to triage, update, comment on, and close Redmine issues, the way a project manager would.</p>
     <div class="hero-ctas">
       <div class="install-pill">
         <span class="dollar">$</span>
@@ -864,7 +864,7 @@
             <span class="cli-title">claude — ~/work/cartly-app</span>
           </div>
           <div class="cli-body" id="feed">
-            <div class="cc-welcome"><span class="cc-star">✻</span> Welcome to <b>Claude Code</b><span class="sub">redmine-mcp-server connected over MCP · 51 tools available</span></div>
+            <div class="cc-welcome"><span class="cc-star">✻</span> Welcome to <b>Claude Code</b><span class="sub">redmine-mcp-server connected over MCP · 53 tools available</span></div>
             <div class="cli-hint" id="feedPlaceholder">▸ press <b style="color:#d6d3cd">Run the agent</b> to start</div>
           </div>
           <div class="cc-input">
@@ -955,7 +955,7 @@
 <section class="caps">
   <div class="inner">
     <h2 class="caps-title">Far more than triage.</h2>
-    <p class="caps-sub">The demo shows one workflow. The other 51 core tools, 65 with plugins, cover the rest of Redmine.</p>
+    <p class="caps-sub">The demo shows one workflow. The other 53 core tools, 67 with plugins, cover the rest of Redmine.</p>
     <div class="caps-grid">
 
       <div class="cap-card">
@@ -1031,7 +1031,7 @@
           <tr>
             <th>Getting it right</th>
             <td data-col="A generic HTTP tool">The model composes URLs, query filters, and JSON bodies from memory, and finds out it was wrong from a 422.</td>
-            <td class="ours" data-col="redmine-mcp-server">51 typed tools with validated parameters. Enumeration tools hand back the valid tracker, status, priority, and role IDs before a write is attempted.</td>
+            <td class="ours" data-col="redmine-mcp-server">53 typed tools with validated parameters. Enumeration tools hand back the valid tracker, status, priority, and role IDs before a write is attempted.</td>
           </tr>
           <tr>
             <th>Context cost</th>
@@ -1204,8 +1204,8 @@ redmine-mcp-server</pre>
     <details class="qa">
       <summary>Do I need to install Redmine plugins?</summary>
       <div class="qa-body">
-        <p>No. All 51 core tools work against a stock Redmine with no plugins at all.</p>
-        <p>Fourteen more are plugin-gated (65 in total) and need both the plugin installed and a matching environment variable: checklists, products, the RedmineUP CRM (contacts, deals, notes, tags, saved queries, deal categories, and product lines), DMSF documents, and Helpdesk email replies. Plugin tools are not even listed to the agent until their flag is set. RedmineUP Agile and AlphaNodes Additional Tags add fields to tools you already have rather than new tools, so sprint, story point, and tag support appears automatically when those plugins are present.</p>
+        <p>No. All 53 core tools work against a stock Redmine with no plugins at all.</p>
+        <p>Fourteen more are plugin-gated (67 in total) and need both the plugin installed and a matching environment variable: checklists, products, the RedmineUP CRM (contacts, deals, notes, tags, saved queries, deal categories, and product lines), DMSF documents, and Helpdesk email replies. Plugin tools are not even listed to the agent until their flag is set. RedmineUP Agile and AlphaNodes Additional Tags add fields to tools you already have rather than new tools, so sprint, story point, and tag support appears automatically when those plugins are present.</p>
       </div>
     </details>
 
@@ -1222,7 +1222,7 @@ redmine-mcp-server</pre>
   <div class="inner">
   <h2 class="install-title">Take it further.</h2>
   <p class="other-tools">
-    The demo shows 4 of the server's 51 core tools. The full set spans
+    The demo shows 4 of the server's 53 core tools. The full set spans
     <code>list_redmine_issues</code>, <code>get_redmine_issue</code>, <code>update_redmine_issue</code>,
     <code>show_triage_board</code>, <code>show_project_dashboard</code>, <code>manage_time_entry</code>,
     <code>manage_redmine_wiki_page</code>, <code>manage_project_member</code>, <code>search_entire_redmine</code>,
@@ -1249,7 +1249,7 @@ redmine-mcp-server</pre>
     </p>
     <h2>What it does</h2>
     <p>
-      Redmine has a capable REST API, but wiring an agent to it directly means handing the model raw HTTP access, which is slow, error-prone, and unsafe. redmine-mcp-server exposes 51 purpose-built tools instead. An agent can list and filter issues, read a ticket with its full history, update status and assignee, add notes, log time, manage wiki pages, pull Gantt timelines, upload and download attachments, and run global search, each as a single typed tool call with predictable, serialized JSON. It can also render interactive apps directly in the chat through the MCP Apps extension: <code>show_triage_board</code> draws a project's issues as drag-and-drop status columns that write back to Redmine, and <code>show_project_dashboard</code> renders a live, read-only project snapshot with click-through drill-ins to matching issue lists.
+      Redmine has a capable REST API, but wiring an agent to it directly means handing the model raw HTTP access, which is slow, error-prone, and unsafe. redmine-mcp-server exposes 53 purpose-built tools instead. An agent can list and filter issues, read a ticket with its full history, update status and assignee, add notes, log time, manage wiki pages, pull Gantt timelines, upload and download attachments, and run global search, each as a single typed tool call with predictable, serialized JSON. It can also render interactive apps directly in the chat through the MCP Apps extension: <code>show_triage_board</code> draws a project's issues as drag-and-drop status columns that write back to Redmine, and <code>show_project_dashboard</code> renders a live, read-only project snapshot with click-through drill-ins to matching issue lists.
     </p>
     <h2>How it stays safe</h2>
     <p>
@@ -1514,7 +1514,7 @@ redmine-mcp-server</pre>
   const PROMPT_TEXT = "triage the overdue issues in Sprint 14";
   const WELCOME_HTML =
     '<div class="cc-welcome"><span class="cc-star">✻</span> Welcome to <b>Claude Code</b>' +
-    '<span class="sub">redmine-mcp-server connected over MCP · 51 tools available</span></div>';
+    '<span class="sub">redmine-mcp-server connected over MCP · 53 tools available</span></div>';
   const HINT_HTML = '<div class="cli-hint" id="feedPlaceholder">▸ press <b style="color:#d6d3cd">Run the agent</b> to start</div>';
 
   // `interacted` gates completion tracking: the reduced-motion path renders the
