@@ -120,6 +120,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its `fields`, so the habit carries over easily. It is now refused the way a
   misplaced `uploads` is
   ([#333](https://github.com/jztan/redmine-mcp-server/issues/333), [#334](https://github.com/jztan/redmine-mcp-server/pull/334)).
+- `search_redmine_issues` returned every hit on Easy Redmine with an empty
+  subject and an id that 404s on `get_redmine_issue`. Easy offsets the ids in
+  `/search.json` (issues by 300000000) and keeps the real one only in `url`,
+  so hydration asked `/issues.json` for ids that do not exist. The id is now
+  read from `url`, falling back to `id`. A row that is not hydrated, on any
+  Redmine, takes its `subject` from the search title (with the stock
+  `Tracker #id (Status): ` prefix stripped) instead of coming back empty, and
+  a hydration that returns fewer issues than asked for is logged
+  ([#346](https://github.com/jztan/redmine-mcp-server/issues/346), [#348](https://github.com/jztan/redmine-mcp-server/pull/348)).
 
 ### Contributors
 - @andilem reported, with measurements from a production ticket, that journal
@@ -164,6 +173,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and implemented the `include_custom_fields` flag
   ([#344](https://github.com/jztan/redmine-mcp-server/issues/344),
   [#345](https://github.com/jztan/redmine-mcp-server/pull/345)).
+- @gino8080 traced the empty search results on Easy Redmine to its offset
+  search ids and fixed hydration and the unhydrated fallback
+  ([#346](https://github.com/jztan/redmine-mcp-server/issues/346),
+  [#348](https://github.com/jztan/redmine-mcp-server/pull/348)).
 
 ## [2.16.0] - 2026-09-19
 ### Added
