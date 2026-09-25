@@ -1,5 +1,6 @@
 from datetime import date
 
+import pytest
 
 from redmine_mcp_server.apps import project_timeline as tl
 
@@ -122,3 +123,189 @@ def test_resolve_window_auto_without_data():
         date(2026, 12, 31),
         True,
     )
+
+
+def _iss(**kw):
+    base = {
+        "id": 42,
+        "subject": "Fix login",
+        "status": {"id": 1, "name": "New"},
+        "assigned_to": {"id": 7, "name": "Alice"},
+        "fixed_version": None,
+        "start_date": None,
+        "due_date": None,
+        "done_ratio": 0,
+        "closed_on": None,
+    }
+    base.update(kw)
+    return base
+
+
+V_DUE = date(2026, 10, 15)
+
+
+@pytest.mark.parametrize(
+    "kw, version_due, expected",
+    [
+        (
+            {"start_date": "2026-09-01", "due_date": "2026-09-20"},
+            V_DUE,
+            ("bar", date(2026, 9, 1), date(2026, 9, 20), "due"),
+        ),
+        (
+            {"start_date": "2026-09-01"},
+            V_DUE,
+            ("bar", date(2026, 9, 1), V_DUE, "version"),
+        ),
+        (
+            {"start_date": "2026-09-01"},
+            None,
+            ("marker", date(2026, 9, 1), date(2026, 9, 1), "start"),
+        ),
+        (
+            {"due_date": "2026-09-20"},
+            V_DUE,
+            ("marker", date(2026, 9, 20), date(2026, 9, 20), "due"),
+        ),
+        (
+            {},
+            V_DUE,
+            ("marker", V_DUE, V_DUE, "version"),
+        ),
+        (
+            # Due before start: marker at the due date.
+            {"start_date": "2026-09-20", "due_date": "2026-09-01"},
+            None,
+            ("marker", date(2026, 9, 1), date(2026, 9, 1), "due"),
+        ),
+    ],
+)
+def test_row_span_table(kw, version_due, expected):
+    span = tl._row_span(_iss(**kw), version_due, closed=False)
+    assert (span["kind"], span["start"], span["end"], span["end_source"]) == expected
+
+
+def test_row_span_unscheduled_returns_none():
+    assert tl._row_span(_iss(), None, closed=False) is None
+
+
+def test_row_span_closed_uses_closed_on_before_version_due():
+    issue = _iss(start_date="2026-02-20", closed_on="2026-07-04T14:38:25")
+    span = tl._row_span(issue, V_DUE, closed=True)
+    assert (span["kind"], span["start"], span["end"], span["end_source"]) == (
+        "bar",
+        date(2026, 2, 20),
+        date(2026, 7, 4),
+        "closed_on",
+    )
+
+
+def test_row_span_closed_without_start_is_marker_at_closed_on():
+    span = tl._row_span(_iss(closed_on="2026-07-04T00:00:00"), None, closed=True)
+    assert (span["kind"], span["end"], span["end_source"]) == (
+        "marker",
+        date(2026, 7, 4),
+        "closed_on",
+    )
+
+
+def test_row_span_closed_on_not_used_when_due_exists():
+    issue = _iss(start_date="2026-06-01", due_date="2026-06-10", closed_on="2026-07-04")
+    span = tl._row_span(issue, None, closed=True)
+    assert (span["end"], span["end_source"]) == (date(2026, 6, 10), "due")
+
+
+def test_row_span_closed_on_ignored_for_open_issues():
+    issue = _iss(start_date="2026-06-01", closed_on="2026-07-04")
+    span = tl._row_span(issue, None, closed=False)
+    assert span["end_source"] == "start"
+
+
+def _span(start, end, source="due", kind="bar"):
+    return {"kind": kind, "start": start, "end": end, "end_source": source}
+
+
+def test_bar_state_done_for_closed():
+    s = _span(date(2026, 1, 1), date(2026, 1, 5))
+    assert tl._bar_state(s, True, 0, TODAY) == ("done", False)
+
+
+def test_bar_state_in_progress_by_start_or_ratio():
+    started = _span(TODAY, date(2026, 10, 30))
+    assert tl._bar_state(started, False, 0, TODAY) == ("in_progress", False)
+    future_with_ratio = _span(date(2026, 10, 1), date(2026, 10, 30))
+    assert tl._bar_state(future_with_ratio, False, 10, TODAY) == (
+        "in_progress",
+        False,
+    )
+
+
+def test_bar_state_planned_when_future_and_zero_ratio():
+    s = _span(date(2026, 10, 1), date(2026, 10, 30))
+    assert tl._bar_state(s, False, 0, TODAY) == ("planned", False)
+    assert tl._bar_state(s, False, None, TODAY) == ("planned", False)
+
+
+def test_bar_state_overdue_flag():
+    s = _span(date(2026, 9, 1), date(2026, 9, 24))
+    assert tl._bar_state(s, False, 50, TODAY) == ("in_progress", True)
+    inferred = _span(date(2026, 9, 1), date(2026, 9, 24), source="version")
+    assert tl._bar_state(inferred, False, 0, TODAY)[1] is True
+
+
+def test_due_today_is_not_overdue():
+    s = _span(date(2026, 9, 1), TODAY)
+    assert tl._bar_state(s, False, 0, TODAY)[1] is False
+
+
+def test_marker_at_start_is_never_overdue():
+    s = _span(date(2026, 9, 1), date(2026, 9, 1), source="start", kind="marker")
+    assert tl._bar_state(s, False, 0, TODAY)[1] is False
+
+
+WS, WE = date(2026, 9, 1), date(2026, 11, 30)
+
+
+def test_issue_row_inside_window():
+    issue = _iss(id=5, start_date="2026-09-10", due_date="2026-09-20", done_ratio=30)
+    kind, row = tl._issue_row(issue, False, None, TODAY, WS, WE)
+    assert kind == "row"
+    assert row == {
+        "type": "issue",
+        "id": 5,
+        "subject": "Fix login",
+        "status": "New",
+        "assigned_to": "Alice",
+        "start": "2026-09-10",
+        "end": "2026-09-20",
+        "kind": "bar",
+        "state": "in_progress",
+        "done_ratio": 30,
+        "overdue": True,
+        "end_source": "due",
+        "clipped_start": False,
+        "clipped_end": False,
+    }
+
+
+def test_issue_row_clipped_keeps_true_dates():
+    issue = _iss(start_date="2026-08-01", due_date="2026-12-20")
+    kind, row = tl._issue_row(issue, False, None, TODAY, WS, WE)
+    assert kind == "row"
+    assert (row["start"], row["end"]) == ("2026-08-01", "2026-12-20")
+    assert (row["clipped_start"], row["clipped_end"]) == (True, True)
+
+
+def test_issue_row_outside_and_unscheduled():
+    past = _iss(start_date="2026-01-01", due_date="2026-01-10")
+    assert tl._issue_row(past, False, None, TODAY, WS, WE) == ("outside", None)
+    assert tl._issue_row(_iss(), False, None, TODAY, WS, WE) == (
+        "unscheduled",
+        None,
+    )
+
+
+def test_issue_row_unassigned_and_missing_status():
+    issue = _iss(assigned_to=None, status=None, due_date="2026-09-30")
+    _, row = tl._issue_row(issue, False, None, TODAY, WS, WE)
+    assert row["assigned_to"] is None and row["status"] is None

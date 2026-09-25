@@ -119,3 +119,77 @@ def _resolve_window(
         e = today + timedelta(days=_EMPTY_AFTER_DAYS)
     s, e = _month_floor(s), _month_ceil(e)
     return {"start": s, "end": e, "auto": auto, "label": _window_label(s, e)}
+
+
+def _row_span(
+    issue: Dict[str, Any], version_due: Optional[date], closed: bool
+) -> Optional[Dict[str, Any]]:
+    """Where an issue is drawn, or None when it has no usable date.
+
+    The end is the due date, else (closed issues only) the ``closed_on``
+    date, else the version due date; Redmine's own Gantt uses due date then
+    version due date and draws a bar only when a start exists too. Markers
+    are this app's extension for single-date issues.
+    """
+    start = _parse_day(issue.get("start_date"))
+    end, source = _parse_day(issue.get("due_date")), "due"
+    if end is None and closed:
+        end, source = _parse_day(issue.get("closed_on")), "closed_on"
+    if end is None and version_due is not None:
+        end, source = version_due, "version"
+    if start is not None and end is not None:
+        if end < start:
+            return {"kind": "marker", "start": end, "end": end, "end_source": source}
+        return {"kind": "bar", "start": start, "end": end, "end_source": source}
+    if start is not None:
+        return {"kind": "marker", "start": start, "end": start, "end_source": "start"}
+    if end is not None:
+        return {"kind": "marker", "start": end, "end": end, "end_source": source}
+    return None
+
+
+def _bar_state(
+    span: Dict[str, Any], closed: bool, done_ratio: Any, today: date
+) -> Tuple[str, bool]:
+    """Return ``(state, overdue)`` for a span; overdue is strictly past."""
+    if closed:
+        return "done", False
+    overdue = span["end_source"] in ("due", "version") and span["end"] < today
+    if (done_ratio or 0) > 0 or span["start"] <= today:
+        return "in_progress", overdue
+    return "planned", overdue
+
+
+def _issue_row(
+    issue: Dict[str, Any],
+    closed: bool,
+    version_due: Optional[date],
+    today: date,
+    win_start: date,
+    win_end: date,
+) -> Tuple[str, Optional[Dict[str, Any]]]:
+    """Build one issue row, or report it as ``outside`` / ``unscheduled``."""
+    span = _row_span(issue, version_due, closed)
+    if span is None:
+        return "unscheduled", None
+    if span["end"] < win_start or span["start"] > win_end:
+        return "outside", None
+    state, overdue = _bar_state(span, closed, issue.get("done_ratio"), today)
+    status = issue.get("status") or {}
+    assignee = issue.get("assigned_to")
+    return "row", {
+        "type": "issue",
+        "id": issue.get("id"),
+        "subject": issue.get("subject", ""),
+        "status": status.get("name"),
+        "assigned_to": assignee.get("name") if isinstance(assignee, dict) else None,
+        "start": span["start"].isoformat(),
+        "end": span["end"].isoformat(),
+        "kind": span["kind"],
+        "state": state,
+        "done_ratio": issue.get("done_ratio") or 0,
+        "overdue": overdue,
+        "end_source": span["end_source"],
+        "clipped_start": span["start"] < win_start,
+        "clipped_end": span["end"] > win_end,
+    }
