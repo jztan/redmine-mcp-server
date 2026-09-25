@@ -285,7 +285,7 @@ matches what the Application can grant and consent does not fail with
 `REDMINE_MCP_SCOPES` is a subset of the scopes this server already advertises
 (the Redmine permissions its tools actually use), not a mirror of the
 Application's full permission list. Permissions your Application grants but no
-MCP tool uses (for example `view_gantt`, `copy_issues`, `edit_own_time_entries`)
+MCP tool uses (for example `view_gantt`, `edit_own_time_entries`)
 are not in that set and are rejected at boot; leave them out of
 `REDMINE_MCP_SCOPES`. The boot error lists the full set of accepted scopes.
 

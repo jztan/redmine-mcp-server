@@ -129,6 +129,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Tracker #id (Status): ` prefix stripped) instead of coming back empty, and
   a hydration that returns fewer issues than asked for is logged
   ([#346](https://github.com/jztan/redmine-mcp-server/issues/346), [#348](https://github.com/jztan/redmine-mcp-server/pull/348)).
+- OAuth: advertise `copy_issues` and require `view_issues`, `copy_issues`, and
+  `add_issues` for `copy_issue`, matching Redmine's `allowed_to?(:copy_issues)`
+  gate on the source project before `copy_from` (previously only `add_issues`
+  was enforced, so tokens could pass MCP and still receive 403 from Redmine)
+  ([#349](https://github.com/jztan/redmine-mcp-server/issues/349)).
+  **OAuth deployments: before starting the upgraded server, grant Copy issues
+  on the Redmine OAuth Application and have users re-consent**, or new
+  authorizations fail with `invalid_scope` when the server advertises the
+  default scope set. Alternatively set `REDMINE_MCP_SCOPES` to a list that
+  omits `copy_issues` until the application is ready.
 
 ### Contributors
 - @andilem reported, with measurements from a production ticket, that journal

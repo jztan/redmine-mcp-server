@@ -1590,7 +1590,12 @@ copy_issue(
 
 **Notes:**
 - Respects `REDMINE_MCP_READ_ONLY` — returns an error in read-only mode.
-- The target user must have permission to create issues in the destination project.
+- OAuth: requires `view_issues`, `copy_issues`, and `add_issues` on the token.
+  Redmine checks `copy_issues` on the **source** project (the issue being
+  copied) and `add_issues` on the **target** project (where the copy is
+  created; defaults to the source project when `project_id` is omitted).
+- The target user must have the matching role permissions in those projects,
+  not only the OAuth scopes on the token.
 
 ---
 

@@ -36,8 +36,15 @@ class TestScopeConstants:
     def test_write_scopes_contains_issue_writes(self):
         from redmine_mcp_server.oauth_scopes import WRITE_SCOPES
 
-        for s in ("add_issues", "edit_issues", "delete_issues"):
+        for s in ("add_issues", "copy_issues", "edit_issues", "delete_issues"):
             assert s in WRITE_SCOPES, f"missing {s}"
+
+    def test_copy_issue_tool_scopes(self):
+        from redmine_mcp_server.oauth_scopes import TOOL_SCOPES
+
+        assert TOOL_SCOPES["copy_issue"] == frozenset(
+            {"view_issues", "copy_issues", "add_issues"}
+        )
 
     def test_write_scopes_contains_relation_and_watcher_scopes(self):
         """Regression pin for the fact-check finding (issue #130 review)."""

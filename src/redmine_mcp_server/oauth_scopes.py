@@ -67,7 +67,8 @@ READ_SCOPES: list[str] = [
 
 # Redmine permissions used by the mutation MCP tools.
 WRITE_SCOPES: list[str] = [
-    "add_issues",  # create_redmine_issue, copy_issue
+    "add_issues",  # create_redmine_issue; copy_issue (target project)
+    "copy_issues",  # copy_issue (Redmine copy_from / allowed_to?(:copy_issues))
     "edit_issues",  # update_redmine_issue
     "delete_issues",  # delete_redmine_issue
     "manage_subtasks",  # update_redmine_issue when parent_issue_id changes
@@ -393,7 +394,7 @@ TOOL_SCOPES: Dict[str, ToolScopeEntry] = {
     "get_gantt_chart": frozenset({"view_issues"}),
     "search_redmine_issues": frozenset({"search_project"}),
     "create_redmine_issue": frozenset({"add_issues"}),
-    "copy_issue": frozenset({"add_issues"}),
+    "copy_issue": frozenset({"view_issues", "copy_issues", "add_issues"}),
     "update_redmine_issue": frozenset({"edit_issues"}),
     "delete_redmine_issue": frozenset({"delete_issues"}),
     "get_private_notes": frozenset({"view_issues", "view_private_notes"}),
