@@ -515,6 +515,8 @@ TOOL_SCOPES: Dict[str, ToolScopeEntry] = {
     "get_triage_board_data": frozenset({"view_issues"}),
     "show_project_dashboard": frozenset({"view_issues"}),
     "get_project_dashboard_data": frozenset({"view_issues"}),
+    "show_project_timeline": frozenset({"view_issues"}),
+    "get_project_timeline_data": frozenset({"view_issues"}),
 }
 
 

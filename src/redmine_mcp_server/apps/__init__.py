@@ -7,3 +7,4 @@ instance, mirroring the ``tools`` package.
 
 from . import triage_board  # noqa: F401  -- triggers app registration
 from . import project_dashboard  # noqa: F401  -- triggers app registration
+from . import project_timeline  # noqa: F401  -- triggers app registration

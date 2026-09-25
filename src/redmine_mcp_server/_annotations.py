@@ -155,6 +155,8 @@ TOOL_KINDS: Dict[str, ToolKind] = {
     "get_triage_board_data": ToolKind.READ,
     "show_project_dashboard": ToolKind.READ,
     "get_project_dashboard_data": ToolKind.READ,
+    "show_project_timeline": ToolKind.READ,
+    "get_project_timeline_data": ToolKind.READ,
 }
 
 

@@ -11,10 +11,14 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime, timedelta, timezone
+from importlib.resources import files
 from typing import Any, Dict, List, Optional, Tuple, Union
+
+from fastmcp.apps.config import AppConfig, ResourceCSP
 
 from .._env import _is_read_only_mode
 from .._validation import _is_valid_project_id
+from ..server import mcp
 from ..tools.issues import list_redmine_issues
 from ..tools.projects import list_redmine_versions
 
@@ -23,6 +27,12 @@ _ONE_SIDED_DAYS = 90
 _MAX_SPAN_DAYS = 366
 _EMPTY_BEFORE_DAYS = 14
 _EMPTY_AFTER_DAYS = 76
+_UI_RESOURCE_URI = "ui://redmine/project-timeline.html"
+_PROJECT_TIMELINE_HTML = (
+    files("redmine_mcp_server.apps._ui")
+    .joinpath("project_timeline.html")
+    .read_text(encoding="utf-8")
+)
 _TL_LIMIT = 250
 _FIELDS = [
     "id",
@@ -459,3 +469,82 @@ async def _build_timeline_payload(
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "read_only": _is_read_only_mode(),
     }
+
+
+def _app_config(**extra: Any) -> AppConfig:
+    """AppConfig shared by the UI resource and its tool (#249).
+
+    The view is self-contained, so the CSP declares no external origins;
+    the lists are explicit so hosts that check for a declared CSP see one.
+    ``domain`` is left unset: its format is host-specific.
+    """
+    return AppConfig(csp=ResourceCSP(connect_domains=[], resource_domains=[]), **extra)
+
+
+@mcp.resource(
+    _UI_RESOURCE_URI, mime_type="text/html;profile=mcp-app", app=_app_config()
+)
+def project_timeline_ui() -> str:
+    """Serve the self-contained project-timeline HTML view."""
+    return _PROJECT_TIMELINE_HTML
+
+
+@mcp.tool(app=_app_config(resource_uri=_UI_RESOURCE_URI, visibility=["model"]))
+async def show_project_timeline(
+    project_id: Union[int, str],
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    filters: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Show a project's schedule as an interactive timeline (Gantt view).
+
+    Use this when the user wants a timeline, schedule, roadmap, or Gantt
+    view, or asks when a version ships or what is planned over a period:
+    "show the timeline for <project>", "what is the schedule this
+    quarter", "when does v3.0 ship". Issues are drawn as bars from their
+    start and due dates, grouped by target version, with a milestone on
+    each version's due date and a Done section for recently closed work.
+
+    Renders in clients that support MCP Apps; other clients receive the
+    same structured data. Prefer ``get_gantt_chart`` for raw timeline data
+    or dependency analysis, ``show_project_dashboard`` for a health
+    snapshot, and ``show_triage_board`` to work issues on a board.
+    Read-only. Dates use the server's UTC day.
+
+    Args:
+        project_id: The project to display, as a numeric ID or string
+            identifier (e.g. ``1`` or ``"web"``).
+        start_date: Optional window start, ``YYYY-MM-DD``. Without dates
+            the window fits the data, within about 3 months of today.
+        end_date: Optional window end, ``YYYY-MM-DD`` (at most 366 days
+            after ``start_date``).
+        filters: Optional extra Redmine filter dict, the same shape
+            ``list_redmine_issues`` accepts (e.g. ``{"tracker_id": 1}``).
+            ``project_id``, ``status_id``, ``closed_on``, ``sort``,
+            ``limit`` and ``offset`` are set by the timeline and refused.
+    """
+    return await _build_timeline_payload(project_id, start_date, end_date, filters)
+
+
+@mcp.tool(app=AppConfig(visibility=["app"]))
+async def get_project_timeline_data(
+    project_id: Union[int, str],
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    filters: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Backend data source for the project timeline's Refresh button.
+
+    Returns the same payload as ``show_project_timeline`` without a UI
+    resource; the timeline's iframe calls this over ``tools/call`` with the
+    arguments the view was opened with. Read-only.
+
+    Args:
+        project_id: The project whose timeline is being refreshed, as a
+            numeric ID or string identifier (e.g. ``1`` or ``"web"``).
+        start_date: Optional window start, ``YYYY-MM-DD``.
+        end_date: Optional window end, ``YYYY-MM-DD``.
+        filters: Optional extra Redmine filter dict, the same shape
+            ``list_redmine_issues`` accepts.
+    """
+    return await _build_timeline_payload(project_id, start_date, end_date, filters)

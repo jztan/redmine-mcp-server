@@ -730,3 +730,66 @@ def test_timeline_html_unwraps_version_descriptions():
     assert "insecure-content-" in html  # the anchored unwrap regex
     assert "\\u2014" in html  # separator written as an escape, not a literal
     assert "\u2014" not in html
+
+
+from fastmcp import Client  # noqa: E402
+
+from redmine_mcp_server import apps  # noqa: E402,F401
+from redmine_mcp_server.server import mcp  # noqa: E402
+
+_EMPTY_CSP = {"connectDomains": [], "resourceDomains": []}
+_URI = "ui://redmine/project-timeline.html"
+
+
+@pytest.mark.asyncio
+async def test_timeline_ui_resource_registered():
+    res = await mcp.get_resource(_URI)
+    assert res.mime_type == "text/html;profile=mcp-app"
+    assert (await res.read()).strip()
+
+
+@pytest.mark.asyncio
+async def test_show_project_timeline_meta_points_at_ui():
+    tool = await mcp.get_tool("show_project_timeline")
+    ui = tool.meta["ui"]
+    assert ui["resourceUri"] == _URI
+    assert ui["visibility"] == ["model"]
+    assert ui["csp"] == _EMPTY_CSP
+
+
+@pytest.mark.asyncio
+async def test_timeline_ui_resource_declares_csp():
+    async with Client(mcp) as client:
+        entry = next(r for r in await client.list_resources() if str(r.uri) == _URI)
+        (content,) = await client.read_resource(_URI)
+    assert entry.meta["ui"]["csp"] == _EMPTY_CSP
+    assert content.meta["ui"]["csp"] == _EMPTY_CSP
+    assert "domain" not in entry.meta["ui"]
+
+
+@pytest.mark.asyncio
+async def test_timeline_backend_tool_is_app_only():
+    tool = await mcp.get_tool("get_project_timeline_data")
+    ui = tool.meta["ui"]
+    assert ui["visibility"] == ["app"]
+    assert "resourceUri" not in ui
+
+
+def test_timeline_tools_have_scopes_and_annotations():
+    from redmine_mcp_server._annotations import TOOL_KINDS, ToolKind
+    from redmine_mcp_server.oauth_scopes import TOOL_SCOPES
+
+    for name in ("show_project_timeline", "get_project_timeline_data"):
+        assert TOOL_SCOPES[name] == frozenset({"view_issues"})
+        assert TOOL_KINDS[name] == ToolKind.READ
+
+
+@pytest.mark.asyncio
+async def test_both_tools_delegate_to_builder():
+    builder = AsyncMock(return_value={"ok": True})
+    with patch.object(tl, "_build_timeline_payload", builder):
+        a = await tl.show_project_timeline("web", start_date="2026-07-01")
+        b = await tl.get_project_timeline_data("web", filters={"tracker_id": 1})
+    assert a == b == {"ok": True}
+    assert builder.await_args_list[0].args == ("web", "2026-07-01", None, None)
+    assert builder.await_args_list[1].args == ("web", None, None, {"tracker_id": 1})
