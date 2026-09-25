@@ -237,8 +237,7 @@
       .body {
         padding: 0;
       }
-      .body > .notice,
-      .body > .tl-detail {
+      .body > .notice {
         margin: 12px 16px 0;
       }
       .body > #root > .panel {
@@ -405,6 +404,8 @@
       .bar,
       .marker,
       .diamond {
+        -webkit-user-select: none;
+        user-select: none;
         position: absolute;
         border: 0;
         padding: 0;
@@ -497,23 +498,32 @@
         outline: 2px solid var(--accent);
         outline-offset: 2px;
       }
-      .tl-detail {
-        margin: 0 0 12px;
-        padding: 10px 14px;
-        border: 1px solid var(--border);
+      .tl-pop {
+        position: absolute;
+        z-index: 5;
+        width: 280px;
+        max-width: calc(100% - 16px);
+        padding: 10px 12px;
+        border: 1px solid var(--border-strong);
         border-radius: 12px;
         background: var(--card);
+        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.18);
         color: var(--text-2);
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px 18px;
+        font-size: 12px;
+        line-height: 1.5;
       }
-      .tl-detail[hidden] {
+      .tl-pop[hidden] {
         display: none;
       }
-      .tl-detail b {
+      .tl-pop-title {
+        margin-bottom: 4px;
         color: var(--text);
         font-weight: 650;
+        overflow-wrap: anywhere;
+      }
+      .tl-pop b {
+        color: var(--text);
+        font-weight: 600;
       }
       .foot-chip {
         font-family: var(--font-mono);
@@ -577,7 +587,6 @@
       </header>
       <div class="body">
         <div id="truncated" class="notice" hidden></div>
-        <div id="detail" class="tl-detail" hidden></div>
         <div id="root">
           <div class="panel" id="loading">Loading timeline...</div>
         </div>
@@ -606,7 +615,7 @@
           filters: null,
           startDate: null,
           endDate: null,
-          detailKey: null,
+          popKey: null,
           ready: false,
         };
 
@@ -615,7 +624,8 @@
         var truncatedEl = document.getElementById("truncated");
         var refreshBtn = document.getElementById("refresh-btn");
         var roPill = document.getElementById("ro-pill");
-        var detailEl = document.getElementById("detail");
+        var popEl = null;
+        var popWrap = null;
         var footLeft = document.getElementById("foot-left");
 
         // --- transport (mirrors triage_board.html) -----------------------
@@ -821,26 +831,41 @@
           overlay.appendChild(label);
         }
 
-        function showDetail(key, lines) {
-          if (state.detailKey === key) {
-            hideDetail();
+        // Details float over the chart, anchored to the clicked mark, so
+        // opening them never changes the card height (and so never
+        // resizes the host iframe).
+        function showPopover(key, title, lines, anchor) {
+          if (!popEl || !popWrap) return;
+          if (state.popKey === key) {
+            hidePopover();
             return;
           }
-          state.detailKey = key;
-          detailEl.replaceChildren();
+          state.popKey = key;
+          popEl.replaceChildren(el("div", "tl-pop-title", title));
           lines.forEach(function (pair) {
-            var span = el("span");
-            span.appendChild(el("b", null, pair[0] + ": "));
-            span.appendChild(document.createTextNode(pair[1]));
-            detailEl.appendChild(span);
+            var row = el("div");
+            row.appendChild(el("b", null, pair[0] + ": "));
+            row.appendChild(document.createTextNode(pair[1]));
+            popEl.appendChild(row);
           });
-          detailEl.hidden = false;
-          queueResize();
+          popEl.style.visibility = "hidden";
+          popEl.hidden = false;
+          var box = popWrap.getBoundingClientRect();
+          var a = anchor.getBoundingClientRect();
+          var w = popEl.offsetWidth;
+          var h = popEl.offsetHeight;
+          var left = a.left - box.left + a.width / 2 - w / 2;
+          left = Math.max(8, Math.min(left, box.width - w - 8));
+          var top = a.bottom - box.top + 6;
+          if (top + h > box.height - 8) top = a.top - box.top - h - 6;
+          top = Math.max(8, top);
+          popEl.style.left = left + "px";
+          popEl.style.top = top + "px";
+          popEl.style.visibility = "";
         }
-        function hideDetail() {
-          state.detailKey = null;
-          detailEl.hidden = true;
-          queueResize();
+        function hidePopover() {
+          state.popKey = null;
+          if (popEl) popEl.hidden = true;
         }
 
         function endLabel(r) {
@@ -852,8 +877,8 @@
 
         function issueNode(r, sc) {
           var key = "issue:" + r.id;
+          var title = "#" + r.id + " " + (r.subject || "");
           var lines = [
-            ["#" + r.id, r.subject],
             ["Status", r.status || "unknown"],
             ["Assignee", r.assigned_to || "unassigned"],
             ["Start", r.end_source === "start" || r.kind === "bar" ? fmtDay(r.start) : "not set"],
@@ -878,7 +903,7 @@
           node.title = "#" + r.id + " " + r.subject;
           node.setAttribute("aria-label", "#" + r.id + " " + r.subject);
           node.addEventListener("click", function () {
-            showDetail(key, lines);
+            showPopover(key, title, lines, node);
           });
           return node;
         }
@@ -891,11 +916,10 @@
           node.title = m.label + " \u00b7 " + fmtDay(m.date);
           node.setAttribute("aria-label", m.label);
           node.addEventListener("click", function () {
-            showDetail("ms:" + m.version_id, [
-              ["Milestone", m.label],
+            showPopover("ms:" + m.version_id, m.label, [
               ["Date", fmtDay(m.date)],
               ["Status", m.closed ? "closed" : "open"],
-            ]);
+            ], node);
           });
           return node;
         }
@@ -938,7 +962,9 @@
         }
 
         function render(p) {
-          hideDetail();
+          hidePopover();
+          popEl = null;
+          popWrap = null;
           nameEl.textContent = p.project.name + " \u00b7 " + p.window.label;
           roPill.hidden = !p.read_only;
           var notes = [];
@@ -973,15 +999,27 @@
           tl.appendChild(body);
           todayLine(p.window, sc, overlay);
           tl.appendChild(overlay);
+          popEl = el("div", "tl-pop");
+          popEl.hidden = true;
+          popEl.setAttribute("role", "dialog");
+          tl.appendChild(popEl);
+          popWrap = tl;
           rootEl.replaceChildren(tl);
           requestAnimationFrame(fitLabels);
           queueResize();
         }
 
         document.addEventListener("keydown", function (e) {
-          if (e.key === "Escape" && !detailEl.hidden) hideDetail();
+          if (e.key === "Escape" && state.popKey) hidePopover();
+        });
+        document.addEventListener("click", function (e) {
+          if (!state.popKey) return;
+          var t = e.target;
+          if (t.closest && t.closest(".bar, .marker, .diamond, .tl-pop")) return;
+          hidePopover();
         });
         window.addEventListener("resize", function () {
+          hidePopover();
           requestAnimationFrame(fitLabels);
         });
         function extractError(result) {

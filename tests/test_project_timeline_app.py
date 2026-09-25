@@ -856,3 +856,21 @@ async def test_undated_query_error_is_partial():
     )
     assert payload["partial"] is True
     assert [g["key"] for g in payload["groups"]] == ["none"]
+
+
+def test_timeline_details_float_over_chart_without_resizing():
+    # Clicking a bar must not grow the iframe: details open in an absolutely
+    # positioned popover inside the chart, not an inline strip above it.
+    html = _timeline_html()
+    assert 'id="detail"' not in html
+    assert "tl-detail" not in html
+    pop_css = html.split(".tl-pop {", 1)[1].split("}", 1)[0]
+    assert "position: absolute" in pop_css
+    show = html.split("function showPopover(", 1)[1].split("\n        }\n", 1)[0]
+    assert "queueResize" not in show
+
+
+def test_timeline_bars_are_not_text_selectable():
+    html = _timeline_html()
+    rule = html.split(".bar,\n      .marker,\n      .diamond {", 1)[1].split("}", 1)[0]
+    assert "user-select: none" in rule
