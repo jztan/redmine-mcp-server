@@ -58,20 +58,25 @@
   }
   .cmd .p { color: #6f6a64; }
 
-  /* The whole board sits in frame. Cropping it mid-card read as an accident
-     rather than a deliberate bleed. */
-  .right { position: relative; flex: 1; height: 100%; display: flex; align-items: center; justify-content: flex-end; }
-  /* The badge has to live outside the frame: the frame clips to its radius. */
-  .shot { position: relative; }
-  .shot-frame {
-    width: 524px; border-radius: 14px; overflow: hidden;
-    border: 1px solid rgba(255,255,255,0.16);
-    box-shadow: 0 30px 80px rgba(0,0,0,0.55);
-    background: #fff;
+  /* Three live apps, fanned: the timeline in front, the board and the
+     dashboard behind it. Every card sits fully in frame; cropping one
+     mid-card read as an accident rather than a deliberate bleed. */
+  .right { position: relative; flex: 1; height: 100%; }
+  .stack { position: absolute; inset: 0; }
+  .shot {
+    position: absolute; border-radius: 12px; overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.16); background: #fff;
+    box-shadow: 0 26px 70px rgba(0,0,0,0.55);
   }
-  .shot-frame img { display: block; width: 100%; height: auto; }
+  .shot img { display: block; width: 100%; height: auto; }
+  .shot.back { filter: brightness(0.78) saturate(0.9); }
+  .shot.board { width: 330px; top: 70px; right: 6px; transform: rotate(4deg); }
+  .shot.dash { width: 262px; top: 96px; left: 4px; transform: rotate(-5deg); }
+  .shot.front { width: 392px; top: 104px; left: 108px; z-index: 2;
+    box-shadow: 0 34px 90px rgba(0,0,0,0.7); }
+  /* The badge has to live outside the frame: the frame clips to its radius. */
   .badge {
-    position: absolute; top: -15px; left: -16px; z-index: 2;
+    position: absolute; top: 88px; left: 92px; z-index: 3;
     font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 12px;
     letter-spacing: 0.08em; text-transform: uppercase; color: #ffffff;
     background: #0071e3; border-radius: 980px; padding: 6px 14px;
@@ -89,17 +94,18 @@
       <h1>Your AI shouldn't just read tickets. It works them.</h1>
       <p class="sub">
         An MCP server that lets <b>Claude Code</b> &amp; other agents triage, update, and close
-        <b>Redmine</b> issues, with a live Kanban board in the chat.
+        <b>Redmine</b> issues, with a live Kanban board, dashboard, and
+        timeline in the chat.
       </p>
       <div class="cmd"><span class="p">$</span> pip install redmine-mcp-server</div>
     </div>
 
     <div class="right">
-      <div class="shot">
+      <div class="stack">
+        <div class="shot back dash"><img src="../pages/project-dashboard.png" alt="" /></div>
+        <div class="shot back board"><img src="../pages/triage-board-kanban.png" alt="" /></div>
         <span class="badge">MCP Apps</span>
-        <div class="shot-frame">
-          <img src="../pages/triage-board-kanban.png" alt="" />
-        </div>
+        <div class="shot front"><img src="../pages/project-timeline.png" alt="" /></div>
       </div>
     </div>
   </div>
