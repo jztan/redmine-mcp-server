@@ -187,6 +187,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   search ids and fixed hydration and the unhydrated fallback
   ([#346](https://github.com/jztan/redmine-mcp-server/issues/346),
   [#348](https://github.com/jztan/redmine-mcp-server/pull/348)).
+- @stevehollis-orderflow reported and fixed `copy_issue` passing the OAuth
+  scope check without `copy_issues`, which Redmine requires on the source
+  project before it copies
+  ([#349](https://github.com/jztan/redmine-mcp-server/issues/349),
+  [#347](https://github.com/jztan/redmine-mcp-server/pull/347)).
 
 ## [2.16.0] - 2026-09-19
 ### Added
