@@ -441,3 +441,231 @@ def test_group_rows_foreign_version_titled_from_issue_ref():
 
 def test_group_rows_empty():
     assert tl._group_rows([], [_ver(1, "v1", "2026-10-01")], WS, WE) == []
+
+
+from unittest.mock import AsyncMock, patch  # noqa: E402
+
+
+def _resp(issues, has_next=False):
+    return {"issues": issues, "pagination": {"has_next": has_next}}
+
+
+def _patch(open_resp, versions, closed_resp):
+    issues = AsyncMock(side_effect=[open_resp, closed_resp])
+    return (
+        patch.object(tl, "list_redmine_issues", issues),
+        patch.object(tl, "list_redmine_versions", AsyncMock(return_value=versions)),
+        issues,
+    )
+
+
+async def _build(open_resp, versions, closed_resp, **kw):
+    pi, pv, issues = _patch(open_resp, versions, closed_resp)
+    with pi, pv:
+        payload = await tl._build_timeline_payload("web", today=TODAY, **kw)
+    return payload, issues
+
+
+@pytest.mark.asyncio
+async def test_build_payload_happy_path():
+    open_issue = _iss(
+        id=1,
+        project={"id": 9, "name": "Web"},
+        fixed_version={"id": 1, "name": "v1"},
+        start_date="2026-09-10",
+        due_date="2026-10-05",
+    )
+    closed_issue = _iss(
+        id=2,
+        status={"id": 5, "name": "Closed"},
+        start_date="2026-09-01",
+        closed_on="2026-09-15T10:00:00",
+    )
+    payload, issues = await _build(
+        _resp([open_issue, _iss(id=3)]),
+        [_ver(1, "v1", "2026-10-10")],
+        _resp([closed_issue]),
+    )
+    assert payload["project"] == {"id": "web", "name": "Web"}
+    assert payload["window"] == {
+        "start": "2026-09-01",
+        "end": "2026-10-31",
+        "today": "2026-09-25",
+        "auto": True,
+        "label": "Sep - Oct 2026",
+    }
+    assert [g["key"] for g in payload["groups"]] == ["version:1", "done"]
+    assert payload["unscheduled"] == 1
+    assert payload["truncated"] is False
+    assert payload["partial"] is False
+    assert payload["read_only"] in (True, False)
+    assert "generated_at" in payload
+
+
+@pytest.mark.asyncio
+async def test_build_payload_query_kwargs_and_order():
+    payload, issues = await _build(
+        _resp([_iss(start_date="2026-09-10", due_date="2026-09-12")]),
+        [],
+        _resp([]),
+        filters={"tracker_id": 1},
+    )
+    open_call, closed_call = issues.await_args_list
+    assert open_call.kwargs == {
+        "project_id": "web",
+        "status_id": "open",
+        "fields": tl._FIELDS,
+        "limit": 250,
+        "sort": "start_date:desc,id:desc",
+        "include_pagination_info": True,
+        "filters": {"tracker_id": 1},
+    }
+    assert closed_call.kwargs == {
+        "project_id": "web",
+        "status_id": "closed",
+        "fields": tl._FIELDS,
+        "limit": 250,
+        "sort": "closed_on:desc,id:desc",
+        "include_pagination_info": True,
+        # Bound is the snapped window start, not today-90.
+        "filters": {"tracker_id": 1, "closed_on": ">=2026-09-01"},
+    }
+
+
+@pytest.mark.asyncio
+async def test_filters_none_is_safe():
+    payload, issues = await _build(_resp([]), [], _resp([]), filters=None)
+    assert "error" not in payload
+    assert issues.await_args_list[0].kwargs["filters"] == {}
+
+
+@pytest.mark.asyncio
+async def test_caller_filters_not_mutated():
+    caller = {"tracker_id": 1}
+    await _build(_resp([]), [], _resp([]), filters=caller)
+    assert caller == {"tracker_id": 1}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "key", ["project_id", "status_id", "closed_on", "sort", "limit", "offset"]
+)
+async def test_reserved_filter_keys_rejected_before_any_call(key):
+    payload, issues = await _build(_resp([]), [], _resp([]), filters={key: 1})
+    assert payload == {
+        "error": f"filters must not contain '{key}'; the timeline sets it itself."
+    }
+    issues.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_filters_must_be_a_dict():
+    payload, issues = await _build(_resp([]), [], _resp([]), filters=["x"])
+    assert payload == {"error": "filters must be an object (a JSON dict)."}
+    issues.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_invalid_project_id_rejected():
+    pi, pv, issues = _patch(_resp([]), [], _resp([]))
+    with pi, pv:
+        payload = await tl._build_timeline_payload("", today=TODAY)
+    assert "error" in payload
+    issues.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "kw, message",
+    [
+        ({"start_date": "2026/09/01"}, "start_date must be a YYYY-MM-DD date."),
+        ({"end_date": "tomorrow"}, "end_date must be a YYYY-MM-DD date."),
+        (
+            {"start_date": "2026-10-01", "end_date": "2026-09-01"},
+            "start_date must not be after end_date.",
+        ),
+        (
+            {"start_date": "2026-01-01", "end_date": "2027-06-01"},
+            "The window from start_date to end_date must not exceed 366 days.",
+        ),
+    ],
+)
+async def test_invalid_dates_rejected_before_any_call(kw, message):
+    payload, issues = await _build(_resp([]), [], _resp([]), **kw)
+    assert payload == {"error": message}
+    issues.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_open_query_error_passes_through():
+    err = {"error": "Project not found"}
+    payload, issues = await _build(err, [], _resp([]))
+    assert payload == err
+    assert issues.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_closed_query_error_is_partial():
+    open_issue = _iss(start_date="2026-09-10", due_date="2026-09-12")
+    payload, _ = await _build(_resp([open_issue]), [], {"error": "boom"})
+    assert payload["partial"] is True
+    assert [g["key"] for g in payload["groups"]] == ["none"]
+
+
+@pytest.mark.asyncio
+async def test_versions_error_is_partial_and_groups_by_issue_ref():
+    open_issue = _iss(
+        fixed_version={"id": 4, "name": "v4"},
+        start_date="2026-09-10",
+        due_date="2026-09-12",
+    )
+    payload, _ = await _build(_resp([open_issue]), {"error": "403"}, _resp([]))
+    assert payload["partial"] is True
+    group = payload["groups"][0]
+    assert (group["key"], group["title"]) == ("version:4", "v4")
+    assert [r["type"] for r in group["rows"]] == ["issue"]
+
+
+@pytest.mark.asyncio
+async def test_truncated_from_either_query():
+    p1, _ = await _build(_resp([], has_next=True), [], _resp([]))
+    p2, _ = await _build(_resp([]), [], _resp([], has_next=True))
+    assert p1["truncated"] is True and p2["truncated"] is True
+
+
+@pytest.mark.asyncio
+async def test_all_undated_truncated_project_shows_empty_state_payload():
+    undated = [_iss(id=i) for i in range(250)]
+    payload, _ = await _build(_resp(undated, has_next=True), [], _resp([]))
+    assert payload["groups"] == []
+    assert payload["unscheduled"] == 250
+    assert payload["truncated"] is True
+
+
+@pytest.mark.asyncio
+async def test_version_due_dates_feed_auto_window_and_row_ends():
+    open_issue = _iss(fixed_version={"id": 1, "name": "v1"}, start_date="2026-09-10")
+    payload, _ = await _build(
+        _resp([open_issue]), [_ver(1, "v1", "2026-11-20")], _resp([])
+    )
+    assert payload["window"]["end"] == "2026-11-30"
+    row = payload["groups"][0]["rows"][0]
+    assert (row["end"], row["end_source"]) == ("2026-11-20", "version")
+
+
+@pytest.mark.asyncio
+async def test_project_name_falls_back_to_closed_row_then_identifier():
+    closed_issue = _iss(
+        project={"id": 9, "name": "Web"}, closed_on="2026-09-15T10:00:00"
+    )
+    p1, _ = await _build(_resp([]), [], _resp([closed_issue]))
+    assert p1["project"]["name"] == "Web"
+    p2, _ = await _build(_resp([]), [], _resp([]))
+    assert p2["project"]["name"] == "web"
+
+
+@pytest.mark.asyncio
+async def test_read_only_reflected():
+    with patch.object(tl, "_is_read_only_mode", return_value=True):
+        payload, _ = await _build(_resp([]), [], _resp([]))
+    assert payload["read_only"] is True

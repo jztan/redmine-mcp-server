@@ -10,14 +10,40 @@ draws the payload.
 from __future__ import annotations
 
 import re
-from datetime import date, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from datetime import date, datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+from .._env import _is_read_only_mode
+from .._validation import _is_valid_project_id
+from ..tools.issues import list_redmine_issues
+from ..tools.projects import list_redmine_versions
 
 _CLAMP_DAYS = 90
 _ONE_SIDED_DAYS = 90
 _MAX_SPAN_DAYS = 366
 _EMPTY_BEFORE_DAYS = 14
 _EMPTY_AFTER_DAYS = 76
+_TL_LIMIT = 250
+_FIELDS = [
+    "id",
+    "subject",
+    "project",
+    "status",
+    "assigned_to",
+    "fixed_version",
+    "start_date",
+    "due_date",
+    "done_ratio",
+    "closed_on",
+]
+_RESERVED_FILTER_KEYS = (
+    "project_id",
+    "status_id",
+    "closed_on",
+    "sort",
+    "limit",
+    "offset",
+)
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _MONTHS = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -279,3 +305,157 @@ def _group_rows(
             {"key": "done", "title": "Done", "description": None, "rows": done_rows}
         )
     return groups
+
+
+def _reject_timeline_filters(filters: Any) -> Optional[str]:
+    """Refuse filters that would override what the builder controls.
+
+    ``list_redmine_issues`` spreads ``filters`` over its named parameters
+    and pops ``limit``/``offset`` out of the caller's dict, so these keys
+    would silently break the open/closed split or the cap.
+    """
+    if filters is None:
+        return None
+    if not isinstance(filters, dict):
+        return "filters must be an object (a JSON dict)."
+    for key in _RESERVED_FILTER_KEYS:
+        if key in filters:
+            return f"filters must not contain '{key}'; the timeline sets it itself."
+    return None
+
+
+def _is_error(resp: Any) -> bool:
+    return isinstance(resp, dict) and "error" in resp
+
+
+def _project_name(issue_lists: List[List[Dict[str, Any]]], project_id: Any) -> str:
+    """First project name found on an open, then a closed row, else the id."""
+    for issues in issue_lists:
+        for issue in issues:
+            proj = issue.get("project")
+            if isinstance(proj, dict) and proj.get("name"):
+                return proj["name"]
+    return str(project_id)
+
+
+async def _build_timeline_payload(
+    project_id: Union[int, str],
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    filters: Optional[Dict[str, Any]] = None,
+    today: Optional[date] = None,
+) -> Dict[str, Any]:
+    """Assemble the render-ready project-timeline payload.
+
+    Order matters: the window is resolved from the open rows and versions
+    before the closed query, whose ``closed_on`` bound is the window start.
+    An error from the open query passes through unchanged; a failed closed
+    or versions query renders what is left and sets ``partial``.
+    """
+    if not _is_valid_project_id(project_id):
+        return {
+            "error": (
+                "project_id must be a non-empty string identifier or "
+                "positive integer."
+            )
+        }
+    start, err = _parse_arg_date("start_date", start_date)
+    if err:
+        return {"error": err}
+    end, err = _parse_arg_date("end_date", end_date)
+    if err:
+        return {"error": err}
+    err = _check_explicit_window(start, end) or _reject_timeline_filters(filters)
+    if err:
+        return {"error": err}
+    if today is None:
+        today = datetime.now(timezone.utc).date()
+
+    open_resp = await list_redmine_issues(
+        project_id=project_id,
+        status_id="open",
+        fields=_FIELDS,
+        limit=_TL_LIMIT,
+        sort="start_date:desc,id:desc",
+        include_pagination_info=True,
+        filters=dict(filters or {}),
+    )
+    if _is_error(open_resp):
+        return open_resp
+    open_issues = open_resp.get("issues", [])
+    truncated = bool((open_resp.get("pagination") or {}).get("has_next"))
+
+    partial = False
+    versions_resp = await list_redmine_versions(project_id=project_id)
+    if isinstance(versions_resp, list):
+        versions = versions_resp
+    else:
+        versions, partial = [], True
+    version_due = {v.get("id"): _parse_day(v.get("due_date")) for v in versions}
+
+    def due_for(issue: Dict[str, Any]) -> Optional[date]:
+        ref = issue.get("fixed_version")
+        return version_due.get(ref.get("id")) if isinstance(ref, dict) else None
+
+    dates: List[date] = []
+    for issue in open_issues:
+        span = _row_span(issue, due_for(issue), closed=False)
+        if span is not None:
+            dates.extend([span["start"], span["end"]])
+    dates.extend(
+        d
+        for v in versions
+        if v.get("status") != "closed"
+        for d in [_parse_day(v.get("due_date"))]
+        if d is not None
+    )
+    window = _resolve_window(today, start, end, dates)
+
+    closed_resp = await list_redmine_issues(
+        project_id=project_id,
+        status_id="closed",
+        fields=_FIELDS,
+        limit=_TL_LIMIT,
+        sort="closed_on:desc,id:desc",
+        include_pagination_info=True,
+        filters={**(filters or {}), "closed_on": ">=" + window["start"].isoformat()},
+    )
+    if _is_error(closed_resp):
+        closed_issues, partial = [], True
+    else:
+        closed_issues = closed_resp.get("issues", [])
+        truncated = truncated or bool(
+            (closed_resp.get("pagination") or {}).get("has_next")
+        )
+
+    entries: List[Tuple[Dict[str, Any], Any, bool]] = []
+    unscheduled = 0
+    for issues, closed in ((open_issues, False), (closed_issues, True)):
+        for issue in issues:
+            kind, row = _issue_row(
+                issue, closed, due_for(issue), today, window["start"], window["end"]
+            )
+            if kind == "unscheduled":
+                unscheduled += 1
+            elif row is not None:
+                entries.append((row, issue.get("fixed_version"), closed))
+
+    return {
+        "project": {
+            "id": project_id,
+            "name": _project_name([open_issues, closed_issues], project_id),
+        },
+        "window": {
+            "start": window["start"].isoformat(),
+            "end": window["end"].isoformat(),
+            "today": today.isoformat(),
+            "auto": window["auto"],
+            "label": window["label"],
+        },
+        "groups": _group_rows(entries, versions, window["start"], window["end"]),
+        "unscheduled": unscheduled,
+        "truncated": truncated,
+        "partial": partial,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "read_only": _is_read_only_mode(),
+    }
