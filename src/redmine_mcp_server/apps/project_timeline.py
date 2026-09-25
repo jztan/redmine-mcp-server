@@ -50,6 +50,7 @@ _RESERVED_FILTER_KEYS = (
     "project_id",
     "status_id",
     "closed_on",
+    "start_date",
     "sort",
     "limit",
     "offset",
@@ -381,6 +382,10 @@ async def _build_timeline_payload(
     if today is None:
         today = datetime.now(timezone.utc).date()
 
+    # Dated and undated open issues are fetched separately. Redmine sorts
+    # start_date with no NULLS clause, so on PostgreSQL (NULLs first on
+    # DESC) a single capped start_date:desc fetch fills up with undated
+    # issues and drops the ones that can actually be drawn.
     open_resp = await list_redmine_issues(
         project_id=project_id,
         status_id="open",
@@ -388,7 +393,7 @@ async def _build_timeline_payload(
         limit=_TL_LIMIT,
         sort="start_date:desc,id:desc",
         include_pagination_info=True,
-        filters=dict(filters or {}),
+        filters={**(filters or {}), "start_date": "*"},
     )
     if _is_error(open_resp):
         return open_resp
@@ -396,6 +401,23 @@ async def _build_timeline_payload(
     truncated = bool((open_resp.get("pagination") or {}).get("has_next"))
 
     partial = False
+    undated_resp = await list_redmine_issues(
+        project_id=project_id,
+        status_id="open",
+        fields=_FIELDS,
+        limit=_TL_LIMIT,
+        sort="id:desc",
+        include_pagination_info=True,
+        filters={**(filters or {}), "start_date": "!*"},
+    )
+    if _is_error(undated_resp):
+        partial = True
+    else:
+        open_issues = open_issues + undated_resp.get("issues", [])
+        truncated = truncated or bool(
+            (undated_resp.get("pagination") or {}).get("has_next")
+        )
+
     versions_resp = await list_redmine_versions(project_id=project_id)
     if isinstance(versions_resp, list):
         versions = versions_resp
@@ -520,8 +542,9 @@ async def show_project_timeline(
             after ``start_date``).
         filters: Optional extra Redmine filter dict, the same shape
             ``list_redmine_issues`` accepts (e.g. ``{"tracker_id": 1}``).
-            ``project_id``, ``status_id``, ``closed_on``, ``sort``,
-            ``limit`` and ``offset`` are set by the timeline and refused.
+            ``project_id``, ``status_id``, ``closed_on``, ``start_date``,
+            ``sort``, ``limit`` and ``offset`` are set by the timeline and
+            refused.
     """
     return await _build_timeline_payload(project_id, start_date, end_date, filters)
 

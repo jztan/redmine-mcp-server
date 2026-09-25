@@ -1842,9 +1842,9 @@ counted as unscheduled. Dates use the server's UTC day.
 - `project_id` (int | str, required): project to display.
 - `start_date` (str, optional): window start, `YYYY-MM-DD`. Without dates the window fits the data, within about 3 months of today; with one date the other is set 90 days away.
 - `end_date` (str, optional): window end, `YYYY-MM-DD`, at most 366 days after `start_date`.
-- `filters` (dict, optional): extra Redmine filters, same as `list_redmine_issues`. `project_id`, `status_id`, `closed_on`, `sort`, `limit` and `offset` are refused.
+- `filters` (dict, optional): extra Redmine filters, same as `list_redmine_issues`. `project_id`, `status_id`, `closed_on`, `start_date`, `sort`, `limit` and `offset` are refused.
 
-Fetches up to 250 open and 250 closed issues; the view says so when a project has more.
+Fetches up to 250 open issues with a start date, 250 without, and 250 closed; the view says so when a project has more.
 
 ### `get_project_timeline_data`
 

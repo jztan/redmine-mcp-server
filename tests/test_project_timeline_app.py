@@ -450,8 +450,9 @@ def _resp(issues, has_next=False):
     return {"issues": issues, "pagination": {"has_next": has_next}}
 
 
-def _patch(open_resp, versions, closed_resp):
-    issues = AsyncMock(side_effect=[open_resp, closed_resp])
+def _patch(open_resp, versions, closed_resp, undated_resp=None):
+    undated = _resp([]) if undated_resp is None else undated_resp
+    issues = AsyncMock(side_effect=[open_resp, undated, closed_resp])
     return (
         patch.object(tl, "list_redmine_issues", issues),
         patch.object(tl, "list_redmine_versions", AsyncMock(return_value=versions)),
@@ -459,8 +460,8 @@ def _patch(open_resp, versions, closed_resp):
     )
 
 
-async def _build(open_resp, versions, closed_resp, **kw):
-    pi, pv, issues = _patch(open_resp, versions, closed_resp)
+async def _build(open_resp, versions, closed_resp, undated_resp=None, **kw):
+    pi, pv, issues = _patch(open_resp, versions, closed_resp, undated_resp)
     with pi, pv:
         payload = await tl._build_timeline_payload("web", today=TODAY, **kw)
     return payload, issues
@@ -510,7 +511,10 @@ async def test_build_payload_query_kwargs_and_order():
         _resp([]),
         filters={"tracker_id": 1},
     )
-    open_call, closed_call = issues.await_args_list
+    open_call, undated_call, closed_call = issues.await_args_list
+    # Dated and undated open issues are fetched separately: Redmine sorts
+    # start_date with no NULLS clause, so on PostgreSQL a single
+    # start_date:desc fetch would fill the cap with undated issues first.
     assert open_call.kwargs == {
         "project_id": "web",
         "status_id": "open",
@@ -518,7 +522,16 @@ async def test_build_payload_query_kwargs_and_order():
         "limit": 250,
         "sort": "start_date:desc,id:desc",
         "include_pagination_info": True,
-        "filters": {"tracker_id": 1},
+        "filters": {"tracker_id": 1, "start_date": "*"},
+    }
+    assert undated_call.kwargs == {
+        "project_id": "web",
+        "status_id": "open",
+        "fields": tl._FIELDS,
+        "limit": 250,
+        "sort": "id:desc",
+        "include_pagination_info": True,
+        "filters": {"tracker_id": 1, "start_date": "!*"},
     }
     assert closed_call.kwargs == {
         "project_id": "web",
@@ -536,19 +549,37 @@ async def test_build_payload_query_kwargs_and_order():
 async def test_filters_none_is_safe():
     payload, issues = await _build(_resp([]), [], _resp([]), filters=None)
     assert "error" not in payload
-    assert issues.await_args_list[0].kwargs["filters"] == {}
+    assert issues.await_args_list[0].kwargs["filters"] == {"start_date": "*"}
 
 
 @pytest.mark.asyncio
 async def test_caller_filters_not_mutated():
+    # list_redmine_issues pops keys out of the dict it is handed; simulate
+    # that so a shared (uncopied) dict would leak between calls.
+    seen = []
+
+    async def mutating(**kwargs):
+        f = kwargs["filters"]
+        seen.append(dict(f))
+        f.pop("tracker_id", None)
+        f["leaked"] = True
+        return _resp([])
+
     caller = {"tracker_id": 1}
-    await _build(_resp([]), [], _resp([]), filters=caller)
+    with (
+        patch.object(tl, "list_redmine_issues", side_effect=mutating),
+        patch.object(tl, "list_redmine_versions", AsyncMock(return_value=[])),
+    ):
+        await tl._build_timeline_payload("web", filters=caller, today=TODAY)
     assert caller == {"tracker_id": 1}
+    assert len(seen) == 3
+    assert all(f.get("tracker_id") == 1 and "leaked" not in f for f in seen)
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "key", ["project_id", "status_id", "closed_on", "sort", "limit", "offset"]
+    "key",
+    ["project_id", "status_id", "closed_on", "start_date", "sort", "limit", "offset"],
 )
 async def test_reserved_filter_keys_rejected_before_any_call(key):
     payload, issues = await _build(_resp([]), [], _resp([]), filters={key: 1})
@@ -636,7 +667,9 @@ async def test_truncated_from_either_query():
 @pytest.mark.asyncio
 async def test_all_undated_truncated_project_shows_empty_state_payload():
     undated = [_iss(id=i) for i in range(250)]
-    payload, _ = await _build(_resp(undated, has_next=True), [], _resp([]))
+    payload, _ = await _build(
+        _resp([]), [], _resp([]), undated_resp=_resp(undated, has_next=True)
+    )
     assert payload["groups"] == []
     assert payload["unscheduled"] == 250
     assert payload["truncated"] is True
@@ -793,3 +826,33 @@ async def test_both_tools_delegate_to_builder():
     assert a == b == {"ok": True}
     assert builder.await_args_list[0].args == ("web", "2026-07-01", None, None)
     assert builder.await_args_list[1].args == ("web", None, None, {"tracker_id": 1})
+
+
+@pytest.mark.asyncio
+async def test_dated_issues_kept_when_undated_overflow():
+    dated = _iss(id=1, start_date="2026-09-10", due_date="2026-09-20")
+    undated = [_iss(id=i) for i in range(100, 350)]
+    payload, _ = await _build(
+        _resp([dated]), [], _resp([]), undated_resp=_resp(undated, has_next=True)
+    )
+    assert [r["id"] for r in payload["groups"][0]["rows"]] == [1]
+    assert payload["unscheduled"] == 250
+    assert payload["truncated"] is True
+
+
+@pytest.mark.asyncio
+async def test_undated_query_rows_can_still_draw_markers():
+    due_only = _iss(id=5, due_date="2026-09-20")
+    payload, _ = await _build(_resp([]), [], _resp([]), undated_resp=_resp([due_only]))
+    row = payload["groups"][0]["rows"][0]
+    assert (row["id"], row["kind"]) == (5, "marker")
+
+
+@pytest.mark.asyncio
+async def test_undated_query_error_is_partial():
+    dated = _iss(id=1, start_date="2026-09-10", due_date="2026-09-20")
+    payload, _ = await _build(
+        _resp([dated]), [], _resp([]), undated_resp={"error": "boom"}
+    )
+    assert payload["partial"] is True
+    assert [g["key"] for g in payload["groups"]] == ["none"]
