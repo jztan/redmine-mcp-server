@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 from typing import Annotated, Any, Dict, List, Literal, Optional, Set, Union
 
 from pydantic import Field
@@ -388,6 +389,72 @@ def _search_needs_hydration(fields: Optional[List[str]]) -> bool:
     return any(f not in _SEARCH_API_NATIVE_FIELDS for f in fields)
 
 
+# The issue id in a search result's `url`. Not anchored, so a Redmine under a
+# sub-URI (`https://host/redmine/issues/42`) still matches.
+_SEARCH_URL_ISSUE_ID = re.compile(r"/issues/(\d+)")
+
+
+def _search_row_value(row: Any, key: str) -> Any:
+    """Read a key off a search row as Redmine sent it.
+
+    Goes through ``raw()`` when there is one: on a python-redmine resource
+    ``url`` is a property built from ``id``, not the ``url`` in the payload.
+    """
+    raw = getattr(row, "raw", None)
+    if callable(raw):
+        try:
+            payload = raw()
+        except Exception:
+            payload = None
+        if isinstance(payload, dict):
+            return payload.get(key)
+    return getattr(row, key, None)
+
+
+def _search_result_issue_id(row: Any) -> Any:
+    """Return the real issue id of a search row.
+
+    Easy Redmine offsets the ``id`` in /search.json per entity type (issues
+    by 300000000), while ``url`` keeps the real one. Read it from ``url``
+    once any query or fragment is gone, and fall back to ``id``.
+    """
+    url = _search_row_value(row, "url")
+    if isinstance(url, str):
+        path = url.split("#", 1)[0].split("?", 1)[0]
+        match = _SEARCH_URL_ISSUE_ID.search(path)
+        if match:
+            return int(match.group(1))
+    return getattr(row, "id", None)
+
+
+def _search_title_subject(title: str, issue_id: Any) -> str:
+    """Strip the stock ``Tracker #id (Status): `` prefix off a search title.
+
+    Only a prefix carrying the row's own id is stripped: tracker and status
+    names can hold spaces and parentheses, so a looser pattern could eat
+    part of the subject. Easy Redmine sends the plain subject, left as is.
+    """
+    prefix = re.match(rf".*?#{issue_id} \(.*?\): ", title, re.DOTALL)
+    return title[prefix.end() :] if prefix else title
+
+
+class _SparseSearchRow:
+    """A search row that was not hydrated, with its real id and a subject.
+
+    Everything else is read from the row as /search.json returned it.
+    """
+
+    def __init__(self, row: Any) -> None:
+        self._row = row
+        self.id = _search_result_issue_id(row)
+        title = _search_row_value(row, "title")
+        if isinstance(title, str):
+            self.subject = _search_title_subject(title, self.id)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._row, name)
+
+
 def _hydrate_search_results(search_results: List[Any]) -> List[Any]:
     """Re-fetch search hits via /issues.json so structured fields populate.
 
@@ -397,21 +464,21 @@ def _hydrate_search_results(search_results: List[Any]) -> List[Any]:
     matching ids and substitutes the full record where available.
 
     Preserves the original search ordering. Falls back per-issue to the
-    sparse search result for any id missing from the hydration response.
-    On any unexpected error, returns the original list unchanged so the
-    caller never loses data.
+    sparse search result for any id missing from the hydration response,
+    with the real id and a subject taken from its title. On any unexpected
+    error, returns the sparse rows so the caller never loses data.
     """
     if not search_results:
         return search_results
 
     ids: List[Any] = []
     for issue in search_results:
-        issue_id = getattr(issue, "id", None)
+        issue_id = _search_result_issue_id(issue)
         if issue_id is not None:
             ids.append(issue_id)
 
     if not ids:
-        return search_results
+        return [_SparseSearchRow(issue) for issue in search_results]
 
     hydrated_by_id: Dict[Any, Any] = {}
     try:
@@ -430,12 +497,20 @@ def _hydrate_search_results(search_results: List[Any]) -> List[Any]:
                     hydrated_by_id[full_id] = full_issue
     except Exception as e:
         logging.warning(f"Failed to hydrate search results, returning sparse data: {e}")
-        return search_results
+        return [_SparseSearchRow(issue) for issue in search_results]
 
-    return [
-        hydrated_by_id.get(getattr(issue, "id", None), issue)
-        for issue in search_results
-    ]
+    missing = len(set(ids) - set(hydrated_by_id))
+    if missing:
+        logging.warning(
+            f"Hydration returned {len(ids) - missing} of {len(ids)} search "
+            f"results, returning sparse data for the other {missing}"
+        )
+
+    rows: List[Any] = []
+    for issue in search_results:
+        full_issue = hydrated_by_id.get(_search_result_issue_id(issue))
+        rows.append(full_issue if full_issue is not None else _SparseSearchRow(issue))
+    return rows
 
 
 # Top-level keys of an issue payload that `_issue_to_dict` serializes itself.
@@ -477,7 +552,7 @@ _ISSUE_MAPPED_KEYS = frozenset(
 # `unmapped_fields`, where it would sidestep the journal pagination in
 # `get_redmine_issue`.
 # Keys the search endpoint puts on its own result rows. `_hydrate_search_results`
-# returns those sparse rows unchanged when the hydrating fetch fails, and their
+# returns those sparse rows when the hydrating fetch fails or misses, and their
 # `raw()` still carries these three -- stock Redmine fields that would otherwise
 # be reported as plugin additions.
 _SEARCH_RESULT_KEYS = frozenset({"title", "url", "datetime"})
@@ -1813,6 +1888,8 @@ def search_redmine_issues(
             logging.debug(
                 f"Hydrated {len(issues_list)} search results via /issues.json"
             )
+        else:
+            issues_list = [_SparseSearchRow(issue) for issue in issues_list]
 
         # Convert to dictionaries with optional field selection
         result_issues = [
