@@ -309,3 +309,135 @@ def test_issue_row_unassigned_and_missing_status():
     issue = _iss(assigned_to=None, status=None, due_date="2026-09-30")
     _, row = tl._issue_row(issue, False, None, TODAY, WS, WE)
     assert row["assigned_to"] is None and row["status"] is None
+
+
+def _row(id, start, end="2026-10-01", state="planned"):
+    return {"type": "issue", "id": id, "start": start, "end": end, "state": state}
+
+
+def _ver(id, name, due, status="open", description=""):
+    return {
+        "id": id,
+        "name": name,
+        "due_date": due,
+        "status": status,
+        "description": description,
+    }
+
+
+def _ref(id, name):
+    return {"id": id, "name": name}
+
+
+def test_group_rows_orders_versions_then_no_version_then_done():
+    versions = [
+        _ver(2, "v3.0", "2026-11-20"),
+        _ver(
+            1,
+            "v2.5",
+            "2026-10-10",
+            description="<insecure-content-ab>\nApps\n</insecure-content-ab>",
+        ),
+        _ver(3, "v9", None),
+        _ver(0, "v2.4", "2026-09-05", status="closed"),
+    ]
+    entries = [
+        (_row(10, "2026-10-01"), _ref(2, "v3.0"), False),
+        (_row(11, "2026-09-10"), _ref(1, "v2.5"), False),
+        (_row(12, "2026-09-12"), _ref(3, "v9"), False),
+        (_row(13, "2026-09-15"), None, False),
+        (_row(14, "2026-09-01", state="done"), _ref(0, "v2.4"), True),
+        (_row(15, "2026-09-02", state="done"), None, True),
+    ]
+    groups = tl._group_rows(entries, versions, WS, WE)
+    assert [g["key"] for g in groups] == [
+        "version:1",
+        "version:2",
+        "version:3",
+        "none",
+        "done",
+    ]
+    assert groups[0]["title"] == "v2.5"
+    assert groups[0]["description"].startswith("<insecure-content-ab>")
+    assert groups[2]["description"] is None
+    assert groups[3]["title"] == "No version"
+    assert groups[4]["title"] == "Done"
+    # Version group: issues, then its milestone last.
+    assert [r["type"] for r in groups[0]["rows"]] == ["issue", "milestone"]
+    assert groups[0]["rows"][1] == {
+        "type": "milestone",
+        "version_id": 1,
+        "label": "v2.5 release",
+        "date": "2026-10-10",
+        "closed": False,
+        "in_window": True,
+    }
+    # Undated version: no milestone row.
+    assert [r["type"] for r in groups[2]["rows"]] == ["issue"]
+    # Done: closed version's rows + milestone, then unversioned closed rows.
+    assert [
+        (r["type"], r.get("id") or r.get("version_id")) for r in groups[4]["rows"]
+    ] == [
+        ("issue", 14),
+        ("milestone", 0),
+        ("issue", 15),
+    ]
+    assert groups[4]["rows"][1]["closed"] is True
+
+
+def test_group_rows_sorts_issues_by_start_end_id():
+    versions = [_ver(1, "v1", "2026-10-10")]
+    entries = [
+        (_row(3, "2026-09-10", "2026-09-20"), _ref(1, "v1"), False),
+        (_row(2, "2026-09-10", "2026-09-15"), _ref(1, "v1"), False),
+        (_row(1, "2026-09-12", "2026-09-13"), _ref(1, "v1"), False),
+    ]
+    rows = tl._group_rows(entries, versions, WS, WE)[0]["rows"]
+    assert [r.get("id") for r in rows[:3]] == [2, 3, 1]
+
+
+def test_group_rows_hides_versions_without_rows():
+    versions = [_ver(1, "shared", "2026-10-01"), _ver(2, "v2", "2026-10-02")]
+    entries = [(_row(1, "2026-09-10"), _ref(2, "v2"), False)]
+    groups = tl._group_rows(entries, versions, WS, WE)
+    assert [g["key"] for g in groups] == ["version:2"]
+
+
+def test_group_rows_milestone_outside_window_has_no_diamond():
+    versions = [_ver(1, "v1", "2027-03-01")]
+    entries = [(_row(1, "2026-09-10"), _ref(1, "v1"), False)]
+    ms = tl._group_rows(entries, versions, WS, WE)[0]["rows"][-1]
+    assert ms["type"] == "milestone" and ms["in_window"] is False
+
+
+def test_group_rows_closed_issue_in_open_version_stays_there():
+    versions = [_ver(1, "v1", "2026-10-10")]
+    entries = [(_row(1, "2026-09-10", state="done"), _ref(1, "v1"), True)]
+    groups = tl._group_rows(entries, versions, WS, WE)
+    assert [g["key"] for g in groups] == ["version:1"]
+
+
+def test_group_rows_open_issue_in_closed_version_goes_to_done():
+    versions = [_ver(1, "v1", "2026-09-05", status="closed")]
+    entries = [(_row(1, "2026-09-10", state="in_progress"), _ref(1, "v1"), False)]
+    groups = tl._group_rows(entries, versions, WS, WE)
+    assert [g["key"] for g in groups] == ["done"]
+    assert groups[0]["rows"][0]["state"] == "in_progress"
+
+
+def test_group_rows_foreign_version_titled_from_issue_ref():
+    # e.g. a subproject version, or the versions query failed.
+    entries = [(_row(1, "2026-09-10"), _ref(77, "sub-v1"), False)]
+    groups = tl._group_rows(entries, [], WS, WE)
+    assert groups == [
+        {
+            "key": "version:77",
+            "title": "sub-v1",
+            "description": None,
+            "rows": [entries[0][0]],
+        }
+    ]
+
+
+def test_group_rows_empty():
+    assert tl._group_rows([], [_ver(1, "v1", "2026-10-01")], WS, WE) == []

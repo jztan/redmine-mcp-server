@@ -193,3 +193,89 @@ def _issue_row(
         "clipped_start": span["start"] < win_start,
         "clipped_end": span["end"] > win_end,
     }
+
+
+def _group_rows(
+    entries: List[Tuple[Dict[str, Any], Any, bool]],
+    versions: List[Dict[str, Any]],
+    win_start: date,
+    win_end: date,
+) -> List[Dict[str, Any]]:
+    """Group issue rows by version, then No version, then one Done group.
+
+    ``entries`` holds ``(row, fixed_version_ref, closed)``. Only versions
+    with at least one row get a group, so shared versions with no work here
+    never show as empty groups. A version's milestone row follows its
+    issues; a version without a due date has no milestone.
+    """
+    by_id = {v.get("id"): v for v in versions}
+    buckets: Dict[Any, List[Dict[str, Any]]] = {}
+    refs: Dict[Any, Dict[str, Any]] = {}
+    none_open: List[Dict[str, Any]] = []
+    none_closed: List[Dict[str, Any]] = []
+    for row, ref, closed in entries:
+        vid = ref.get("id") if isinstance(ref, dict) else None
+        if vid is None:
+            (none_closed if closed else none_open).append(row)
+            continue
+        buckets.setdefault(vid, []).append(row)
+        refs.setdefault(vid, ref)
+
+    def sort_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        return sorted(rows, key=lambda r: (r["start"], r["end"], r.get("id") or 0))
+
+    def version_name(vid: Any) -> str:
+        return (by_id.get(vid) or refs[vid]).get("name") or ""
+
+    def order_key(vid: Any) -> Tuple[bool, str, str]:
+        due = (by_id.get(vid) or {}).get("due_date")
+        return (due is None, due or "", version_name(vid))
+
+    def version_rows(vid: Any) -> List[Dict[str, Any]]:
+        rows = sort_rows(buckets[vid])
+        v = by_id.get(vid)
+        due = _parse_day(v.get("due_date")) if v else None
+        if due is not None:
+            rows.append(
+                {
+                    "type": "milestone",
+                    "version_id": vid,
+                    "label": f"{version_name(vid)} release",
+                    "date": due.isoformat(),
+                    "closed": v.get("status") == "closed",
+                    "in_window": win_start <= due <= win_end,
+                }
+            )
+        return rows
+
+    def is_closed(vid: Any) -> bool:
+        return (by_id.get(vid) or {}).get("status") == "closed"
+
+    groups: List[Dict[str, Any]] = []
+    for vid in sorted((v for v in buckets if not is_closed(v)), key=order_key):
+        groups.append(
+            {
+                "key": f"version:{vid}",
+                "title": version_name(vid),
+                "description": (by_id.get(vid) or {}).get("description") or None,
+                "rows": version_rows(vid),
+            }
+        )
+    if none_open:
+        groups.append(
+            {
+                "key": "none",
+                "title": "No version",
+                "description": None,
+                "rows": sort_rows(none_open),
+            }
+        )
+    done_rows: List[Dict[str, Any]] = []
+    for vid in sorted((v for v in buckets if is_closed(v)), key=order_key):
+        done_rows.extend(version_rows(vid))
+    done_rows.extend(sort_rows(none_closed))
+    if done_rows:
+        groups.append(
+            {"key": "done", "title": "Done", "description": None, "rows": done_rows}
+        )
+    return groups
