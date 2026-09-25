@@ -58,30 +58,35 @@
   }
   .cmd .p { color: #6f6a64; }
 
-  /* Three live apps, fanned: the timeline in front, the board and the
-     dashboard behind it. Every card sits fully in frame; cropping one
-     mid-card read as an accident rather than a deliberate bleed. */
-  .right { position: relative; flex: 1; height: 100%; }
-  .stack { position: absolute; inset: 0; }
-  .shot {
-    position: absolute; border-radius: 12px; overflow: hidden;
-    border: 1px solid rgba(255,255,255,0.16); background: #fff;
-    box-shadow: 0 26px 70px rgba(0,0,0,0.55);
+  /* The agent's tool loop is the product, so it gets the panel. The apps
+     and the auth options are footnotes under it, not the headline. */
+  .right { position: relative; flex: 1; height: 100%; display: flex; flex-direction: column;
+    justify-content: center; align-items: flex-end; gap: 18px; }
+  .term {
+    width: 500px; border-radius: 14px; overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.13); background: #161514;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.55);
+    font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 16.5px; line-height: 1.62;
   }
-  .shot img { display: block; width: 100%; height: auto; }
-  .shot.back { filter: brightness(0.78) saturate(0.9); }
-  .shot.board { width: 330px; top: 70px; right: 6px; transform: rotate(4deg); }
-  .shot.dash { width: 262px; top: 96px; left: 4px; transform: rotate(-5deg); }
-  .shot.front { width: 392px; top: 104px; left: 108px; z-index: 2;
-    box-shadow: 0 34px 90px rgba(0,0,0,0.7); }
-  /* The badge has to live outside the frame: the frame clips to its radius. */
-  .badge {
-    position: absolute; top: 88px; left: 92px; z-index: 3;
-    font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 12px;
-    letter-spacing: 0.08em; text-transform: uppercase; color: #ffffff;
-    background: #0071e3; border-radius: 980px; padding: 6px 14px;
-    box-shadow: 0 8px 24px rgba(0, 113, 227, 0.45);
-  }
+  .term-bar { display: flex; align-items: center; gap: 8px; padding: 12px 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.08); color: #8a857f; font-size: 13.5px; }
+  .term-bar i { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
+  .term-bar .t { margin-left: 8px; }
+  .term-body { padding: 16px 20px 18px; color: #e8e6e3; }
+  .term-body .prompt { color: #ffffff; margin-bottom: 4px; }
+  .term-body .call { display: flex; gap: 10px; }
+  .term-body .call::before { content: ""; flex: none; width: 9px; height: 9px; margin-top: 9px;
+    border-radius: 50%; background: #d97757; }
+  .term-body .fn { color: #ffffff; }
+  .term-body .arg { color: #9b958e; }
+  .term-body .out { color: #9b958e; padding-left: 19px; margin-bottom: 2px; }
+  .term-body .out::before { content: "\2514\00a0\00a0"; color: #5f5a55; }
+  .notes { width: 500px; display: flex; flex-direction: column; gap: 10px; }
+  .note { display: flex; align-items: center; gap: 5px; flex-wrap: nowrap; white-space: nowrap;
+    font-size: 14.5px; color: #a9a5a0; }
+  .note .k { color: #e8e6e3; font-weight: 600; margin-right: 2px; }
+  .chip { font-size: 11.5px; color: #e8e6e3; padding: 3px 8px; border-radius: 980px;
+    border: 1px solid rgba(255,255,255,0.16); background: rgba(255,255,255,0.05); }
 </style>
 </head>
 <body>
@@ -94,18 +99,34 @@
       <h1>Your AI shouldn't just read tickets. It works them.</h1>
       <p class="sub">
         An MCP server that lets <b>Claude Code</b> &amp; other agents triage, update, and close
-        <b>Redmine</b> issues, with a live Kanban board, dashboard, and
-        timeline in the chat.
+        <b>Redmine</b> issues.
       </p>
       <div class="cmd"><span class="p">$</span> pip install redmine-mcp-server</div>
     </div>
 
     <div class="right">
-      <div class="stack">
-        <div class="shot back dash"><img src="../pages/project-dashboard.png" alt="" /></div>
-        <div class="shot back board"><img src="../pages/triage-board-kanban.png" alt="" /></div>
-        <span class="badge">MCP Apps</span>
-        <div class="shot front"><img src="../pages/project-timeline.png" alt="" /></div>
+      <div class="term">
+        <div class="term-bar">
+          <i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i>
+          <span class="t">claude &middot; redmine-mcp-server</span>
+        </div>
+        <div class="term-body">
+          <div class="prompt">&gt; triage the overdue issues in Cartly</div>
+          <div class="call"><span><span class="fn">list_redmine_issues</span><span class="arg">(status: "open", overdue)</span></span></div>
+          <div class="out">2 issues &middot; #188, #307</div>
+          <div class="call"><span><span class="fn">get_redmine_attachment</span><span class="arg">(7012)</span></span></div>
+          <div class="out">downloaded promo-500-trace.log</div>
+          <div class="call"><span><span class="fn">update_redmine_issue</span><span class="arg">(188, &hellip;)</span></span></div>
+          <div class="out">#188 &rarr; In Progress &middot; assigned Maya</div>
+          <div class="call"><span><span class="fn">update_redmine_issue</span><span class="arg">(307, notes: &hellip;)</span></span></div>
+          <div class="out">comment added &middot; asked Sam for repro steps</div>
+        </div>
+      </div>
+      <div class="notes">
+        <div class="note"><span class="k">Enterprise auth</span>
+          <span class="chip">OAuth2</span><span class="chip">OAuth proxy</span>
+          <span class="chip">Per-user API keys</span><span class="chip">Read-only mode</span></div>
+        <div class="note">+ a live Kanban board, dashboard, and timeline in the chat</div>
       </div>
     </div>
   </div>
