@@ -669,3 +669,64 @@ async def test_read_only_reflected():
     with patch.object(tl, "_is_read_only_mode", return_value=True):
         payload, _ = await _build(_resp([]), [], _resp([]))
     assert payload["read_only"] is True
+
+
+from importlib.resources import files  # noqa: E402
+
+
+def _timeline_html():
+    return (
+        files("redmine_mcp_server.apps._ui")
+        .joinpath("project_timeline.html")
+        .read_text(encoding="utf-8")
+    )
+
+
+def test_timeline_html_speaks_extapps_protocol():
+    html = _timeline_html()
+    for token in [
+        "ui/initialize",
+        "ui/notifications/initialized",
+        "ui/notifications/tool-result",
+        "ui/notifications/tool-input",
+        "ui/notifications/size-changed",
+        "get_project_timeline_data",
+        "2026-01-26",
+        "postMessage",
+        "read_only",
+        "start_date",
+        "end_date",
+    ]:
+        assert token in html, token
+
+
+def test_timeline_html_never_uses_innerhtml():
+    assert "innerHTML" not in _timeline_html()
+
+
+def test_timeline_html_reuses_dashboard_design_tokens():
+    html = _timeline_html()
+    for token in [
+        "--accent",
+        "--panel-2",
+        "--pos",
+        "--neg",
+        'data-theme="dark"',
+        "prefers-color-scheme: dark",
+        'class="shell"',
+        'class="stamp"',
+    ]:
+        assert token in html, token
+
+
+def test_timeline_html_is_self_contained():
+    html = _timeline_html()
+    for bad in ["<link", 'src="http', 'src="//', 'href="http', "@import", "cdn."]:
+        assert bad not in html, bad
+
+
+def test_timeline_html_unwraps_version_descriptions():
+    html = _timeline_html()
+    assert "insecure-content-" in html  # the anchored unwrap regex
+    assert "\\u2014" in html  # separator written as an escape, not a literal
+    assert "\u2014" not in html
