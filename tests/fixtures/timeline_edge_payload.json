@@ -1,0 +1,41 @@
+{
+  "project": {"id": 1, "name": "testing project1"},
+  "window": {"start": "2026-08-01", "end": "2026-10-31", "today": "2026-09-25", "auto": false, "label": "Aug - Oct 2026"},
+  "groups": [
+    {
+      "key": "version:1", "title": "v1.0",
+      "description": "<insecure-content-2c3d4e5f6a7b8c9d>\nFirst line wins\nsecond line is ignored\n</insecure-content-2c3d4e5f6a7b8c9d>",
+      "rows": [
+        {"type": "issue", "id": 1, "subject": "<img src=x onerror=alert(1)> and a very long subject that goes on and on past any label width", "status": "New", "assigned_to": null, "start": "2026-07-01", "end": "2026-12-20", "kind": "bar", "state": "in_progress", "done_ratio": 10, "overdue": false, "end_source": "due", "clipped_start": true, "clipped_end": true},
+        {"type": "issue", "id": 2, "subject": "Overdue work", "status": "In Progress", "assigned_to": "Alice", "start": "2026-08-10", "end": "2026-09-20", "kind": "bar", "state": "in_progress", "done_ratio": 60, "overdue": true, "end_source": "due", "clipped_start": false, "clipped_end": false},
+        {"type": "issue", "id": 3, "subject": "Ends at version date", "status": "New", "assigned_to": null, "start": "2026-10-02", "end": "2026-10-20", "kind": "bar", "state": "planned", "done_ratio": 0, "overdue": false, "end_source": "version", "clipped_start": false, "clipped_end": false},
+        {"type": "issue", "id": 4, "subject": "Tiny", "status": "New", "assigned_to": null, "start": "2026-10-05", "end": "2026-10-06", "kind": "bar", "state": "planned", "done_ratio": 0, "overdue": false, "end_source": "due", "clipped_start": false, "clipped_end": false},
+        {"type": "issue", "id": 5, "subject": "Start-only marker", "status": "New", "assigned_to": null, "start": "2026-10-10", "end": "2026-10-10", "kind": "marker", "state": "planned", "done_ratio": 0, "overdue": false, "end_source": "start", "clipped_start": false, "clipped_end": false},
+        {"type": "milestone", "version_id": 1, "label": "v1.0 release", "date": "2026-10-20", "closed": false, "in_window": true}
+      ]
+    },
+    {
+      "key": "version:2", "title": "v2.0",
+      "description": "Plain description without a wrapper that is quite long indeed",
+      "rows": [
+        {"type": "issue", "id": 6, "subject": "Due-only marker overdue", "status": "New", "assigned_to": null, "start": "2026-09-01", "end": "2026-09-01", "kind": "marker", "state": "in_progress", "done_ratio": 0, "overdue": true, "end_source": "due", "clipped_start": false, "clipped_end": false},
+        {"type": "milestone", "version_id": 2, "label": "v2.0 release", "date": "2027-02-01", "closed": false, "in_window": false}
+      ]
+    },
+    {
+      "key": "none", "title": "No version", "description": null,
+      "rows": [
+        {"type": "issue", "id": 7, "subject": "Unversioned", "status": "New", "assigned_to": null, "start": "2026-09-01", "end": "2026-09-30", "kind": "bar", "state": "in_progress", "done_ratio": 0, "overdue": false, "end_source": "due", "clipped_start": false, "clipped_end": false}
+      ]
+    },
+    {
+      "key": "done", "title": "Done", "description": null,
+      "rows": [
+        {"type": "issue", "id": 8, "subject": "Closed without due", "status": "Closed", "assigned_to": null, "start": "2026-08-03", "end": "2026-08-20", "kind": "bar", "state": "done", "done_ratio": 100, "overdue": false, "end_source": "closed_on", "clipped_start": false, "clipped_end": false},
+        {"type": "issue", "id": 9, "subject": "Closed marker", "status": "Closed", "assigned_to": null, "start": "2026-08-25", "end": "2026-08-25", "kind": "marker", "state": "done", "done_ratio": 100, "overdue": false, "end_source": "closed_on", "clipped_start": false, "clipped_end": false}
+      ]
+    }
+  ],
+  "unscheduled": 7, "truncated": true, "partial": true,
+  "generated_at": "2026-09-25T08:00:00+00:00", "read_only": true
+}

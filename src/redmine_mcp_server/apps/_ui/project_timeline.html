@@ -35,8 +35,9 @@
         --prio-low: #94a3b8;
         --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
         --today: #e5653a;
-        --stripe-a: rgba(148, 163, 184, 0.34);
-        --stripe-b: rgba(148, 163, 184, 0.16);
+        --on-accent: #ffffff;
+        --stripe-a: rgba(148, 163, 184, 0.5);
+        --stripe-b: rgba(148, 163, 184, 0.24);
       }
       @media (prefers-color-scheme: dark) {
         :root {
@@ -63,6 +64,7 @@
           --prio-normal: #73a7ff;
           --prio-low: #7c899c;
           --today: #ff8a5c;
+          --on-accent: #0b1a33;
           --stripe-a: rgba(148, 163, 184, 0.3);
           --stripe-b: rgba(148, 163, 184, 0.12);
         }
@@ -88,8 +90,9 @@
         --prio-low: #94a3b8;
         --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
         --today: #e5653a;
-        --stripe-a: rgba(148, 163, 184, 0.34);
-        --stripe-b: rgba(148, 163, 184, 0.16);
+        --on-accent: #ffffff;
+        --stripe-a: rgba(148, 163, 184, 0.5);
+        --stripe-b: rgba(148, 163, 184, 0.24);
       }
       :root[data-theme="dark"] {
         --shell: rgba(20, 24, 30, 0.55);
@@ -111,6 +114,7 @@
         --prio-normal: #73a7ff;
         --prio-low: #7c899c;
         --today: #ff8a5c;
+        --on-accent: #0b1a33;
         --stripe-a: rgba(148, 163, 184, 0.3);
         --stripe-b: rgba(148, 163, 184, 0.12);
       }
@@ -148,24 +152,26 @@
 
       .head {
         display: flex;
-        align-items: flex-start;
+        align-items: center;
         justify-content: space-between;
         gap: 16px;
-        padding: 22px 24px 18px;
+        padding: 14px 20px;
         border-bottom: 1px solid var(--border);
       }
       .head-copy {
         min-width: 0;
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
       }
       .head h1 {
         margin: 0;
-        font-size: 20px;
+        font-size: 16px;
         font-weight: 700;
         letter-spacing: -0.03em;
       }
       .head .sub {
-        margin-top: 4px;
-        font-size: 12px;
+        font-size: 12.5px;
         color: var(--text-2);
         font-variant-numeric: tabular-nums;
         white-space: nowrap;
@@ -229,8 +235,14 @@
       }
 
       .body {
-        background: var(--panel);
-        padding: 18px;
+        padding: 0;
+      }
+      .body > .notice,
+      .body > .tl-detail {
+        margin: 12px 16px 0;
+      }
+      .body > #root > .panel {
+        margin: 16px;
       }
       .notice {
         margin: 0 0 14px;
@@ -291,9 +303,6 @@
       .tl {
         --label-w: 165px;
         position: relative;
-        background: var(--card);
-        border: 1px solid var(--border);
-        border-radius: 16px;
         overflow: hidden;
       }
       .tl-axis {
@@ -314,6 +323,8 @@
         align-items: flex-end;
         justify-content: center;
         padding-bottom: 9px;
+        overflow: hidden;
+        white-space: nowrap;
         font-size: 12.5px;
         font-weight: 600;
         color: var(--text-2);
@@ -329,7 +340,7 @@
       .tl-divider {
         position: absolute;
         top: 20px;
-        bottom: 0;
+        height: 28px;
         width: 1px;
         background: var(--border);
       }
@@ -414,6 +425,9 @@
       .marker-in_progress {
         background: var(--accent);
       }
+      .bar-in_progress {
+        color: var(--on-accent);
+      }
       .bar-done,
       .marker-done {
         background: var(--pos);
@@ -434,7 +448,16 @@
         box-shadow: 0 0 0 1.5px var(--neg);
       }
       .bar.inferred {
-        border-right: 2px dashed var(--card);
+        -webkit-mask-image: linear-gradient(
+          to right,
+          #000 calc(100% - 16px),
+          rgba(0, 0, 0, 0.25)
+        );
+        mask-image: linear-gradient(
+          to right,
+          #000 calc(100% - 16px),
+          rgba(0, 0, 0, 0.25)
+        );
       }
       .bar.clip-start {
         clip-path: polygon(6px 0, 100% 0, 100% 100%, 6px 100%, 0 50%);
@@ -524,6 +547,13 @@
         }
         .tl {
           --label-w: 120px;
+        }
+        .body {
+          padding-left: 0;
+          padding-right: 0;
+        }
+        .head {
+          align-items: flex-start;
         }
       }
     </style>
@@ -755,7 +785,6 @@
           var months = el("div", "tl-months");
           var cur = new Date(parseDay(w.start));
           var endMs = parseDay(w.end);
-          var first = true;
           while (cur.getTime() <= endMs) {
             var y = cur.getUTCFullYear();
             var m = cur.getUTCMonth();
@@ -765,14 +794,13 @@
             var right = sc.clamp(((next.getTime() - parseDay(w.start)) /
               (endMs + DAY - parseDay(w.start))) * 100);
             var cell = el("div", "tl-month", MONTHS[m]);
+            cell.setAttribute("data-short", MONTHS[m].slice(0, 3));
+            cell.setAttribute("data-long", MONTHS[m]);
             pctStyle(cell, left, right - left);
             months.appendChild(cell);
-            if (!first) {
-              var div = el("div", "tl-divider");
-              pctStyle(div, left);
-              overlay.appendChild(div);
-            }
-            first = false;
+            var div = el("div", "tl-divider");
+            pctStyle(div, left);
+            overlay.appendChild(div);
             cur = next;
           }
           var row = el("div", "tl-axis");
@@ -897,6 +925,12 @@
         }
 
         function fitLabels() {
+          rootEl.querySelectorAll(".tl-month").forEach(function (c) {
+            c.textContent = c.getAttribute("data-long");
+            if (c.scrollWidth > c.clientWidth) {
+              c.textContent = c.getAttribute("data-short");
+            }
+          });
           rootEl.querySelectorAll(".bar").forEach(function (b) {
             b.classList.remove("nolabel");
             if (b.scrollWidth > b.clientWidth) b.classList.add("nolabel");
