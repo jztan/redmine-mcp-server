@@ -1,4 +1,4 @@
-"""A custom field name that cannot be resolved is reported, not dropped (#ISSUE).
+"""A custom field name that cannot be resolved is reported, not dropped (#362).
 
 ``create_redmine_issue`` and ``update_redmine_issue`` resolve a name-keyed
 ``fields`` entry (``{"Department": "Engineering"}``) by reading

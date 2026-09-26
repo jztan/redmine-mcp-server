@@ -83,7 +83,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   needs and the `custom_fields` id form, and nothing is written. A lookup error
   on update, such as an ambiguous name, is also returned as itself rather than
   as an unexpected error in the update
-  ([#ISSUE](https://github.com/jztan/redmine-mcp-server/issues/ISSUE)).
+  ([#362](https://github.com/jztan/redmine-mcp-server/issues/362)).
 
 ## [2.17.0] - 2026-09-26
 ### Added
