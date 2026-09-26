@@ -7,6 +7,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Interactive `project-timeline` MCP App: the new `show_project_timeline` tool
+  renders a project's schedule as a timeline in clients that support the MCP
+  Apps extension. Issue bars run from start to due date, grouped by target
+  version, with a milestone diamond on each version's due date, a Today line,
+  and a Done section for work closed in the window. Clicking a bar or
+  milestone opens its details in a floating popover. An issue with no due date
+  ends at its version's due date, a closed one on the day it closed, and
+  issues with no dates at all are counted as unscheduled. `start_date` and
+  `end_date` set the window (at most 366 days; without them it fits the data,
+  within about 3 months of today), and `filters` takes the same Redmine
+  filters as `list_redmine_issues`. A Refresh action re-fetches through the
+  app-callable `get_project_timeline_data` tool. Read-only
+  ([#350](https://github.com/jztan/redmine-mcp-server/issues/350)).
 
 ## [2.17.0] - 2026-09-26
 ### Added
