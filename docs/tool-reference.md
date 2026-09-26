@@ -776,7 +776,7 @@ List all members (users and groups) of a Redmine project along with their assign
 **Parameters:**
 - `project_id` (integer or string, required): Project ID (numeric) or identifier (string)
 
-**Returns:** List of membership dictionaries containing user/group info and roles
+**Returns:** List of membership dictionaries containing user/group info and roles. A role that comes from a group the user belongs to, or from the parent project when this one inherits members, carries `inherited: true`; Redmine omits the key for a role held directly, and so does this tool. A role held both ways appears twice on the same row, once with the key and once without, so do not deduplicate roles by `id`.
 
 **Example:**
 ```json
@@ -786,7 +786,10 @@ List all members (users and groups) of a Redmine project along with their assign
     "user": {"id": 5, "name": "John Doe"},
     "group": null,
     "project": {"id": 10, "name": "My Project"},
-    "roles": [{"id": 3, "name": "Developer"}]
+    "roles": [
+      {"id": 3, "name": "Developer"},
+      {"id": 4, "name": "Manager", "inherited": true}
+    ]
   },
   {
     "id": 2,
@@ -870,7 +873,7 @@ Add, update, or remove a Redmine project membership.
 - `role_ids` (array of integers): Non-empty list of role IDs. Required for `action="add"` and `action="update"`. Use `list_redmine_roles` to discover valid IDs
 
 **Returns:**
-- `add`/`update`: membership dictionary (with `id`, `user`/`group`, `project`, `roles`)
+- `add`/`update`: membership dictionary (with `id`, `user`/`group`, `project`, `roles`), shaped like a `list_project_members` entry. `update` returns the whole membership as Redmine re-reads it, so an inherited role on it carries `inherited: true`
 - `remove`: `{"success": true, "deleted_membership_id": <id>}`
 - Error: `{"error": "..."}`
 

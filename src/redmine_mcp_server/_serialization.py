@@ -435,6 +435,47 @@ def _named_ref(obj: Any) -> Optional[Dict[str, Any]]:
     }
 
 
+def _membership_roles_to_list(raw_roles: Any) -> List[Dict[str, Any]]:
+    """Serialize the ``roles`` array of one membership, keeping ``inherited``.
+
+    Redmine renders each role as ``{id, name}`` and merges ``inherited =>
+    true`` onto it when its member role has an ``inherited_from`` -- a role
+    that comes from a group the user belongs to, or from the parent of a
+    subproject that inherits members. ``app/views/members/index.api.rsb``,
+    ``members/show.api.rsb`` and ``users/show.api.rsb`` all carry that line.
+    Redmine omits the key otherwise, so it is mirrored only when present --
+    a hard-coded ``inherited: false`` would be a claim Redmine never made,
+    and it is the one field that tells "holds Manager here" apart from "a
+    group or the parent project does".
+
+    Takes payload dicts (a user's ``include=memberships``) and python-redmine
+    ``Role`` resources (``ProjectMembership.roles``). A resource is read
+    through ``raw()``, python-redmine's accessor for the decoded payload, so
+    a key Redmine did not send reads as absent rather than as a default.
+    """
+    if raw_roles is None or isinstance(raw_roles, (str, bytes, dict)):
+        return []
+    try:
+        items = list(raw_roles)
+    except TypeError:
+        return []
+
+    roles: List[Dict[str, Any]] = []
+    for role in items:
+        entry = _named_ref(role)
+        if entry is None:
+            continue
+        if isinstance(role, dict):
+            payload: Any = role
+        else:
+            raw = getattr(role, "raw", None)
+            payload = raw() if callable(raw) else None
+        if isinstance(payload, dict) and "inherited" in payload:
+            entry["inherited"] = payload["inherited"]
+        roles.append(entry)
+    return roles
+
+
 def _safe_isoformat(val: Any) -> Optional[str]:
     """Return an ISO-8601 string for a date/datetime value.
 

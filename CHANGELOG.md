@@ -38,6 +38,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it
   ([#354](https://github.com/jztan/redmine-mcp-server/issues/354)).
 
+### Fixed
+- `list_project_members` and `manage_project_member(action="update")` dropped
+  Redmine's `inherited` flag from each role, so a role that comes from a group
+  or from the parent project read exactly like one held directly. The flag is
+  now kept where Redmine sends it and left out where it does not, as
+  `get_current_user(include_memberships=True)` already did
+  ([#356](https://github.com/jztan/redmine-mcp-server/issues/356)).
+
 ## [2.17.0] - 2026-09-26
 ### Added
 - A long description, note or wiki page can be changed without the model
