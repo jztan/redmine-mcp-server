@@ -522,7 +522,9 @@ async def list_project_issue_custom_fields(
         ``possible_values`` and ``trackers``. On failure, a dict with an
         ``"error"`` key is returned (callers should check
         ``isinstance(result, dict)`` to distinguish failure from an
-        empty list).
+        empty list). ``[]`` means the project has no issue custom fields
+        enabled; when Redmine's response leaves the array out, the result is
+        an error with ``code: "ISSUE_CUSTOM_FIELDS_UNREADABLE"``, never ``[]``.
 
     Why the six keys are unreadable: this tool reads
     ``GET /projects/{id}.json?include=issue_custom_fields``, which Redmine
@@ -593,14 +595,33 @@ async def list_project_issue_custom_fields(
             project = _get_redmine_client().project.get(
                 project_id, include="issue_custom_fields"
             )
-            # ResourceSet defines __len__ but not __bool__, so `or []` would
-            # construct every CustomField purely to test truthiness and then
-            # discard them. list() is still needed: __iter__ rebuilds each
-            # resource on every pass, and the sequence is walked more than once.
-            raw_custom_fields = getattr(project, "issue_custom_fields", None)
-            custom_fields = (
-                list(raw_custom_fields) if raw_custom_fields is not None else []
-            )
+            # Check the payload before touching the attribute: for a name in
+            # python-redmine's Project._includes, reading it when Redmine left
+            # it out re-fetches the project and then answers [] -- "no fields"
+            # for a response that said nothing about fields. See _included_list.
+            payload = project.raw()
+            if not isinstance(payload, dict) or not isinstance(
+                payload.get("issue_custom_fields"), list
+            ):
+                return {
+                    "error": (
+                        f"Redmine's response for project {project_id} did not "
+                        "include issue_custom_fields, so which issue custom "
+                        "fields it enables is unknown. This is not an empty "
+                        "list."
+                    ),
+                    "code": "ISSUE_CUSTOM_FIELDS_UNREADABLE",
+                    "hint": (
+                        "Redmine 6.1.4 and 7.0.1 leave this array out when the "
+                        "caller lacks the View issues permission on the "
+                        "project; earlier releases always send it. A custom "
+                        "field whose id is known can still be set with "
+                        'fields={"custom_fields": [{"id": N, "value": ...}]}.'
+                    ),
+                }
+            # list(): ResourceSet.__iter__ rebuilds each resource on every
+            # pass, and the sequence is walked more than once.
+            custom_fields = list(project.issue_custom_fields)
 
             if parsed_tracker_id is not None:
                 reason = _tracker_bindings_unreadable_reason(

@@ -501,7 +501,9 @@ List the ids and names of the issue custom fields enabled for a project.
 - `project_id` (integer or string, required): Project ID (numeric) or identifier (string)
 - `tracker_id` (integer, optional): Restrict output to fields applicable to the given tracker ID. Requires readable tracker bindings, which stock Redmine does not provide -- see below
 
-**Returns:** List of custom field metadata dictionaries
+**Returns:** List of custom field metadata dictionaries. `[]` means the project enables no issue custom fields.
+
+When Redmine's response leaves the `issue_custom_fields` array out, the tool returns an `error` with `code: "ISSUE_CUSTOM_FIELDS_UNREADABLE"` and a `hint` rather than `[]`, so "unknown" never looks like "none". Redmine 6.1.4 and 7.0.1 leave the array out for a caller without View issues on the project, so such a caller gets this error; earlier releases send the array whenever it is requested.
 
 **Example (stock Redmine):**
 ```json
