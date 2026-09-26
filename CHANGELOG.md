@@ -67,6 +67,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   case [#233](https://github.com/jztan/redmine-mcp-server/pull/233) left for
   when that shipped; earlier releases always send it when asked
   ([#364](https://github.com/jztan/redmine-mcp-server/issues/364)).
+- `manage_product` and `manage_document` read several fields under key names
+  their plugins do not send, the pattern
+  [#227](https://github.com/jztan/redmine-mcp-server/pull/227) fixed for
+  contacts. A product's `tags`, `created_on` and `updated_on` were empty for
+  every product, because the Products plugin renders `tag_list`, `created_at`
+  and `updated_at`; they are now read from those keys. A document's
+  `folder_id` was `null` on every `get`, because DMSF renders
+  `dmsf_folder_id`. `custom_fields`, writable through both tools, was never
+  returned: a product now carries it on every read, and a document on `get`
+  from its latest revision (`null` on a `list` row, whose endpoint renders
+  none). A product's `author` is returned as well
+  ([#ISSUE](https://github.com/jztan/redmine-mcp-server/issues/ISSUE)).
 
 ## [2.17.0] - 2026-09-26
 ### Added

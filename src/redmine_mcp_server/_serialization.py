@@ -288,11 +288,11 @@ def _custom_fields_to_list(resource: Any) -> List[Dict[str, Any]]:
     Redmine renders custom field values with the same
     ``render_api_custom_values`` helper on every resource that has them, and has
     already limited them to the values the caller may see, so one converter
-    serves the issue and contact serializers. The tools that reach a
-    plugin endpoint through ``engine.request`` hold the decoded JSON rather than
-    a resource, which is why a dict is read with ``get`` -- ``getattr`` on a
-    dict would silently report no custom fields at all, the same reason
-    ``_named_ref`` branches on the type.
+    serves the issue, contact, product and document serializers. The tools
+    that reach a plugin endpoint through ``engine.request`` hold the decoded
+    JSON rather than a resource, which is why a dict is read with ``get`` --
+    ``getattr`` on a dict would silently report no custom fields at all, the
+    same reason ``_named_ref`` branches on the type.
     """
     if isinstance(resource, dict):
         raw_custom_fields = resource.get("custom_fields")

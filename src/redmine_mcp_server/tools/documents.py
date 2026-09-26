@@ -69,6 +69,7 @@ from .._errors import _handle_redmine_error
 from .._offload import offloaded
 from .._serialization import (
     _REDMINE_API_PAGE_CAP,
+    _custom_fields_to_list,
     _safe_isoformat,
     wrap_insecure_content,
 )
@@ -120,6 +121,15 @@ def _document_to_dict(node: Dict[str, Any]) -> Dict[str, Any]:
     This serializer merges both shapes into one stable representation, falling
     back to the latest revision when a field is missing at the top level.
 
+    Two fields are read under the plugin's own key: the single shape renders
+    the parent folder as ``dmsf_folder_id`` (``dmsf_files/show.api.rsb``), not
+    ``folder_id``, and renders custom field values per revision, as
+    ``custom_fields`` on each ``dmsf_file_revisions`` entry. Both were
+    dropped, though ``custom_fields`` is writable through this tool. The list
+    shape renders no custom field values at all, so ``custom_fields`` is
+    ``None`` on a list row -- not requested of this endpoint, rather than
+    none -- and ``[]`` on a single document that has none.
+
     Per the wrap policy in #109: free-text fields (``description``) are
     wrapped in ``<insecure-content>`` boundary tags; structured-metadata
     fields (``filename``, ``name``, ``title``, ``author.name``) are
@@ -160,6 +170,13 @@ def _document_to_dict(node: Dict[str, Any]) -> Dict[str, Any]:
 
     filename = node.get("filename") or node.get("name") or ""
 
+    if latest:
+        custom_fields: Optional[List[Dict[str, Any]]] = _custom_fields_to_list(latest)
+    elif "custom_fields" in node:
+        custom_fields = _custom_fields_to_list(node)
+    else:
+        custom_fields = None
+
     return {
         "id": node.get("id"),
         "type": node.get("type"),
@@ -174,9 +191,10 @@ def _document_to_dict(node: Dict[str, Any]) -> Dict[str, Any]:
             node.get("size") if node.get("size") is not None else latest.get("size")
         ),
         "content_type": node.get("content_type") or latest.get("mime_type"),
-        "folder_id": node.get("folder_id"),
+        "folder_id": node.get("dmsf_folder_id") or node.get("folder_id"),
         "project_id": node.get("project_id"),
         "author": author,
+        "custom_fields": custom_fields,
         "created_on": _safe_isoformat(
             node.get("created_on") or latest.get("created_at")
         ),
