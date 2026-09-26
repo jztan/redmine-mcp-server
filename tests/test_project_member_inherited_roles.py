@@ -1,4 +1,4 @@
-"""Project membership roles keep Redmine's ``inherited`` flag (#ISSUE).
+"""Project membership roles keep Redmine's ``inherited`` flag (#356).
 
 Redmine's ``app/views/members/index.api.rsb`` and ``show.api.rsb`` merge
 ``inherited => true`` onto a role whose member role has an ``inherited_from``:
