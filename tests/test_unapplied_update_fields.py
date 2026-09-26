@@ -1,4 +1,4 @@
-"""``update_redmine_issue`` reports submitted fields Redmine discarded (#ISSUE).
+"""``update_redmine_issue`` reports submitted fields Redmine discarded (#368).
 
 ``Issue#safe_attributes=`` drops several kinds of write without a validation
 error -- a status the workflow does not allow (``attrs.delete('status_id')``

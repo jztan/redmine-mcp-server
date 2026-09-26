@@ -79,7 +79,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stored form is predictable are checked. A `status_name` that matches no
   status was dropped the same way and the rest written; it is now refused
   before anything is sent
-  ([#ISSUE](https://github.com/jztan/redmine-mcp-server/issues/ISSUE)).
+  ([#368](https://github.com/jztan/redmine-mcp-server/issues/368)).
 
 ## [2.17.0] - 2026-09-26
 ### Added
