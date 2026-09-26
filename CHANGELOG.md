@@ -67,6 +67,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   case [#233](https://github.com/jztan/redmine-mcp-server/pull/233) left for
   when that shipped; earlier releases always send it when asked
   ([#364](https://github.com/jztan/redmine-mcp-server/issues/364)).
+- `update_redmine_issue` reported a write Redmine had discarded as a success.
+  Redmine drops some fields without a validation error and saves the rest --
+  a status the workflow does not allow, a field the workflow makes read-only,
+  a custom field the user may not edit -- so the tool returned the unchanged
+  issue with nothing saying so. The response now carries `unapplied_fields`,
+  listing each submitted field the updated issue does not reflect (custom
+  fields as `cf_<id>`), and omits it when there is none, like
+  `unmapped_fields`. It comes from comparing the request with the issue the
+  tool already re-fetches, so it costs no extra request, and only fields whose
+  stored form is predictable are checked. A `status_name` that matches no
+  status was dropped the same way and the rest written; it is now refused
+  before anything is sent
+  ([#368](https://github.com/jztan/redmine-mcp-server/issues/368)).
 
 ## [2.17.0] - 2026-09-26
 ### Added

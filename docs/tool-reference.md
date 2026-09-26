@@ -1383,7 +1383,13 @@ A failed edit is reported with the index of the pair that failed and leaves the 
 - `attachments` (list): Metadata for each attached file (id, filename, filesize, content_url, etc.).
 - `journal_id` (integer): ID of the journal entry the attachments were placed on.
 
-**Note:** You can use either `status_id` or `status_name` in fields. When `status_name` is provided, the tool automatically resolves the corresponding status ID.
+`unapplied_fields` (list of strings): the submitted fields the updated issue does not reflect. Redmine discards some writes without an error and saves the rest — a status the workflow does not allow (`Issue#safe_attributes=` deletes `status_id` unconditionally and assigns it only when allowed), a tracker or project outside the allowed targets, a field the workflow makes read-only or the tracker disables, a date, priority or done ratio derived from subtasks, and a custom field the user may not edit. The call still succeeds, and anything else in it, such as a note, was written. Like `unmapped_fields`, the key is omitted when there is nothing to report.
+- Checked: the `*_id` fields (as integers; a project identifier, `"me"` or `"#12"` is not checked), `start_date` and `due_date` (as `YYYY-MM-DD`), `done_ratio`, `estimated_hours` given as a number, `is_private`, `subject`, `description` (ignoring line endings) and custom field values, compared as Redmine stores them.
+- Custom fields are reported as `cf_<id>`, including ones set by name. A status set through `status_name` is reported as `status_name`.
+- Not checked: `notes`, `private_notes`, `uploads`, `watcher_user_ids`, `deleted_attachment_ids`, `tag_list`, agile fields, extension keys, and a file custom field's upload token. The key's absence makes no claim about them.
+- No extra request: the comparison uses the issue the tool already re-fetches for its response.
+
+**Note:** You can use either `status_id` or `status_name` in fields. When `status_name` is provided, the tool automatically resolves the corresponding status ID. A `status_name` that matches no status is refused before anything is written, naming the statuses that exist.
 You can also update custom fields by name (for example `{"size": "S"}`) and the tool will resolve them to Redmine `custom_fields` entries using project custom-field metadata. You can still pass explicit `custom_fields` with field IDs.
 
 When `REDMINE_AGILE_ENABLED=true`, you can also set RedmineUP Agile fields, written via the Agile plugin endpoint:
