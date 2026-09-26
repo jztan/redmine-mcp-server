@@ -15,8 +15,11 @@ under it; that is why the fabricated defaults survived. The fakes here raise
 
 import os
 import sys
+from unittest.mock import patch
 
 import pytest
+from redminelib import Redmine
+from redminelib.engines import SyncEngine
 from redminelib.exceptions import ResourceAttrError
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -97,6 +100,10 @@ class Tracker:
 class FakeProject:
     def __init__(self, custom_fields):
         self.issue_custom_fields = custom_fields
+
+    def raw(self):
+        # The include's payload; only its presence is read from here.
+        return {"issue_custom_fields": list(self.issue_custom_fields)}
 
 
 class TestSerializerNeverInvents:
@@ -237,3 +244,88 @@ class TestTrackerFilterHonesty:
         result = await list_project_issue_custom_fields(project_id=41, tracker_id=5)
 
         assert result == []
+
+
+class _ProjectEngine(SyncEngine):
+    """Serves ``GET /projects/41.json`` as Redmine renders it, and counts.
+
+    ``fields`` is the ``issue_custom_fields`` array, or ``None`` for a response
+    that leaves it out even though it was asked for.
+    """
+
+    def __init__(self, **options):
+        super().__init__(**options)
+        self.calls = []
+        self.fields = None
+
+    def request(self, method, url, **kwargs):
+        include = (kwargs.get("params") or {}).get("include")
+        self.calls.append(include)
+        project = {"id": 41, "name": "Pipeline", "identifier": "pipeline"}
+        if self.fields is not None and "issue_custom_fields" in (include or ""):
+            project["issue_custom_fields"] = [dict(f) for f in self.fields]
+        return {"project": project}
+
+
+class TestOmittedIncludeIsNotEmpty:
+    """An omitted ``issue_custom_fields`` array is reported, not read as ``[]``.
+
+    The name is in python-redmine's ``Project._includes``, so reading the
+    attribute when the key is missing re-fetches the whole project and answers
+    ``[]`` -- indistinguishable from a project with no fields. Every released
+    Redmine sends the array when asked (6.1.1 through 7.0.0); 6.1-stable and
+    trunk leave it out for a caller without ``view_issues`` (#ISSUE).
+    """
+
+    @pytest.fixture
+    def engine(self):
+        client = Redmine(
+            "https://redmine.example.com", key="configured-key", engine=_ProjectEngine
+        )
+        with patch("redmine_mcp_server._client.redmine", client):
+            yield client.engine
+
+    @pytest.mark.asyncio
+    async def test_omitted_array_is_an_error_not_an_empty_list(self, engine):
+        result = await list_project_issue_custom_fields(project_id=41)
+
+        assert isinstance(result, dict)
+        assert result["code"] == "ISSUE_CUSTOM_FIELDS_UNREADABLE"
+        assert "issue_custom_fields" in result["error"]
+        assert "View issues" in result["hint"]
+        assert "extra_fields" in result["hint"]
+
+    @pytest.mark.asyncio
+    async def test_omitted_array_is_not_fetched_again(self, engine):
+        await list_project_issue_custom_fields(project_id=41)
+
+        assert engine.calls == ["issue_custom_fields"]
+
+    @pytest.mark.asyncio
+    async def test_omitted_array_is_reported_before_the_tracker_filter(self, engine):
+        result = await list_project_issue_custom_fields(project_id=41, tracker_id=5)
+
+        assert result["code"] == "ISSUE_CUSTOM_FIELDS_UNREADABLE"
+        assert engine.calls == ["issue_custom_fields"]
+
+    @pytest.mark.asyncio
+    async def test_an_empty_array_is_still_an_empty_list(self, engine):
+        engine.fields = []
+
+        result = await list_project_issue_custom_fields(project_id=41)
+
+        assert result == []
+        assert engine.calls == ["issue_custom_fields"]
+
+    @pytest.mark.asyncio
+    async def test_a_present_array_is_returned_from_one_request(self, engine):
+        engine.fields = [{"id": 1, "name": "Size"}, {"id": 2, "name": "Department"}]
+
+        result = await list_project_issue_custom_fields(project_id=41)
+
+        assert [(f["id"], f["name"]) for f in result] == [
+            (1, "Size"),
+            (2, "Department"),
+        ]
+        assert result[0]["is_required"] is None
+        assert engine.calls == ["issue_custom_fields"]

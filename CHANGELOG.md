@@ -22,6 +22,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   app-callable `get_project_timeline_data` tool. Read-only
   ([#350](https://github.com/jztan/redmine-mcp-server/issues/350)).
 
+### Fixed
+- `list_project_issue_custom_fields` no longer answers `[]` when Redmine's
+  response leaves out the `issue_custom_fields` array. `issue_custom_fields` is
+  in python-redmine's `Project._includes`, so reading the attribute re-fetched
+  the whole project and then fell back to `[]`, which a caller cannot tell
+  from a project with no fields. The tool now checks the payload first and
+  returns an error with `code: "ISSUE_CUSTOM_FIELDS_UNREADABLE"`. Released
+  Redmine (6.1.1 to 6.1.3, 7.0.0) always sends the array when asked, but
+  `6.1-stable` and trunk leave it out for a caller without `view_issues` on
+  the project, which is the case
+  [#233](https://github.com/jztan/redmine-mcp-server/pull/233) left for when
+  that ships
+  ([#ISSUE](https://github.com/jztan/redmine-mcp-server/issues/ISSUE)).
+
 ## [2.17.0] - 2026-09-26
 ### Added
 - A long description, note or wiki page can be changed without the model
