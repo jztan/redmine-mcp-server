@@ -105,7 +105,10 @@ class TestCreateWrapperFetchesProjectCustomFields:
         client_factory.assert_not_called()
 
     def test_wrapper_fetches_project_and_resolves(self):
-        project_obj = SimpleNamespace(issue_custom_fields=[_cf(2, "Department")])
+        fields = [_cf(2, "Department")]
+        project_obj = SimpleNamespace(
+            issue_custom_fields=fields, raw=lambda: {"issue_custom_fields": fields}
+        )
         with patch(
             "redmine_mcp_server._custom_fields._get_redmine_client"
         ) as client_factory:
@@ -124,8 +127,9 @@ class TestCreateRedmineIssueEndToEnd:
     @patch("redmine_mcp_server._client.redmine")
     async def test_creates_with_name_keyed_custom_field(self, mock_redmine):
         # Project lookup returns the custom field definition.
+        fields = [_cf(2, "Department")]
         mock_redmine.project.get.return_value = SimpleNamespace(
-            issue_custom_fields=[_cf(2, "Department")]
+            issue_custom_fields=fields, raw=lambda: {"issue_custom_fields": fields}
         )
         # The create itself returns a minimal issue stub.
         mock_redmine.issue.create.return_value = SimpleNamespace(

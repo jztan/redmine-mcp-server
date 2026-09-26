@@ -926,6 +926,7 @@ class TestRedmineHandler:
         size_custom_field.possible_values = ["S", "M", "L"]
         project = Mock()
         project.issue_custom_fields = [size_custom_field]
+        project.raw.return_value = {"issue_custom_fields": project.issue_custom_fields}
         mock_redmine.project.get.return_value = project
 
         result = await update_redmine_issue(123, {"size": "S", "notes": "size set"})
@@ -961,6 +962,7 @@ class TestRedmineHandler:
         size_custom_field.possible_values = ["S", "M", "L"]
         project = Mock()
         project.issue_custom_fields = [size_custom_field]
+        project.raw.return_value = {"issue_custom_fields": project.issue_custom_fields}
         mock_redmine.project.get.return_value = project
 
         await update_redmine_issue(
@@ -1024,6 +1026,7 @@ class TestRedmineHandler:
         size_custom_field.possible_values = ["S", "M", "L"]
         project = Mock()
         project.issue_custom_fields = [size_custom_field]
+        project.raw.return_value = {"issue_custom_fields": project.issue_custom_fields}
         mock_redmine.project.get.return_value = project
 
         result = await update_redmine_issue(123, {"size": []})
@@ -1051,6 +1054,7 @@ class TestRedmineHandler:
         size_custom_field.possible_values = ["S", "M", "L"]
         project = Mock()
         project.issue_custom_fields = [size_custom_field]
+        project.raw.return_value = {"issue_custom_fields": project.issue_custom_fields}
         mock_redmine.project.get.return_value = project
 
         result = await update_redmine_issue(123, {"size": "XXL"})
@@ -1085,6 +1089,7 @@ class TestRedmineHandler:
 
         project = Mock()
         project.issue_custom_fields = [field_a, field_b]
+        project.raw.return_value = {"issue_custom_fields": project.issue_custom_fields}
         mock_redmine.project.get.return_value = project
 
         result = await update_redmine_issue(123, {"project category": "Bug"})
