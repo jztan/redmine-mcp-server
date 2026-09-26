@@ -342,8 +342,9 @@ class TestCreatePath:
     async def test_without_the_registration_the_custom_field_wins(self, mock_redmine):
         """The same collision the update path has, on create: the label
         "Acme Sprint ID" normalizes to the attribute's own name."""
+        fields = [SimpleNamespace(id=7, name="Acme Sprint ID")]
         mock_redmine.project.get.return_value = SimpleNamespace(
-            issue_custom_fields=[SimpleNamespace(id=7, name="Acme Sprint ID")]
+            issue_custom_fields=fields, raw=lambda: {"issue_custom_fields": fields}
         )
         mock_redmine.issue.create.return_value = self._issue_stub()
 

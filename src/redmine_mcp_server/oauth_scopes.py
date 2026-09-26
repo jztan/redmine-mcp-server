@@ -394,6 +394,10 @@ TOOL_SCOPES: Dict[str, ToolScopeEntry] = {
     "list_redmine_queries": frozenset({"view_issues"}),
     "get_gantt_chart": frozenset({"view_issues"}),
     "search_redmine_issues": frozenset({"search_project"}),
+    # A custom field passed by name in `fields` is resolved by reading
+    # projects#show (view_project) -- and, on update, issues#show
+    # (view_issues) first. Argument-conditional, so not required here; the
+    # tools report a denied lookup themselves and write nothing.
     "create_redmine_issue": frozenset({"add_issues"}),
     "copy_issue": frozenset({"view_issues", "copy_issues", "add_issues"}),
     "update_redmine_issue": frozenset({"edit_issues"}),

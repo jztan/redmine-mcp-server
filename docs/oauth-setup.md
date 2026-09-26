@@ -224,7 +224,13 @@ Notes:
 - The map gates each tool's base permission. Argument-conditional
   permissions (for example `manage_subtasks` when changing
   `parent_issue_id`, or tag scopes for `tag_list`) are still enforced
-  by Redmine itself.
+  by Redmine itself. One such case is a custom field passed by *name* in
+  `create_redmine_issue` / `update_redmine_issue` `fields`: resolving it
+  reads the project, which needs `view_project`, and Redmine 6.1.4 and
+  7.0.1 include the project's custom fields only with `view_issues` (on
+  update, the issue read needs `view_issues` as well). Without them the
+  tool returns an error naming the scope and writes nothing; the
+  `custom_fields: [{"id": N, ...}]` form needs neither.
 - RedmineUP plugin tools (`manage_product`, `manage_contact`,
   `manage_deal`, checklists) do not require plugin scopes in the map;
   Redmine enforces its own plugin permissions for them. `manage_contact`

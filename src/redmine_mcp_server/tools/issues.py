@@ -2611,9 +2611,15 @@ async def update_redmine_issue(
 
         try:
             if update_fields or upload_descriptors or tags_update_needed:
-                update_fields = _map_named_custom_fields_for_update(
-                    issue_id, update_fields
-                )
+                # As on create: a name that cannot be resolved, or a lookup
+                # that cannot run, is the caller's to fix, and nothing has
+                # been written yet -- not an error in the update itself.
+                try:
+                    update_fields = _map_named_custom_fields_for_update(
+                        issue_id, update_fields
+                    )
+                except ValueError as e:
+                    return {"error": str(e)}
                 update_kwargs = dict(update_fields)
                 if tags_update_needed:
                     update_kwargs["tag_list"] = tag_list
