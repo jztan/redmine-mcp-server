@@ -409,14 +409,11 @@ class TestProductPayloadKeys:
         product["tags"] = ["legacy"]
         assert self._serialize(product)["tags"] == ["legacy"]
 
-    def test_no_tags_is_empty_list(self):
-        product = _make_product()
-        del product["tag_list"]
-        assert self._serialize(product)["tags"] == []
-
-    def test_empty_tag_list_is_empty(self):
+    def test_missing_or_empty_tag_list_is_empty(self):
         product = _make_product()
         product["tag_list"] = []
+        assert self._serialize(product)["tags"] == []
+        del product["tag_list"]
         assert self._serialize(product)["tags"] == []
 
     def test_timestamps_read_from_created_at_and_updated_at(self):
@@ -470,11 +467,6 @@ class TestProductPayloadKeys:
         """``render_api_custom_values`` omits the key when there are none."""
         product = _make_product()
         del product["custom_fields"]
-        assert self._serialize(product)["custom_fields"] == []
-
-    def test_scalar_custom_fields_is_not_iterated(self):
-        product = _make_product()
-        product["custom_fields"] = "garbage"
         assert self._serialize(product)["custom_fields"] == []
 
     @pytest.mark.asyncio

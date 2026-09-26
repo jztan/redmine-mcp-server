@@ -121,14 +121,12 @@ def _document_to_dict(node: Dict[str, Any]) -> Dict[str, Any]:
     This serializer merges both shapes into one stable representation, falling
     back to the latest revision when a field is missing at the top level.
 
-    Two fields are read under the plugin's own key: the single shape renders
-    the parent folder as ``dmsf_folder_id`` (``dmsf_files/show.api.rsb``), not
-    ``folder_id``, and renders custom field values per revision, as
-    ``custom_fields`` on each ``dmsf_file_revisions`` entry. Both were
-    dropped, though ``custom_fields`` is writable through this tool. The list
-    shape renders no custom field values at all, so ``custom_fields`` is
-    ``None`` on a list row -- not requested of this endpoint, rather than
-    none -- and ``[]`` on a single document that has none.
+    The single shape renders the parent folder as ``dmsf_folder_id``
+    (``dmsf_files/show.api.rsb``), and custom field values per revision, as
+    ``custom_fields`` on each ``dmsf_file_revisions`` entry. The list shape
+    renders no custom field values at all, so ``custom_fields`` is ``None``
+    on a list row -- unknown, rather than none -- and ``[]`` on a single
+    document whose latest revision has none.
 
     Per the wrap policy in #109: free-text fields (``description``) are
     wrapped in ``<insecure-content>`` boundary tags; structured-metadata
@@ -139,16 +137,17 @@ def _document_to_dict(node: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(node, dict):
         return {}
 
-    # The latest revision is the highest-id entry; DMSF returns them in
-    # ascending order so the last element is the current one. Fall back to
-    # max-by-id when the order can't be assumed.
+    # The latest revision is the highest-id entry. DMSF orders the
+    # association newest first (``has_many :dmsf_file_revisions, -> {
+    # order(created_at: :desc, id: :desc) }`` in ``dmsf_file.rb``), so the
+    # last element is the oldest; picking by id does not depend on the order.
     revisions = node.get("dmsf_file_revisions")
-    if isinstance(revisions, list) and revisions:
-        latest = revisions[-1]
-        if not isinstance(latest, dict):
-            latest = {}
-    else:
-        latest = {}
+    entries = (
+        [r for r in revisions if isinstance(r, dict)]
+        if isinstance(revisions, list)
+        else []
+    )
+    latest = max(entries, key=lambda r: r.get("id") or 0, default={})
 
     # Author can arrive as a nested dict (list endpoint) or as a bare user_id
     # on the latest revision (single endpoint). Normalize to either a
@@ -170,13 +169,6 @@ def _document_to_dict(node: Dict[str, Any]) -> Dict[str, Any]:
 
     filename = node.get("filename") or node.get("name") or ""
 
-    if latest:
-        custom_fields: Optional[List[Dict[str, Any]]] = _custom_fields_to_list(latest)
-    elif "custom_fields" in node:
-        custom_fields = _custom_fields_to_list(node)
-    else:
-        custom_fields = None
-
     return {
         "id": node.get("id"),
         "type": node.get("type"),
@@ -194,7 +186,7 @@ def _document_to_dict(node: Dict[str, Any]) -> Dict[str, Any]:
         "folder_id": node.get("dmsf_folder_id") or node.get("folder_id"),
         "project_id": node.get("project_id"),
         "author": author,
-        "custom_fields": custom_fields,
+        "custom_fields": _custom_fields_to_list(latest) if latest else None,
         "created_on": _safe_isoformat(
             node.get("created_on") or latest.get("created_at")
         ),

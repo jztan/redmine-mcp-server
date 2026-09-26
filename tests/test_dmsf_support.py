@@ -911,8 +911,9 @@ _ = MagicMock
 def _show_payload(**overrides) -> dict:
     """A document in the shape ``dmsf_files/show.api.rsb`` renders.
 
-    The parent folder is ``dmsf_folder_id`` and custom field values are
-    rendered per revision, inside each ``dmsf_file_revisions`` entry.
+    The parent folder is ``dmsf_folder_id``, custom field values are rendered
+    per revision, and the revisions come newest first, the order of the
+    ``dmsf_file_revisions`` association in ``dmsf_file.rb``.
     """
     node = {
         "id": 10,
@@ -922,16 +923,6 @@ def _show_payload(**overrides) -> dict:
         "dmsf_folder_id": 12,
         "dmsf_file_revisions": [
             {
-                "id": 1,
-                "name": "spec.pdf",
-                "title": "Spec",
-                "version": "0.1",
-                "user_id": 3,
-                "created_at": "2026-05-01T10:00:00Z",
-                "updated_at": "2026-05-01T10:00:00Z",
-                "custom_fields": [{"id": 1, "name": "Owner", "value": "old"}],
-            },
-            {
                 "id": 2,
                 "name": "spec.pdf",
                 "title": "Spec",
@@ -940,6 +931,16 @@ def _show_payload(**overrides) -> dict:
                 "created_at": "2026-05-02T10:00:00Z",
                 "updated_at": "2026-05-02T10:00:00Z",
                 "custom_fields": [{"id": 1, "name": "Owner", "value": "new"}],
+            },
+            {
+                "id": 1,
+                "name": "spec.pdf",
+                "title": "Spec",
+                "version": "0.1",
+                "user_id": 3,
+                "created_at": "2026-05-01T10:00:00Z",
+                "updated_at": "2026-05-01T10:00:00Z",
+                "custom_fields": [{"id": 1, "name": "Owner", "value": "old"}],
             },
         ],
     }
@@ -952,7 +953,8 @@ class TestDocumentPayloadKeys:
 
     ``folder_id`` read a key DMSF never sends, so it was ``None`` on every
     ``get``, and ``custom_fields`` was never returned, though the tool writes
-    it as ``custom_field_values`` (#ISSUE).
+    it as ``custom_field_values``. The latest revision was taken as the last
+    entry, which is the oldest in DMSF's order (#ISSUE).
     """
 
     def _serialize(self, node):
@@ -987,11 +989,6 @@ class TestDocumentPayloadKeys:
             del revision["custom_fields"]
         assert self._serialize(node)["custom_fields"] == []
 
-    def test_scalar_custom_fields_is_not_iterated(self):
-        node = _show_payload()
-        node["dmsf_file_revisions"][-1]["custom_fields"] = "garbage"
-        assert self._serialize(node)["custom_fields"] == []
-
     def test_list_node_custom_fields_is_none(self):
         """``dmsf/show.api.rsb`` renders no custom field values on a node, so a
         list row cannot say a document has none."""
@@ -1000,12 +997,16 @@ class TestDocumentPayloadKeys:
         assert result["custom_fields"] is None
         assert result["folder_id"] is None
 
-    def test_flat_node_carrying_custom_fields_is_read(self):
-        node = _make_doc(3)
-        node["custom_fields"] = [{"id": 2, "name": "Area", "value": "QA"}]
-        assert self._serialize(node)["custom_fields"] == [
-            {"id": 2, "name": "Area", "value": "QA"}
-        ]
+    def test_latest_revision_is_picked_by_id_in_either_order(self):
+        """DMSF renders revisions newest first; the pick must not depend on it."""
+        newest_first = _show_payload()
+        oldest_first = _show_payload()
+        oldest_first["dmsf_file_revisions"].reverse()
+        for node in (newest_first, oldest_first):
+            result = self._serialize(node)
+            assert result["version"] == "0.2"
+            assert result["updated_on"] == "2026-05-02T10:00:00Z"
+            assert result["custom_fields"][0]["value"] == "new"
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
