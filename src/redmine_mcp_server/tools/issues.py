@@ -2354,6 +2354,211 @@ def _text_from_staged_upload(
         }
 
 
+# Submitted issue attributes whose effect can be read off the re-fetched issue
+# without guessing at how Redmine normalises them, mapped to the reference the
+# issue serializer returns them under.
+_UNAPPLIED_REF_FIELDS = {
+    "project_id": "project",
+    "tracker_id": "tracker",
+    "status_id": "status",
+    "priority_id": "priority",
+    "category_id": "category",
+    "fixed_version_id": "fixed_version",
+    "assigned_to_id": "assigned_to",
+    "parent_issue_id": "parent",
+}
+_ISO_DATE = re.compile(r"\A\d{4}-\d{2}-\d{2}\Z")
+# A submitted value this check does not know how Redmine will read, so it
+# makes no claim about it either way.
+_UNCHECKED = object()
+
+
+def _submitted_id(value: Any) -> Any:
+    """An id as Redmine would store it, ``None`` for a clear, else unchecked.
+
+    A project identifier, ``"me"`` or ``"#12"`` is resolved by Redmine in ways
+    the re-fetched issue cannot confirm, so they are left alone.
+    """
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return _UNCHECKED
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value.strip())
+    return _UNCHECKED
+
+
+def _submitted_hours(value: Any) -> Any:
+    """Hours as a float, ``None`` for a clear, else unchecked.
+
+    Redmine also accepts ``"1h30"`` and ``"1:30"`` (``String#to_hours``);
+    those are left alone rather than re-implemented here.
+    """
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return _UNCHECKED
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value.strip())
+        except ValueError:
+            return _UNCHECKED
+    return _UNCHECKED
+
+
+def _submitted_flag(value: Any) -> Any:
+    """A boolean in the spellings Rails casts, else unchecked."""
+    if isinstance(value, bool):
+        return value
+    if value in (0, 1) and isinstance(value, int):
+        return bool(value)
+    if isinstance(value, str) and value.strip().lower() in ("1", "true"):
+        return True
+    if isinstance(value, str) and value.strip().lower() in ("0", "false"):
+        return False
+    return _UNCHECKED
+
+
+def _custom_value_set(value: Any) -> frozenset:
+    """A custom field value as the set of non-blank strings Redmine keeps.
+
+    Mirrors ``FieldFormat::Base#set_custom_field_value``: every value is
+    stored as a string, and a multiple value drops blanks and duplicates. A
+    set also lets a single value compare equal to a one-element list.
+    """
+    items = value if isinstance(value, (list, tuple)) else [value]
+    normalised = set()
+    for item in items:
+        if item is None:
+            continue
+        if isinstance(item, bool):
+            item = "1" if item else "0"
+        text = _normalized_newlines(str(item))
+        if text != "":
+            normalised.add(text)
+    return frozenset(normalised)
+
+
+def _same_custom_value(submitted: Any, current: Any) -> bool:
+    wanted = _custom_value_set(submitted)
+    stored = _custom_value_set(current)
+    if wanted == stored:
+        return True
+    # A float field is stored as typed after separator normalisation, so
+    # ``1.50`` and ``1.5`` are the same number written two ways.
+    if len(wanted) == len(stored) == 1:
+        try:
+            return float(next(iter(wanted))) == float(next(iter(stored)))
+        except ValueError:
+            return False
+    return False
+
+
+def _unapplied_update_fields(
+    submitted: Dict[str, Any], result: Dict[str, Any], description: Any
+) -> List[str]:
+    """Submitted fields the re-fetched issue does not carry.
+
+    Redmine discards several kinds of write without an error, so ``save``
+    succeeds with the field unchanged: a status the workflow does not allow,
+    a tracker or project outside the allowed targets, anything
+    ``delete_unsafe_attributes`` removes (a field the workflow makes
+    read-only, a disabled core field, a date, priority or done ratio derived
+    from subtasks), and a custom field the user may not edit
+    (``Issue#safe_attributes=``). Comparing what was sent with what came back
+    is the only way to see it, and costs nothing: the issue is re-fetched for
+    the response anyway.
+
+    Only fields whose stored form is predictable are checked, so a value
+    Redmine merely normalises is never reported: ids, dates, ``done_ratio``,
+    numeric ``estimated_hours``, ``is_private``, ``subject``, ``description``
+    (line endings aside) and custom field values by id, reported as
+    ``cf_<id>``. Anything else -- ``notes``, ``uploads``, watchers, a project
+    identifier, keys this server routes elsewhere -- is not checked.
+
+    ``result`` is the serialized issue; ``description`` is the raw one,
+    since the serialized copy is wrapped in boundary tags.
+    """
+    unapplied: List[str] = []
+    for key, value in submitted.items():
+        if key in _UNAPPLIED_REF_FIELDS:
+            wanted = _submitted_id(value)
+            if wanted is _UNCHECKED:
+                continue
+            ref = result.get(_UNAPPLIED_REF_FIELDS[key])
+            if wanted != (ref.get("id") if isinstance(ref, dict) else None):
+                unapplied.append(key)
+        elif key in ("start_date", "due_date"):
+            if value is None or value == "":
+                wanted = None
+            elif isinstance(value, str) and _ISO_DATE.match(value.strip()):
+                wanted = value.strip()
+            else:
+                continue
+            if wanted != result.get(key):
+                unapplied.append(key)
+        elif key == "done_ratio":
+            wanted = _submitted_id(value)
+            if wanted is _UNCHECKED or wanted is None:
+                continue
+            if wanted != result.get(key):
+                unapplied.append(key)
+        elif key == "estimated_hours":
+            wanted = _submitted_hours(value)
+            if wanted is _UNCHECKED:
+                continue
+            current = result.get(key)
+            if wanted is None:
+                applied = current is None
+            else:
+                # Rails maps ``:float`` to a single-precision column on MySQL,
+                # so 2.3 can read back as 2.2999999523; Redmine shows hours to
+                # two decimals, so anything closer than that is the same value.
+                applied = (
+                    isinstance(current, (int, float))
+                    and abs(float(current) - wanted) < 0.005
+                )
+            if not applied:
+                unapplied.append(key)
+        elif key == "is_private":
+            wanted = _submitted_flag(value)
+            if wanted is _UNCHECKED:
+                continue
+            if wanted != bool(result.get(key)):
+                unapplied.append(key)
+        elif key == "subject":
+            if isinstance(value, str) and value != result.get(key):
+                unapplied.append(key)
+        elif key == "description":
+            if value is None:
+                value = ""
+            if not isinstance(value, str):
+                continue
+            current = description if isinstance(description, str) else ""
+            if _normalized_newlines(value) != _normalized_newlines(current):
+                unapplied.append(key)
+        elif key == "custom_fields" and isinstance(value, list):
+            current_values = {}
+            for entry in result.get("custom_fields") or []:
+                if isinstance(entry, dict):
+                    current_values[str(entry.get("id"))] = entry.get("value")
+            for entry in value:
+                if not isinstance(entry, dict) or entry.get("id") is None:
+                    continue
+                field_id = str(entry.get("id"))
+                # Absent from the response means not visible to this user,
+                # and a field that is not visible is not editable either.
+                if field_id not in current_values or not _same_custom_value(
+                    entry.get("value"), current_values[field_id]
+                ):
+                    unapplied.append(f"cf_{field_id}")
+    return unapplied
+
+
 @mcp.tool()
 async def update_redmine_issue(
     issue_id: int,
@@ -2392,6 +2597,18 @@ async def update_redmine_issue(
     Non-standard keys in ``fields`` are treated as candidate custom-field names.
     When a matching project custom field is found, it is translated into
     ``custom_fields`` entries for Redmine update payloads.
+
+    The returned issue carries ``unapplied_fields``, the submitted fields it
+    does not reflect. Redmine discards some writes without an error -- a
+    status the workflow does not allow, a field the workflow makes read-only,
+    a custom field the user may not edit -- so a non-empty list means the
+    call changed less than it asked for, while anything else in it, such as a
+    note, was still written. Custom fields are named ``cf_<id>``, and a status
+    set by name is reported as ``status_name``. Only ids, dates,
+    ``done_ratio``, numeric ``estimated_hours``, ``is_private``, ``subject``,
+    ``description`` and custom field values are checked, so ``[]`` says
+    nothing about notes, uploads, watchers or plugin fields. An unknown
+    ``status_name`` is refused before anything is written.
 
     Args:
         issue_id: The issue to update.
@@ -2597,17 +2814,54 @@ async def update_redmine_issue(
 
     def _run():
         nonlocal update_fields
+        # How ``status_name`` fared, so a discarded status is reported under
+        # the key the caller used.
+        status_from_name = False
+        status_name_unresolved = False
         # Convert status name to id if requested
         if "status_name" in update_fields and "status_id" not in update_fields:
-            name = str(update_fields.pop("status_name")).lower()
+            raw_name = update_fields.pop("status_name")
+            name = str(raw_name).lower()
             try:
-                statuses = _get_redmine_client().issue_status.all()
+                statuses = list(_get_redmine_client().issue_status.all())
+            except Exception as e:
+                # The write goes ahead without the status, and the result
+                # reports ``status_name`` as not applied.
+                logger.warning(f"Error resolving status name '{name}': {e}")
+                status_name_unresolved = True
+            else:
                 for status in statuses:
                     if getattr(status, "name", "").lower() == name:
                         update_fields["status_id"] = status.id
+                        status_from_name = True
                         break
-            except Exception as e:
-                logger.warning(f"Error resolving status name '{name}': {e}")
+                else:
+                    # Dropping it and writing the rest would report success
+                    # for a status change that was never sent (#193).
+                    known = ", ".join(
+                        str(getattr(status, "name", "")) for status in statuses
+                    )
+                    return {
+                        "error": (
+                            f"Unknown status_name {str(raw_name)!r}. Nothing "
+                            f"was changed. Known statuses: {known or 'none'}."
+                        )
+                    }
+
+        def _with_unapplied(result: Dict[str, Any], issue: Any) -> Dict[str, Any]:
+            # Compared with what the caller asked for, after name resolution
+            # but before any required-field autofill a retry adds.
+            unapplied = _unapplied_update_fields(
+                update_fields, result, getattr(issue, "description", None)
+            )
+            if status_from_name:
+                unapplied = [
+                    "status_name" if key == "status_id" else key for key in unapplied
+                ]
+            if status_name_unresolved:
+                unapplied.append("status_name")
+            result["unapplied_fields"] = unapplied
+            return result
 
         try:
             if update_fields or upload_descriptors or tags_update_needed:
@@ -2639,12 +2893,12 @@ async def update_redmine_issue(
                 )
                 if agile_update_needed:
                     result = _augment_with_agile_data(issue_id, result)
-                return result
+                return _with_unapplied(result, updated_issue)
             updated_issue = _get_redmine_client().issue.get(issue_id)
             result = _issue_to_dict(updated_issue, include_custom_fields=True)
             if agile_update_needed:
                 result = _augment_with_agile_data(issue_id, result)
-            return result
+            return _with_unapplied(result, updated_issue)
         except ValidationError as e:
             if not _is_required_custom_field_autofill_enabled():
                 return _augment_validation_error_with_field_hint(
@@ -2727,12 +2981,12 @@ async def update_redmine_issue(
                     )
                     if agile_update_needed:
                         result = _augment_with_agile_data(issue_id, result)
-                    return result
+                    return _with_unapplied(result, updated_issue)
                 updated_issue = _get_redmine_client().issue.get(issue_id)
                 result = _issue_to_dict(updated_issue, include_custom_fields=True)
                 if agile_update_needed:
                     result = _augment_with_agile_data(issue_id, result)
-                return result
+                return _with_unapplied(result, updated_issue)
             except Exception as retry_error:
                 return _augment_validation_error_with_field_hint(
                     _handle_redmine_error(
