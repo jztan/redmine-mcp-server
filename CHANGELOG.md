@@ -67,6 +67,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   case [#233](https://github.com/jztan/redmine-mcp-server/pull/233) left for
   when that shipped; earlier releases always send it when asked
   ([#364](https://github.com/jztan/redmine-mcp-server/issues/364)).
+- `create_redmine_issue` and `update_redmine_issue` report a custom field name
+  in `fields` that they could not resolve, instead of losing it. Resolving a
+  name reads `GET /projects/{id}.json?include=issue_custom_fields`, which
+  needs `view_project`, and neither tool's scope entry requires it because
+  only a name-keyed payload makes the read. When that read was denied, the
+  403 escaped `create_redmine_issue` unhandled and came back from
+  `update_redmine_issue` as "Access denied" for the update itself. When the
+  response left `issue_custom_fields` out, python-redmine re-fetched the
+  project, answered `[]`, and the name was sent on as a top-level key Redmine
+  ignores, so the write succeeded without the value. Released Redmine (6.1.1
+  to 6.1.3, 7.0.0) always sends the array when asked, but `6.1-stable` and
+  trunk omit it for a caller without `view_issues` on the project. Both cases
+  now return an error that names the read, the permission it needs and the
+  `custom_fields` id form, and nothing is written. A lookup error on update,
+  such as an ambiguous name, is also returned as itself rather than as an
+  unexpected error in the update
+  ([#ISSUE](https://github.com/jztan/redmine-mcp-server/issues/ISSUE)).
 
 ## [2.17.0] - 2026-09-26
 ### Added

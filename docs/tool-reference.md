@@ -1265,6 +1265,8 @@ create_redmine_issue(
 
 **Name-keyed custom fields (#123):** `fields` accepts custom-field *names* directly. The tool resolves the name to a `custom_fields` entry via `list_project_issue_custom_fields` and rewrites the payload before sending it to Redmine. Ambiguous names (two custom fields that normalize to the same name) raise with an explicit error pointing at the id form.
 
+Resolving a name reads `GET /projects/{id}.json?include=issue_custom_fields`, which needs the View project permission (OAuth scope `view_project`); `update_redmine_issue` first reads the issue to find its project, which needs View issues (`view_issues`). Neither is in the tools' scope entries, because only a name-keyed payload makes the read. If the read is denied, or Redmine's response leaves `issue_custom_fields` out (every release up to 7.0.0 sends it when asked; `6.1-stable` and trunk omit it without `view_issues` on the project), the tool returns an `error` and writes nothing, rather than sending the name on as a key Redmine ignores. The id form below needs no lookup.
+
 ```python
 # Name-keyed -- the tool resolves "Department" to its custom_field id
 create_redmine_issue(

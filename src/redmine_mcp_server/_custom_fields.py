@@ -13,6 +13,8 @@ import os
 import re
 from typing import Any, Dict, List, Optional, Set, Union
 
+from redminelib.exceptions import ForbiddenError
+
 from ._client import _get_redmine_client
 from ._env import _is_true_env
 from ._extension_registry import extension_issue_update_keys
@@ -451,17 +453,75 @@ def _upsert_custom_field_entry(
     entries.append({"id": field_id, "value": value})
 
 
+_NAME_LOOKUP_ALTERNATIVE = (
+    "Nothing was written. Pass the field by id instead: "
+    'extra_fields={"custom_fields": [{"id": N, "value": ...}]}. The ids also '
+    "appear under custom_fields on an issue read with get_redmine_issue."
+)
+
+
+def _issue_custom_fields_for_name_lookup(project_id: Union[int, str]) -> List[Any]:
+    """Read the issue custom fields a project enables, to resolve names.
+
+    Raises ``ValueError`` instead of returning ``[]`` when they cannot be read.
+    An empty list here leaves every name in ``fields`` unresolved, and
+    ``_resolve_named_custom_fields`` then sends it on as a top-level key that
+    Redmine ignores, so the value would be dropped without a word. Two ways
+    here:
+
+    - ``projects#show`` refuses the read. It needs ``view_project``, which
+      the create and update scope entries do not require, because only a
+      name-keyed ``fields`` payload reaches this read -- an argument-
+      conditional permission, left to Redmine like the others.
+    - The response leaves ``issue_custom_fields`` out. Every released Redmine
+      sends it when asked (6.1.1 to 6.1.3, 7.0.0), but 6.1-stable and trunk
+      omit it for a caller without ``view_issues`` on the project. The
+      payload is checked before the attribute, which would otherwise
+      re-fetch the whole project and answer ``[]`` -- see ``_included_list``.
+    """
+    try:
+        project = _get_redmine_client().project.get(
+            project_id, include="issue_custom_fields"
+        )
+    except ForbiddenError:
+        raise ValueError(
+            "Could not resolve the custom field names in fields: reading the "
+            f"issue custom fields of project {project_id} was denied. That "
+            "read needs the View project permission (OAuth scope "
+            f"view_project). {_NAME_LOOKUP_ALTERNATIVE}"
+        ) from None
+    payload = project.raw()
+    if not isinstance(payload, dict) or not isinstance(
+        payload.get("issue_custom_fields"), list
+    ):
+        raise ValueError(
+            "Could not resolve the custom field names in fields: Redmine's "
+            f"response for project {project_id} did not include "
+            f"issue_custom_fields. {_NAME_LOOKUP_ALTERNATIVE}"
+        )
+    return list(getattr(project, "issue_custom_fields", None) or [])
+
+
 def _resolve_project_issue_custom_fields(issue_id: int) -> List[Any]:
-    """Load project custom-field definitions for a given issue."""
-    issue = _get_redmine_client().issue.get(issue_id)
+    """Load project custom-field definitions for a given issue.
+
+    Raises ``ValueError`` when they cannot be read; see
+    ``_issue_custom_fields_for_name_lookup``.
+    """
+    try:
+        issue = _get_redmine_client().issue.get(issue_id)
+    except ForbiddenError:
+        raise ValueError(
+            "Could not resolve the custom field names in fields: reading "
+            f"issue {issue_id} to find its project was denied. That read "
+            "needs the View issues permission (OAuth scope view_issues). "
+            f"{_NAME_LOOKUP_ALTERNATIVE}"
+        ) from None
     project = getattr(issue, "project", None)
     project_id = getattr(project, "id", None)
     if project_id is None:
         return []
-    project_obj = _get_redmine_client().project.get(
-        project_id, include="issue_custom_fields"
-    )
-    return list(getattr(project_obj, "issue_custom_fields", None) or [])
+    return _issue_custom_fields_for_name_lookup(project_id)
 
 
 def _project_issue_custom_fields_by_project_id(
@@ -472,13 +532,11 @@ def _project_issue_custom_fields_by_project_id(
     Mirrors ``_resolve_project_issue_custom_fields`` but skips the
     issue-id-to-project-id lookup hop that the update path needs.
     Used by the create path where ``project_id`` is already known.
+    Raises ``ValueError`` when they cannot be read.
     """
     if project_id is None:
         return []
-    project_obj = _get_redmine_client().project.get(
-        project_id, include="issue_custom_fields"
-    )
-    return list(getattr(project_obj, "issue_custom_fields", None) or [])
+    return _issue_custom_fields_for_name_lookup(project_id)
 
 
 def _is_standard_issue_update_key(field_name: str) -> bool:
