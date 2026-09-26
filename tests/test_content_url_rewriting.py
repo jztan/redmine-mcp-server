@@ -156,7 +156,7 @@ class TestSerializersUseRewriter:
             author=None,
             created_on=None,
         )
-        issue = SimpleNamespace(attachments=[att])
+        issue = SimpleNamespace(attachments=[att], raw=lambda: {"attachments": [att]})
 
         result = _attachments_to_list(issue)
         assert result[0]["content_url"] == (
