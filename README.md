@@ -25,7 +25,7 @@ A Model Context Protocol (MCP) server that connects AI assistants to Redmine. It
 
 ## Features
 
-- **51 MCP tools on a stock Redmine, 65 with the RedmineUP and DMSF plugins** (plus 1 operator tool gated by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`): Issues, projects, news, time tracking, wiki, Gantt, file operations, membership management, products, contacts and deals (CRM), DMSF documents, Helpdesk email replies, and more
+- **53 MCP tools on a stock Redmine, 67 with the RedmineUP and DMSF plugins** (plus 1 operator tool gated by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`): Issues, projects, news, time tracking, wiki, Gantt, file operations, membership management, products, contacts and deals (CRM), DMSF documents, Helpdesk email replies, and more
 - **Interactive Kanban Board**: `show_triage_board` renders a live, drag-and-drop issue board right in the chat via the MCP Apps extension
 - **Flexible Authentication**: API key, username/password, OAuth2 per-user tokens, or a browser login with each user's own API key on Redmines without OAuth
 - **Prompt Injection Protection**: User-controlled content wrapped in boundary tags for safe LLM consumption
@@ -643,9 +643,9 @@ Tools for a Redmine plugin written in house can be added from a separate package
 
 A deployment can expose a subset of these with `REDMINE_MCP_ALLOW_TOOLS`; everything else disappears from `tools/list` and is refused by `call_tool`.
 
-This MCP server provides 51 core tools for interacting with Redmine, plus 14 plugin tools that are listed only when the matching `REDMINE_*_ENABLED` flag is set (65 in total), and 1 operator tool exposed by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true` (maximum of 66). A client connected to a vanilla Redmine sees just the 51 core tools. For full documentation of every tool, see the [Tool Reference](./docs/tool-reference.md).
+This MCP server provides 53 core tools for interacting with Redmine, plus 14 plugin tools that are listed only when the matching `REDMINE_*_ENABLED` flag is set (67 in total), and 1 operator tool exposed by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true` (maximum of 68). A client connected to a vanilla Redmine sees just the 53 core tools. For full documentation of every tool, see the [Tool Reference](./docs/tool-reference.md).
 
-**Core tools (51, always available):** Project Management (10), Issue Operations (13), Time Tracking (4), Discovery / Enumeration (7), Search & Wiki (2), News (4), File Operations (5), Gantt (1), Interactive Apps (4), Meta (1).
+**Core tools (53, always available):** Project Management (10), Issue Operations (13), Time Tracking (4), Discovery / Enumeration (7), Search & Wiki (2), News (4), File Operations (5), Gantt (1), Interactive Apps (6), Meta (1).
 
 **Plugin-gated tools (14, listed only when their flag is set):** Checklists (3), Products (1), Contacts / CRM (2), Deals / CRM (3), shared CRM notes and saved queries (2, either CRM flag), deal product lines (1, deals plus products), Documents / DMSF (1), Helpdesk (1). Each requires the matching Redmine plugin installed **and** its env flag set; with the flag off the tools are not registered on the MCP surface.
 
@@ -654,7 +654,7 @@ This MCP server provides 51 core tools for interacting with Redmine, plus 14 plu
 <details>
 <summary><strong>Full tool list with descriptions</strong></summary>
 
-### Core tools (51, always available)
+### Core tools (53, always available)
 
 These tools require only a Redmine instance and credentials, with no extra plugins or feature flags.
 
@@ -726,6 +726,8 @@ These tools require only a Redmine instance and credentials, with no extra plugi
   - [`get_triage_board_data`](docs/tool-reference.md#get_triage_board_data) - Board data source backing the board's Refresh action
   - [`show_project_dashboard`](docs/tool-reference.md#show_project_dashboard) - Render a live project snapshot (open/closed, overdue, due this week, open-by-priority, recent activity) as an interactive dashboard, with click-through drill-ins to matching issue lists
   - [`get_project_dashboard_data`](docs/tool-reference.md#get_project_dashboard_data) - App-only data source backing the dashboard's Refresh action
+  - [`show_project_timeline`](docs/tool-reference.md#show_project_timeline) - Render a project's schedule as an interactive timeline: issue bars by version, milestone diamonds, and a Today line
+  - [`get_project_timeline_data`](docs/tool-reference.md#get_project_timeline_data) - App-only data source backing the timeline's Refresh action
 
 - **Meta** (1 tool)
   - [`get_mcp_server_info`](docs/tool-reference.md#get_mcp_server_info) - Report server version, auth mode, read-only state, the authenticated user (`current_user`), and which plugin-gated tool families are enabled. Use to detect deployment lag before relying on a recently-shipped fix, or to confirm who `assigned_to_id="me"` resolves to.

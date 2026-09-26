@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>MCP App preview</title>
+    <style>
+      body { margin: 0; padding: 24px; background: #eef2f8; font-family: sans-serif; }
+      @media (prefers-color-scheme: dark) { body { background: #15181d; } }
+      iframe { border: 0; width: var(--w, 815px); height: 400px; display: block; }
+    </style>
+  </head>
+  <body>
+    <!--
+      Static host for previewing an MCP App view with a fixture payload, no
+      server or Redmine needed. Serve the repo root over HTTP, e.g.
+      `python -m http.server 8765`, then open
+      /tests/fixtures/app_preview.html?view=project_timeline&fixture=timeline_mockup_payload.json
+      Optional: &width=380. Theme follows the browser's color scheme.
+    -->
+    <iframe id="app" title="app preview"></iframe>
+    <script>
+      (function () {
+        "use strict";
+        var q = new URLSearchParams(location.search);
+        var view = q.get("view") || "project_timeline";
+        var fixture = q.get("fixture") || "timeline_mockup_payload.json";
+        var frame = document.getElementById("app");
+        if (q.get("width")) frame.style.setProperty("--w", q.get("width") + "px");
+        var payloadP = fetch(fixture).then(function (r) { return r.json(); });
+
+        function send(msg) { frame.contentWindow.postMessage(msg, "*"); }
+        function result(payload) {
+          return {
+            content: [{ type: "text", text: JSON.stringify(payload) }],
+            structuredContent: payload,
+          };
+        }
+
+        window.addEventListener("message", function (event) {
+          if (event.source !== frame.contentWindow) return;
+          var msg = event.data || {};
+          if (msg.method === "ui/initialize") {
+            send({ jsonrpc: "2.0", id: msg.id, result: {
+              protocolVersion: msg.params.protocolVersion,
+              hostInfo: { name: "app-preview", version: "1.0.0" },
+              hostCapabilities: {},
+              hostContext: {},
+            } });
+          } else if (msg.method === "ui/notifications/initialized") {
+            payloadP.then(function (p) {
+              send({ jsonrpc: "2.0", method: "ui/notifications/tool-input",
+                params: { arguments: { project_id: p.project.id } } });
+              send({ jsonrpc: "2.0", method: "ui/notifications/tool-result",
+                params: result(p) });
+            });
+          } else if (msg.method === "tools/call") {
+            payloadP.then(function (p) {
+              send({ jsonrpc: "2.0", id: msg.id, result: result(p) });
+            });
+          } else if (msg.method === "ui/notifications/size-changed") {
+            frame.style.height = Math.ceil(msg.params.height) + "px";
+          } else if (msg.id !== undefined) {
+            send({ jsonrpc: "2.0", id: msg.id, result: {} });
+          }
+        });
+        frame.src = "../../src/redmine_mcp_server/apps/_ui/" + view + ".html";
+      })();
+    </script>
+  </body>
+</html>

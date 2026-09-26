@@ -83,11 +83,11 @@ class TestAnnotationsTable:
             for name, kind in TOOL_KINDS.items()
             if name not in from_extensions
         }
-        assert len(own) == 66
+        assert len(own) == 68
         counts = {kind: 0 for kind in ToolKind}
         for kind in own.values():
             counts[kind] += 1
-        assert counts[ToolKind.READ] == 36
+        assert counts[ToolKind.READ] == 38
         assert counts[ToolKind.WRITE_ADDITIVE] == 7
         assert counts[ToolKind.WRITE_DESTRUCTIVE] == 18
         assert counts[ToolKind.WRITE_DESTRUCTIVE_IDEMPOTENT] == 5
@@ -96,7 +96,7 @@ class TestAnnotationsTable:
 async def _registered_tools():
     """Enumerate tools exactly as the server does.
 
-    Importing only ``tools`` sees 48 of the 52; ``apps`` registers 4 more.
+    Importing only ``tools`` sees 48 of the 54; ``apps`` registers 6 more.
     """
     from redmine_mcp_server.server import mcp
     import redmine_mcp_server.tools  # noqa: F401  triggers registration
