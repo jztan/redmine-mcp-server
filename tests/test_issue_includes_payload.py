@@ -1,4 +1,4 @@
-"""Regression tests for reading issue includes without re-fetching (#ISSUE).
+"""Regression tests for reading issue includes without re-fetching (#360).
 
 ``journals``, ``attachments``, ``watchers`` and ``children`` are in
 python-redmine's ``Issue._includes``. Reading one as an attribute when the key

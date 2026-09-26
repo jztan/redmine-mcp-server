@@ -77,7 +77,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the payload carries them, completing for issues what
   [#223](https://github.com/jztan/redmine-mcp-server/pull/223) did for
   `relations`. Results are unchanged
-  ([#ISSUE](https://github.com/jztan/redmine-mcp-server/issues/ISSUE)).
+  ([#360](https://github.com/jztan/redmine-mcp-server/issues/360)).
 
 ## [2.17.0] - 2026-09-26
 ### Added
