@@ -67,6 +67,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   case [#233](https://github.com/jztan/redmine-mcp-server/pull/233) left for
   when that shipped; earlier releases always send it when asked
   ([#364](https://github.com/jztan/redmine-mcp-server/issues/364)).
+- `get_redmine_issue(include_children=True)` on a leaf issue, and
+  `include_watchers=True` for a caller without `view_issue_watchers`, no longer
+  send a second request for the whole issue. Redmine leaves both keys out in
+  those cases (`render_api_issue_children` returns early on `issue.leaf?`, and
+  the watchers block is gated on the permission), and python-redmine re-fetches
+  any `_includes` name missing from the payload, only to get the same answer.
+  `journals`, `attachments`, `watchers` and `children` are now read only when
+  the payload carries them, completing for issues what
+  [#223](https://github.com/jztan/redmine-mcp-server/pull/223) did for
+  `relations`. Results are unchanged
+  ([#360](https://github.com/jztan/redmine-mcp-server/issues/360)).
 
 ## [2.17.0] - 2026-09-26
 ### Added

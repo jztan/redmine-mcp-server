@@ -32,6 +32,7 @@ def _issue(journals):
     issue.description = "beschreibung"
     issue.journals = journals
     issue.attachments = []
+    issue.raw.return_value = {"journals": journals, "attachments": []}
     return issue
 
 

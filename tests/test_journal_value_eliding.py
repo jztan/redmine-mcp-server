@@ -166,6 +166,9 @@ class TestWhatThisSaves:
                 _Journal([], journal_id=99, notes="the actual comment")
             ]
 
+            def raw(self):
+                return {"journals": self.journals}
+
         elided = json.dumps(_journals_to_list(_Issue()))
         full = json.dumps(_journals_to_list(_Issue(), include_journal_values=True))
 

@@ -250,6 +250,22 @@ def _included_list(resource: Any, key: str) -> List[Any]:
     return list(value) if isinstance(value, list) else []
 
 
+def _included_resources(resource: Any, key: str) -> List[Any]:
+    """:func:`_included_list`, for callers that read resources, not dicts.
+
+    The payload decides whether the key is present; only then is the
+    attribute read, which python-redmine encodes from that payload without a
+    request. Read first, the attribute of an ``_includes`` name re-fetches the
+    whole resource with ``include=<key>`` when the key is missing, and Redmine
+    omits some on purpose: an issue's ``children`` when it is a leaf, and
+    ``watchers`` without ``view_issue_watchers``. Not for
+    ``relations``, whose attribute ignores the payload altogether.
+    """
+    if not _included_list(resource, key):
+        return []
+    return list(getattr(resource, key))
+
+
 def _issue_relation_to_dict(relation: Any) -> Dict[str, Any]:
     """Convert an issue relation to a serializable dict.
 

@@ -76,7 +76,9 @@ class TestStructuredFieldsAreVerbatim:
             author=None,
             created_on=None,
         )
-        out = _attachments_to_list(SimpleNamespace(attachments=[att]))
+        out = _attachments_to_list(
+            SimpleNamespace(attachments=[att], raw=lambda: {"attachments": [att]})
+        )
         assert out[0]["filename"] == _PAYLOAD
 
     def test_issue_category_name_is_verbatim(self):
@@ -144,7 +146,9 @@ class TestFreeTextFieldsRemainWrapped:
             author=None,
             created_on=None,
         )
-        out = _attachments_to_list(SimpleNamespace(attachments=[att]))
+        out = _attachments_to_list(
+            SimpleNamespace(attachments=[att], raw=lambda: {"attachments": [att]})
+        )
         assert _wrapped(out[0]["description"])
 
     def test_dmsf_document_description_is_wrapped(self):
@@ -165,6 +169,6 @@ class TestFreeTextFieldsRemainWrapped:
             private_notes=False,
             details=[],
         )
-        issue = SimpleNamespace(journals=[journal])
+        issue = SimpleNamespace(journals=[journal], raw=lambda: {"journals": [journal]})
         out = _journals_to_list(issue)
         assert _wrapped(out[0]["notes"])

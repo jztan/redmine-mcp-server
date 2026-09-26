@@ -41,6 +41,7 @@ def _make_minimal_issue(issue_id: int = 1, tags=None) -> Mock:
             "updated_on",
             "journals",
             "attachments",
+            "raw",
         ]
         + (["tags"] if tags is not None else [])
     )
@@ -56,6 +57,7 @@ def _make_minimal_issue(issue_id: int = 1, tags=None) -> Mock:
     issue.updated_on = None
     issue.journals = []
     issue.attachments = []
+    issue.raw.return_value = {"journals": [], "attachments": []}
     if tags is not None:
         issue.tags = tags
     return issue
