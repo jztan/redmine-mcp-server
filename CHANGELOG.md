@@ -21,6 +21,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   filters as `list_redmine_issues`. A Refresh action re-fetches through the
   app-callable `get_project_timeline_data` tool. Read-only
   ([#350](https://github.com/jztan/redmine-mcp-server/issues/350)).
+- `manage_contact` takes `custom_field_ids` on `list`, returning only the
+  custom fields named in each contact's `custom_fields`. The choice was all of
+  them or none: a lookup needing two of them paid for every field the
+  instance defines, on every row. Additive, and the elision contract is
+  unchanged: named fields are requested fields, so `custom_fields` holds just
+  those with no `custom_fields_count`, and `[]` still means the contact
+  carries none of them
+  ([#352](https://github.com/jztan/redmine-mcp-server/issues/352)).
 
 ## [2.17.0] - 2026-09-26
 ### Added

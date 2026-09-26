@@ -664,3 +664,138 @@ class TestOutputFieldSelection:
         assert result["contacts"][0]["custom_fields"] is None
         assert result["contacts"][0]["custom_fields_count"] == 2
         assert result["pagination"]["total"] == 1
+
+
+def _contact_with_three_fields() -> dict:
+    return _api_contact(
+        custom_fields=[
+            {"id": 42, "name": "Account Owner", "value": "Bob Owner"},
+            {"id": 43, "name": "Region", "value": ""},
+            {"id": 44, "name": "Tier", "value": "Gold"},
+        ]
+    )
+
+
+class TestCustomFieldSelection:
+    """``custom_field_ids`` on ``list``: the fields a lookup needs, not all of
+    them or none (#352).
+
+    It narrows ``include_custom_fields`` rather than adding a second shape:
+    ``custom_fields`` holds only the named fields with no
+    ``custom_fields_count``, since they were requested, and ``[]`` still means
+    the contact carries none of them.
+    """
+
+    def test_only_the_named_fields_are_returned(self):
+        result = _contact_to_dict(
+            _contact_with_three_fields(), custom_field_ids=[44, 42]
+        )
+        # Payload order, not request order.
+        assert result["custom_fields"] == [
+            {"id": 42, "name": "Account Owner", "value": "Bob Owner"},
+            {"id": 44, "name": "Tier", "value": "Gold"},
+        ]
+        assert "custom_fields_count" not in result
+
+    def test_a_field_with_an_empty_value_is_still_returned(self):
+        """Selection is by id, not by whether the field carries a value."""
+        result = _contact_to_dict(_contact_with_three_fields(), custom_field_ids=[43])
+        assert result["custom_fields"] == [{"id": 43, "name": "Region", "value": ""}]
+
+    def test_an_id_the_contact_does_not_carry_answers_an_empty_list(self):
+        result = _contact_to_dict(_contact_with_three_fields(), custom_field_ids=[99])
+        assert result["custom_fields"] == []
+        assert "custom_fields_count" not in result
+
+    def test_a_contact_with_no_custom_fields(self):
+        result = _contact_to_dict(_api_contact(custom_fields=[]), custom_field_ids=[42])
+        assert result["custom_fields"] == []
+        assert "custom_fields_count" not in result
+
+    def test_the_ids_narrow_even_with_the_flag_on(self):
+        result = _contact_to_dict(
+            _contact_with_three_fields(),
+            include_custom_fields=True,
+            custom_field_ids=[42],
+        )
+        assert [cf["id"] for cf in result["custom_fields"]] == [42]
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_list_returns_only_the_named_fields(self, mock_redmine):
+        mock_redmine.engine.request.return_value = {
+            "contacts": [_contact_with_three_fields()]
+        }
+        with patch.dict(os.environ, CRM_ON):
+            result = await manage_contact(action="list", custom_field_ids=[42])
+        assert result[0]["custom_fields"] == [
+            {"id": 42, "name": "Account Owner", "value": "Bob Owner"}
+        ]
+        assert "custom_fields_count" not in result[0]
+        assert mock_redmine.engine.request.call_count == 1
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_it_is_not_sent_to_redmine(self, mock_redmine):
+        mock_redmine.engine.request.return_value = {"contacts": []}
+        with patch.dict(os.environ, CRM_ON):
+            await manage_contact(action="list", custom_field_ids=[42])
+        params = mock_redmine.engine.request.call_args.kwargs["params"]
+        assert "custom_field_ids" not in params
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_the_pagination_envelope_carries_the_narrowed_rows(
+        self, mock_redmine
+    ):
+        mock_redmine.engine.request.return_value = {
+            "contacts": [_contact_with_three_fields()],
+            "total_count": 1,
+        }
+        with patch.dict(os.environ, CRM_ON):
+            result = await manage_contact(
+                action="list", custom_field_ids=[44], include_pagination_info=True
+            )
+        assert [cf["id"] for cf in result["contacts"][0]["custom_fields"]] == [44]
+        assert result["pagination"]["total"] == 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "bad",
+        [[], [0], [-3], ["42"], [True], [42, None], [4.2], "42", 42],
+    )
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_malformed_ids_are_refused(self, mock_redmine, bad):
+        with patch.dict(os.environ, CRM_ON):
+            result = await manage_contact(action="list", custom_field_ids=bad)
+        assert "custom_field_ids" in result["error"]
+        mock_redmine.engine.request.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_filters_may_not_carry_it(self, mock_redmine):
+        with patch.dict(os.environ, CRM_ON):
+            result = await manage_contact(
+                action="list", filters={"custom_field_ids": "42"}
+            )
+        assert "custom_field_ids" in result["error"]
+        mock_redmine.engine.request.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_a_single_contact_read_still_returns_every_field(self, mock_redmine):
+        """``list`` only: ``get`` keeps returning the full set."""
+        mock_redmine.engine.request.return_value = {
+            "contact": _contact_with_three_fields()
+        }
+        with patch.dict(os.environ, CRM_ON):
+            result = await manage_contact(
+                action="get", contact_id=55, custom_field_ids=[42]
+            )
+        assert [cf["id"] for cf in result["custom_fields"]] == [42, 43, 44]
