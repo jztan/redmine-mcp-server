@@ -37,14 +37,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the bare contact. Each now appears under its own key when the plugin sent
   it
   ([#354](https://github.com/jztan/redmine-mcp-server/issues/354)).
-
-### Fixed
 - `list_project_members` and `manage_project_member(action="update")` dropped
   Redmine's `inherited` flag from each role, so a role that comes from a group
   or from the parent project read exactly like one held directly. The flag is
   now kept where Redmine sends it and left out where it does not, as
   `get_current_user(include_memberships=True)` already did
   ([#356](https://github.com/jztan/redmine-mcp-server/issues/356)).
+
+### Contributors
+- @mmahmed reported and fixed three contact and membership gaps: contact
+  lists can select which custom fields come back, a contact `get` returns the
+  `include` arrays it asks for, and project member roles keep Redmine's
+  `inherited` flag
+  ([#352](https://github.com/jztan/redmine-mcp-server/issues/352),
+  [#353](https://github.com/jztan/redmine-mcp-server/pull/353),
+  [#354](https://github.com/jztan/redmine-mcp-server/issues/354),
+  [#355](https://github.com/jztan/redmine-mcp-server/pull/355),
+  [#356](https://github.com/jztan/redmine-mcp-server/issues/356),
+  [#357](https://github.com/jztan/redmine-mcp-server/pull/357)).
 
 ## [2.17.0] - 2026-09-26
 ### Added
