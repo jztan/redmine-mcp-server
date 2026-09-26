@@ -93,6 +93,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on update, such as an ambiguous name, is also returned as itself rather than
   as an unexpected error in the update
   ([#362](https://github.com/jztan/redmine-mcp-server/issues/362)).
+- `manage_product` and `manage_document` read several fields under key names
+  their plugins do not send, the pattern
+  [#227](https://github.com/jztan/redmine-mcp-server/pull/227) fixed for
+  contacts. A product's `tags`, `created_on` and `updated_on` are now read
+  from the `tag_list`, `created_at` and `updated_at` the Products plugin
+  renders, and its `author` and `custom_fields` are returned. A document's
+  `folder_id` is read from DMSF's `dmsf_folder_id`, and `get` returns the
+  `custom_fields` of its latest revision (`null` on a `list` row, whose
+  endpoint renders none). `get` also took the oldest revision as the latest,
+  because DMSF lists revisions newest first, so `version`, `description`,
+  `size` and the timestamps were stale; it now takes the highest revision id
+  ([#358](https://github.com/jztan/redmine-mcp-server/issues/358)).
 
 ## [2.17.0] - 2026-09-26
 ### Added
