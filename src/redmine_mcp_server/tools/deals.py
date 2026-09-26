@@ -136,8 +136,9 @@ def _deal_note_to_dict(note: Any) -> Dict[str, Any]:
 
     ``content`` is free text and is wrapped in ``<insecure-content>``
     boundary tags, matching how issue ``description`` and journal notes are
-    treated. The plugin only renders the notes array for a caller holding
-    ``view_deals`` on the project.
+    treated. The plugin only renders the notes array for a caller who may
+    see its parent: ``view_deals`` on a deal, ``view_contacts`` on a contact,
+    whose ``include=notes`` entries have the same keys.
     """
     if not isinstance(note, dict):
         return {}

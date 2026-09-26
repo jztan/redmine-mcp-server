@@ -15,6 +15,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from redmine_mcp_server.tools.contacts import (  # noqa: E402
+    _contact_includes_to_dict,
     _contact_to_dict,
     manage_contact,
 )
@@ -799,3 +800,139 @@ class TestCustomFieldSelection:
                 action="get", contact_id=55, custom_field_ids=[42]
             )
         assert [cf["id"] for cf in result["custom_fields"]] == [42, 43, 44]
+
+
+
+
+def _api_contact_with_includes() -> dict:
+    """A contact as ``contacts/show.api.rsb`` renders it under
+    ``include=notes,contacts,deals,issues`` (redmine_contacts 4.4.5 PRO)."""
+    return _api_contact(
+        notes=[
+            {
+                "id": 7,
+                "content": "Called about renewal",
+                "type_id": 1,
+                "author": {"id": 54, "name": "Carol Author"},
+                "created_on": "2026-05-01T09:00:00Z",
+                "updated_on": "2026-05-01T09:30:00Z",
+            }
+        ],
+        contacts=[{"id": 56, "name": "Alice Example"}],
+        deals=[
+            {
+                "id": 3,
+                "price": "1500.0",
+                "currency": "USD",
+                "price_type": 0,
+                "name": "Renewal",
+                "project": {"id": 2, "name": "Sales"},
+                "status": {"id": 1, "name": "Pending"},
+                "background": "Multi-year",
+                "created_on": "2026-05-02T09:00:00Z",
+                "updated_on": "2026-05-03T09:00:00Z",
+            }
+        ],
+        issues=[
+            {
+                "id": 101,
+                "subject": "Onboarding",
+                "status": {"id": 1, "name": "New"},
+                "due_date": "2026-06-01",
+                "created_on": "2026-05-04T09:00:00Z",
+                "updated_on": "2026-05-05T09:00:00Z",
+            }
+        ],
+    )
+
+
+class TestGetIncludes:
+    """``include`` on ``get`` returns what the plugin renders for it (#ISSUE).
+
+    ``contacts/show.api.rsb`` honours exactly four includes -- ``notes``,
+    ``contacts``, ``deals`` and ``issues`` -- and the serializer used to drop
+    all four, so every include came back as the bare contact.
+    """
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_every_include_is_returned(self, mock_redmine):
+        mock_redmine.engine.request.return_value = {
+            "contact": _api_contact_with_includes()
+        }
+        with patch.dict(os.environ, CRM_ON):
+            result = await manage_contact(
+                action="get", contact_id=55, include="notes,contacts,deals,issues"
+            )
+        params = mock_redmine.engine.request.call_args.kwargs["params"]
+        assert params["include"] == "notes,contacts,deals,issues"
+        note = result["notes"][0]
+        assert (note["id"], note["type_id"]) == (7, 1)
+        assert note["author"] == {"id": 54, "name": "Carol Author"}
+        assert note["created_on"] == "2026-05-01T09:00:00Z"
+        assert "Called about renewal" in result["notes"][0]["content"]
+        assert result["contacts"] == [{"id": 56, "name": "Alice Example"}]
+        assert result["deals"][0]["name"] == "Renewal"
+        assert result["deals"][0]["status"] == {"id": 1, "name": "Pending"}
+        assert result["deals"][0]["project"] == {"id": 2, "name": "Sales"}
+        assert result["issues"] == [
+            {
+                "id": 101,
+                "subject": "Onboarding",
+                "status": {"id": 1, "name": "New"},
+                "due_date": "2026-06-01",
+                "created_on": "2026-05-04T09:00:00Z",
+                "updated_on": "2026-05-05T09:00:00Z",
+            }
+        ]
+
+    def test_free_text_is_wrapped(self):
+        result = _contact_to_dict(_api_contact_with_includes())
+        includes = _contact_includes_to_dict(_api_contact_with_includes())
+        assert includes["notes"][0]["content"].startswith("<insecure-content")
+        assert includes["deals"][0]["background"].startswith("<insecure-content")
+        # The list serializer is unchanged: includes are a `get` concern.
+        assert "notes" not in result
+
+    def test_an_embedded_deal_carries_only_the_keys_rendered(self):
+        """Not ``_deal_to_dict``: that would report ``None`` for keys such as
+        ``probability`` that the embedded template never sends."""
+        deal = _contact_includes_to_dict(_api_contact_with_includes())["deals"][0]
+        assert set(deal) == {
+            "id",
+            "name",
+            "price",
+            "currency",
+            "price_type",
+            "project",
+            "status",
+            "background",
+            "created_on",
+            "updated_on",
+        }
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_an_include_the_payload_lacks_is_absent_not_empty(self, mock_redmine):
+        """The plugin omits an array that is empty or not visible to the
+        caller, and cannot say which, so neither does the tool."""
+        mock_redmine.engine.request.return_value = {"contact": _api_contact()}
+        with patch.dict(os.environ, CRM_ON):
+            result = await manage_contact(action="get", contact_id=55, include="deals")
+        assert "deals" not in result
+        assert result["id"] == 55
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_non_dict_entries_are_dropped(self, mock_redmine):
+        mock_redmine.engine.request.return_value = {
+            "contact": _api_contact(contacts=[{"id": 56, "name": "A"}, "junk", None])
+        }
+        with patch.dict(os.environ, CRM_ON):
+            result = await manage_contact(
+                action="get", contact_id=55, include="contacts"
+            )
+        assert result["contacts"] == [{"id": 56, "name": "A"}]

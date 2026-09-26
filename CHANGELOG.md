@@ -30,6 +30,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carries none of them
   ([#352](https://github.com/jztan/redmine-mcp-server/issues/352)).
 
+### Fixed
+- `manage_contact(action="get")` returns the `include` arrays it asks for.
+  The CRM plugin renders `notes`, `contacts`, `deals` and `issues` on
+  request, but the serializer dropped all four, so every include came back as
+  the bare contact. Each now appears under its own key when the plugin sent
+  it
+  ([#ISSUE](https://github.com/jztan/redmine-mcp-server/issues/ISSUE)).
+
 ## [2.17.0] - 2026-09-26
 ### Added
 - A long description, note or wiki page can be changed without the model
