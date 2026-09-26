@@ -386,7 +386,7 @@ class TestProductPayloadKeys:
     It read ``tags``, ``created_on`` and ``updated_on``, which the plugin
     never sends, so all three came back empty for every product; ``author``
     and ``custom_fields`` were dropped outright, though ``custom_fields`` and
-    ``tag_list`` are writable through the tool (#ISSUE).
+    ``tag_list`` are writable through the tool (#358).
     """
 
     def _serialize(self, product):

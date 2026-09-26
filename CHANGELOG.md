@@ -78,7 +78,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   endpoint renders none). `get` also took the oldest revision as the latest,
   because DMSF lists revisions newest first, so `version`, `description`,
   `size` and the timestamps were stale; it now takes the highest revision id
-  ([#ISSUE](https://github.com/jztan/redmine-mcp-server/issues/ISSUE)).
+  ([#358](https://github.com/jztan/redmine-mcp-server/issues/358)).
 
 ## [2.17.0] - 2026-09-26
 ### Added

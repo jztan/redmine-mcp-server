@@ -954,7 +954,7 @@ class TestDocumentPayloadKeys:
     ``folder_id`` read a key DMSF never sends, so it was ``None`` on every
     ``get``, and ``custom_fields`` was never returned, though the tool writes
     it as ``custom_field_values``. The latest revision was taken as the last
-    entry, which is the oldest in DMSF's order (#ISSUE).
+    entry, which is the oldest in DMSF's order (#358).
     """
 
     def _serialize(self, node):
