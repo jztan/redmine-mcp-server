@@ -5,9 +5,8 @@ Redmine's ``app/views/members/index.api.rsb`` and ``show.api.rsb`` merge
 one that comes from a group the user belongs to, or from the parent of a
 subproject that inherits members. The key is omitted for a role held
 directly. ``_membership_to_dict`` used to flatten every role to ``{id, name}``,
-so ``list_project_members`` and ``manage_project_member(action="add" |
-"update")`` reported a group-derived Manager role exactly like a direct one,
-while ``get_current_user(include_memberships=True)`` kept the flag.
+so ``list_project_members`` and ``manage_project_member(action="update")``
+reported a group-derived Manager role exactly like a direct one, while ``get_current_user(include_memberships=True)`` kept the flag.
 
 These tests build real python-redmine resources from a payload shaped like
 that renderer's output rather than using ``Mock``: a ``Mock`` role answers
