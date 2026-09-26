@@ -2988,8 +2988,8 @@ Requires the **RedmineUP Products** plugin and `REDMINE_PRODUCTS_ENABLED=true`.
 - `fields` (dict): For `update`, fields to update. Allowed keys: `name`, `description`, `price`, `currency`, `status_id`, `code`, `project_id`, `category_id`, `tag_list`, `custom_fields`. Unknown keys are silently filtered
 
 **Returns:**
-- `list`: array of product dicts
-- `get`/`create`: product dict
+- `list`: array of product dicts, each with the keys `get` returns
+- `get`/`create`: product dict with `id`, `name`, `description`, `code`, `price`, `currency`, `status_id`, `project`, `category`, `author`, `tags`, `custom_fields`, `created_on`, `updated_on`. `tags` is read from the plugin's `tag_list` and the timestamps from its `created_at` / `updated_at`. `custom_fields` is `[]` when the product has none
 - `update`: `{"success": true, "product_id": N, "updated_fields": [...]}`
 - Error: `{"error": "..."}`
 
@@ -3169,7 +3169,7 @@ Requires the **RedmineUP CRM** plugin in its **Pro** edition, `REDMINE_DEALS_ENA
 
 **Returns:**
 - `list`: array of deal dicts
-- `get`/`create`: deal dict with `id`, `name`, `price`, `currency`, `price_type`, `duration`, `probability`, `due_date`, `background`, `project`, `status`, `category`, `author`, `contact`, `assigned_to`, `related_contacts`, `created_on`, `updated_on`. A `notes` key is added only when `include="notes"` was requested and the plugin returned notes, so its absence means "not requested" rather than "none". `custom_fields` is accepted on writes but not returned, matching `manage_product` and `manage_document`. `manage_contact` differs: it returns contact `custom_fields` on `get` and `create`, and on `list` under `include_custom_fields` or `custom_field_ids`
+- `get`/`create`: deal dict with `id`, `name`, `price`, `currency`, `price_type`, `duration`, `probability`, `due_date`, `background`, `project`, `status`, `category`, `author`, `contact`, `assigned_to`, `related_contacts`, `created_on`, `updated_on`. A `notes` key is added only when `include="notes"` was requested and the plugin returned notes, so its absence means "not requested" rather than "none". `custom_fields` is accepted on writes but not returned. `manage_product` differs, returning `custom_fields` on `list`, `get` and `create`, as does `manage_document` on `get`; `manage_contact` returns contact `custom_fields` on `get` and `create`, and on `list` under `include_custom_fields` or `custom_field_ids`
 - `update`: `{"success": true, "deal_id": N, "updated_fields": [...]}`
 - `delete`: `{"success": true, "deal_id": N, "message": ...}`
 - Error: `{"error": "..."}`
@@ -3347,8 +3347,8 @@ Combined DMSF CRUD tool. **Action-dispatched** — pass `action="list"|"get"|"cr
 
 **Returns:**
 
-- `list`: list of node dicts. Each node has `id`, `type` (`file` / `folder` / `file-link` / `folder-link`), `filename`, `title`, `name`, `description`, `version`, `size`, `content_type`, `folder_id`, `project_id`, `author` (`{id, name}`), `created_on`, `updated_on`.
-- `get`: a single node dict with the same shape. Most metadata (`description`, `size`, `version`, `mime_type`, `user_id`, timestamps) is pulled from the latest entry of `dmsf_file_revisions[]` — see the design notes below.
+- `list`: list of node dicts. Each node has `id`, `type` (`file` / `folder` / `file-link` / `folder-link`), `filename`, `title`, `name`, `description`, `version`, `size`, `content_type`, `folder_id`, `project_id`, `author` (`{id, name}`), `custom_fields`, `created_on`, `updated_on`. DMSF's list endpoint renders only `id`, `title`, `type` and `filename` per node, so the other keys are empty or `null` on a list row (`custom_fields` is `null`, not `[]`); call `get` for a document's metadata.
+- `get`: a single node dict with the same shape. Most metadata (`description`, `size`, `version`, `mime_type`, `user_id`, timestamps, `custom_fields`) is pulled from the latest entry of `dmsf_file_revisions[]`, the one with the highest `id` (DMSF lists revisions newest first) — see the design notes below. `custom_fields` is `[]` when that revision has none, and `folder_id` is read from DMSF's `dmsf_folder_id`.
 - `create`: a **sparse** dict containing only `id` + `name` (plus a `note` pointing at `action="get"` for full metadata). DMSF's commit endpoint deliberately returns id + name only; call `get` if you need description/size/version/timestamps. Returns `{"success": True}` if the response is unexpectedly empty.
 - `update`: `{"success": True, "document_id": N, "updated_fields": [...], "note": "DMSF created a new revision; previous revisions remain accessible via the document's revision history."}`.
 - Any failure: `{"error": "..."}`.
