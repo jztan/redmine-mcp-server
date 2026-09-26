@@ -74,6 +74,10 @@ _CONTACT_OWNED_QUERY_KEYS = frozenset(
         "include_custom_fields",
         # The same again: it selects which custom field values come back.
         "custom_field_ids",
+        # Sent in the one spelling every database adapter reads (see
+        # `_list_contacts_action`); through `filters` a caller would have to
+        # know the database's own literal for true.
+        "is_company",
     }
 )
 
@@ -424,6 +428,7 @@ def _list_contacts_action(
     include_pagination_info: bool = False,
     include_custom_fields: bool = False,
     custom_field_ids: Optional[List[int]] = None,
+    is_company: Optional[bool] = None,
     first_name: Optional[str] = None,
     last_name: Optional[str] = None,
     middle_name: Optional[str] = None,
@@ -466,6 +471,8 @@ def _list_contacts_action(
                 "custom field IDs."
             )
         }
+    if is_company is not None and not isinstance(is_company, bool):
+        return {"error": "is_company must be a boolean."}
     params: Dict[str, Any] = {"limit": limit}
     if offset:
         params["offset"] = offset
@@ -487,6 +494,7 @@ def _list_contacts_action(
         "email": email,
         "phone": phone,
         "author_id": author_id,
+        "is_company": is_company,
     }
     requested = sorted(name for name, value in pro_only.items() if value is not None)
     if requested:
@@ -522,8 +530,17 @@ def _list_contacts_action(
     # computed from the payload, rather than only checking that a non-matching
     # value came back empty.
     for name, value in pro_only.items():
-        if value is not None and name != "author_id":
+        if value is not None and name not in ("author_id", "is_company"):
             params[name] = value
+    # ``ContactQuery#sql_for_is_company_field`` (redmine_contacts 4.4.5) reads
+    # a value as true only when it equals the adapter's ``quoted_true``, whose
+    # spelling varies by adapter and Rails version, and anything else as
+    # false, so no fixed literal means true everywhere. ``"0"`` is nobody's
+    # true, so it means false everywhere, and ``"!0"`` is its negation: ``!``
+    # is the ``:list`` filter's other operator, which Redmine's short-filter
+    # parser strips before the plugin maps the value.
+    if is_company is not None:
+        params["is_company"] = "!0" if is_company else "0"
 
     if filters is not None:
         if not isinstance(filters, dict):
@@ -634,7 +651,7 @@ def _create_contact_action(
     company: Optional[str] = None,
     email: Optional[str] = None,
     phone: Optional[str] = None,
-    is_company: bool = False,
+    is_company: Optional[bool] = None,
     visibility: int = 0,
     fields: Optional[Dict[str, Any]] = None,
     **_: Any,
@@ -648,6 +665,10 @@ def _create_contact_action(
         }
     if not isinstance(first_name, str) or not first_name.strip():
         return {"error": "first_name must be a non-empty string."}
+    # Optional on the tool so that `list` can tell "not asked" from "people
+    # only"; a create that does not say still files a person, as it always has.
+    if is_company is None:
+        is_company = False
     if not isinstance(is_company, bool):
         return {"error": "is_company must be a boolean."}
     if visibility not in (0, 1, 2):
@@ -887,7 +908,7 @@ async def manage_contact(
     job_title: Optional[str] = None,
     email: Optional[str] = None,
     phone: Optional[str] = None,
-    is_company: bool = False,
+    is_company: Optional[bool] = None,
     visibility: int = 0,
     fields: Optional[Dict[str, Any]] = None,
     filters: Optional[Dict[str, Any]] = None,
@@ -979,11 +1000,10 @@ async def manage_contact(
             ``REDMINE_CRM_EDITION=pro``.
         phone: ``create`` attribute. Filters a ``list`` where
             ``REDMINE_CRM_EDITION=pro``.
-        is_company: ``create`` only -- ``true`` files the record as a company
-            rather than a person. This is **not** a list filter: the plugin's
-            own ``is_company`` filter returns the same wrong set for every
-            value, so filter the ``is_company`` key on the returned contacts
-            instead.
+        is_company: On ``create``, ``true`` files the record as a company
+            rather than a person (default: a person). On ``list``, ``true``
+            returns only companies and ``false`` only people; left out, both.
+            Filters a ``list`` where ``REDMINE_CRM_EDITION=pro``.
         visibility: ``create`` only. ``0`` project, ``1`` public, ``2``
             private.
         fields: ``create`` and ``update`` only. Contact attributes to write.
