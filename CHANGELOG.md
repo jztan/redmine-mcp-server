@@ -52,20 +52,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now kept where Redmine sends it and left out where it does not, as
   `get_current_user(include_memberships=True)` already did
   ([#356](https://github.com/jztan/redmine-mcp-server/issues/356)).
-
-### Contributors
-- @mmahmed reported and fixed three contact and membership gaps: contact
-  lists can select which custom fields come back, a contact `get` returns the
-  `include` arrays it asks for, and project member roles keep Redmine's
-  `inherited` flag
-  ([#352](https://github.com/jztan/redmine-mcp-server/issues/352),
-  [#353](https://github.com/jztan/redmine-mcp-server/pull/353),
-  [#354](https://github.com/jztan/redmine-mcp-server/issues/354),
-  [#355](https://github.com/jztan/redmine-mcp-server/pull/355),
-  [#356](https://github.com/jztan/redmine-mcp-server/issues/356),
-  [#357](https://github.com/jztan/redmine-mcp-server/pull/357)).
-
-### Fixed
 - `list_project_issue_custom_fields` no longer answers `[]` when Redmine's
   response leaves out the `issue_custom_fields` array. `issue_custom_fields` is
   in python-redmine's `Project._includes`, so reading the attribute re-fetched
@@ -129,6 +115,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   status was dropped the same way and the rest written; it is now refused
   before anything is sent
   ([#368](https://github.com/jztan/redmine-mcp-server/issues/368)).
+
+### Contributors
+- @mmahmed reported and fixed nine gaps across contacts, project members,
+  custom fields, products, documents and issues: contact lists select which
+  custom fields come back and filter on `is_company`, a contact `get` returns
+  its `include` arrays, member roles keep Redmine's `inherited` flag, an
+  omitted or unreadable `issue_custom_fields` is reported instead of read as
+  `[]`, product and DMSF fields are read under the keys their plugins send,
+  issue includes Redmine leaves out no longer trigger a second request, and
+  `update_redmine_issue` reports the fields Redmine discarded
+  ([#352](https://github.com/jztan/redmine-mcp-server/issues/352),
+  [#353](https://github.com/jztan/redmine-mcp-server/pull/353),
+  [#354](https://github.com/jztan/redmine-mcp-server/issues/354),
+  [#355](https://github.com/jztan/redmine-mcp-server/pull/355),
+  [#356](https://github.com/jztan/redmine-mcp-server/issues/356),
+  [#357](https://github.com/jztan/redmine-mcp-server/pull/357),
+  [#358](https://github.com/jztan/redmine-mcp-server/issues/358),
+  [#359](https://github.com/jztan/redmine-mcp-server/pull/359),
+  [#360](https://github.com/jztan/redmine-mcp-server/issues/360),
+  [#361](https://github.com/jztan/redmine-mcp-server/pull/361),
+  [#362](https://github.com/jztan/redmine-mcp-server/issues/362),
+  [#363](https://github.com/jztan/redmine-mcp-server/pull/363),
+  [#364](https://github.com/jztan/redmine-mcp-server/issues/364),
+  [#365](https://github.com/jztan/redmine-mcp-server/pull/365),
+  [#366](https://github.com/jztan/redmine-mcp-server/issues/366),
+  [#367](https://github.com/jztan/redmine-mcp-server/pull/367),
+  [#368](https://github.com/jztan/redmine-mcp-server/issues/368),
+  [#369](https://github.com/jztan/redmine-mcp-server/pull/369))).
 
 ## [2.17.0] - 2026-09-26
 ### Added
