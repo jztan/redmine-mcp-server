@@ -1019,11 +1019,7 @@ def _journal_details_to_list(
 def _journals_to_list(
     issue: Any, include_journal_values: bool = False
 ) -> List[Dict[str, Any]]:
-    """Convert journals on an issue object to a list of dicts.
-
-    Read through ``_included_resources``, so an issue fetched without
-    ``include=journals`` reads as having none rather than being fetched again.
-    """
+    """Convert journals on an issue object to a list of dicts."""
     journals: List[Dict[str, Any]] = []
     for journal in _included_resources(issue, "journals"):
         notes = getattr(journal, "notes", "")
@@ -1062,10 +1058,7 @@ def _journals_to_list(
 
 
 def _attachments_to_list(issue: Any) -> List[Dict[str, Any]]:
-    """Convert attachments on an issue object to a list of dicts.
-
-    Never fetches; see ``_included_resources``.
-    """
+    """Convert attachments on an issue object to a list of dicts."""
     return [
         _attachment_to_dict(attachment)
         for attachment in _included_resources(issue, "attachments")
@@ -1322,30 +1315,23 @@ async def get_redmine_issue(
             if include_attachments:
                 result["attachments"] = _attachments_to_list(issue)
 
-            # Watchers and children from the payload too. Redmine omits
-            # `children` for every leaf issue and `watchers` without
-            # view_issue_watchers, and the attribute re-fetches a missing
-            # include -- see _included_resources.
+            # Watchers, relations and children from the include= payload,
+            # never the attribute -- see _included_list and
+            # _included_resources.
             if include_watchers:
-                raw = _included_resources(issue, "watchers")
-                result["watchers"] = [{"id": w.id, "name": w.name} for w in raw]
+                result["watchers"] = [
+                    _named_ref(w) for w in _included_list(issue, "watchers")
+                ]
             if want_relations:
-                # From the include= payload, not the lazy issue.relations
-                # attribute -- see _included_list.
                 result["relations"] = _issue_relations_to_list(issue)
             if include_children:
-                raw = _included_resources(issue, "children")
                 result["children"] = [
                     {
-                        "id": c.id,
-                        "subject": getattr(c, "subject", ""),
-                        "tracker": (
-                            {"id": c.tracker.id, "name": c.tracker.name}
-                            if getattr(c, "tracker", None)
-                            else None
-                        ),
+                        "id": c.get("id"),
+                        "subject": c.get("subject", ""),
+                        "tracker": _named_ref(c.get("tracker")),
                     }
-                    for c in raw
+                    for c in _included_list(issue, "children")
                 ]
 
             if _is_tags_enabled():
@@ -3494,15 +3480,8 @@ def get_private_notes(
     """
     try:
         issue = _get_redmine_client().issue.get(issue_id, include="journals")
-        raw_journals = _included_resources(issue, "journals")
-
         private: List[Dict[str, Any]] = []
-        try:
-            iterator = iter(raw_journals)
-        except TypeError:
-            return []
-
-        for journal in iterator:
+        for journal in _included_resources(issue, "journals"):
             if not bool(getattr(journal, "private_notes", False)):
                 continue
             # Skip entries with no notes body (private detail-only records).

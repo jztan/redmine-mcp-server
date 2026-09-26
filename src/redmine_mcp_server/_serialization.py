@@ -251,32 +251,19 @@ def _included_list(resource: Any, key: str) -> List[Any]:
 
 
 def _included_resources(resource: Any, key: str) -> List[Any]:
-    """Read an ``include=`` collection as python-redmine resources, never fetching.
+    """:func:`_included_list`, for callers that read resources, not dicts.
 
-    For a name in ``_includes`` but not ``_relations`` -- an issue's
-    ``journals``, ``attachments``, ``watchers`` and ``children`` -- the
-    attribute does read the payload, and encodes it into the resources the
-    serializers walk. But when the key is absent, ``__getattr__`` calls
-    ``refresh(itself=False, include=key)``: a second ``GET`` of the whole
-    resource, answered ``[]`` when Redmine omits the key again. Redmine omits
-    two of them on purpose -- ``children`` for every leaf issue
-    (``render_api_issue_children`` returns early on ``issue.leaf?``) and
-    ``watchers`` without ``view_issue_watchers`` -- so the re-fetch fires on
-    ordinary reads and never learns anything.
-
-    So the payload decides: the attribute is read only when the key is there,
-    which python-redmine then serves without a request. A key that was never
-    included reads as empty, as in :func:`_included_list`. Presence is tested
-    on the value, not the key, because a fallback that has already run leaves
-    the key in ``raw()`` holding ``None``.
-
-    Not for ``relations``, which ``Issue`` also lists in ``_relations``; the
-    attribute ignores the payload there, so use :func:`_included_list`.
+    The payload decides whether the key is present; only then is the
+    attribute read, which python-redmine encodes from that payload without a
+    request. Read first, the attribute of an ``_includes`` name re-fetches the
+    whole resource with ``include=<key>`` when the key is missing, and Redmine
+    omits some on purpose: an issue's ``children`` when it is a leaf, and
+    ``watchers`` without ``view_issue_watchers``. Not for
+    ``relations``, whose attribute ignores the payload altogether.
     """
-    payload = resource.raw()
-    if not isinstance(payload, dict) or not isinstance(payload.get(key), list):
+    if not _included_list(resource, key):
         return []
-    return list(getattr(resource, key, None) or [])
+    return list(getattr(resource, key))
 
 
 def _issue_relation_to_dict(relation: Any) -> Dict[str, Any]:

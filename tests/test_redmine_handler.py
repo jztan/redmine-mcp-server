@@ -2188,30 +2188,21 @@ class TestGetRedmineIssueIncludeFlags:
         issue.assigned_to = None
         issue.created_on = None
         issue.updated_on = None
-        issue.journals = []
-        issue.attachments = []
-        w1 = Mock(id=10)
-        w1.name = "Watcher One"
-        w2 = Mock(id=11)
-        w2.name = "Watcher Two"
-        issue.watchers = [w1, w2]
-        # Relations come from the include=relations payload, as dicts.
+        # Includes come from the payload, as Redmine renders them.
         # python-redmine's issue.relations attribute does NOT read that
         # payload -- it is a lazy relation that issues a separate
-        # GET /issues/{id}/relations.json, mapped to manage_issue_relations.
-        # So serve them from raw() and make the attribute raise, so a
-        # regression to getattr fails here and not only against a real Redmine.
-        issue.children = [
-            Mock(
-                id=200,
-                subject="Child Issue",
-                tracker=Mock(id=1, name="Bug"),
-            )
-        ]
+        # GET /issues/{id}/relations.json, mapped to manage_issue_relations
+        # -- and the other include attributes re-fetch the issue when their
+        # key is missing. So serve them from raw() and make the relations
+        # attribute raise, so a regression to getattr fails here and not only
+        # against a real Redmine.
         issue.raw.return_value = {
             "journals": [],
             "attachments": [],
-            "watchers": issue.watchers,
+            "watchers": [
+                {"id": 10, "name": "Watcher One"},
+                {"id": 11, "name": "Watcher Two"},
+            ],
             "relations": [
                 {
                     "id": 5,
@@ -2221,7 +2212,13 @@ class TestGetRedmineIssueIncludeFlags:
                     "delay": None,
                 }
             ],
-            "children": issue.children,
+            "children": [
+                {
+                    "id": 200,
+                    "subject": "Child Issue",
+                    "tracker": {"id": 1, "name": "Bug"},
+                }
+            ],
         }
         type(issue).relations = PropertyMock(side_effect=ForbiddenError)
         return issue
@@ -2353,7 +2350,8 @@ class TestGetRedmineIssueIncludeFlags:
     async def test_watchers_missing_attribute(
         self, mock_redmine, mock_cleanup, mock_issue_with_extras
     ):
-        delattr(mock_issue_with_extras, "watchers")
+        # As Redmine renders it without view_issue_watchers: no key at all.
+        del mock_issue_with_extras.raw.return_value["watchers"]
         mock_redmine.issue.get.return_value = mock_issue_with_extras
         result = await get_redmine_issue(1, include_watchers=True)
         assert result["watchers"] == []
