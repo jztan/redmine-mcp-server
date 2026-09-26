@@ -272,9 +272,9 @@ class TestOmittedIncludeIsNotEmpty:
 
     The name is in python-redmine's ``Project._includes``, so reading the
     attribute when the key is missing re-fetches the whole project and answers
-    ``[]`` -- indistinguishable from a project with no fields. Every released
-    Redmine sends the array when asked (6.1.1 through 7.0.0); 6.1-stable and
-    trunk leave it out for a caller without ``view_issues`` (#ISSUE).
+    ``[]`` -- indistinguishable from a project with no fields. Redmine 6.1.4
+    and 7.0.1 leave the array out for a caller without ``view_issues`` on the
+    project; earlier releases always send it when asked (#ISSUE).
     """
 
     @pytest.fixture
@@ -293,7 +293,7 @@ class TestOmittedIncludeIsNotEmpty:
         assert result["code"] == "ISSUE_CUSTOM_FIELDS_UNREADABLE"
         assert "issue_custom_fields" in result["error"]
         assert "View issues" in result["hint"]
-        assert "extra_fields" in result["hint"]
+        assert 'fields={"custom_fields"' in result["hint"]
 
     @pytest.mark.asyncio
     async def test_omitted_array_is_not_fetched_again(self, engine):

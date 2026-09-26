@@ -612,12 +612,10 @@ async def list_project_issue_custom_fields(
             project = _get_redmine_client().project.get(
                 project_id, include="issue_custom_fields"
             )
-            # Check the payload before touching the attribute. The name is in
-            # python-redmine's Project._includes, so reading it when Redmine
-            # left it out re-fetches the whole project and then answers [] --
-            # "no fields" for a response that said nothing about fields.
-            # Presence is tested on the value: the attribute's fallback
-            # leaves the key in raw() holding None. See _included_list.
+            # Check the payload before touching the attribute: for a name in
+            # python-redmine's Project._includes, reading it when Redmine left
+            # it out re-fetches the project and then answers [] -- "no fields"
+            # for a response that said nothing about fields. See _included_list.
             payload = project.raw()
             if not isinstance(payload, dict) or not isinstance(
                 payload.get("issue_custom_fields"), list
@@ -631,23 +629,16 @@ async def list_project_issue_custom_fields(
                     ),
                     "code": "ISSUE_CUSTOM_FIELDS_UNREADABLE",
                     "hint": (
-                        "Redmine 6.1.1 to 7.0.0 always send this array when "
-                        "asked, so on those a plugin or proxy removed it. "
-                        "Later versions omit it when the caller lacks the "
-                        "View issues permission on the project. A custom "
+                        "Redmine 6.1.4 and 7.0.1 leave this array out when the "
+                        "caller lacks the View issues permission on the "
+                        "project; earlier releases always send it. A custom "
                         "field whose id is known can still be set with "
-                        'extra_fields={"custom_fields": [{"id": N, '
-                        '"value": ...}]}.'
+                        'fields={"custom_fields": [{"id": N, "value": ...}]}.'
                     ),
                 }
-            # ResourceSet defines __len__ but not __bool__, so `or []` would
-            # construct every CustomField purely to test truthiness and then
-            # discard them. list() is still needed: __iter__ rebuilds each
-            # resource on every pass, and the sequence is walked more than once.
-            raw_custom_fields = getattr(project, "issue_custom_fields", None)
-            custom_fields = (
-                list(raw_custom_fields) if raw_custom_fields is not None else []
-            )
+            # list(): ResourceSet.__iter__ rebuilds each resource on every
+            # pass, and the sequence is walked more than once.
+            custom_fields = list(project.issue_custom_fields)
 
             if parsed_tracker_id is not None:
                 reason = _tracker_bindings_unreadable_reason(
