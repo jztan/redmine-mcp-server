@@ -19,6 +19,7 @@ from .._serialization import (
     _custom_fields_to_list,
     _enabled_module_names,
     _included_list,
+    _membership_roles_to_list,
     _named_ref,
     _pagination_info,
     _payload_attr,
@@ -224,7 +225,7 @@ def _membership_to_dict(membership: Any) -> Dict[str, Any]:
     user = getattr(membership, "user", None)
     group = getattr(membership, "group", None)
     project = getattr(membership, "project", None)
-    roles = getattr(membership, "roles", None) or []
+    roles = getattr(membership, "roles", None)
 
     result: Dict[str, Any] = {
         "id": getattr(membership, "id", None),
@@ -244,26 +245,8 @@ def _membership_to_dict(membership: Any) -> Dict[str, Any]:
     # Project info
     result["project"] = _named_ref(project)
 
-    # Roles
-    result["roles"] = []
-    try:
-        for role in roles:
-            if isinstance(role, dict):
-                result["roles"].append(
-                    {
-                        "id": role.get("id"),
-                        "name": role.get("name", ""),
-                    }
-                )
-            else:
-                result["roles"].append(
-                    {
-                        "id": getattr(role, "id", None),
-                        "name": getattr(role, "name", ""),
-                    }
-                )
-    except TypeError:
-        pass  # roles not iterable
+    # Roles, with the ``inherited`` flag where Redmine sent it
+    result["roles"] = _membership_roles_to_list(roles)
 
     return result
 
@@ -1318,6 +1301,12 @@ def list_project_members(
     Returns all users and groups that are members of the specified project,
     along with their assigned roles.
 
+    A role that comes from a group the user belongs to, or from the parent
+    project when this one inherits members, carries ``inherited: true``;
+    Redmine omits the key for a role held directly, and so does this tool --
+    so test for the key, do not expect ``inherited: false``. A role held both
+    ways appears twice on the same row, once with the key and once without.
+
     Args:
         project_id: Project identifier (ID number or string identifier)
 
@@ -1335,7 +1324,10 @@ def list_project_members(
                 "user": {"id": 5, "name": "John Doe"},
                 "group": null,
                 "project": {"id": 1, "name": "My Project"},
-                "roles": [{"id": 3, "name": "Developer"}]
+                "roles": [
+                    {"id": 3, "name": "Developer"},
+                    {"id": 4, "name": "Manager", "inherited": true}
+                ]
             },
             ...
         ]

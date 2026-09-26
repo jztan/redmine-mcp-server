@@ -15,6 +15,7 @@ from .._offload import offloaded
 from .._serialization import (
     _included_list,
     _iter_capped,
+    _membership_roles_to_list,
     _named_ref,
     _safe_isoformat,
 )
@@ -185,30 +186,6 @@ def list_redmine_users(
         return _handle_redmine_error(e, "listing users")
 
 
-def _membership_roles_to_list(raw_roles: Any) -> List[Dict[str, Any]]:
-    """Serialize the ``roles`` array of one user-show membership entry.
-
-    Redmine renders each role as ``{id, name}`` and merges ``inherited =>
-    true`` onto it when the role arrives through a group membership
-    (``app/views/users/show.api.rsb``). It omits the key otherwise, so the
-    key is mirrored only when present -- a hard-coded ``inherited: false``
-    would be a claim Redmine never made, and it is the one field that tells
-    "I hold Manager here" apart from "a group I am in does".
-    """
-    if not isinstance(raw_roles, list):
-        return []
-
-    roles: List[Dict[str, Any]] = []
-    for role in raw_roles:
-        entry = _named_ref(role)
-        if entry is None:
-            continue
-        if isinstance(role, dict) and "inherited" in role:
-            entry["inherited"] = role["inherited"]
-        roles.append(entry)
-    return roles
-
-
 def _current_user_memberships(user: Any) -> List[Dict[str, Any]]:
     """Serialize the caller's ``include=memberships`` payload.
 
@@ -225,11 +202,9 @@ def _current_user_memberships(user: Any) -> List[Dict[str, Any]]:
     - It emits ``user`` and ``group``. Redmine's user-show renderer emits
       neither -- the user is the caller, implicitly -- so both would come
       back ``None``, indistinguishable from a membership naming no principal.
-    - It flattens roles to ``{id, name}`` and so would drop ``inherited``.
 
-    Widening the shared helper to cover all three would change
-    ``list_project_members`` output, which has its own callers and belongs in
-    its own change.
+    The roles are the one part the two share, and they go through the same
+    ``_membership_roles_to_list``.
     """
     memberships: List[Dict[str, Any]] = []
     for membership in _included_list(user, "memberships"):
