@@ -3044,6 +3044,7 @@ Requires the **RedmineUP CRM** plugin and `REDMINE_CRM_ENABLED=true`. Visibility
 - `offset` (integer, optional): For `list`, contacts to skip — needed to page past the first 100
 - `include_pagination_info` (boolean, optional): For `list`, return `{"contacts": [...], "pagination": {...}}` instead of a bare array. Default: `false`. The same envelope and the same keys as [`list_redmine_issues`](#list_redmine_issues) -- `total`, `limit`, `offset`, `count`, `has_next`, `has_previous`, `next_offset`, `previous_offset`
 - `include_custom_fields` (boolean, optional): For `list`, return each contact's `custom_fields` values. Default: `false`. Costs no extra request -- the CRM API renders every custom field on every contact whether or not it carries a value (`render_api_custom_values` is unconditional in the plugin's `contacts/index.api.rsb`), so the data is already in the payload. It is the larger half of a contact row, which is why the collection does not return the values unasked. Without it the key is elided rather than dropped, the way a long journal value is: `custom_fields` is `null` and `custom_fields_count` says how many were withheld, so `null` ("not requested") stays distinguishable from `[]` ("this contact has none"). `get` and `create` return the values always
+- `custom_field_ids` (array of integers, optional): For `list`, return only these custom fields in each contact's `custom_fields`, e.g. `[42, 43]`, in the order the payload carries them. Implies `include_custom_fields`. The IDs are each entry's `id`, the same number a `cf_42` filter uses. As with `include_custom_fields`, no `custom_fields_count` comes back, and `[]` means the contact carries none of the fields named -- an ID no contact carries is not an error. An empty list, or any entry that is not a positive integer, is refused
 - `contact_id` (integer): Required for all actions except `list` and `create`
 - `include` (string, optional): For `get`, comma-separated includes (`notes`, `deals`, `contacts`)
 - `first_name` (string): Required for `create`. Filters a `list` where `REDMINE_CRM_EDITION=pro`
@@ -3055,7 +3056,7 @@ Requires the **RedmineUP CRM** plugin and `REDMINE_CRM_ENABLED=true`. Visibility
 - `fields` (dict): For `update`, fields to update. Allowed keys: `first_name`, `last_name`, `middle_name`, `company`, `job_title`, `phone`, `email`, `website`, `skype_name`, `birthday`, `background`, `address_attributes`, `tag_list`, `is_company`, `assigned_to_id`, `custom_fields`, `visibility`, `project_id`. For `create`, additional fields beyond the named parameters
 
 **Returns:**
-- `list`: array of contact dicts -- or, with `include_pagination_info=true`, `{"contacts": [...], "pagination": {...}}`. A listed contact carries `custom_fields` values only under `include_custom_fields=true`; otherwise that key is `null` and `custom_fields_count` carries the number withheld
+- `list`: array of contact dicts -- or, with `include_pagination_info=true`, `{"contacts": [...], "pagination": {...}}`. A listed contact carries `custom_fields` values only under `include_custom_fields=true`, or just the fields named under `custom_field_ids`; otherwise that key is `null` and `custom_fields_count` carries the number withheld
 - `get`/`create`: contact dict, `custom_fields` values included
 - `update`: `{"success": true, "contact_id": N, "updated_fields": [...]}`
 - `delete`: `{"success": true, "contact_id": N, "message": ...}`
@@ -3097,6 +3098,12 @@ manage_contact(
 #     "previous_offset": null
 #   }
 # }
+
+# Read two custom fields off every contact, not all of them
+manage_contact(action="list", custom_field_ids=[42, 43])
+# Each row carries just those two:
+#   "custom_fields": [{"id": 42, "name": "Account Owner", "value": "..."},
+#                     {"id": 43, "name": "Tier", "value": "..."}]
 
 # Fetch a single contact with related notes and deals
 manage_contact(action="get", contact_id=42, include="notes,deals")
@@ -3157,7 +3164,7 @@ Requires the **RedmineUP CRM** plugin in its **Pro** edition, `REDMINE_DEALS_ENA
 
 **Returns:**
 - `list`: array of deal dicts
-- `get`/`create`: deal dict with `id`, `name`, `price`, `currency`, `price_type`, `duration`, `probability`, `due_date`, `background`, `project`, `status`, `category`, `author`, `contact`, `assigned_to`, `related_contacts`, `created_on`, `updated_on`. A `notes` key is added only when `include="notes"` was requested and the plugin returned notes, so its absence means "not requested" rather than "none". `custom_fields` is accepted on writes but not returned, matching `manage_product` and `manage_document`. `manage_contact` differs: it returns contact `custom_fields` on `get` and `create`, and on `list` under `include_custom_fields`
+- `get`/`create`: deal dict with `id`, `name`, `price`, `currency`, `price_type`, `duration`, `probability`, `due_date`, `background`, `project`, `status`, `category`, `author`, `contact`, `assigned_to`, `related_contacts`, `created_on`, `updated_on`. A `notes` key is added only when `include="notes"` was requested and the plugin returned notes, so its absence means "not requested" rather than "none". `custom_fields` is accepted on writes but not returned, matching `manage_product` and `manage_document`. `manage_contact` differs: it returns contact `custom_fields` on `get` and `create`, and on `list` under `include_custom_fields` or `custom_field_ids`
 - `update`: `{"success": true, "deal_id": N, "updated_fields": [...]}`
 - `delete`: `{"success": true, "deal_id": N, "message": ...}`
 - Error: `{"error": "..."}`

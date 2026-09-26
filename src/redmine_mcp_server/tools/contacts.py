@@ -71,6 +71,8 @@ _CONTACT_OWNED_QUERY_KEYS = frozenset(
         # Redmine as an unregistered key, be ignored there, and leave the
         # caller with the full rows they asked to do without.
         "include_custom_fields",
+        # The same again: it selects which custom field values come back.
+        "custom_field_ids",
     }
 )
 
@@ -186,7 +188,9 @@ def _contact_tag_names(raw: Any) -> List[str]:
 
 
 def _contact_to_dict(
-    contact: Dict[str, Any], include_custom_fields: bool = False
+    contact: Dict[str, Any],
+    include_custom_fields: bool = False,
+    custom_field_ids: Optional[List[int]] = None,
 ) -> Dict[str, Any]:
     """Serialize a RedmineUP CRM API response into a stable dict.
 
@@ -274,7 +278,16 @@ def _contact_to_dict(
     # from genuinely empty. Here ``None`` is never a real value for a
     # list-valued key, so it carries that meaning by itself and a flag would
     # only restate it.
+    #
+    # ``custom_field_ids`` narrows the values to the fields named, in the
+    # order the payload carries them, and implies ``include_custom_fields``:
+    # the fields were requested, so there is no count, and ``[]`` still means
+    # this contact carries none of them.
     custom_fields = _custom_fields_to_list(contact)
+    if custom_field_ids is not None:
+        wanted = set(custom_field_ids)
+        custom_fields = [cf for cf in custom_fields if cf["id"] in wanted]
+        include_custom_fields = True
     if include_custom_fields:
         result["custom_fields"] = custom_fields
     else:
@@ -338,6 +351,7 @@ def _list_contacts_action(
     offset: int = 0,
     include_pagination_info: bool = False,
     include_custom_fields: bool = False,
+    custom_field_ids: Optional[List[int]] = None,
     first_name: Optional[str] = None,
     last_name: Optional[str] = None,
     middle_name: Optional[str] = None,
@@ -363,6 +377,21 @@ def _list_contacts_action(
             "error": (
                 "project_id must be a non-empty string identifier or "
                 "positive integer."
+            )
+        }
+    # An empty list is refused rather than read as "no fields": that is what
+    # leaving the parameter out already means, and a caller building the list
+    # from a lookup that found nothing is better told than handed the elided
+    # shape as if it had asked for it.
+    if custom_field_ids is not None and (
+        not isinstance(custom_field_ids, list)
+        or not custom_field_ids
+        or not all(_is_positive_int(cf_id) for cf_id in custom_field_ids)
+    ):
+        return {
+            "error": (
+                "custom_field_ids must be a non-empty list of positive integer "
+                "custom field IDs."
             )
         }
     params: Dict[str, Any] = {"limit": limit}
@@ -471,7 +500,11 @@ def _list_contacts_action(
         envelope = payload if isinstance(payload, dict) else {}
         raw = envelope.get("contacts", [])
         contacts = [
-            _contact_to_dict(c, include_custom_fields=include_custom_fields)
+            _contact_to_dict(
+                c,
+                include_custom_fields=include_custom_fields,
+                custom_field_ids=custom_field_ids,
+            )
             for c in raw[:limit]
         ]
         if not include_pagination_info:
@@ -770,6 +803,7 @@ async def manage_contact(
     offset: Annotated[int, Field(ge=0)] = 0,
     include_pagination_info: bool = False,
     include_custom_fields: bool = False,
+    custom_field_ids: Optional[List[int]] = None,
     contact_id: Optional[int] = None,
     include: Optional[str] = None,
     first_name: Optional[str] = None,
@@ -835,6 +869,12 @@ async def manage_contact(
             means "not requested" and ``[]`` means "this contact has none".
             A ``get`` returns the values always, so read one contact in full
             rather than turning this on to see one field.
+        custom_field_ids: ``list`` only. Return only these custom fields in
+            each contact's ``custom_fields``, e.g. ``[42, 43]``; implies
+            ``include_custom_fields``. The IDs are the ``id`` of each
+            ``custom_fields`` entry, the same number as in a ``cf_42`` filter.
+            ``[]`` means the contact carries none of them; an ID no contact
+            carries is not an error.
         include_pagination_info: ``list`` only. Return
             ``{"contacts": [...], "pagination": {...}}`` rather than a bare
             list (default: False), with the keys ``list_redmine_issues``
@@ -890,9 +930,9 @@ async def manage_contact(
         ``pagination`` -- ``get`` / ``create`` one contact dict, the remaining
         actions a status dict, and ``{"error": ...}`` on failure. A listed
         contact carries ``custom_fields`` values only under
-        ``include_custom_fields``, and otherwise ``None`` plus
-        ``custom_fields_count``; ``get`` and ``create`` always carry the
-        values.
+        ``include_custom_fields`` or ``custom_field_ids``, and otherwise
+        ``None`` plus ``custom_fields_count``; ``get`` and ``create`` always
+        carry the values.
     """
     if not _is_crm_enabled():
         return dict(_CRM_DISABLED_ERROR)
@@ -907,6 +947,7 @@ async def manage_contact(
         offset=offset,
         include_pagination_info=include_pagination_info,
         include_custom_fields=include_custom_fields,
+        custom_field_ids=custom_field_ids,
         contact_id=contact_id,
         include=include,
         first_name=first_name,
