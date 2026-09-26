@@ -173,6 +173,7 @@ class TestJournalsList_StringDates:
 
         issue = Mock()
         issue.journals = [journal]
+        issue.raw.return_value = {"journals": [journal]}
 
         result = _journals_to_list(issue)
         assert len(result) == 1
@@ -196,6 +197,7 @@ class TestAttachmentsList_StringDates:
 
         issue = Mock()
         issue.attachments = [attachment]
+        issue.raw.return_value = {"attachments": [attachment]}
 
         result = _attachments_to_list(issue)
         assert len(result) == 1

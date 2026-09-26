@@ -43,6 +43,7 @@ from .._serialization import (
     _attachment_to_dict,
     _custom_fields_to_list,
     _included_list,
+    _included_resources,
     _issue_relation_to_dict,
     _issue_relations_to_list,
     _iter_capped,
@@ -1018,18 +1019,13 @@ def _journal_details_to_list(
 def _journals_to_list(
     issue: Any, include_journal_values: bool = False
 ) -> List[Dict[str, Any]]:
-    """Convert journals on an issue object to a list of dicts."""
-    raw_journals = getattr(issue, "journals", None)
-    if raw_journals is None:
-        return []
+    """Convert journals on an issue object to a list of dicts.
 
+    Read through ``_included_resources``, so an issue fetched without
+    ``include=journals`` reads as having none rather than being fetched again.
+    """
     journals: List[Dict[str, Any]] = []
-    try:
-        iterator = iter(raw_journals)
-    except TypeError:
-        return []
-
-    for journal in iterator:
+    for journal in _included_resources(issue, "journals"):
         notes = getattr(journal, "notes", "")
         details = _journal_details_to_list(journal, include_journal_values)
         # Keep journals that have a note OR field-change details. Entries with
@@ -1066,25 +1062,19 @@ def _journals_to_list(
 
 
 def _attachments_to_list(issue: Any) -> List[Dict[str, Any]]:
-    """Convert attachments on an issue object to a list of dicts."""
-    raw_attachments = getattr(issue, "attachments", None)
-    if raw_attachments is None:
-        return []
+    """Convert attachments on an issue object to a list of dicts.
 
-    attachments: List[Dict[str, Any]] = []
-    try:
-        iterator = iter(raw_attachments)
-    except TypeError:
-        return []
-
-    for attachment in iterator:
-        attachments.append(_attachment_to_dict(attachment))
-    return attachments
+    Never fetches; see ``_included_resources``.
+    """
+    return [
+        _attachment_to_dict(attachment)
+        for attachment in _included_resources(issue, "attachments")
+    ]
 
 
 def _newest_journal_id(issue: Any) -> Optional[int]:
     """Return the id of the newest journal on an issue, or None."""
-    raw = getattr(issue, "journals", None) or []
+    raw = _included_resources(issue, "journals")
     ids = [getattr(j, "id", None) for j in raw if getattr(j, "id", None) is not None]
     return max(ids) if ids else None
 
@@ -1332,15 +1322,19 @@ async def get_redmine_issue(
             if include_attachments:
                 result["attachments"] = _attachments_to_list(issue)
 
+            # Watchers and children from the payload too. Redmine omits
+            # `children` for every leaf issue and `watchers` without
+            # view_issue_watchers, and the attribute re-fetches a missing
+            # include -- see _included_resources.
             if include_watchers:
-                raw = getattr(issue, "watchers", None) or []
+                raw = _included_resources(issue, "watchers")
                 result["watchers"] = [{"id": w.id, "name": w.name} for w in raw]
             if want_relations:
                 # From the include= payload, not the lazy issue.relations
                 # attribute -- see _included_list.
                 result["relations"] = _issue_relations_to_list(issue)
             if include_children:
-                raw = getattr(issue, "children", None) or []
+                raw = _included_resources(issue, "children")
                 result["children"] = [
                     {
                         "id": c.id,
@@ -3317,7 +3311,7 @@ def _edit_issue_note_action(
             )
 
         current = None
-        for journal in getattr(issue, "journals", None) or []:
+        for journal in _included_resources(issue, "journals"):
             if getattr(journal, "id", None) == journal_id:
                 current = getattr(journal, "notes", "") or ""
                 break
@@ -3500,7 +3494,7 @@ def get_private_notes(
     """
     try:
         issue = _get_redmine_client().issue.get(issue_id, include="journals")
-        raw_journals = getattr(issue, "journals", None) or []
+        raw_journals = _included_resources(issue, "journals")
 
         private: List[Dict[str, Any]] = []
         try:

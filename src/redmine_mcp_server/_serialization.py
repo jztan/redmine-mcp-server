@@ -250,6 +250,35 @@ def _included_list(resource: Any, key: str) -> List[Any]:
     return list(value) if isinstance(value, list) else []
 
 
+def _included_resources(resource: Any, key: str) -> List[Any]:
+    """Read an ``include=`` collection as python-redmine resources, never fetching.
+
+    For a name in ``_includes`` but not ``_relations`` -- an issue's
+    ``journals``, ``attachments``, ``watchers`` and ``children`` -- the
+    attribute does read the payload, and encodes it into the resources the
+    serializers walk. But when the key is absent, ``__getattr__`` calls
+    ``refresh(itself=False, include=key)``: a second ``GET`` of the whole
+    resource, answered ``[]`` when Redmine omits the key again. Redmine omits
+    two of them on purpose -- ``children`` for every leaf issue
+    (``render_api_issue_children`` returns early on ``issue.leaf?``) and
+    ``watchers`` without ``view_issue_watchers`` -- so the re-fetch fires on
+    ordinary reads and never learns anything.
+
+    So the payload decides: the attribute is read only when the key is there,
+    which python-redmine then serves without a request. A key that was never
+    included reads as empty, as in :func:`_included_list`. Presence is tested
+    on the value, not the key, because a fallback that has already run leaves
+    the key in ``raw()`` holding ``None``.
+
+    Not for ``relations``, which ``Issue`` also lists in ``_relations``; the
+    attribute ignores the payload there, so use :func:`_included_list`.
+    """
+    payload = resource.raw()
+    if not isinstance(payload, dict) or not isinstance(payload.get(key), list):
+        return []
+    return list(getattr(resource, key, None) or [])
+
+
 def _issue_relation_to_dict(relation: Any) -> Dict[str, Any]:
     """Convert an issue relation to a serializable dict.
 

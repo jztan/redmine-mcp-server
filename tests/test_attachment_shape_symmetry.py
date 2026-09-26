@@ -68,7 +68,10 @@ class TestIssueAndWikiProduceSameShape:
     either tool yields identical shapes."""
 
     def test_issue_attachments_have_canonical_keys(self):
-        issue = SimpleNamespace(attachments=[_make_attachment()])
+        attachments = [_make_attachment()]
+        issue = SimpleNamespace(
+            attachments=attachments, raw=lambda: {"attachments": attachments}
+        )
         result = _attachments_to_list(issue)
         assert len(result) == 1
         assert set(result[0].keys()) == _EXPECTED_KEYS
@@ -95,7 +98,9 @@ class TestIssueAndWikiProduceSameShape:
         # equality on each non-description field; assert description
         # carries the same inner payload.
         att = _make_attachment()
-        issue_result = _attachments_to_list(SimpleNamespace(attachments=[att]))[0]
+        issue_result = _attachments_to_list(
+            SimpleNamespace(attachments=[att], raw=lambda: {"attachments": [att]})
+        )[0]
         wiki_result = _wiki_page_to_dict(
             SimpleNamespace(title="t", text="", version=1, attachments=[att]),
             include_attachments=True,

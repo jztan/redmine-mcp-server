@@ -84,6 +84,7 @@ class TestRedmineHandler:
         attachment.author = att_author
         attachment.created_on = datetime(2025, 1, 2, 11, 0, 0)
         mock_issue.attachments = [attachment]
+        mock_issue.raw.return_value = {"attachments": [attachment]}
 
         # Mock custom fields (e.g., Agile plugin "Size")
         custom_field = Mock()
@@ -1166,6 +1167,10 @@ class TestRedmineHandler:
         journal.user = user
 
         mock_redmine_issue.journals = [journal]
+        mock_redmine_issue.raw.return_value = {
+            **mock_redmine_issue.raw.return_value,
+            "journals": [journal],
+        }
         return mock_redmine_issue
 
     @pytest.fixture
@@ -1381,6 +1386,7 @@ class TestHelperFunctionEdgeCases:
         mock_journal.details = []  # No field-change details either
         mock_journal.id = 1
         mock_issue.journals = [mock_journal]
+        mock_issue.raw.return_value = {"journals": [mock_journal]}
         result = _journals_to_list(mock_issue)
         assert result == []  # Filtered out (no information to surface)
 
@@ -1403,6 +1409,7 @@ class TestHelperFunctionEdgeCases:
             }
         ]
         mock_issue.journals = [mock_journal]
+        mock_issue.raw.return_value = {"journals": [mock_journal]}
         result = _journals_to_list(mock_issue)
         assert len(result) == 1
         assert result[0]["id"] == 34166
@@ -1439,6 +1446,7 @@ class TestHelperFunctionEdgeCases:
             }
         ]
         mock_issue.journals = [mock_journal]
+        mock_issue.raw.return_value = {"journals": [mock_journal]}
         result = _journals_to_list(mock_issue)
         assert len(result) == 1
         assert result[0]["details"][0]["property"] == "cf"
@@ -1456,6 +1464,7 @@ class TestHelperFunctionEdgeCases:
         mock_journal.details = []
         mock_journal.id = 1
         mock_issue.journals = [mock_journal]
+        mock_issue.raw.return_value = {"journals": [mock_journal]}
         result = _journals_to_list(mock_issue)
         # Whitespace is truthy, so it won't be filtered
         assert len(result) == 1
@@ -2053,6 +2062,7 @@ class TestGetRedmineIssueJournalPagination:
             j.user = Mock(id=1, name="Author")
             journals.append(j)
         issue.journals = journals
+        issue.raw.return_value = {"journals": journals, "attachments": []}
         return issue
 
     @pytest.mark.asyncio
@@ -2191,7 +2201,17 @@ class TestGetRedmineIssueIncludeFlags:
         # GET /issues/{id}/relations.json, mapped to manage_issue_relations.
         # So serve them from raw() and make the attribute raise, so a
         # regression to getattr fails here and not only against a real Redmine.
+        issue.children = [
+            Mock(
+                id=200,
+                subject="Child Issue",
+                tracker=Mock(id=1, name="Bug"),
+            )
+        ]
         issue.raw.return_value = {
+            "journals": [],
+            "attachments": [],
+            "watchers": issue.watchers,
             "relations": [
                 {
                     "id": 5,
@@ -2200,16 +2220,10 @@ class TestGetRedmineIssueIncludeFlags:
                     "relation_type": "relates",
                     "delay": None,
                 }
-            ]
+            ],
+            "children": issue.children,
         }
         type(issue).relations = PropertyMock(side_effect=ForbiddenError)
-        issue.children = [
-            Mock(
-                id=200,
-                subject="Child Issue",
-                tracker=Mock(id=1, name="Bug"),
-            )
-        ]
         return issue
 
     @pytest.mark.asyncio

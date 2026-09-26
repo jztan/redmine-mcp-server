@@ -606,6 +606,7 @@ class TestGetPrivateNotes:
 
         issue = Mock()
         issue.journals = [j1, j2]
+        issue.raw.return_value = {"journals": [j1, j2]}
         mock_redmine.issue.get.return_value = issue
 
         result = await get_private_notes(issue_id=1)

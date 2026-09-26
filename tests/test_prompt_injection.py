@@ -138,6 +138,7 @@ class TestJournalsToListWrapping:
 
         issue = Mock()
         issue.journals = [journal]
+        issue.raw.return_value = {"journals": [journal]}
 
         result = _journals_to_list(issue)
         assert result[0]["notes"].startswith("<insecure-content-")
@@ -152,6 +153,7 @@ class TestJournalsToListWrapping:
 
         issue = Mock()
         issue.journals = [journal]
+        issue.raw.return_value = {"journals": [journal]}
 
         result = _journals_to_list(issue)
         assert result == []
