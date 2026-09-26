@@ -28,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unchanged: named fields are requested fields, so `custom_fields` holds just
   those with no `custom_fields_count`, and `[]` still means the contact
   carries none of them
-  ([#ISSUE](https://github.com/jztan/redmine-mcp-server/issues/ISSUE)).
+  ([#352](https://github.com/jztan/redmine-mcp-server/issues/352)).
 
 ## [2.17.0] - 2026-09-26
 ### Added

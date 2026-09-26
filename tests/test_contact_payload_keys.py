@@ -678,7 +678,7 @@ def _contact_with_three_fields() -> dict:
 
 class TestCustomFieldSelection:
     """``custom_field_ids`` on ``list``: the fields a lookup needs, not all of
-    them or none (#ISSUE).
+    them or none (#352).
 
     It narrows ``include_custom_fields`` rather than adding a second shape:
     ``custom_fields`` holds only the named fields with no
