@@ -455,7 +455,7 @@ def _upsert_custom_field_entry(
 
 _NAME_LOOKUP_ALTERNATIVE = (
     "Nothing was written. Pass the field by id instead: "
-    'extra_fields={"custom_fields": [{"id": N, "value": ...}]}. The ids also '
+    'fields={"custom_fields": [{"id": N, "value": ...}]}. The ids also '
     "appear under custom_fields on an issue read with get_redmine_issue."
 )
 
@@ -463,21 +463,15 @@ _NAME_LOOKUP_ALTERNATIVE = (
 def _issue_custom_fields_for_name_lookup(project_id: Union[int, str]) -> List[Any]:
     """Read the issue custom fields a project enables, to resolve names.
 
-    Raises ``ValueError`` instead of returning ``[]`` when they cannot be read.
-    An empty list here leaves every name in ``fields`` unresolved, and
-    ``_resolve_named_custom_fields`` then sends it on as a top-level key that
-    Redmine ignores, so the value would be dropped without a word. Two ways
-    here:
+    Raises ``ValueError`` rather than returning ``[]`` when they cannot be
+    read, since ``[]`` would send every name on as a key Redmine ignores:
 
-    - ``projects#show`` refuses the read. It needs ``view_project``, which
-      the create and update scope entries do not require, because only a
-      name-keyed ``fields`` payload reaches this read -- an argument-
-      conditional permission, left to Redmine like the others.
-    - The response leaves ``issue_custom_fields`` out. Every released Redmine
-      sends it when asked (6.1.1 to 6.1.3, 7.0.0), but 6.1-stable and trunk
-      omit it for a caller without ``view_issues`` on the project. The
-      payload is checked before the attribute, which would otherwise
-      re-fetch the whole project and answer ``[]`` -- see ``_included_list``.
+    - ``projects#show`` refuses the read. It needs ``view_project``, an
+      argument-conditional permission the scope map leaves to Redmine (see
+      ``TOOL_SCOPES``); reported here because nothing has been written yet.
+    - The response leaves ``issue_custom_fields`` out, as Redmine 6.1.4 and
+      7.0.1 do without ``view_issues`` on the project. Checked on the payload,
+      as in ``_included_list``: the attribute would re-fetch the project.
     """
     try:
         project = _get_redmine_client().project.get(
@@ -497,9 +491,11 @@ def _issue_custom_fields_for_name_lookup(project_id: Union[int, str]) -> List[An
         raise ValueError(
             "Could not resolve the custom field names in fields: Redmine's "
             f"response for project {project_id} did not include "
-            f"issue_custom_fields. {_NAME_LOOKUP_ALTERNATIVE}"
+            "issue_custom_fields. Redmine 6.1.4 and 7.0.1 leave it out for a "
+            "caller without the View issues permission (OAuth scope "
+            f"view_issues) on the project. {_NAME_LOOKUP_ALTERNATIVE}"
         )
-    return list(getattr(project, "issue_custom_fields", None) or [])
+    return list(project.issue_custom_fields)
 
 
 def _resolve_project_issue_custom_fields(issue_id: int) -> List[Any]:

@@ -10,9 +10,9 @@ name-keyed payload makes it. When it could not be read:
   ``update_redmine_issue`` came back as "Access denied" for the update itself;
 - an omitted array was read through python-redmine's include fallback, which
   re-fetched the project and answered ``[]``, leaving every name unresolved and
-  sent on as a top-level key Redmine ignores. Released Redmine (6.1.1 to 6.1.3,
-  7.0.0) always sends the array when asked; 6.1-stable and trunk omit it for a
-  caller without ``view_issues`` on the project.
+  sent on as a top-level key Redmine ignores. Redmine 6.1.4 and 7.0.1 leave
+  the array out for a caller without ``view_issues`` on the project; earlier
+  releases always send it.
 
 The engine below keeps python-redmine whole and records every request, so the
 tests can assert that nothing was written, not only that an error came back.
@@ -125,7 +125,7 @@ class TestCreate:
         assert isinstance(result, dict)
         assert "custom field names" in result["error"]
         assert "view_project" in result["error"]
-        assert "extra_fields" in result["error"]
+        assert 'fields={"custom_fields"' in result["error"]
         assert "Nothing was written" in result["error"]
         assert engine.writes == []
 
@@ -138,7 +138,8 @@ class TestCreate:
         )
 
         assert "issue_custom_fields" in result["error"]
-        assert "extra_fields" in result["error"]
+        assert "view_issues" in result["error"]
+        assert 'fields={"custom_fields"' in result["error"]
         assert engine.writes == []
         # Checked on the payload: the include fallback's re-fetch never runs.
         assert len(_project_reads(engine)) == 1
