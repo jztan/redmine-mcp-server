@@ -2355,8 +2355,8 @@ def _text_from_staged_upload(
 
 
 # Submitted issue attributes whose effect can be read off the re-fetched issue
-# without guessing at how Redmine normalises them, mapped to the reference the
-# issue serializer returns them under.
+# without guessing at how Redmine normalises them, mapped to the reference
+# Redmine returns them under.
 _UNAPPLIED_REF_FIELDS = {
     "project_id": "project",
     "tracker_id": "tracker",
@@ -2385,8 +2385,10 @@ def _submitted_id(value: Any) -> Any:
         return _UNCHECKED
     if isinstance(value, int):
         return value
-    if isinstance(value, str) and value.strip().isdigit():
-        return int(value.strip())
+    if isinstance(value, str):
+        text = value.strip()
+        if text.isdigit():
+            return int(text)
     return _UNCHECKED
 
 
@@ -2400,66 +2402,69 @@ def _submitted_hours(value: Any) -> Any:
         return None
     if isinstance(value, bool):
         return _UNCHECKED
-    if isinstance(value, (int, float)):
+    try:
         return float(value)
-    if isinstance(value, str):
-        try:
-            return float(value.strip())
-        except ValueError:
-            return _UNCHECKED
-    return _UNCHECKED
+    except (TypeError, ValueError):
+        return _UNCHECKED
+
+
+_RAILS_FLAGS = {"1": True, "true": True, "0": False, "false": False}
 
 
 def _submitted_flag(value: Any) -> Any:
     """A boolean in the spellings Rails casts, else unchecked."""
     if isinstance(value, bool):
         return value
-    if value in (0, 1) and isinstance(value, int):
+    if isinstance(value, int) and value in (0, 1):
         return bool(value)
-    if isinstance(value, str) and value.strip().lower() in ("1", "true"):
-        return True
-    if isinstance(value, str) and value.strip().lower() in ("0", "false"):
-        return False
+    if isinstance(value, str):
+        return _RAILS_FLAGS.get(value.strip().lower(), _UNCHECKED)
     return _UNCHECKED
 
 
-def _custom_value_set(value: Any) -> frozenset:
+def _custom_value_set(value: Any) -> Any:
     """A custom field value as the set of non-blank strings Redmine keeps.
 
     Mirrors ``FieldFormat::Base#set_custom_field_value``: every value is
-    stored as a string, and a multiple value drops blanks and duplicates. A
-    set also lets a single value compare equal to a one-element list.
+    stored as its Ruby ``to_s`` (``true`` as ``"true"``), and a multiple value
+    drops blanks and duplicates. A set also lets a single value compare equal
+    to a one-element list. A hash -- a file custom field takes an upload token
+    and stores the attachment id -- is not stored as sent, so it is left
+    unchecked.
     """
     items = value if isinstance(value, (list, tuple)) else [value]
     normalised = set()
     for item in items:
         if item is None:
             continue
+        if isinstance(item, (dict, list, tuple)):
+            return _UNCHECKED
         if isinstance(item, bool):
-            item = "1" if item else "0"
+            item = "true" if item else "false"
         text = _normalized_newlines(str(item))
         if text != "":
             normalised.add(text)
     return frozenset(normalised)
 
 
-def _same_custom_value(submitted: Any, current: Any) -> bool:
-    wanted = _custom_value_set(submitted)
+def _same_custom_value(wanted: frozenset, current: Any) -> bool:
     stored = _custom_value_set(current)
-    if wanted == stored:
+    if stored is _UNCHECKED or wanted == stored:
         return True
-    # A float field is stored as typed after separator normalisation, so
-    # ``1.50`` and ``1.5`` are the same number written two ways.
+    # ``normalize_float`` swaps the caller's locale decimal separator for
+    # ``.``, so ``1,5`` is stored as ``1.5``; and Python and Ruby spell some
+    # floats differently (``1e+16`` against ``1.0e+16``).
     if len(wanted) == len(stored) == 1:
         try:
-            return float(next(iter(wanted))) == float(next(iter(stored)))
+            submitted = next(iter(wanted)).replace(",", ".")
+            return float(submitted) == float(next(iter(stored)))
         except ValueError:
             return False
     return False
 
 
 def _unapplied_update_fields(
-    submitted: Dict[str, Any], result: Dict[str, Any], description: Any
+    submitted: Dict[str, Any], payload: Dict[str, Any]
 ) -> List[str]:
     """Submitted fields the re-fetched issue does not carry.
 
@@ -2473,23 +2478,28 @@ def _unapplied_update_fields(
     is the only way to see it, and costs nothing: the issue is re-fetched for
     the response anyway.
 
+    ``payload`` is the re-fetched issue as Redmine sent it (``raw()``), not
+    the serialized dict or the resource attributes: python-redmine turns a
+    date-shaped custom field value into a date even on a text field, and the
+    serializer wraps the description in boundary tags.
+
     Only fields whose stored form is predictable are checked, so a value
     Redmine merely normalises is never reported: ids, dates, ``done_ratio``,
     numeric ``estimated_hours``, ``is_private``, ``subject``, ``description``
     (line endings aside) and custom field values by id, reported as
     ``cf_<id>``. Anything else -- ``notes``, ``uploads``, watchers, a project
     identifier, keys this server routes elsewhere -- is not checked.
-
-    ``result`` is the serialized issue; ``description`` is the raw one,
-    since the serialized copy is wrapped in boundary tags.
     """
     unapplied: List[str] = []
     for key, value in submitted.items():
         if key in _UNAPPLIED_REF_FIELDS:
+            # python-redmine sends an ``assigned_to_id`` of 0 as a clear.
+            if key == "assigned_to_id" and value == 0 and value is not False:
+                value = None
             wanted = _submitted_id(value)
             if wanted is _UNCHECKED:
                 continue
-            ref = result.get(_UNAPPLIED_REF_FIELDS[key])
+            ref = payload.get(_UNAPPLIED_REF_FIELDS[key])
             if wanted != (ref.get("id") if isinstance(ref, dict) else None):
                 unapplied.append(key)
         elif key in ("start_date", "due_date"):
@@ -2499,19 +2509,19 @@ def _unapplied_update_fields(
                 wanted = value.strip()
             else:
                 continue
-            if wanted != result.get(key):
+            if wanted != payload.get(key):
                 unapplied.append(key)
         elif key == "done_ratio":
             wanted = _submitted_id(value)
             if wanted is _UNCHECKED or wanted is None:
                 continue
-            if wanted != result.get(key):
+            if wanted != payload.get(key):
                 unapplied.append(key)
         elif key == "estimated_hours":
             wanted = _submitted_hours(value)
             if wanted is _UNCHECKED:
                 continue
-            current = result.get(key)
+            current = payload.get(key)
             if wanted is None:
                 applied = current is None
             else:
@@ -2528,32 +2538,37 @@ def _unapplied_update_fields(
             wanted = _submitted_flag(value)
             if wanted is _UNCHECKED:
                 continue
-            if wanted != bool(result.get(key)):
+            if wanted != bool(payload.get(key)):
                 unapplied.append(key)
         elif key == "subject":
-            if isinstance(value, str) and value != result.get(key):
+            if isinstance(value, str) and value != payload.get(key):
                 unapplied.append(key)
         elif key == "description":
             if value is None:
                 value = ""
             if not isinstance(value, str):
                 continue
-            current = description if isinstance(description, str) else ""
+            current = payload.get(key)
+            current = current if isinstance(current, str) else ""
             if _normalized_newlines(value) != _normalized_newlines(current):
                 unapplied.append(key)
         elif key == "custom_fields" and isinstance(value, list):
-            current_values = {}
-            for entry in result.get("custom_fields") or []:
-                if isinstance(entry, dict):
-                    current_values[str(entry.get("id"))] = entry.get("value")
+            current_values = {
+                str(entry.get("id")): entry.get("value")
+                for entry in payload.get("custom_fields") or []
+                if isinstance(entry, dict)
+            }
             for entry in value:
                 if not isinstance(entry, dict) or entry.get("id") is None:
                     continue
-                field_id = str(entry.get("id"))
+                wanted = _custom_value_set(entry.get("value"))
+                if wanted is _UNCHECKED:
+                    continue
+                field_id = str(entry["id"])
                 # Absent from the response means not visible to this user,
                 # and a field that is not visible is not editable either.
                 if field_id not in current_values or not _same_custom_value(
-                    entry.get("value"), current_values[field_id]
+                    wanted, current_values[field_id]
                 ):
                     unapplied.append(f"cf_{field_id}")
     return unapplied
@@ -2598,17 +2613,17 @@ async def update_redmine_issue(
     When a matching project custom field is found, it is translated into
     ``custom_fields`` entries for Redmine update payloads.
 
-    The returned issue carries ``unapplied_fields``, the submitted fields it
-    does not reflect. Redmine discards some writes without an error -- a
-    status the workflow does not allow, a field the workflow makes read-only,
-    a custom field the user may not edit -- so a non-empty list means the
-    call changed less than it asked for, while anything else in it, such as a
+    Redmine discards some writes without an error -- a status the workflow
+    does not allow, a field the workflow makes read-only, a custom field the
+    user may not edit. When that happens the returned issue carries
+    ``unapplied_fields``, the submitted fields it does not reflect: the call
+    changed less than it asked for, while anything else in it, such as a
     note, was still written. Custom fields are named ``cf_<id>``, and a status
-    set by name is reported as ``status_name``. Only ids, dates,
-    ``done_ratio``, numeric ``estimated_hours``, ``is_private``, ``subject``,
-    ``description`` and custom field values are checked, so ``[]`` says
-    nothing about notes, uploads, watchers or plugin fields. An unknown
-    ``status_name`` is refused before anything is written.
+    set by name is reported as ``status_name``. The key is omitted when every
+    checked field landed. Only ids, dates, ``done_ratio``, numeric
+    ``estimated_hours``, ``is_private``, ``subject``, ``description`` and
+    custom field values are checked, never notes, uploads, watchers or plugin
+    fields. An unknown ``status_name`` is refused before anything is written.
 
     Args:
         issue_id: The issue to update.
@@ -2814,26 +2829,23 @@ async def update_redmine_issue(
 
     def _run():
         nonlocal update_fields
-        # How ``status_name`` fared, so a discarded status is reported under
-        # the key the caller used.
-        status_from_name = False
-        status_name_unresolved = False
+        # A status set by name is reported under the key the caller used.
+        status_named = False
         # Convert status name to id if requested
         if "status_name" in update_fields and "status_id" not in update_fields:
-            raw_name = update_fields.pop("status_name")
-            name = str(raw_name).lower()
+            raw_name = str(update_fields.pop("status_name"))
+            name = raw_name.lower()
+            status_named = True
             try:
                 statuses = list(_get_redmine_client().issue_status.all())
             except Exception as e:
                 # The write goes ahead without the status, and the result
                 # reports ``status_name`` as not applied.
                 logger.warning(f"Error resolving status name '{name}': {e}")
-                status_name_unresolved = True
             else:
                 for status in statuses:
                     if getattr(status, "name", "").lower() == name:
                         update_fields["status_id"] = status.id
-                        status_from_name = True
                         break
                 else:
                     # Dropping it and writing the rest would report success
@@ -2843,24 +2855,31 @@ async def update_redmine_issue(
                     )
                     return {
                         "error": (
-                            f"Unknown status_name {str(raw_name)!r}. Nothing "
-                            f"was changed. Known statuses: {known or 'none'}."
+                            f"Unknown status_name {raw_name!r}. Nothing was "
+                            f"changed. Known statuses: {known or 'none'}."
                         )
                     }
 
         def _with_unapplied(result: Dict[str, Any], issue: Any) -> Dict[str, Any]:
             # Compared with what the caller asked for, after name resolution
             # but before any required-field autofill a retry adds.
-            unapplied = _unapplied_update_fields(
-                update_fields, result, getattr(issue, "description", None)
-            )
-            if status_from_name:
+            try:
+                payload = issue.raw()
+            except Exception:
+                payload = None
+            if not isinstance(payload, dict):
+                return result
+            unapplied = _unapplied_update_fields(update_fields, payload)
+            if status_named:
+                if "status_id" not in update_fields:
+                    # The lookup failed, so no status was sent at all.
+                    unapplied.append("status_name")
                 unapplied = [
                     "status_name" if key == "status_id" else key for key in unapplied
                 ]
-            if status_name_unresolved:
-                unapplied.append("status_name")
-            result["unapplied_fields"] = unapplied
+            # Omitted when empty, like ``unmapped_fields`` beside it.
+            if unapplied:
+                result["unapplied_fields"] = unapplied
             return result
 
         try:

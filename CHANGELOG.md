@@ -73,8 +73,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a custom field the user may not edit -- so the tool returned the unchanged
   issue with nothing saying so. The response now carries `unapplied_fields`,
   listing each submitted field the updated issue does not reflect (custom
-  fields as `cf_<id>`), found by comparing the request with the issue the
-  tool already re-fetches, so it costs no extra request. Only fields whose
+  fields as `cf_<id>`), and omits it when there is none, like
+  `unmapped_fields`. It comes from comparing the request with the issue the
+  tool already re-fetches, so it costs no extra request, and only fields whose
   stored form is predictable are checked. A `status_name` that matches no
   status was dropped the same way and the rest written; it is now refused
   before anything is sent

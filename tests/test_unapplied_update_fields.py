@@ -25,12 +25,12 @@ from redmine_mcp_server.tools.issues import (  # noqa: E402
 
 
 def _ref(ref_id, name="x"):
-    return SimpleNamespace(id=ref_id, name=name)
+    return {"id": ref_id, "name": name}
 
 
-def _issue(**overrides):
-    """A re-fetched issue, as a plain object so no attribute is invented."""
-    attrs = {
+def _payload(**overrides):
+    """A re-fetched issue as Redmine sends it, which is what ``raw()`` holds."""
+    payload = {
         "id": 123,
         "subject": "Subject",
         "description": "Line one\r\nLine two",
@@ -39,7 +39,6 @@ def _issue(**overrides):
         "priority": _ref(2, "Normal"),
         "tracker": _ref(1, "Bug"),
         "author": _ref(1, "Author"),
-        "assigned_to": None,
         "start_date": "2026-01-05",
         "due_date": None,
         "done_ratio": 0,
@@ -47,20 +46,26 @@ def _issue(**overrides):
         "is_private": False,
         "custom_fields": [],
     }
-    attrs.update(overrides)
-    return SimpleNamespace(**attrs)
+    payload.update(overrides)
+    return payload
 
 
-def _serialized(**overrides):
-    from redmine_mcp_server.tools.issues import _issue_to_dict
+def _issue(**overrides):
+    """A re-fetched issue, as a plain object so no attribute is invented.
 
-    issue = _issue(**overrides)
-    return _issue_to_dict(issue, include_custom_fields=True), issue.description
+    ``raw()`` serves the payload and the attributes mirror it, so readers that
+    check the payload before an attribute see what Redmine would send.
+    """
+    payload = _payload(**overrides)
+    attrs = {
+        key: SimpleNamespace(**value) if isinstance(value, dict) else value
+        for key, value in payload.items()
+    }
+    return SimpleNamespace(raw=lambda: payload, **attrs)
 
 
-def _unapplied(submitted, **issue_overrides):
-    result, description = _serialized(**issue_overrides)
-    return _unapplied_update_fields(submitted, result, description)
+def _unapplied(submitted, **overrides):
+    return _unapplied_update_fields(submitted, _payload(**overrides))
 
 
 class TestReferenceFields:
@@ -95,6 +100,13 @@ class TestReferenceFields:
 
     def test_clear_discarded_when_the_ref_remains(self):
         assert _unapplied({"assigned_to_id": None}, assigned_to=_ref(5)) == [
+            "assigned_to_id"
+        ]
+
+    def test_assignee_zero_is_the_clear_python_redmine_sends(self):
+        """python-redmine sends ``assigned_to_id`` 0 as ``""``, a clear."""
+        assert _unapplied({"assigned_to_id": 0}) == []
+        assert _unapplied({"assigned_to_id": 0}, assigned_to=_ref(5)) == [
             "assigned_to_id"
         ]
 
@@ -163,11 +175,8 @@ class TestScalarFields:
 
 
 class TestCustomFields:
-    def _cf(self, field_id, value, multiple=False):
-        entry = {"id": field_id, "name": f"Field {field_id}", "value": value}
-        if multiple:
-            entry["multiple"] = True
-        return entry
+    def _cf(self, field_id, value):
+        return {"id": field_id, "name": f"Field {field_id}", "value": value}
 
     def test_applied_value(self):
         assert (
@@ -194,9 +203,9 @@ class TestCustomFields:
     def test_values_are_compared_as_redmine_stores_them(self):
         stored = [
             self._cf(1, "7"),
-            self._cf(2, "1"),
+            self._cf(2, "true"),
             self._cf(3, "1.5"),
-            self._cf(4, ["b", "a"], multiple=True),
+            self._cf(4, ["b", "a"]),
             self._cf(5, ""),
             self._cf(6, []),
             self._cf(7, "a\r\nb"),
@@ -215,6 +224,40 @@ class TestCustomFields:
     def test_malformed_entries_are_skipped(self):
         submitted = ["junk", {"value": "no id"}, {"id": None, "value": "x"}]
         assert _unapplied({"custom_fields": submitted}) == []
+
+    def test_boolean_is_stored_as_ruby_spells_it(self):
+        """``set_custom_field_value`` stores ``value.to_s``: ``"false"``."""
+        assert (
+            _unapplied(
+                {"custom_fields": [{"id": 2, "value": False}]},
+                custom_fields=[self._cf(2, "false")],
+            )
+            == []
+        )
+        assert _unapplied(
+            {"custom_fields": [{"id": 2, "value": False}]},
+            custom_fields=[self._cf(2, "1")],
+        ) == ["cf_2"]
+
+    def test_locale_decimal_comma_is_the_same_float(self):
+        """``normalize_float`` stores ``1,5`` as ``1.5`` for a comma locale."""
+        assert (
+            _unapplied(
+                {"custom_fields": [{"id": 3, "value": "1,5"}]},
+                custom_fields=[self._cf(3, "1.5")],
+            )
+            == []
+        )
+
+    def test_file_field_upload_token_is_not_checked(self):
+        """A file custom field takes a token and stores the attachment id."""
+        assert (
+            _unapplied(
+                {"custom_fields": [{"id": 9, "value": {"token": "7.abc"}}]},
+                custom_fields=[self._cf(9, "7")],
+            )
+            == []
+        )
 
     def test_non_list_payload_is_not_checked(self):
         assert _unapplied({"custom_fields": None}) == []
@@ -236,13 +279,7 @@ class TestUncheckedKeys:
 
 
 def _statuses(*pairs):
-    statuses = []
-    for status_id, name in pairs:
-        status = Mock()
-        status.id = status_id
-        status.name = name
-        statuses.append(status)
-    return statuses
+    return [SimpleNamespace(id=status_id, name=name) for status_id, name in pairs]
 
 
 class TestThroughTheTool:
@@ -262,7 +299,27 @@ class TestThroughTheTool:
     async def test_applied_write_reports_nothing(self, mock_redmine):
         mock_redmine.issue.get.return_value = _issue(status=_ref(2, "In Progress"))
         result = await update_redmine_issue(123, {"status_id": 2, "notes": "moved"})
-        assert result["unapplied_fields"] == []
+        assert "error" not in result
+        assert "unapplied_fields" not in result
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_compared_with_the_payload_not_the_resource(self, mock_redmine):
+        """python-redmine turns a date-shaped custom field value into a date,
+        even on a text field, so the resource no longer holds what Redmine
+        stored; the payload does."""
+        from redminelib import Redmine
+
+        payload = _payload(
+            custom_fields=[{"id": 3, "name": "Note", "value": "2026-9-5"}]
+        )
+        resource = Redmine("https://redmine.example").issue.to_resource(payload)
+        mock_redmine.issue.get.return_value = resource
+        result = await update_redmine_issue(
+            123, {"custom_fields": [{"id": 3, "value": "2026-9-5"}]}
+        )
+        assert "error" not in result
+        assert "unapplied_fields" not in result
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.redmine")
@@ -324,6 +381,11 @@ class TestThroughTheTool:
         size.possible_values = ["S", "M", "L"]
         project = Mock()
         project.issue_custom_fields = [size]
+        project.raw.return_value = {
+            "issue_custom_fields": [
+                {"id": 6, "name": "Size", "possible_values": ["S", "M", "L"]}
+            ]
+        }
         mock_redmine.project.get.return_value = project
 
         result = await update_redmine_issue(123, {"size": "S"})
@@ -346,6 +408,11 @@ class TestThroughTheTool:
         location.default_value = "Any"
         project = Mock()
         project.issue_custom_fields = [location]
+        project.raw.return_value = {
+            "issue_custom_fields": [
+                {"id": 8, "name": "Location", "default_value": "Any"}
+            ]
+        }
         mock_redmine.project.get.return_value = project
         project_lookup = Mock()
         project_lookup.project = Mock(id=41, name="Project")
@@ -363,7 +430,8 @@ class TestThroughTheTool:
             result = await update_redmine_issue(123, {"status_id": 2})
 
         assert mock_redmine.issue.update.call_count == 2
-        assert result["unapplied_fields"] == []
+        assert "error" not in result
+        assert "unapplied_fields" not in result
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.redmine")
