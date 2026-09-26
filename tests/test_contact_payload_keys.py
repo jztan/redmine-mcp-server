@@ -803,7 +803,6 @@ class TestCustomFieldSelection:
 
 
 
-
 def _api_contact_with_includes() -> dict:
     """A contact as ``contacts/show.api.rsb`` renders it under
     ``include=notes,contacts,deals,issues`` (redmine_contacts 4.4.5 PRO)."""

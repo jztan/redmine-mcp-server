@@ -451,6 +451,27 @@ def _safe_isoformat(val: Any) -> Optional[str]:
     return val.isoformat()
 
 
+def _deal_note_to_dict(note: Any) -> Dict[str, Any]:
+    """Serialize one CRM note, keyed as the plugin's show.api.rsb renders it.
+
+    ``content`` is free text and is wrapped in ``<insecure-content>``
+    boundary tags, matching how issue ``description`` and journal notes are
+    treated. The plugin only renders the notes array for a caller who may
+    see its parent: ``view_deals`` on a deal, ``view_contacts`` on a contact,
+    whose ``include=notes`` entries have the same keys.
+    """
+    if not isinstance(note, dict):
+        return {}
+    return {
+        "id": note.get("id"),
+        "content": wrap_insecure_content(note.get("content", "")),
+        "type_id": note.get("type_id"),
+        "author": _named_ref(note.get("author")),
+        "created_on": _safe_isoformat(note.get("created_on")),
+        "updated_on": _safe_isoformat(note.get("updated_on")),
+    }
+
+
 def _coerce_json_safe(value: Any) -> Any:
     """Convert arbitrary values into JSON-safe data."""
     if value is None or isinstance(value, (str, int, float, bool)):

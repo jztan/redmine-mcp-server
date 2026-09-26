@@ -13,6 +13,7 @@ from .._offload import offloaded
 from .._serialization import (
     _REDMINE_API_PAGE_CAP,
     _custom_fields_to_list,
+    _deal_note_to_dict,
     _named_ref,
     _normalize_tag_list,
     _pagination_info,
@@ -29,7 +30,6 @@ from .._validation import (
 )
 from .._plugin_visibility import plugin_tag
 from ..server import mcp
-from .deals import _deal_note_to_dict
 
 _CRM_DISABLED_ERROR = {
     "error": (
