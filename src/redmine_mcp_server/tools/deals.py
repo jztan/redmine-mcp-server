@@ -24,6 +24,7 @@ from .._errors import _READ_ONLY_ERROR, _handle_redmine_error
 from .._offload import offloaded
 from .._serialization import (
     _REDMINE_API_PAGE_CAP,
+    _deal_note_to_dict,
     _named_ref,
     _safe_isoformat,
     wrap_insecure_content,
@@ -129,26 +130,6 @@ def _coerce_price(price: Any) -> Optional[str]:
     if isinstance(price, str):
         return price
     return None
-
-
-def _deal_note_to_dict(note: Any) -> Dict[str, Any]:
-    """Serialize one deal note, keyed as the plugin's show.api.rsb renders it.
-
-    ``content`` is free text and is wrapped in ``<insecure-content>``
-    boundary tags, matching how issue ``description`` and journal notes are
-    treated. The plugin only renders the notes array for a caller holding
-    ``view_deals`` on the project.
-    """
-    if not isinstance(note, dict):
-        return {}
-    return {
-        "id": note.get("id"),
-        "content": wrap_insecure_content(note.get("content", "")),
-        "type_id": note.get("type_id"),
-        "author": _named_ref(note.get("author")),
-        "created_on": _safe_isoformat(note.get("created_on")),
-        "updated_on": _safe_isoformat(note.get("updated_on")),
-    }
 
 
 def _deal_line_to_dict(line: Dict[str, Any]) -> Dict[str, Any]:

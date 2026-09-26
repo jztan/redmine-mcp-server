@@ -13,6 +13,7 @@ from .._offload import offloaded
 from .._serialization import (
     _REDMINE_API_PAGE_CAP,
     _custom_fields_to_list,
+    _deal_note_to_dict,
     _named_ref,
     _normalize_tag_list,
     _pagination_info,
@@ -185,6 +186,77 @@ def _contact_tag_names(raw: Any) -> List[str]:
     if isinstance(raw, (list, tuple)):
         raw = [entry.get("name") if isinstance(entry, dict) else entry for entry in raw]
     return _normalize_tag_list(raw)
+
+
+def _contact_deal_to_dict(deal: Any) -> Dict[str, Any]:
+    """Serialize one entry of a contact's ``include=deals`` array.
+
+    Only the keys ``contacts/show.api.rsb`` renders for an embedded deal --
+    a subset of what ``manage_deal`` returns, so ``_deal_to_dict`` would
+    report ``None`` for keys the plugin never sent. ``background`` is free
+    text and is wrapped in boundary tags, as it is on a deal.
+    """
+    if not isinstance(deal, dict):
+        return {}
+    return {
+        "id": deal.get("id"),
+        "name": deal.get("name", ""),
+        "price": deal.get("price"),
+        "currency": deal.get("currency"),
+        "price_type": deal.get("price_type"),
+        "project": _named_ref(deal.get("project")),
+        "status": _named_ref(deal.get("status")),
+        "background": wrap_insecure_content(deal.get("background", "")),
+        "created_on": _safe_isoformat(deal.get("created_on")),
+        "updated_on": _safe_isoformat(deal.get("updated_on")),
+    }
+
+
+def _contact_issue_to_dict(issue: Any) -> Dict[str, Any]:
+    """Serialize one entry of a contact's ``include=issues`` array.
+
+    The keys ``contacts/show.api.rsb`` renders for a linked issue, and no
+    others.
+    """
+    if not isinstance(issue, dict):
+        return {}
+    return {
+        "id": issue.get("id"),
+        "subject": issue.get("subject"),
+        "status": _named_ref(issue.get("status")),
+        "due_date": _safe_isoformat(issue.get("due_date")),
+        "created_on": _safe_isoformat(issue.get("created_on")),
+        "updated_on": _safe_isoformat(issue.get("updated_on")),
+    }
+
+
+def _contact_includes_to_dict(contact: Dict[str, Any]) -> Dict[str, Any]:
+    """The ``include=`` arrays a single contact's payload carries.
+
+    Each key is emitted only when the payload carries it, the way
+    ``_deal_to_dict`` treats ``notes``. The plugin renders an array only when
+    it was asked for *and* is non-empty *and* the caller may see it --
+    ``notes`` needs ``authorize_for(:notes, :show)``, ``deals``
+    ``view_deals``, ``issues`` ``view_issues`` -- so an absent key cannot say
+    which of those it was, and ``[]`` would claim a distinction the API does
+    not make.
+
+    ``notes`` share the deal template's keys exactly, so the deal note
+    serializer is reused. ``contacts`` is a company's people, rendered as
+    ``{id, name}`` refs.
+    """
+    serializers = {
+        "notes": _deal_note_to_dict,
+        "contacts": _named_ref,
+        "deals": _contact_deal_to_dict,
+        "issues": _contact_issue_to_dict,
+    }
+    result: Dict[str, Any] = {}
+    for key, serialize in serializers.items():
+        raw = contact.get(key)
+        if isinstance(raw, list):
+            result[key] = [serialize(entry) for entry in raw if isinstance(entry, dict)]
+    return result
 
 
 def _contact_to_dict(
@@ -543,7 +615,9 @@ def _get_contact_action(
             return {"error": f"Contact {contact_id} not found."}
         # A single-contact read keeps every custom field, the way
         # `get_redmine_issue` does. The collection is where the cost is.
-        return _contact_to_dict(contact, include_custom_fields=True)
+        result = _contact_to_dict(contact, include_custom_fields=True)
+        result.update(_contact_includes_to_dict(contact))
+        return result
     except Exception as e:
         return _handle_redmine_error(
             e,
@@ -883,7 +957,14 @@ async def manage_contact(
             reported", never as a number, and note that passing ``search`` is
             one such case. ``has_next`` is always a boolean, never ``null``,
             so it is safe to loop on.
-        include: ``get`` only. Comma-separated related data to request.
+        include: ``get`` only. Comma-separated, any of ``notes``,
+            ``contacts`` (a company's people, as ``{id, name}``), ``deals``
+            and ``issues`` (issues linked to the contact) -- the four the
+            plugin renders on request, each under its own key. Redmine
+            ignores any other name without an error. The plugin leaves
+            an array out when it is empty or the caller may not see it --
+            ``deals`` needs ``view_deals`` and ``issues`` ``view_issues`` --
+            so an absent key means "none visible", not an error.
         first_name: Required on ``create``. Filters a ``list`` where
             ``REDMINE_CRM_EDITION=pro``.
         last_name: ``create`` attribute. Filters a ``list`` where
@@ -928,7 +1009,8 @@ async def manage_contact(
         ``list`` a list of contact dicts -- or, with
         ``include_pagination_info=True``, a dict of ``contacts`` and
         ``pagination`` -- ``get`` / ``create`` one contact dict, the remaining
-        actions a status dict, and ``{"error": ...}`` on failure. A listed
+        actions a status dict, and ``{"error": ...}`` on failure. ``get``
+        adds the ``include`` arrays it was given, when present. A listed
         contact carries ``custom_fields`` values only under
         ``include_custom_fields`` or ``custom_field_ids``, and otherwise
         ``None`` plus ``custom_fields_count``; ``get`` and ``create`` always
