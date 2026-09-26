@@ -23,15 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#350](https://github.com/jztan/redmine-mcp-server/issues/350)).
 
 ### Fixed
-- `list_project_members` and `manage_project_member(action="add"|"update")`
-  dropped Redmine's `inherited` flag from each role, so a Manager role that
-  comes from a group or from the parent project read exactly like one held
-  directly -- the one fact a caller needs before removing a role or auditing
-  who holds access. Redmine merges `inherited: true` onto such a role in
-  `members/index.api.rsb` and `show.api.rsb`, and it is now mirrored where
-  Redmine sends it and omitted where it does not, the way
-  `get_current_user(include_memberships=True)` already did; both serializers
-  now share one role helper
+- `list_project_members` and `manage_project_member(action="update")` dropped
+  Redmine's `inherited` flag from each role, so a role that comes from a group
+  or from the parent project read exactly like one held directly. The flag is
+  now kept where Redmine sends it and left out where it does not, as
+  `get_current_user(include_memberships=True)` already did
   ([#ISSUE](https://github.com/jztan/redmine-mcp-server/issues/ISSUE)).
 
 ## [2.17.0] - 2026-09-26

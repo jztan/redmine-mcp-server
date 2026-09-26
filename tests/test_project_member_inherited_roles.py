@@ -104,15 +104,6 @@ class TestMembershipToDictInherited:
 
 
 class TestMembershipRolesToList:
-    def test_payload_dicts(self):
-        """The ``get_current_user`` path hands over decoded payload dicts."""
-        roles = _membership_roles_to_list(MEMBERSHIPS_PAYLOAD[0]["roles"])
-
-        assert roles == [
-            {"id": 3, "name": "Developer"},
-            {"id": 4, "name": "Manager", "inherited": True},
-        ]
-
     @pytest.mark.parametrize("value", [None, "Manager", {"id": 4}, 42])
     def test_not_a_role_list(self, value):
         assert _membership_roles_to_list(value) == []

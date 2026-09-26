@@ -873,7 +873,7 @@ Add, update, or remove a Redmine project membership.
 - `role_ids` (array of integers): Non-empty list of role IDs. Required for `action="add"` and `action="update"`. Use `list_redmine_roles` to discover valid IDs
 
 **Returns:**
-- `add`/`update`: membership dictionary (with `id`, `user`/`group`, `project`, `roles`), shaped like a `list_project_members` entry, `inherited` included
+- `add`/`update`: membership dictionary (with `id`, `user`/`group`, `project`, `roles`), shaped like a `list_project_members` entry. `update` returns the whole membership as Redmine re-reads it, so an inherited role on it carries `inherited: true`
 - `remove`: `{"success": true, "deleted_membership_id": <id>}`
 - Error: `{"error": "..."}`
 
