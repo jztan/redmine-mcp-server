@@ -274,7 +274,7 @@ class TestOmittedIncludeIsNotEmpty:
     attribute when the key is missing re-fetches the whole project and answers
     ``[]`` -- indistinguishable from a project with no fields. Redmine 6.1.4
     and 7.0.1 leave the array out for a caller without ``view_issues`` on the
-    project; earlier releases always send it when asked (#ISSUE).
+    project; earlier releases always send it when asked (#364).
     """
 
     @pytest.fixture

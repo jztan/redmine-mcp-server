@@ -32,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   leave the array out for a caller without `view_issues` on the project, the
   case [#233](https://github.com/jztan/redmine-mcp-server/pull/233) left for
   when that shipped; earlier releases always send it when asked
-  ([#ISSUE](https://github.com/jztan/redmine-mcp-server/issues/ISSUE)).
+  ([#364](https://github.com/jztan/redmine-mcp-server/issues/364)).
 
 ## [2.17.0] - 2026-09-26
 ### Added
