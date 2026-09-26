@@ -36,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   request, but the serializer dropped all four, so every include came back as
   the bare contact. Each now appears under its own key when the plugin sent
   it
-  ([#ISSUE](https://github.com/jztan/redmine-mcp-server/issues/ISSUE)).
+  ([#354](https://github.com/jztan/redmine-mcp-server/issues/354)).
 
 ## [2.17.0] - 2026-09-26
 ### Added

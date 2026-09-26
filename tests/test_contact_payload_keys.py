@@ -847,7 +847,7 @@ def _api_contact_with_includes() -> dict:
 
 
 class TestGetIncludes:
-    """``include`` on ``get`` returns what the plugin renders for it (#ISSUE).
+    """``include`` on ``get`` returns what the plugin renders for it (#354).
 
     ``contacts/show.api.rsb`` honours exactly four includes -- ``notes``,
     ``contacts``, ``deals`` and ``issues`` -- and the serializer used to drop
