@@ -6,6 +6,7 @@ the plugin's own field names, and ``custom_fields`` / ``author`` / ``projects``
 that the serializer used to drop.
 """
 
+import json
 import os
 import sys
 from unittest.mock import patch
@@ -323,6 +324,7 @@ class TestFiltersCannotReachAValidatedParameter:
             {"search": "y"},
             {"tags": "vip"},
             {"first_name": "Bob"},
+            {"is_company": "TRUE"},
         ],
     )
     @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
@@ -380,18 +382,6 @@ class TestFiltersThatWouldCorruptTheQuery:
         params = mock_redmine.engine.request.call_args.kwargs["params"]
         assert "fields" not in params
         assert params["cf_42"] == "Bob Owner"
-
-    @pytest.mark.asyncio
-    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
-    @patch("redmine_mcp_server._client.redmine")
-    async def test_is_company_is_not_forwarded_as_a_filter(self, mock_redmine):
-        """The plugin's own `is_company` filter answers with the same wrong set
-        for every value, so `list` leaves it off the query."""
-        mock_redmine.engine.request.return_value = {"contacts": []}
-        with patch.dict(os.environ, CRM_ON):
-            await manage_contact(action="list", is_company=True)
-        params = mock_redmine.engine.request.call_args.kwargs["params"]
-        assert "is_company" not in params
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
@@ -474,6 +464,8 @@ class TestTheProOnlyFiltersAreGated:
             {"email": "alice@example.com"},
             {"phone": "+1-555-0100"},
             {"author_id": 54},
+            {"is_company": True},
+            {"is_company": False},
         ],
     )
     @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
@@ -935,3 +927,77 @@ class TestGetIncludes:
                 action="get", contact_id=55, include="contacts"
             )
         assert result["contacts"] == [{"id": 56, "name": "A"}]
+
+
+
+class TestIsCompanyFilter:
+    """``is_company`` on ``list``, spelled so every database adapter reads it
+    (#366).
+
+    ``ContactQuery#sql_for_is_company_field`` (redmine_contacts 4.4.5) treats
+    a value as true only when it equals the adapter's ``quoted_true``, whose
+    spelling varies by adapter and Rails version, and as false otherwise, so
+    no fixed literal means true everywhere. ``"0"`` is nobody's true, so it
+    means false everywhere, and ``"!0"`` negates it.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("flag, wire", [(True, "!0"), (False, "0")])
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_sent_as_the_adapter_independent_value(
+        self, mock_redmine, flag, wire
+    ):
+        mock_redmine.engine.request.return_value = {"contacts": []}
+        with patch.dict(os.environ, CRM_PRO):
+            await manage_contact(action="list", is_company=flag)
+        params = mock_redmine.engine.request.call_args.kwargs["params"]
+        assert params["is_company"] == wire
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_left_out_it_does_not_filter(self, mock_redmine):
+        mock_redmine.engine.request.return_value = {"contacts": []}
+        with patch.dict(os.environ, CRM_ON):
+            await manage_contact(action="list")
+        params = mock_redmine.engine.request.call_args.kwargs["params"]
+        assert "is_company" not in params
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_it_combines_with_the_other_filters(self, mock_redmine):
+        mock_redmine.engine.request.return_value = {"contacts": []}
+        with patch.dict(os.environ, CRM_PRO):
+            await manage_contact(
+                action="list", is_company=True, company="Acme", filters={"cf_42": "x"}
+            )
+        params = mock_redmine.engine.request.call_args.kwargs["params"]
+        assert params["is_company"] == "!0"
+        assert params["company"] == "Acme"
+        assert params["cf_42"] == "x"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("bad", ["TRUE", "1", 1, 0])
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_a_non_boolean_is_refused(self, mock_redmine, bad):
+        with patch.dict(os.environ, CRM_PRO):
+            result = await manage_contact(action="list", is_company=bad)
+        assert "is_company" in result["error"]
+        mock_redmine.engine.request.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("flag", [None, False, True])
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_create_still_files_a_person_unless_told(self, mock_redmine, flag):
+        mock_redmine.engine.request.return_value = {"contact": _api_contact()}
+        kwargs = {} if flag is None else {"is_company": flag}
+        with patch.dict(os.environ, CRM_ON):
+            await manage_contact(
+                action="create", project_id="sales", first_name="Acme", **kwargs
+            )
+        body = json.loads(mock_redmine.engine.request.call_args.kwargs["data"])
+        assert body["contact"]["is_company"] is bool(flag)
