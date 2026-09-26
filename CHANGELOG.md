@@ -29,6 +29,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   those with no `custom_fields_count`, and `[]` still means the contact
   carries none of them
   ([#352](https://github.com/jztan/redmine-mcp-server/issues/352)).
+- `manage_contact` takes `is_company` on `list`: `true` returns only
+  companies, `false` only people. The plugin's filter was documented as
+  broken, but it reads a value as true only in the database adapter's own
+  spelling of true, which varies by adapter and Rails version, so no fixed
+  literal such as the documented `"1"` means true on every database. The tool
+  sends `0` and `!0`, which mean false and not-false on every adapter.
+  `is_company` is now refused inside `filters`, like the other named
+  parameters; `create` is unchanged
+  ([#366](https://github.com/jztan/redmine-mcp-server/issues/366)).
 
 ### Fixed
 - `manage_contact(action="get")` returns the `include` arrays it asks for.
