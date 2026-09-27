@@ -7,6 +7,7 @@ Two subsystems:
     payloads expected by the Redmine API
 """
 
+import difflib
 import json
 import logging
 import os
@@ -550,6 +551,51 @@ def _is_standard_issue_update_key(field_name: str) -> bool:
     return field_name in extension_issue_update_keys()
 
 
+# An attribute Redmine or a plugin accepts on an issue is always a snake_case
+# identifier (``project_id``, ``agile_data_attributes``). A key of any other
+# shape can only have been meant as a custom field name.
+_ATTRIBUTE_SHAPED_KEY = re.compile(r"\A[a-z][a-z0-9_]*\Z")
+# Redmine core attributes that are not in _STANDARD_ISSUE_UPDATE_FIELDS but
+# reach the name lookup (``Issue`` ``safe_attributes`` at 6.1.1). Never
+# refused, however close they are to a custom field name.
+_PASSTHROUGH_ISSUE_ATTRIBUTES = frozenset(
+    {"project_id", "lock_version", "custom_field_values"}
+)
+# How close a snake_case key must be to a custom field name to be treated as
+# a misspelling of it rather than a plugin attribute.
+_NAME_TYPO_CUTOFF = 0.85
+
+
+def _reject_unmatched_name(
+    candidate: str, by_normalized_name: Dict[str, Dict[str, Any]]
+) -> None:
+    """Raise ``ValueError`` for a key that was meant as a custom field name.
+
+    An unmatched key used to be passed on as a top-level issue attribute,
+    which Redmine ignores, so a misspelled name was a write that reported
+    success and changed nothing (#370). Refusing every unmatched key would
+    break plugin attributes that do work this way -- RedmineUP Agile accepts
+    ``agile_data_attributes`` on create -- so only two shapes are refused: a
+    key that cannot be an attribute at all (spaces, capitals), and a
+    snake_case key that is a near miss for one of the project's field names.
+    """
+    if candidate in _PASSTHROUGH_ISSUE_ATTRIBUTES:
+        return
+    normalized = _normalize_field_label(candidate)
+    close = difflib.get_close_matches(
+        normalized, list(by_normalized_name), n=1, cutoff=_NAME_TYPO_CUTOFF
+    )
+    if _ATTRIBUTE_SHAPED_KEY.match(candidate) and not close:
+        return
+    names = sorted(entry["name"] for entry in by_normalized_name.values())
+    hint = f" Did you mean '{by_normalized_name[close[0]]['name']}'?" if close else ""
+    known = ", ".join(f"'{name}'" for name in names) if names else "none"
+    raise ValueError(
+        f"Unknown custom field '{candidate}'.{hint} Custom fields on this "
+        f"project: {known}. Nothing was written."
+    )
+
+
 def _resolve_named_custom_fields(
     payload: Dict[str, Any], project_custom_fields: List[Any]
 ) -> Dict[str, Any]:
@@ -630,6 +676,7 @@ def _resolve_named_custom_fields(
 
         match = by_normalized_name.get(normalized_candidate)
         if match is None:
+            _reject_unmatched_name(candidate, by_normalized_name)
             continue
 
         value = payload.pop(candidate)

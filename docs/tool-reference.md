@@ -1263,7 +1263,7 @@ create_redmine_issue(
 - `attachments` (list): Metadata for each attached file (id, filename, filesize, content_url, etc.).
 - `journal_id` (integer or null): ID of the journal entry the attachments were placed on, or null when no journal note accompanies the upload (i.e. when no `notes` is provided).
 
-**Name-keyed custom fields (#123):** `fields` accepts custom-field *names* directly. The tool resolves the name to a `custom_fields` entry via `list_project_issue_custom_fields` and rewrites the payload before sending it to Redmine. Ambiguous names (two custom fields that normalize to the same name) raise with an explicit error pointing at the id form.
+**Name-keyed custom fields (#123):** `fields` accepts custom-field *names* directly. The tool resolves the name to a `custom_fields` entry via `list_project_issue_custom_fields` and rewrites the payload before sending it to Redmine. Ambiguous names (two custom fields that normalize to the same name) raise with an explicit error pointing at the id form. A key that was meant as a name but matches no custom field is refused with the closest match and the project's field names, and nothing is written: that is any key with spaces or capitals, and any snake_case key within a typo of a field name. Other snake_case keys are passed through untouched, so plugin attributes such as `agile_data_attributes` still reach Redmine.
 
 Resolving a name reads `GET /projects/{id}.json?include=issue_custom_fields`, which needs the View project permission (OAuth scope `view_project`); `update_redmine_issue` first reads the issue to find its project, which needs View issues (`view_issues`). Neither is in the tools' scope entries, because only a name-keyed payload makes the read. If the read is denied, or Redmine's response leaves `issue_custom_fields` out (Redmine 6.1.4 and 7.0.1 leave it out for a caller without View issues on the project; earlier releases always send it), the tool returns an `error` and writes nothing, rather than sending the name on as a key Redmine ignores. The id form below needs no lookup.
 
@@ -1392,7 +1392,7 @@ A failed edit is reported with the index of the pair that failed and leaves the 
 - No extra request: the comparison uses the issue the tool already re-fetches for its response.
 
 **Note:** You can use either `status_id` or `status_name` in fields. When `status_name` is provided, the tool automatically resolves the corresponding status ID. A `status_name` that matches no status is refused before anything is written, naming the statuses that exist.
-You can also update custom fields by name (for example `{"size": "S"}`) and the tool will resolve them to Redmine `custom_fields` entries using project custom-field metadata. You can still pass explicit `custom_fields` with field IDs.
+You can also update custom fields by name (for example `{"size": "S"}`) and the tool will resolve them to Redmine `custom_fields` entries using project custom-field metadata. A name that matches no field is refused rather than dropped (see `create_redmine_issue`). You can still pass explicit `custom_fields` with field IDs.
 
 When `REDMINE_AGILE_ENABLED=true`, you can also set RedmineUP Agile fields, written via the Agile plugin endpoint:
 

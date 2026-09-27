@@ -115,6 +115,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   status was dropped the same way and the rest written; it is now refused
   before anything is sent
   ([#368](https://github.com/jztan/redmine-mcp-server/issues/368)).
+- `create_redmine_issue` and `update_redmine_issue` refuse a `fields` key that
+  was meant as a custom field name but matches none, instead of passing it on
+  as a top-level attribute that Redmine ignores, so a misspelled name no
+  longer reports success for a write that changed nothing. The error suggests
+  the closest field name and lists the project's fields, and nothing is
+  written. A key with spaces or capitals, or a snake_case key within a typo
+  of a field name, is refused; any other snake_case key is still passed
+  through, so plugin attributes such as RedmineUP Agile's
+  `agile_data_attributes` keep working. Behavior change: a key like
+  `"Budget Code"` that matches no field now returns an error where it used
+  to be dropped silently
+  ([#370](https://github.com/jztan/redmine-mcp-server/issues/370)).
 
 ### Contributors
 - @mmahmed reported and fixed nine gaps across contacts, project members,
