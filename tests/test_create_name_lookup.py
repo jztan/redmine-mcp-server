@@ -64,14 +64,12 @@ class TestResolveNamedCustomFieldsHelper:
             {"id": 2, "value": "Engineering"},
         ]
 
-    def test_unknown_name_passes_through(self):
-        # When a name-keyed field doesn't match any project custom
-        # field definition, leave it on the payload. Redmine will
-        # reject it with its own validation error, which is the
-        # right surface for "this field doesn't exist."
+    def test_unknown_name_is_refused(self):
+        # Redmine does not reject an unknown top-level key, it ignores it,
+        # so passing the name on made a write that changed nothing (#370).
         payload = {"NonExistent": "value"}
-        out = _resolve_named_custom_fields(payload, [_cf(2, "Department")])
-        assert out["NonExistent"] == "value"
+        with pytest.raises(ValueError, match="Unknown custom field 'NonExistent'"):
+            _resolve_named_custom_fields(payload, [_cf(2, "Department")])
 
     def test_ambiguous_name_raises(self):
         # Two custom fields share the normalized name -> the caller

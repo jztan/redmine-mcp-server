@@ -158,16 +158,18 @@ class TestCreate:
         assert "Department" not in post["body"]["issue"]
 
     @pytest.mark.asyncio
-    async def test_an_empty_array_leaves_the_name_to_redmine_as_before(self, engine):
-        """A project with no fields is a real answer, not an unreadable one."""
+    async def test_an_empty_array_is_a_real_answer_not_an_unreadable_one(self, engine):
+        """A project with no fields is answered, so the name is unknown (#370)."""
         engine.fields = []
 
         result = await create_redmine_issue(
             project_id=1, subject="X", fields={"Department": "Engineering"}
         )
 
-        assert "error" not in result, result
-        assert len(engine.writes) == 1
+        assert "Unknown custom field 'Department'" in result["error"]
+        assert "Custom fields on this project: none" in result["error"]
+        assert "did not include" not in result["error"]
+        assert engine.writes == []
 
     @pytest.mark.asyncio
     async def test_standard_fields_alone_never_read_the_project(self, engine):
