@@ -916,7 +916,7 @@
 
     <div class="callout">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-      <span>This is a scripted walkthrough against canned data. The JSON in each tool call matches the real server's response shape field-for-field — including the <code>&lt;insecure-content&gt;</code> boundary tags that wrap untrusted user text. Nothing here connects to a live Redmine.</span>
+      <span>This is a scripted walkthrough against canned data. The JSON in each tool call matches the real server's response shape field-for-field, including the <code>&lt;insecure-content&gt;</code> boundary tags that wrap untrusted user text. Nothing here connects to a live Redmine.</span>
     </div>
   </div>
 </section>
@@ -925,7 +925,7 @@
 <section class="receipt hidden" id="receipt">
   <div class="receipt-inner">
     <h2 id="receiptHead">The agent worked the backlog.</h2>
-    <p>That's the point. With redmine-mcp-server, an agent doesn't just summarize your tickets — it moves them.</p>
+    <p>That's the point. With redmine-mcp-server, an agent doesn't just summarize your tickets. It moves them.</p>
     <div class="receipt-row">
       <span><b id="rCalls">6</b>tool calls</span>
       <span><b id="rIssues">2</b>issues touched</span>
@@ -1336,7 +1336,7 @@ redmine-mcp-server</pre>
 
 <footer>
   <p>redmine-mcp-server is open source · MIT licensed · built by <a href="https://blog.jztan.com/?utm_source=redmine-mcp-demo&utm_medium=referral&utm_campaign=demo-launch&utm_content=footer-byline">jztan</a></p>
-  <p style="margin-top:4px;font-size:11px;color:var(--text-tertiary)"><a href="https://pypi.org/project/redmine-mcp-server/" style="color:inherit;text-decoration:none;">redmine-mcp-server __VERSION__</a> · demo v0.2.1</p>
+  <p style="margin-top:4px;font-size:11px;color:var(--text-tertiary)"><a href="https://pypi.org/project/redmine-mcp-server/" style="color:inherit;text-decoration:none;">redmine-mcp-server __VERSION__</a> · demo v0.2.2</p>
 </footer>
 
 <div class="toast" id="toast">Copied</div>
@@ -1346,7 +1346,7 @@ redmine-mcp-server</pre>
   function track(name, params) { try { gtag("event", name, params || {}); } catch (e) {} }
   const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  // Fixed "today" for the fixture — deterministic, no Date.now().
+  // Fixed "today" for the fixture: deterministic, no Date.now().
   const TODAY = "2026-06-20";
   const PROJECT = { id: 42, name: "Cartly" };
   const ME = { id: 6, name: "Alex Rivera" };       // the human the agent acts for
@@ -1668,7 +1668,7 @@ redmine-mcp-server</pre>
   async function playStep(step, animated) {
     const ph = $("feedPlaceholder"); if (ph) ph.remove();
 
-    // Reasoning-only turn (no tool call) — e.g. the agent analyzing a file.
+    // Reasoning-only turn (no tool call), e.g. the agent analyzing a file.
     if (!step.tool) {
       const turn = document.createElement("div");
       turn.className = "turn on";
