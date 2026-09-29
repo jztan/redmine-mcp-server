@@ -1,0 +1,239 @@
+"""Keep the GitHub Pages demo true to the real server and to stock Redmine.
+
+The demo (pages/index.html) scripts MCP tool calls and shows their JSON.
+These tests evaluate the page's fixture and script section in Node and
+check it against the server's own tool signatures and serializer, plus a
+few static checks on the embedded Redmine markup.
+"""
+
+import hashlib
+import inspect
+import json
+import re
+import shutil
+import subprocess
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from redmine_mcp_server.tools import files, issues
+from redmine_mcp_server.tools.issues import _issue_to_dict
+
+PAGE = Path(__file__).resolve().parents[1] / "pages" / "index.html"
+HTML = PAGE.read_text(encoding="utf-8")
+
+DATA_START = "const TODAY"
+DATA_END = "// ── Redmine issue-table rendering"
+
+TOOLS = {
+    "list_redmine_issues": issues.list_redmine_issues,
+    "get_redmine_issue": issues.get_redmine_issue,
+    "update_redmine_issue": issues.update_redmine_issue,
+    "get_redmine_attachment": files.get_redmine_attachment,
+}
+
+ISSUE_KEYS = list(
+    _issue_to_dict(
+        SimpleNamespace(id=1, subject="s", description="d", custom_fields=[]),
+        include_custom_fields=True,
+    )
+)
+JOURNAL_KEYS = [
+    "id",
+    "user",
+    "notes",
+    "notes_sha256",
+    "created_on",
+    "private_notes",
+    "details",
+]
+WRAPPED = re.compile(
+    r"^<insecure-content-([0-9a-f]{16})>\n(.*)\n</insecure-content-\1>$", re.S
+)
+NAIVE_TS = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d$")
+AWARE_TS = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{6}\+00:00$")
+TERMINAL_TITLE = "claude — ~/work/cartly-app"
+
+
+def _evaluate_demo():
+    if shutil.which("node") is None:
+        pytest.skip("node is needed to evaluate the demo script")
+    start, end = HTML.index(DATA_START), HTML.index(DATA_END)
+    js = HTML[start:end] + (
+        "\nconsole.log(JSON.stringify({"
+        "issues: initialIssues(),"
+        "steps: SCRIPT.filter(s => s.tool).map(s => "
+        "({tool: s.tool, args: s.args, result: s.result()}))}));"
+    )
+    out = subprocess.run(["node", "-e", js], capture_output=True, text=True, check=True)
+    return json.loads(out.stdout)
+
+
+@pytest.fixture(scope="module")
+def demo():
+    return _evaluate_demo()
+
+
+def _unwrap(value):
+    match = WRAPPED.match(value)
+    assert match, f"not wrapped in insecure-content tags: {value!r}"
+    return match.group(2)
+
+
+def _sha(text):
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _issue_results(demo):
+    for step in demo["steps"]:
+        if step["tool"] in ("get_redmine_issue", "update_redmine_issue"):
+            yield step
+
+
+# ── Tool calls and JSON ──────────────────────────────────────
+
+
+def test_args_match_real_signatures(demo):
+    for step in demo["steps"]:
+        params = inspect.signature(TOOLS[step["tool"]]).parameters
+        unknown = set(step["args"]) - set(params)
+        assert not unknown, f"{step['tool']} does not accept {unknown}"
+
+
+def test_list_call_scopes_to_the_sprint_and_filters_overdue(demo):
+    args = demo["steps"][0]["args"]
+    assert demo["steps"][0]["tool"] == "list_redmine_issues"
+    assert args["status_id"] == "open"
+    assert args["fixed_version_id"] == 31
+    assert args["filters"] == {"due_date": "<=2026-06-19"}
+
+
+def test_list_result_keys_are_the_requested_fields(demo):
+    step = demo["steps"][0]
+    for row in step["result"]:
+        assert list(row) == step["args"]["fields"]
+
+
+def test_list_result_is_what_the_fixture_would_return(demo):
+    expected = sorted(
+        (
+            i["id"]
+            for i in demo["issues"]
+            if i["status"]["id"] != 5
+            and i["fixed_version"]["id"] == 31
+            and i["due_date"] <= "2026-06-19"
+        ),
+    )
+    got = sorted(row["id"] for row in demo["steps"][0]["result"])
+    assert got == expected
+
+
+def test_issue_results_have_the_real_key_order(demo):
+    for step in _issue_results(demo):
+        keys = list(step["result"])
+        assert keys[: len(ISSUE_KEYS)] == ISSUE_KEYS, step["tool"]
+        extra = keys[len(ISSUE_KEYS) :]
+        if step["tool"] == "get_redmine_issue":
+            assert extra == ["description_sha256", "journals", "attachments"]
+        else:
+            assert extra == []
+
+
+def test_tracker_and_version_are_objects(demo):
+    for step in _issue_results(demo):
+        result = step["result"]
+        assert set(result["tracker"]) == {"id", "name"}
+        assert result["fixed_version"] == {"id": 31, "name": "Sprint 14"}
+
+
+def test_description_digest_is_of_the_raw_text(demo):
+    for step in demo["steps"]:
+        if step["tool"] != "get_redmine_issue":
+            continue
+        raw = _unwrap(step["result"]["description"])
+        assert step["result"]["description_sha256"] == _sha(raw)
+
+
+def test_journals_have_the_real_shape(demo):
+    for step in demo["steps"]:
+        if step["tool"] != "get_redmine_issue":
+            continue
+        for journal in step["result"]["journals"]:
+            assert list(journal) == JOURNAL_KEYS
+            assert journal["notes_sha256"] == _sha(_unwrap(journal["notes"]))
+
+
+def test_timestamps_use_the_server_formats(demo):
+    def walk(node):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key.endswith("_on") and value is not None:
+                    assert NAIVE_TS.match(value), (key, value)
+                if key == "expires_at":
+                    assert AWARE_TS.match(value), (key, value)
+                walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    for step in demo["steps"]:
+        walk(step["result"])
+
+
+def test_every_fixture_issue_matches_the_page_filter(demo):
+    for issue in demo["issues"]:
+        assert issue["status"]["id"] != 5
+        assert issue["fixed_version"] == {"id": 31, "name": "Sprint 14"}
+        assert issue["tracker"]["id"] in (1, 2, 3)
+
+
+# ── Embedded Redmine markup ──────────────────────────────────
+
+
+def test_filters_are_a_fieldset_not_chips():
+    assert "chipf" not in HTML
+    assert 'class="rm-filters"' in HTML and "<fieldset" in HTML
+    assert "Target version" in HTML
+    assert "Add filter" in HTML
+    assert "Save custom query" in HTML
+
+
+def test_header_matches_stock_redmine():
+    assert "» Cartly" not in HTML
+    assert "My account" in HTML and "Sign out" in HTML
+    assert "rm-search" in HTML
+    assert "New issue" in HTML
+
+
+def test_embedded_app_pins_light_scheme():
+    rule = HTML[HTML.index(".rm-app {") :]
+    assert "color-scheme: light" in rule[: rule.index("}")]
+
+
+def test_closed_rows_are_not_struck_through():
+    assert "line-through" not in HTML
+    assert "prio-urgent" not in HTML
+
+
+def test_close_removes_row_without_animation_path():
+    body = HTML[HTML.index("function dropIssue") :]
+    body = body[: body.index("\n  }\n")]
+    assert "REDUCED_MOTION" in body
+    assert "board = board.filter" in body
+
+
+def test_reset_restores_initial_board():
+    body = HTML[HTML.index("function reset()") :]
+    assert "board = initialIssues()" in body[: body.index("\n  }\n")]
+
+
+# ── Copy ─────────────────────────────────────────────────────
+
+
+def test_no_em_dashes_in_copy():
+    assert HTML.replace(TERMINAL_TITLE, "").count("—") == 0
+
+
+def test_callout_claim_stays():
+    assert "field-for-field" in HTML
