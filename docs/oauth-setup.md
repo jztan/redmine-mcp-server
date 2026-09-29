@@ -109,6 +109,10 @@ REDMINE_MCP_JWT_SIGNING_KEY=<stable-random-secret>
 # Unset = loopback only. "*" = allow any. Or list patterns for hosted clients.
 # REDMINE_MCP_ALLOWED_CLIENT_REDIRECT_URIS=https://app.example.com/*
 
+# Optional: lifetime of the access token issued to clients (see note below).
+# Unset or 0 = mirror Redmine's expires_in (2 hours).
+# REDMINE_MCP_ACCESS_TOKEN_EXPIRY_SECONDS=604800
+
 # Optional: use a separate upstream Redmine OAuth app.
 # If unset, REDMINE_INTROSPECT_CLIENT_ID / _SECRET are reused.
 # REDMINE_OAUTH_CLIENT_ID=<UID from Redmine>
@@ -119,6 +123,8 @@ REDMINE_MCP_JWT_SIGNING_KEY=<stable-random-secret>
 Set these in `.env` (local) or `.env.docker` (Docker). Legacy credentials are not needed in OAuth mode.
 
 **Client redirect-URI allowlist:** In `oauth-proxy` mode an MCP client registers its own redirect URI via Dynamic Client Registration. By default the server accepts only loopback targets (`http://localhost:*` and `http://127.0.0.1:*`), which fits local MCP clients (Claude Desktop, Codex CLI, `mcp-remote`) while preventing a registered client from pointing the flow at a remote URL. To support a hosted client with a non-loopback redirect URI, set `REDMINE_MCP_ALLOWED_CLIENT_REDIRECT_URIS` to a comma- or space-separated list of glob patterns (for example `https://app.example.com/*`). Set it to `*` to restore the permissive "accept any redirect URI" behaviour. External consent on Redmine and forwarded PKCE remain in effect regardless of this setting.
+
+**Client token lifetime:** By default the access token OAuthProxy issues to a client lives exactly as long as the Redmine token behind it, which is Doorkeeper's `expires_in` (2 hours on stock Redmine). After that the client has to call `/token` with its refresh token, and OAuthProxy rotates the refresh token on every such call, rejecting the old one. When several processes share one client's stored credentials, for example parallel sessions of the same CLI, the first to refresh wins and every other process is sent back through the browser login. Setting `REDMINE_MCP_ACCESS_TOKEN_EXPIRY_SECONDS` (for example `604800`, 7 days) decouples the two lifetimes, so clients rarely refresh. It does not extend upstream access: the proxy token only points at the stored Redmine token, which is still validated on every request and refreshed server-side when it expires, so revoking the application in Redmine (**My account → Authorized applications**) still cuts the client off immediately. The trade-off is that a leaked proxy access token stays usable for that long while the grant is alive, the same exposure a leaked refresh token already has.
 
 **Upstream OAuth client:** When `REDMINE_OAUTH_CLIENT_ID` / `REDMINE_OAUTH_CLIENT_SECRET` are unset, the introspection client (Step 2) is reused as the upstream authorization client. That client therefore needs more than introspection rights: it must have the **authorization code** grant enabled and `${REDMINE_MCP_BASE_URL}/auth/callback` registered as a redirect URI, otherwise `/authorize` fails upstream. This is already true if the introspection client is the Step 1 user-flow app; if you registered a separate introspection-only app, either enable the authorization code grant and redirect URI on it or set `REDMINE_OAUTH_CLIENT_ID` / `REDMINE_OAUTH_CLIENT_SECRET` to a dedicated upstream app.
 

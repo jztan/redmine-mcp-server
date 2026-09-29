@@ -44,6 +44,57 @@ def test_build_oauth_proxy_restricts_redirect_uris_to_loopback_by_default(
     ]
 
 
+def _set_proxy_env(monkeypatch, tmp_path):
+    monkeypatch.setenv("REDMINE_URL", "https://redmine.example")
+    monkeypatch.setenv("REDMINE_MCP_BASE_URL", "https://mcp.example")
+    monkeypatch.setenv("REDMINE_INTROSPECT_CLIENT_ID", "introspect-client")
+    monkeypatch.setenv("REDMINE_INTROSPECT_CLIENT_SECRET", "introspect-secret")
+    monkeypatch.setenv("REDMINE_MCP_JWT_SIGNING_KEY", "stable-test-signing-key")
+    monkeypatch.setattr(settings, "home", tmp_path)
+
+
+def test_build_oauth_proxy_mirrors_upstream_token_expiry_by_default(
+    monkeypatch, tmp_path
+):
+    _set_proxy_env(monkeypatch, tmp_path)
+    monkeypatch.delenv("REDMINE_MCP_ACCESS_TOKEN_EXPIRY_SECONDS", raising=False)
+
+    proxy = build_oauth_proxy()
+
+    assert proxy._fastmcp_access_token_expiry_seconds is None
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("604800", 604800),
+        (" 86400 ", 86400),
+        ("0", None),
+        ("-5", None),
+        ("", None),
+    ],
+)
+def test_build_oauth_proxy_applies_access_token_expiry(
+    monkeypatch, tmp_path, raw, expected
+):
+    _set_proxy_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("REDMINE_MCP_ACCESS_TOKEN_EXPIRY_SECONDS", raw)
+
+    proxy = build_oauth_proxy()
+
+    assert proxy._fastmcp_access_token_expiry_seconds == expected
+
+
+def test_build_oauth_proxy_rejects_non_integer_access_token_expiry(
+    monkeypatch, tmp_path
+):
+    _set_proxy_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("REDMINE_MCP_ACCESS_TOKEN_EXPIRY_SECONDS", "7d")
+
+    with pytest.raises(RuntimeError, match="REDMINE_MCP_ACCESS_TOKEN_EXPIRY_SECONDS"):
+        build_oauth_proxy()
+
+
 @pytest.mark.asyncio
 async def test_authenticated_app_mounts_oauth_proxy_under_mcp(monkeypatch, tmp_path):
     monkeypatch.setenv("REDMINE_URL", "https://redmine.example")

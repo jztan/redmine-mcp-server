@@ -952,6 +952,16 @@ Likely causes, in order:
 
 The probe result is cached for `HEALTH_INTROSPECTION_TTL_SECONDS` (default 30 seconds). Wait that long after fixing the underlying issue before re-checking `/health`.
 
+### Symptom: clients have to log in again every few hours (oauth-proxy)
+
+Look for this warning in the server log:
+
+```
+Refresh token not found for client=... (token_hash=...); it was already rotated, expired, or revoked. Rejecting with invalid_grant, which forces the client to re-authenticate.
+```
+
+OAuthProxy rotates the refresh token on every refresh and rejects the old one. If the same `token_hash` shows up repeatedly for one `client`, several processes are sharing that client's stored credentials (parallel CLI sessions, a desktop app plus a terminal): one refreshed, and the others are still holding the rotated token. Set `REDMINE_MCP_ACCESS_TOKEN_EXPIRY_SECONDS` (for example `604800`) so clients rarely need to refresh; see "Client token lifetime" in `docs/oauth-setup.md`.
+
 ### Symptom: clients see 401 where they used to see 503
 
 This is by design after the FastMCP v3 auth migration. The previous middleware returned `503 upstream_unavailable` when Redmine was unreachable for token validation; FastMCP's `IntrospectionTokenVerifier` treats transport failures as auth failures and returns 401. Operators monitoring for 503 spikes should switch to:

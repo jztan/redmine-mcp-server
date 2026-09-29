@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- `REDMINE_MCP_ACCESS_TOKEN_EXPIRY_SECONDS` sets the lifetime of the access
+  token `oauth-proxy` issues to clients, passed to FastMCP's `OAuthProxy` as
+  `fastmcp_access_token_expiry_seconds`. It used to mirror Redmine's
+  `expires_in` (2 hours), so clients refreshed every 2 hours, and because the
+  proxy rotates the refresh token on each refresh, processes sharing one
+  client's credentials raced and the losers were forced to log in again. The
+  upstream Redmine token is still validated per request and refreshed
+  server-side, so revoking the grant in Redmine still takes effect at once.
+  Unset or `0` keeps the old behaviour; a non-integer value fails at startup.
 - Interactive `project-timeline` MCP App: the new `show_project_timeline` tool
   renders a project's schedule as a timeline in clients that support the MCP
   Apps extension. Issue bars run from start to due date, grouped by target

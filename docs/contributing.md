@@ -113,7 +113,7 @@ Cross-cutting utilities live as flat private modules:
 | `_errors.py` | `_handle_redmine_error`, `_scrub_error_message`, `_READ_ONLY_ERROR` |
 | `_validation.py` | Input validators (`_is_positive_int`, `_is_valid_project_id`, `_validate_hours`) |
 | `_serialization.py` | `wrap_insecure_content`, `_safe_isoformat`, `_iter_capped`, `_named_ref`, `_coerce_json_safe`, `_normalize_csv_list` |
-| `_env.py` | Environment accessors: read-only / plugin flags (`_is_read_only_mode`, `_is_*_enabled`), secret resolution with Docker/Kubernetes `*_FILE` support (`get_secret`, `get_required`, `get_required_secret`), `require_introspection_credentials`, `get_allowed_client_redirect_uris` (oauth-proxy redirect-URI allowlist), `get_health_introspection_ttl_seconds`, `get_extension_modules` (parses `REDMINE_MCP_EXTENSIONS`) |
+| `_env.py` | Environment accessors: read-only / plugin flags (`_is_read_only_mode`, `_is_*_enabled`), secret resolution with Docker/Kubernetes `*_FILE` support (`get_secret`, `get_required`, `get_required_secret`), `require_introspection_credentials`, `get_allowed_client_redirect_uris` (oauth-proxy redirect-URI allowlist), `get_health_introspection_ttl_seconds`, `get_oauth_proxy_access_token_expiry_seconds` (oauth-proxy client token lifetime), `get_extension_modules` (parses `REDMINE_MCP_EXTENSIONS`) |
 | `_custom_fields.py` | Custom-field parsing, autofill, and update coercion |
 | `_ssrf.py` | SSRF protection for `upload_file`'s `source_url` |
 | `_cleanup.py` | Background cleanup task |

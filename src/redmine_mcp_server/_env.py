@@ -351,6 +351,41 @@ def get_health_introspection_ttl_seconds() -> int:
     return _get_int_env("HEALTH_INTROSPECTION_TTL_SECONDS", 30)
 
 
+def get_oauth_proxy_access_token_expiry_seconds() -> int | None:
+    """Lifetime of the access token OAuthProxy issues to MCP clients.
+
+    ``REDMINE_MCP_ACCESS_TOKEN_EXPIRY_SECONDS``, passed to FastMCP's
+    ``OAuthProxy`` as ``fastmcp_access_token_expiry_seconds``. Unset, blank or
+    ``0`` returns ``None``, which keeps FastMCP's default of mirroring
+    Doorkeeper's ``expires_in`` (2 hours on stock Redmine).
+
+    A longer lifetime cuts how often clients call ``/token`` to refresh. That
+    matters because OAuthProxy rotates the refresh token on every refresh and
+    rejects the old one, so several processes sharing one client's stored
+    credentials (parallel sessions of the same CLI) race each other, and each
+    loser is forced back through the browser login. The FastMCP token is only
+    a reference: the upstream Redmine token is still validated on every
+    request and refreshed server-side when it expires, so revoking the grant
+    in Redmine still takes effect immediately.
+
+    A value that is not an integer raises at startup rather than silently
+    falling back, since the fallback would bring the re-auth churn back
+    without any sign of why.
+    """
+    raw = os.getenv("REDMINE_MCP_ACCESS_TOKEN_EXPIRY_SECONDS")
+    if raw is None or not raw.strip():
+        return None
+    try:
+        seconds = int(raw.strip())
+    except ValueError:
+        raise RuntimeError(
+            "REDMINE_MCP_ACCESS_TOKEN_EXPIRY_SECONDS must be an integer number "
+            f"of seconds, got {raw!r}. Unset it or use 0 to mirror Redmine's "
+            "expires_in."
+        ) from None
+    return seconds if seconds > 0 else None
+
+
 def get_allowed_client_redirect_uris() -> list[str] | None:
     """Allowed client redirect-URI patterns for oauth-proxy mode.
 
