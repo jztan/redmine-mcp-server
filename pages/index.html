@@ -373,7 +373,10 @@
     border: 0; border-top: 1px solid #ccc; margin: 0 0 6px; padding: 4px 0 6px 16px;
   }
   .rm-filters legend, .rm-options legend { font-size: 12.6px; color: #333; padding: 0 4px; margin-left: -12px; }
-  .rm-filterbox { display: flex; justify-content: space-between; gap: 12px 24px; flex-wrap: wrap; }
+  /* The filter box is shown collapsed (Redmine's fieldset toggle) at every
+     width, so the issues and the agent stay in view. */
+  .rm-filterbox { display: none; }
+  .rm-filters { padding-bottom: 0; }
   .rm-filterrows { display: grid; grid-template-columns: minmax(130px, 200px) auto auto; gap: 6px 12px; align-items: center; font-size: 13px; }
   .rm-filterrows label { display: flex; align-items: center; gap: 6px; }
   .rm-addfilter { display: flex; align-items: center; gap: 6px; font-size: 13px; align-self: flex-start; }
@@ -383,7 +386,7 @@
      menu, tabs, project title and search give way to one 64px bar holding the
      project jump box and a menu button; the contextual links become buttons
      above the heading. */
-  .rm-mbar, .rm-fold-closed { display: none; }
+  .rm-mbar { display: none; }
   @media (max-width: 899px) {
     .rm-topmenu, .rm-menu, .rm-headrow { display: none; }
     .rm-header { padding: 0; background: #628db6; }
@@ -401,13 +404,7 @@
       border: 1px solid #ccc; border-radius: 3px; padding: 6px 10px; font-weight: bold;
     }
   }
-  /* Phones: show the filter box collapsed (Redmine's fieldset toggle), since
-     its rows would push the issues out of view. */
   @media (max-width: 640px) {
-    .rm-filterbox { display: none; }
-    .rm-fold-open { display: none; }
-    .rm-fold-closed { display: inline; }
-    .rm-filters { padding-bottom: 0; }
     .rm-buttons { flex-wrap: wrap; gap: 8px; }
   }
   /* Wrap the table so it scrolls horizontally on narrow screens instead of
@@ -890,7 +887,7 @@
               <div class="rm-contextual"><a href="#">&#8853; New issue</a><a href="#" title="Actions">&#8943;</a></div>
             </div>
             <fieldset class="rm-filters">
-              <legend><span class="rm-fold-open">&#8964;</span><span class="rm-fold-closed">&#8250;</span> Filters</legend>
+              <legend>&#8250; Filters</legend>
               <div class="rm-filterbox">
                 <div class="rm-filterrows">
                   <label><input type="checkbox" checked tabindex="-1"> Status</label>

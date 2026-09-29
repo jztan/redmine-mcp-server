@@ -356,7 +356,9 @@ def test_narrow_screens_get_redmines_mobile_header():
     assert ".rm-mbar" in block
 
 
-def test_phones_show_the_filters_collapsed():
-    block = _media_block("max-width: 640px")
-    assert ".rm-filterbox" in block and "display: none" in block
-    assert 'class="rm-fold-closed"' in HTML
+def test_filter_box_is_always_collapsed():
+    # Redmine's collapsible fieldset, shown folded at every width so the
+    # issues and the agent stay in view; the rows stay in the markup.
+    assert "<legend>&#8250; Filters</legend>" in HTML
+    assert re.search(r"^  \.rm-filterbox \{ display: none; \}", HTML, re.M)
+    assert "rm-fold-" not in HTML
