@@ -387,33 +387,23 @@
   /* Wrap the table so it scrolls horizontally on narrow screens instead of
      being clipped by the card (this is how Redmine itself behaves on mobile). */
   .rm-tablewrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  table.rm-list { width: 100%; min-width: 560px; border-collapse: collapse; font-size: 12px; }
+  table.rm-list { width: 100%; min-width: 600px; border-collapse: collapse; font-size: 13px; border: 1px solid #e4e4e4; }
   table.rm-list th {
-    background: #eee; border: 1px solid var(--rm-border); color: #444; font-weight: bold;
-    text-align: left; padding: 3px 7px; white-space: nowrap;
+    background: #eee; border: 1px solid #d7d7d7; color: #333; font-weight: bold;
+    text-align: center; padding: 4px; white-space: nowrap;
   }
-  table.rm-list th .sortarrow { color: #888; font-size: 9px; }
-  table.rm-list td { border: 1px solid var(--rm-border); padding: 3px 7px; vertical-align: middle; white-space: nowrap; }
-  table.rm-list tr:nth-child(even) td { background: #f6f7f8; }
-  table.rm-list tr.prio-urgent td { background: #fbe9e6; }
-  table.rm-list tr.prio-urgent:nth-child(even) td { background: #f7e2df; }
-  table.rm-list tr { transition: background 0.4s ease; }
+  table.rm-list th a { color: var(--rm-link); }
+  table.rm-list th .sortarrow { color: var(--rm-link); font-size: 10px; margin-right: 2px; }
+  table.rm-list td { border-top: 1px solid #e4e4e4; padding: 3px 6px; vertical-align: middle; text-align: center; white-space: nowrap; }
+  table.rm-list tbody tr:nth-child(odd) td { background: #fff; }
+  table.rm-list tbody tr:nth-child(even) td { background: #f6f7f8; }
+  table.rm-list tr { transition: opacity 0.6s ease, background 0.4s ease; }
   table.rm-list tr.flash td { background: #fcf2cf !important; }
+  table.rm-list tr.leaving { opacity: 0; }
   table.rm-list input[type="checkbox"] { margin: 0; vertical-align: middle; }
-  .rm-id { color: var(--rm-link); text-decoration: none; }
-  .rm-id:hover { color: #c61a1a; }
-  td.rm-subject { width: 99%; max-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  td.rm-subject a { color: var(--rm-link); text-decoration: none; }
-  td.rm-subject a:hover { color: #c61a1a; text-decoration: underline; }
-  tr.closed td { color: #999; }
-  tr.closed td.rm-subject a { color: #999; text-decoration: line-through; }
-  td.rm-prio { font-weight: bold; }
-  td.rm-prio.urgent { color: #cc3300; }
-  td.rm-prio.high { color: #cc6600; }
-  td.rm-prio.normal { color: #555; font-weight: normal; }
-  td.rm-prio.low { color: #888; font-weight: normal; }
-  td.rm-due.overdue { color: #cc3300; font-weight: bold; }
-  .rm-none { color: #999; font-style: italic; }
+  td.rm-subject { text-align: left !important; width: 99%; max-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  td.rm-due.overdue { color: #cc2222; }
+  td.rm-actions { color: var(--rm-link); }
 
   /* ── Agent CLI, styled after Claude Code ──
      The Redmine table above mutates as the agent's MCP tool calls land here. */
@@ -780,7 +770,8 @@
     .rm-list th:nth-child(1), .rm-list td:nth-child(1),   /* checkbox */
     .rm-list th:nth-child(3), .rm-list td:nth-child(3),   /* Tracker */
     .rm-list th:nth-child(5), .rm-list td:nth-child(5),   /* Priority */
-    .rm-list th:nth-child(8), .rm-list td:nth-child(8) {  /* Due date */
+    .rm-list th:nth-child(8), .rm-list td:nth-child(8),   /* Due date */
+    .rm-list th:nth-child(9), .rm-list td:nth-child(9) {  /* Actions (⋯) */
       display: none;
     }
     table.rm-list td, table.rm-list th { white-space: normal; }
@@ -887,10 +878,12 @@
             <div class="rm-tablewrap">
               <table class="rm-list">
                 <thead><tr>
-                  <th style="width:16px"></th>
-                  <th>#&nbsp;<span class="sortarrow">▾</span></th>
-                  <th>Tracker</th><th>Status</th><th>Priority</th>
-                  <th>Subject</th><th>Assignee</th><th>Due&nbsp;date</th>
+                  <th style="width:16px"><input type="checkbox" tabindex="-1" title="Check all / Uncheck all"></th>
+                  <th><a href="#">#</a></th>
+                  <th><a href="#">Tracker</a></th><th><a href="#">Status</a></th>
+                  <th><span class="sortarrow">&#8964;</span><a href="#">Priority</a></th>
+                  <th><a href="#">Subject</a></th><th><a href="#">Assignee</a></th><th><a href="#">Due date</a></th>
+                  <th></th>
                 </tr></thead>
                 <tbody id="issueRows"></tbody>
               </table>
@@ -1551,30 +1544,40 @@ redmine-mcp-server</pre>
       args: { issue_id: 4812, fields: { status_id: 5, notes: "Closing: fix merged in r4471 and stable on CI per Sam's 2026-06-17 note. No further action needed." } },
       result: () => { const i = byId(4812); i.status = STATUS.CLOSED;
                       const d = issueDict(i); d.custom_fields = []; return d; },
-      apply: () => { render(); flash([4812]); touch([4812]); addComment(); markClosed(); },
+      apply: () => { render(); touch([4812]); addComment(); markClosed(); dropIssue(4812); },
     },
   ];
 
   // ── Redmine issue-table rendering ─────────────────────────
-  function overdue(i) { return i.due_date < TODAY && i.status.id !== 5; }
+  function overdue(i) { return i.due_date < TODAY && i.status.id !== STATUS.CLOSED.id; }
+  // Redmine's en locale default date format.
+  function usDate(iso) { const [y, m, d] = iso.split("-"); return `${m}/${d}/${y}`; }
   function rowHtml(i) {
-    const closed = i.status.id === 5;
-    const prio = i.priority.name.toLowerCase();
-    const assignee = i.assigned_to ? escapeHtml(i.assigned_to.name) : '<span class="rm-none">(none)</span>';
-    const cls = [closed ? "closed" : "", prio === "urgent" ? "prio-urgent" : ""].filter(Boolean).join(" ");
-    return `<tr class="${cls}" data-id="${i.id}">
-      <td><input type="checkbox" disabled></td>
-      <td><a class="rm-id" href="#">${i.id}</a></td>
-      <td>${i.tracker}</td>
+    const assignee = i.assigned_to ? `<a href="#">${escapeHtml(i.assigned_to.name)}</a>` : "";
+    return `<tr data-id="${i.id}">
+      <td><input type="checkbox" tabindex="-1"></td>
+      <td><a href="#">${i.id}</a></td>
+      <td>${i.tracker.name}</td>
       <td>${i.status.name}</td>
-      <td class="rm-prio ${prio}">${i.priority.name}</td>
+      <td>${i.priority.name}</td>
       <td class="rm-subject"><a href="#" title="${escapeHtml(i.subject)}">${escapeHtml(i.subject)}</a></td>
       <td>${assignee}</td>
-      <td class="rm-due ${overdue(i) ? "overdue" : ""}">${i.due_date}</td>
+      <td class="rm-due ${overdue(i) ? "overdue" : ""}">${usDate(i.due_date)}</td>
+      <td class="rm-actions" title="Actions">&#8943;</td>
     </tr>`;
   }
+  function byPriorityThenId(a, b) { return b.priority.id - a.priority.id || b.id - a.id; }
   function render() {
-    $("issueRows").innerHTML = board.map(rowHtml).join("");
+    $("issueRows").innerHTML = [...board].sort(byPriorityThenId).map(rowHtml).join("");
+  }
+  // The page filters on open issues, so a closed issue leaves the list the
+  // next time Redmine renders it. Fade it out, then drop it from the board.
+  function dropIssue(id) {
+    const gone = () => { board = board.filter(i => i.id !== id); render(); };
+    const row = document.querySelector(`tr[data-id="${id}"]`);
+    if (REDUCED_MOTION || !row) { gone(); return; }
+    row.classList.add("leaving");
+    setTimeout(gone, 650);
   }
 
   function flash(ids) {
