@@ -840,7 +840,7 @@
       <div class="stage-body">
         <div class="rm-app" aria-label="Embedded Redmine issues page (mockup)">
           <div class="rm-topmenu">
-            <span><a href="#">Home</a><a href="#">My page</a><a href="#">Projects</a><a href="#" title="Help">?</a></span>
+            <span><a href="#">Home</a><a href="#">My page</a><a href="#">Projects</a><a href="#">Help</a></span>
             <span class="rm-right"><span>Logged in as</span> <a href="#" style="margin-left:4px">alex.rivera</a><a href="#">My account</a><a href="#">Sign out</a></span>
           </div>
           <div class="rm-header">
@@ -1432,9 +1432,10 @@ redmine-mcp-server</pre>
       total_estimated_hours: null,
       total_spent_hours: 0.0,
       is_private: false,
-      closed_on: i.status.id === STATUS.CLOSED.id ? TODAY + "T16:52:11" : null,
+      closed_on: i.status.id === STATUS.CLOSED.id ? i.updated_on : null,
       created_on: "2026-06-02T09:14:23",
-      updated_on: TODAY + "T16:40:05",
+      // A write stamps updated_on (and closed_on, on a close) at save time.
+      updated_on: i.updated_on || TODAY + "T16:40:05",
     };
     if (!fields) return full;
     const out = {};
@@ -1512,7 +1513,7 @@ redmine-mcp-server</pre>
       summary: "#4821 → In Progress · assigned Maya Chen",
       tool: "update_redmine_issue",
       args: { issue_id: 4821, fields: { status_id: 2, assigned_to_id: 8 } },
-      result: () => { const i = byId(4821); i.status = STATUS.INPROG; i.assigned_to = MAYA;
+      result: () => { const i = byId(4821); i.status = STATUS.INPROG; i.assigned_to = MAYA; i.updated_on = TODAY + "T16:47:32";
                       const d = issueDict(i); d.custom_fields = []; return d; },
       apply: () => { render(); flash([4821]); touch([4821]); },
     },
@@ -1521,7 +1522,7 @@ redmine-mcp-server</pre>
       summary: "comment added to #4821",
       tool: "update_redmine_issue",
       args: { issue_id: 4821, fields: { notes: "Triaged: logcat (attachment #7012) shows the FCM foreground service killed ~30 min in, right after Android 14's foreground-service timeout. Root cause confirmed. Reassigned to Maya (notifications). Needs to land in the 4.2 release." } },
-      result: () => { const i = byId(4821);
+      result: () => { const i = byId(4821); i.updated_on = TODAY + "T16:48:05";
         const d = issueDict(i); d.custom_fields = []; return d; },
       apply: () => { render(); flash([4821]); addComment(); },
     },
@@ -1542,7 +1543,7 @@ redmine-mcp-server</pre>
       summary: "#4812 → Closed · comment added",
       tool: "update_redmine_issue",
       args: { issue_id: 4812, fields: { status_id: 5, notes: "Closing: fix merged in r4471 and stable on CI per Sam's 2026-06-17 note. No further action needed." } },
-      result: () => { const i = byId(4812); i.status = STATUS.CLOSED;
+      result: () => { const i = byId(4812); i.status = STATUS.CLOSED; i.updated_on = TODAY + "T16:52:11";
                       const d = issueDict(i); d.custom_fields = []; return d; },
       apply: () => { render(); touch([4812]); addComment(); markClosed(); dropIssue(4812); },
     },
@@ -1572,12 +1573,15 @@ redmine-mcp-server</pre>
   }
   // The page filters on open issues, so a closed issue leaves the list the
   // next time Redmine renders it. Fade it out, then drop it from the board.
+  // Cleared by reset(): a Replay during the fade must not drop the issue
+  // from the fresh board.
+  let dropTimer = null;
   function dropIssue(id) {
     const gone = () => { board = board.filter(i => i.id !== id); render(); };
     const row = document.querySelector(`tr[data-id="${id}"]`);
     if (REDUCED_MOTION || !row) { gone(); return; }
     row.classList.add("leaving");
-    setTimeout(gone, 650);
+    dropTimer = setTimeout(gone, 650);
   }
 
   function flash(ids) {
@@ -1614,6 +1618,7 @@ redmine-mcp-server</pre>
   let idx = 0, playing = false, animating = false, promptShown = false, interacted = false;
   function reset() {
     playing = false; animating = false; idx = 0; promptShown = false;
+    clearTimeout(dropTimer); dropTimer = null;
     board = initialIssues(); _boundary = 0; render();
     $("feed").innerHTML = WELCOME_HTML + HINT_HTML;
     $("cliInput").textContent = "";

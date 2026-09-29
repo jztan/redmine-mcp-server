@@ -237,3 +237,31 @@ def test_no_em_dashes_in_copy():
 
 def test_callout_claim_stays():
     assert "field-for-field" in HTML
+
+
+# ── Review fixes ─────────────────────────────────────────────
+
+
+def test_writes_stamp_updated_on_at_save_time(demo):
+    updates = [s for s in demo["steps"] if s["tool"] == "update_redmine_issue"]
+    for step in updates:
+        result = step["result"]
+        assert result["updated_on"] > result["created_on"]
+        if result["closed_on"] is not None:
+            assert result["updated_on"] == result["closed_on"]
+    stamps = [s["result"]["updated_on"] for s in updates]
+    assert stamps == sorted(stamps) and len(set(stamps)) == len(stamps)
+
+
+def test_help_link_uses_stock_caption():
+    topmenu = HTML[HTML.index('<div class="rm-topmenu">') :]
+    topmenu = topmenu[: topmenu.index("</div>")]
+    assert ">Help</a>" in topmenu
+    assert ">?</a>" not in topmenu
+
+
+def test_reset_cancels_a_pending_row_drop():
+    drop = HTML[HTML.index("function dropIssue") :]
+    assert "dropTimer = setTimeout(" in drop[: drop.index("\n  }\n")]
+    body = HTML[HTML.index("function reset()") :]
+    assert "clearTimeout(dropTimer)" in body[: body.index("\n  }\n")]
