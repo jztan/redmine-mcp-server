@@ -325,3 +325,9 @@ def test_page_claims_match_the_server():
     assert "plugins,:" not in HTML
     assert "comment, log time, and close issues" not in HTML
     assert "Cursor and other clients use the generic HTTP" not in HTML
+
+
+def test_network_claim_admits_url_uploads():
+    # upload_file(source_url=...) fetches the URL an agent passes it.
+    assert "talks to exactly two things" not in HTML
+    assert "talks only to your Redmine and your MCP client." not in HTML

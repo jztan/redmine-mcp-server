@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="light dark" />
 
 <title>redmine-mcp-server · Your AI doesn't just read tickets. It works them.</title>
-<meta name="description" content="Self-hosted MCP server that gives AI agents 53 tools to work a Redmine instance, 67 with RedmineUP and DMSF plugins,: issues, wikis, time tracking, Gantt, files, plus a Kanban board, project dashboard, and timeline rendered in the chat. Tested on Redmine 6.1 and 7.0. MIT licensed." />
+<meta name="description" content="Self-hosted MCP server that gives AI agents 53 tools to work a Redmine instance, 67 with RedmineUP and DMSF plugins: issues, wikis, time tracking, Gantt, files, plus a Kanban board, project dashboard, and timeline rendered in the chat. Tested on Redmine 6.1 and 7.0. MIT licensed." />
 
 <link rel="canonical" href="https://redmine-mcp-server.jztan.com/" />
 
@@ -20,7 +20,7 @@
 <!-- Open Graph (LinkedIn, Facebook, Slack) -->
 <meta property="og:type" content="website" />
 <meta property="og:title" content="redmine-mcp-server · Your AI shouldn't just read tickets. It should work them." />
-<meta property="og:description" content="Watch an AI agent triage a Redmine sprint in your browser: reassign, comment, log time, and close issues through real MCP tool calls. Enterprise auth with OAuth2, an OAuth proxy, or per-user API keys, plus live apps in the chat. No install required." />
+<meta property="og:description" content="Watch an AI agent triage a Redmine sprint in your browser: reassign, comment on, and close issues through real MCP tool calls. Enterprise auth with OAuth2, an OAuth proxy, or per-user API keys, plus live apps in the chat. No install required." />
 <meta property="og:url" content="https://redmine-mcp-server.jztan.com/" />
 <meta property="og:image" content="https://redmine-mcp-server.jztan.com/og-image.png?v=3" />
 <meta property="og:image:width" content="1200" />
@@ -69,7 +69,7 @@
       "name": "Can the agent write to my Redmine, or only read it?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "It writes. Creating and updating issues, adding notes, logging time, editing wiki pages, and managing members, versions, categories, and relations are all tool calls. If you would rather it did not, set REDMINE_MCP_READ_ONLY=true and every write branch is blocked while reads keep working. Deleting an issue always requires explicit confirmation flags and shows a cascade-impact preview first, in either mode."
+        "text": "It writes. Creating and updating issues, adding notes, logging time, editing wiki pages, and managing members, versions, categories, and relations are all tool calls. If you would rather it did not, set REDMINE_MCP_READ_ONLY=true and every write branch is blocked while reads keep working. Deleting an issue is refused unless confirm_delete=true is passed, and the refusal carries a cascade-impact preview; an issue with subtasks needs a second flag. In read-only mode deletion is blocked outright."
       }
     },
     {
@@ -77,7 +77,7 @@
       "name": "Does my Redmine data leave my network?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Not through this server. It runs on your own infrastructure and talks to exactly two things: your Redmine and your MCP client. There is no hosted service, no telemetry, and no third party in the path. What your AI client then sends to its model provider is between you and that client, the same as for any other tool it runs."
+        "text": "Not through this server. It runs on your own infrastructure and talks to your Redmine and your MCP client, plus any URL an agent explicitly asks it to upload a file from (SSRF-checked). There is no hosted service, no telemetry, and no third party in the path. What your AI client then sends to its model provider is between you and that client, the same as for any other tool it runs."
       }
     },
     {
@@ -85,7 +85,7 @@
       "name": "Which AI clients does it work with?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Any client that speaks MCP. Claude Code, Claude Desktop, VS Code with Copilot, Codex CLI, and Kiro have step-by-step guides in the README, and Cursor and other clients use the generic HTTP configuration. The server exposes streamable HTTP at /mcp. Clients that only speak stdio connect through a bridge, which the setup guides cover."
+        "text": "Any client that speaks MCP. Claude Code, Claude Desktop, VS Code with Copilot, Cursor, Codex CLI, and Kiro have step-by-step guides in the README, and other clients use the generic HTTP configuration. The server exposes streamable HTTP at /mcp. Clients that only speak stdio connect through a bridge, which the setup guides cover."
       }
     },
     {
@@ -101,7 +101,7 @@
       "name": "Do I need to install Redmine plugins?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "No. All 53 core tools work against a stock Redmine with no plugins at all. Fourteen more are plugin-gated (67 in total) and need both the plugin installed and a matching environment variable: checklists, products, the RedmineUP CRM (contacts, deals, notes, tags, saved queries, deal categories, and product lines), DMSF documents, and Helpdesk email replies. Plugin tools are not even listed to the agent until their flag is set. RedmineUP Agile and AlphaNodes Additional Tags add fields to tools you already have rather than new tools, so sprint, story point, and tag support appears automatically when those plugins are present."
+        "text": "No. All 53 core tools work against a stock Redmine with no plugins at all. Fourteen more are plugin-gated (67 in total) and need both the plugin installed and a matching environment variable: checklists, products, the RedmineUP CRM (contacts, deals, notes, tags, saved queries, deal categories, and product lines), DMSF documents, and Helpdesk email replies. Plugin tools are not even listed to the agent until their flag is set. RedmineUP Agile and AlphaNodes Additional Tags add fields to tools you already have rather than new tools, turned on with REDMINE_AGILE_ENABLED and REDMINE_TAGS_ENABLED."
       }
     },
     {
@@ -443,7 +443,9 @@
   .tc-call { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
   .tc-name { color: var(--cli-text); }
   .tc-args { color: var(--cli-dim); }
-  .tc-result { color: var(--cli-dim); padding-left: 18px; margin-top: 2px; cursor: pointer; }
+  .tc-result { color: var(--cli-dim); padding-left: 18px; margin-top: 2px; cursor: pointer; display: grid; grid-template-columns: auto 1fr; }
+  .tc-result::before { grid-row: span 2; }
+  .tc-result > span { grid-column: 2; min-width: 0; }
   /* The tool's text output (compact JSON), clipped as Claude Code clips long output. */
   .tc-out { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-all; }
   .tc-result::before { content: "\23bf  "; color: #57534d; }
@@ -1007,13 +1009,13 @@
 <section class="caps">
   <div class="inner">
     <h2 class="caps-title">Far more than triage.</h2>
-    <p class="caps-sub">The demo shows one workflow. The other 53 core tools, 67 with plugins, cover the rest of Redmine.</p>
+    <p class="caps-sub">The demo shows one workflow. The server's 53 core tools, 67 with plugins, cover the rest of Redmine.</p>
     <div class="caps-grid">
 
       <div class="cap-card">
         <svg class="cap-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
         <p class="cap-head">Search <b>all of Redmine</b> at once</p>
-        <p class="cap-desc">One <code>search_entire_redmine</code> call spans issues, wiki pages, projects, and news.</p>
+        <p class="cap-desc">One <code>search_entire_redmine</code> call spans issues, wiki pages, and news.</p>
       </div>
 
       <div class="cap-card">
@@ -1025,7 +1027,7 @@
       <div class="cap-card">
         <svg class="cap-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         <p class="cap-head">Log and import <b>time</b></p>
-        <p class="cap-desc">Record time entries or bulk-import a week of them with <code>manage_time_entry</code>.</p>
+        <p class="cap-desc">Record time entries with <code>manage_time_entry</code>, or bulk-import a week of them with <code>import_time_entries</code>.</p>
       </div>
 
       <div class="cap-card">
@@ -1093,7 +1095,7 @@
           <tr>
             <th>Guardrails</th>
             <td data-col="A generic HTTP tool">Whatever the credential can do, the model can do, with no way to scope it down or preview the damage.</td>
-            <td class="ours" data-col="redmine-mcp-server">Read-only mode, per-tool OAuth scope enforcement, and a required confirmation with cascade preview before an issue is deleted.</td>
+            <td class="ours" data-col="redmine-mcp-server">Read-only mode, per-tool OAuth scope enforcement, and a required confirmation flag, with a cascade-impact preview on refusal, before an issue is deleted.</td>
           </tr>
           <tr>
             <th>Untrusted text</th>
@@ -1137,7 +1139,7 @@
       </div>
       <div class="trust-item">
         <p class="trust-head">Destructive actions ask first</p>
-        <p class="trust-desc"><code>delete_redmine_issue</code> requires explicit confirmation flags and shows a cascade-impact preview before anything irreversible happens.</p>
+        <p class="trust-desc"><code>delete_redmine_issue</code> refuses without an explicit confirmation flag and returns a cascade-impact preview with the refusal; subtasks need a second flag.</p>
       </div>
       <div class="trust-item">
         <p class="trust-head">Hardened network edges</p>
@@ -1225,14 +1227,14 @@ redmine-mcp-server</pre>
       <summary>Can the agent write to my Redmine, or only read it?</summary>
       <div class="qa-body">
         <p>It writes. Creating and updating issues, adding notes, logging time, editing wiki pages, and managing members, versions, categories, and relations are all tool calls.</p>
-        <p>If you would rather it did not, set <code>REDMINE_MCP_READ_ONLY=true</code> and every write branch is blocked while reads keep working. Deleting an issue always requires explicit confirmation flags and shows a cascade-impact preview first, in either mode.</p>
+        <p>If you would rather it did not, set <code>REDMINE_MCP_READ_ONLY=true</code> and every write branch is blocked while reads keep working. Deleting an issue is refused unless <code>confirm_delete=true</code> is passed, and the refusal carries a cascade-impact preview; an issue with subtasks needs a second flag. In read-only mode deletion is blocked outright.</p>
       </div>
     </details>
 
     <details class="qa">
       <summary>Does my Redmine data leave my network?</summary>
       <div class="qa-body">
-        <p>Not through this server. It runs on your own infrastructure and talks to exactly two things: your Redmine and your MCP client. There is no hosted service, no telemetry, and no third party in the path.</p>
+        <p>Not through this server. It runs on your own infrastructure and talks to your Redmine and your MCP client, plus any URL an agent explicitly asks it to upload a file from (SSRF-checked). There is no hosted service, no telemetry, and no third party in the path.</p>
         <p>What your AI client then sends to its model provider is between you and that client, the same as for any other tool it runs.</p>
       </div>
     </details>
@@ -1240,7 +1242,7 @@ redmine-mcp-server</pre>
     <details class="qa">
       <summary>Which AI clients does it work with?</summary>
       <div class="qa-body">
-        <p>Any client that speaks MCP. Claude Code, Claude Desktop, VS Code with Copilot, Codex CLI, and Kiro have step-by-step guides in the README, and Cursor and other clients use the generic HTTP configuration.</p>
+        <p>Any client that speaks MCP. Claude Code, Claude Desktop, VS Code with Copilot, Cursor, Codex CLI, and Kiro have step-by-step guides in the README, and other clients use the generic HTTP configuration.</p>
         <p>The server exposes streamable HTTP at <code>/mcp</code>. Clients that only speak stdio connect through a bridge, which the setup guides cover.</p>
       </div>
     </details>
@@ -1257,7 +1259,7 @@ redmine-mcp-server</pre>
       <summary>Do I need to install Redmine plugins?</summary>
       <div class="qa-body">
         <p>No. All 53 core tools work against a stock Redmine with no plugins at all.</p>
-        <p>Fourteen more are plugin-gated (67 in total) and need both the plugin installed and a matching environment variable: checklists, products, the RedmineUP CRM (contacts, deals, notes, tags, saved queries, deal categories, and product lines), DMSF documents, and Helpdesk email replies. Plugin tools are not even listed to the agent until their flag is set. RedmineUP Agile and AlphaNodes Additional Tags add fields to tools you already have rather than new tools, so sprint, story point, and tag support appears automatically when those plugins are present.</p>
+        <p>Fourteen more are plugin-gated (67 in total) and need both the plugin installed and a matching environment variable: checklists, products, the RedmineUP CRM (contacts, deals, notes, tags, saved queries, deal categories, and product lines), DMSF documents, and Helpdesk email replies. Plugin tools are not even listed to the agent until their flag is set. RedmineUP Agile and AlphaNodes Additional Tags add fields to tools you already have rather than new tools, turned on with <code>REDMINE_AGILE_ENABLED</code> and <code>REDMINE_TAGS_ENABLED</code>.</p>
       </div>
     </details>
 
@@ -1305,7 +1307,7 @@ redmine-mcp-server</pre>
     </p>
     <h2>How it stays safe</h2>
     <p>
-      The server runs on your own infrastructure and talks only to your Redmine and your MCP client. A read-only mode (<code>REDMINE_MCP_READ_ONLY=true</code>) blocks every write while you evaluate. In OAuth mode, each tool call is checked against the Redmine permission scopes the tool actually uses, per action for the <code>manage_*</code> tools, with unmapped tools denied by default and <code>tools/list</code> filtered to the token's scopes. User-controlled text is wrapped in boundary tags before it reaches the model, URL-based uploads are SSRF-checked, and issue deletion requires explicit confirmation with a cascade-impact preview.
+      The server runs on your own infrastructure and talks to your Redmine and your MCP client, plus any URL an agent explicitly asks it to upload a file from. A read-only mode (<code>REDMINE_MCP_READ_ONLY=true</code>) blocks every write while you evaluate. In OAuth mode, each tool call is checked against the Redmine permission scopes the tool actually uses, per action for the <code>manage_*</code> tools, with unmapped tools denied by default and <code>tools/list</code> filtered to the token's scopes. User-controlled text is wrapped in boundary tags before it reaches the model, URL-based uploads are SSRF-checked, and issue deletion is refused without an explicit confirmation flag, with a cascade-impact preview in the refusal.
     </p>
     <h2>What the demo shows</h2>
     <p>
