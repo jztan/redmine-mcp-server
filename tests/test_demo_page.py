@@ -331,3 +331,32 @@ def test_network_claim_admits_url_uploads():
     # upload_file(source_url=...) fetches the URL an agent passes it.
     assert "talks to exactly two things" not in HTML
     assert "talks only to your Redmine and your MCP client." not in HTML
+
+
+# ── Phone layout (Redmine's responsive view) ─────────────────
+
+
+def _media_block(query):
+    start = HTML.index(f"@media ({query})")
+    depth, i = 0, HTML.index("{", start)
+    for j in range(i, len(HTML)):
+        depth += {"{": 1, "}": -1}.get(HTML[j], 0)
+        if depth == 0:
+            return HTML[start : j + 1]
+    raise AssertionError(query)
+
+
+def test_narrow_screens_get_redmines_mobile_header():
+    # Redmine's responsive.css (max-width: 899px): top menu, tabs, title and
+    # search hidden; a 64px bar with the project jump box and a menu button.
+    assert 'class="rm-mbar"' in HTML and 'class="rm-burger"' in HTML
+    block = _media_block("max-width: 899px")
+    for sel in (".rm-topmenu", ".rm-menu", ".rm-headrow"):
+        assert sel in block
+    assert ".rm-mbar" in block
+
+
+def test_phones_show_the_filters_collapsed():
+    block = _media_block("max-width: 640px")
+    assert ".rm-filterbox" in block and "display: none" in block
+    assert 'class="rm-fold-closed"' in HTML

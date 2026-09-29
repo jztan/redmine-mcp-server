@@ -379,10 +379,36 @@
   .rm-addfilter { display: flex; align-items: center; gap: 6px; font-size: 13px; align-self: flex-start; }
   .rm-options { padding-bottom: 0; }
   .rm-buttons { display: flex; gap: 14px; font-size: 12.6px; margin: 6px 0 12px; }
+  /* Redmine's own mobile layout (responsive.css, max-width: 899px): the top
+     menu, tabs, project title and search give way to one 64px bar holding the
+     project jump box and a menu button; the contextual links become buttons
+     above the heading. */
+  .rm-mbar, .rm-fold-closed { display: none; }
+  @media (max-width: 899px) {
+    .rm-topmenu, .rm-menu, .rm-headrow { display: none; }
+    .rm-header { padding: 0; background: #628db6; }
+    .rm-mbar {
+      display: flex; align-items: center; height: 64px; color: #f8f8f8;
+      font-size: 22px; font-weight: bold;
+    }
+    .rm-mjump { font-size: 18px; margin: 0 12px 0 10px; opacity: 0.9; }
+    .rm-burger {
+      margin-left: auto; width: 60px; height: 64px; line-height: 64px; text-align: center;
+      border-left: 1px solid #ddd; font-size: 30px; font-weight: normal;
+    }
+    .rm-titlebar { flex-direction: column-reverse; align-items: flex-start; gap: 12px; }
+    .rm-contextual a, .rm-buttons a {
+      border: 1px solid #ccc; border-radius: 3px; padding: 6px 10px; font-weight: bold;
+    }
+  }
+  /* Phones: show the filter box collapsed (Redmine's fieldset toggle), since
+     its rows would push the issues out of view. */
   @media (max-width: 640px) {
-    .rm-search { display: none; }
-    .rm-filterrows { grid-template-columns: auto auto; }
-    .rm-filterrows .rm-empty { display: none; }
+    .rm-filterbox { display: none; }
+    .rm-fold-open { display: none; }
+    .rm-fold-closed { display: inline; }
+    .rm-filters { padding-bottom: 0; }
+    .rm-buttons { flex-wrap: wrap; gap: 8px; }
   }
   /* Wrap the table so it scrolls horizontally on narrow screens instead of
      being clipped by the card (this is how Redmine itself behaves on mobile). */
@@ -849,6 +875,7 @@
             <span class="rm-right"><span>Logged in as</span> <a href="#" style="margin-left:4px">alex.rivera</a><a href="#">My account</a><a href="#">Sign out</a></span>
           </div>
           <div class="rm-header">
+            <div class="rm-mbar"><span class="rm-mjump">&#8964;</span>Cartly<span class="rm-burger">&#8801;</span></div>
             <div class="rm-headrow">
               <div class="rm-proj">Cartly</div>
               <div class="rm-search">Search: <span class="rm-input"></span><span class="rm-select">Cartly</span></div>
@@ -863,7 +890,7 @@
               <div class="rm-contextual"><a href="#">&#8853; New issue</a><a href="#" title="Actions">&#8943;</a></div>
             </div>
             <fieldset class="rm-filters">
-              <legend>&#8964; Filters</legend>
+              <legend><span class="rm-fold-open">&#8964;</span><span class="rm-fold-closed">&#8250;</span> Filters</legend>
               <div class="rm-filterbox">
                 <div class="rm-filterrows">
                   <label><input type="checkbox" checked tabindex="-1"> Status</label>
