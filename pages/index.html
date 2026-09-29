@@ -425,7 +425,7 @@
   .cc-welcome b { color: var(--cli-text); font-weight: 500; }
   .cc-welcome .sub { display: block; margin-top: 3px; font-size: 11.5px; color: #6f6a64; }
   .cli-prompt { color: var(--cli-text); }
-  .cli-prompt::before { content: "> "; color: var(--cli-dim); }
+  .cli-prompt::before { content: "❯ "; color: var(--cli-dim); }
   .cli-hint { color: var(--cli-dim); margin-top: 10px; }
   .blink, .cc-cursor { animation: blink 1.1s step-end infinite; }
   @keyframes blink { 50% { opacity: 0; } }
@@ -434,7 +434,9 @@
   .turn { opacity: 0; transform: translateY(5px); transition: all 0.35s ease; margin-top: 14px; }
   .turn.on { opacity: 1; transform: none; }
   .cc-msg { display: flex; gap: 8px; }
-  .cc-bullet { color: var(--cli-accent); flex-shrink: 0; }
+  .cc-bullet { color: var(--cli-text); flex-shrink: 0; }
+  .tc-line .cc-bullet { color: var(--cli-dim); }
+  .toolcall.done .tc-line .cc-bullet { color: #7faa6e; }
   .agent-text { color: var(--cli-text); }
   .toolcall { margin-top: 12px; }
   .tc-line { display: flex; gap: 8px; align-items: baseline; }
@@ -442,8 +444,10 @@
   .tc-name { color: var(--cli-text); }
   .tc-args { color: var(--cli-dim); }
   .tc-result { color: var(--cli-dim); padding-left: 18px; margin-top: 2px; cursor: pointer; }
+  /* The tool's text output (compact JSON), clipped as Claude Code clips long output. */
+  .tc-out { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-all; }
   .tc-result::before { content: "\23bf  "; color: #57534d; }
-  .tc-expand { color: #6f6a64; }
+  .tc-expand { display: block; color: #6f6a64; }
   .tc-result:hover .tc-expand { color: var(--cli-text); }
   .hidden-tc { display: none; }
   .tc-pending { color: var(--cli-dim); animation: ccpulse 1.1s ease-in-out infinite; }
@@ -477,10 +481,9 @@
   .cc-input { flex-shrink: 0; padding: 4px 14px 12px; }
   .cc-input-box { border: 1px solid #4a443d; border-radius: 8px; padding: 8px 12px;
                   color: var(--cli-dim); font-family: var(--font-mono); font-size: 12.5px; }
-  .cc-input-box::before { content: "> "; color: #6f6a64; }
+  .cc-input-box::before { content: "❯ "; color: #6f6a64; }
   .cc-input-hint { margin-top: 5px; font-family: var(--font-mono); font-size: 10.5px;
                    color: #6f6a64; display: flex; justify-content: space-between; }
-  .cc-input-hint .ok { color: #7faa6e; }
 
   /* ledger / scoreboard */
   .scoreboard { display: flex; gap: 40px; padding: 16px 24px; border-top: 1px solid var(--border); background: var(--bg-elev); flex-wrap: wrap; }
@@ -828,7 +831,7 @@
       <div class="stage-head">
         <div class="proj-meta">
           <div class="proj-name">An AI agent on a live Redmine</div>
-          <div class="proj-sub">scripted walkthrough, no real Redmine connected · the agent edits the Issues page below with MCP tool calls</div>
+          <div class="proj-sub">scripted walkthrough, no real Redmine connected · the agent edits the Issues page below by calling the server's 53 MCP tools, registered in Claude Code as <code>redmine</code></div>
         </div>
         <div class="stage-controls">
           <button class="btn btn-sm" id="playBtn">▶ Run the agent</button>
@@ -896,12 +899,12 @@
             <span class="cli-title">claude — ~/work/cartly-app</span>
           </div>
           <div class="cli-body" id="feed">
-            <div class="cc-welcome"><span class="cc-star">✻</span> Welcome to <b>Claude Code</b><span class="sub">redmine-mcp-server connected over MCP · 53 tools available</span></div>
+            <div class="cc-welcome"><span class="cc-star">✻</span> <b>Claude Code</b> v2.1.284<span class="sub">Opus 5.5 · ~/work/cartly-app</span></div>
             <div class="cli-hint" id="feedPlaceholder">▸ press <b style="color:#d6d3cd">Run the agent</b> to start</div>
           </div>
           <div class="cc-input">
             <div class="cc-input-box"><span id="cliInput"></span><span class="cc-cursor">▏</span></div>
-            <div class="cc-input-hint"><span>? for shortcuts</span><span class="ok">● redmine-mcp-server (MCP)</span></div>
+            <div class="cc-input-hint"><span>? for shortcuts</span></div>
           </div>
         </div>
       </div>
@@ -1463,7 +1466,6 @@ redmine-mcp-server</pre>
     {
       section: "discover: overdue, open issues in Sprint 14",
       say: "I'll start by pulling the overdue, open tickets in Sprint 14, highest priority first.",
-      summary: "2 issues · #4821 (High), #4812 (Normal)",
       tool: "list_redmine_issues",
       args: { project_id: 42, status_id: "open", fixed_version_id: 31,
               filters: { due_date: "<=2026-06-19" }, sort: "priority:desc",
@@ -1475,7 +1477,6 @@ redmine-mcp-server</pre>
     {
       section: "analyze & triage #4821",
       say: "#4821 is the top one: High, overdue since Jun 12, still unassigned. Reading it.",
-      summary: "High · unassigned · 1 attachment (logcat) · journal from Sam",
       tool: "get_redmine_issue",
       args: { issue_id: 4821 },
       result: () => issueDetail(byId(4821),
@@ -1489,7 +1490,6 @@ redmine-mcp-server</pre>
     },
     {
       say: "Sam attached a logcat from a repro. Let me pull it down and see what's actually failing.",
-      summary: "downloaded logcat-push-drop.txt · 48 KB · text/plain",
       tool: "get_redmine_attachment",
       args: { attachment_id: 7012 },
       result: () => ({
@@ -1510,7 +1510,6 @@ redmine-mcp-server</pre>
     },
     {
       say: "Confirmed. Assigning Maya, who owns notifications, and moving it to In Progress.",
-      summary: "#4821 → In Progress · assigned Maya Chen",
       tool: "update_redmine_issue",
       args: { issue_id: 4821, fields: { status_id: 2, assigned_to_id: 8 } },
       result: () => { const i = byId(4821); i.status = STATUS.INPROG; i.assigned_to = MAYA; i.updated_on = TODAY + "T16:47:32";
@@ -1519,7 +1518,6 @@ redmine-mcp-server</pre>
     },
     {
       say: "Leaving a triage summary on the ticket so whoever picks it up has the context.",
-      summary: "comment added to #4821",
       tool: "update_redmine_issue",
       args: { issue_id: 4821, fields: { notes: "Triaged: logcat (attachment #7012) shows the FCM foreground service killed ~30 min in, right after Android 14's foreground-service timeout. Root cause confirmed. Reassigned to Maya (notifications). Needs to land in the 4.2 release." } },
       result: () => { const i = byId(4821); i.updated_on = TODAY + "T16:48:05";
@@ -1529,7 +1527,6 @@ redmine-mcp-server</pre>
     {
       section: "verify & close #4812",
       say: "Next, the other overdue ticket, #4812. Before touching it, reading why a test fix is still open.",
-      summary: "In Progress · journal: Sam → fix merged in r4471, green since",
       tool: "get_redmine_issue",
       args: { issue_id: 4812 },
       result: () => issueDetail(byId(4812),
@@ -1540,7 +1537,6 @@ redmine-mcp-server</pre>
     },
     {
       say: "Sam's last note says the fix merged and has been green since. It was just never closed, so I'm closing it with a reason.",
-      summary: "#4812 → Closed · comment added",
       tool: "update_redmine_issue",
       args: { issue_id: 4812, fields: { status_id: 5, notes: "Closing: fix merged in r4471 and stable on CI per Sam's 2026-06-17 note. No further action needed." } },
       result: () => { const i = byId(4812); i.status = STATUS.CLOSED; i.updated_on = TODAY + "T16:52:11";
@@ -1609,8 +1605,8 @@ redmine-mcp-server</pre>
   // ── Driver ────────────────────────────────────────────────
   const PROMPT_TEXT = "triage the overdue issues in Sprint 14";
   const WELCOME_HTML =
-    '<div class="cc-welcome"><span class="cc-star">✻</span> Welcome to <b>Claude Code</b>' +
-    '<span class="sub">redmine-mcp-server connected over MCP · 53 tools available</span></div>';
+    '<div class="cc-welcome"><span class="cc-star">✻</span> <b>Claude Code</b> v2.1.284' +
+    '<span class="sub">Opus 5.5 · ~/work/cartly-app</span></div>';
   const HINT_HTML = '<div class="cli-hint" id="feedPlaceholder">▸ press <b style="color:#d6d3cd">Run the agent</b> to start</div>';
 
   // `interacted` gates completion tracking: the reduced-motion path renders the
@@ -1692,7 +1688,7 @@ redmine-mcp-server</pre>
     }
 
     const result = step.result();
-    const argsPreview = Object.entries(step.args).filter(([k]) => k !== "fields")
+    const argsPreview = Object.entries(step.args)
       .map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(", ");
     const tid = "tc" + idx;
     const turn = document.createElement("div");
@@ -1700,8 +1696,8 @@ redmine-mcp-server</pre>
     turn.innerHTML = `
       <div class="cc-msg"><span class="cc-bullet">⏺</span><span class="agent-text"></span></div>
       <div class="toolcall hidden-tc">
-        <div class="tc-line"><span class="cc-bullet">⏺</span><span class="tc-call"><span class="tc-name">${step.tool}</span><span class="tc-args">(${escapeHtml(argsPreview)})</span></span></div>
-        <div class="tc-result"><span class="tc-pending">running…</span></div>
+        <div class="tc-line"><span class="cc-bullet">⏺</span><span class="tc-call"><span class="tc-name">redmine - ${step.tool} (MCP)</span><span class="tc-args">(${escapeHtml(argsPreview)})</span></span></div>
+        <div class="tc-result"><span class="tc-pending">Running…</span></div>
         <div class="json-wrap" id="${tid}">
           <div class="json-label">request</div>
           <pre class="json-box">${syntaxHighlight(JSON.stringify(step.args, null, 2))}</pre>
@@ -1724,14 +1720,13 @@ redmine-mcp-server</pre>
       tcEl.classList.remove("hidden-tc");
     }
     // the tool returns: fill the result line and apply its effect to the board
-    resEl.innerHTML = `${escapeHtml(step.summary || "ok")} <span class="tc-expand">(ctrl+o to expand)</span>`;
+    // Claude Code shows the tool's own text output (the server's compact
+    // JSON), clipped, not a summary.
+    resEl.innerHTML = `<span class="tc-out">${escapeHtml(JSON.stringify(result))}</span><span class="tc-expand">(ctrl+o to expand)</span>`;
+    tcEl.classList.add("done");
     bumpCalls();
     step.apply();
-    const expandLabel = resEl.querySelector(".tc-expand");
-    resEl.addEventListener("click", () => {
-      const open = $(tid).classList.toggle("open");
-      expandLabel.textContent = open ? "(ctrl+o to collapse)" : "(ctrl+o to expand)";
-    });
+    resEl.addEventListener("click", () => { $(tid).classList.toggle("open"); });
     if (REDUCED_MOTION) $(tid).classList.add("open");
     scrollFeed();
     idx++;

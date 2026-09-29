@@ -265,3 +265,63 @@ def test_reset_cancels_a_pending_row_drop():
     assert "dropTimer = setTimeout(" in drop[: drop.index("\n  }\n")]
     body = HTML[HTML.index("function reset()") :]
     assert "clearTimeout(dropTimer)" in body[: body.index("\n  }\n")]
+
+
+# ── Claude Code terminal mock ────────────────────────────────
+
+
+def _cli_block():
+    start = HTML.index('<div class="cli">')
+    return HTML[start : HTML.index('<div class="scoreboard">', start)]
+
+
+def test_tool_header_names_the_server_like_claude_code():
+    # Claude Code titles an MCP call "<server> - <tool> (MCP)"; the README
+    # registers this server as "redmine".
+    assert "redmine - ${step.tool} (MCP)" in HTML
+
+
+def test_tool_args_preview_keeps_every_argument():
+    assert 'k !== "fields"' not in HTML
+
+
+def test_pending_state_reads_like_claude_code():
+    assert "Running…</span>" in HTML
+    assert ">running…<" not in HTML
+
+
+def test_tool_result_shows_the_real_output_not_a_summary():
+    assert "step.summary" not in HTML
+    assert re.search(r"^\s+summary: ", HTML, re.M) is None
+    assert "JSON.stringify(result)" in HTML
+
+
+def test_no_invented_claude_code_chrome():
+    cli = _cli_block()
+    assert "Welcome to" not in cli
+    assert "tools available" not in cli
+    assert "(MCP)</span></div>" not in cli
+    assert "ctrl+o to collapse" not in HTML
+    assert "Welcome to" not in HTML[HTML.index("const WELCOME_HTML") :][:400]
+
+
+def test_prompt_uses_claude_codes_pointer_glyph():
+    assert 'content: "> "' not in HTML
+    assert HTML.count('content: "❯ "') == 2
+
+
+# ── Page claims ──────────────────────────────────────────────
+
+
+def test_page_claims_match_the_server():
+    assert "The other 53 core tools" not in HTML
+    assert "bulk-import a week of them with <code>manage_time_entry" not in HTML
+    assert "<code>import_time_entries</code>" in HTML
+    assert "wiki pages, projects, and news" not in HTML
+    assert "appears automatically when those plugins are present" not in HTML
+    assert "REDMINE_AGILE_ENABLED" in HTML and "REDMINE_TAGS_ENABLED" in HTML
+    assert "in either mode" not in HTML
+    assert "before anything irreversible happens" not in HTML
+    assert "plugins,:" not in HTML
+    assert "comment, log time, and close issues" not in HTML
+    assert "Cursor and other clients use the generic HTTP" not in HTML
