@@ -1326,23 +1326,45 @@ redmine-mcp-server</pre>
 
   const STATUS = { NEW: {id:1,name:"New"}, INPROG: {id:2,name:"In Progress"}, RESOLVED:{id:3,name:"Resolved"}, CLOSED: {id:5,name:"Closed"} };
   const PRIO = { LOW:{id:1,name:"Low"}, NORMAL:{id:2,name:"Normal"}, HIGH:{id:3,name:"High"}, URGENT:{id:4,name:"Urgent"} };
+  const TRACKER = { BUG: {id:1,name:"Bug"}, FEATURE: {id:2,name:"Feature"} };
+  const SPRINT = { id: 31, name: "Sprint 14" };
 
-  // ── Fixture issues (the project's open issues, as shown on the
-  //    Redmine Issues page). Displayed newest-id first. ──────────
+  // sha256 of each raw text, as the server computes description_sha256 and
+  // notes_sha256 (of the text before wrap_insecure_content adds its tags).
+  // tests/test_demo_page.py recomputes these, so edit text and digest together.
+  const DIGESTS = {
+    "See ticket for full repro steps.":
+      "154653a5d6c7898f10a55d602e80a400b96861d689f42cef766506d7869c6cea",
+    "Push notifications stop arriving after ~30 min on Android 14 (Pixel 8). FCM token looks valid. Repro: background the app, wait, send a test push. Nothing lands. Works on Android 13.":
+      "999fd8ebc7836b077e8b27f3756f2817c943e1d9761caabe04e77bc93342ad80",
+    "The checkout E2E suite fails intermittently on CI (~1 run in 8), blocking the release pipeline.":
+      "90be906eafecc667deab4e017c45013131a101becb8151680e5deb0adbe36e2f",
+    "Seeing this in crash-free sessions too, likely the foreground-service change in 14. Attached a logcat from a repro.":
+      "e30e0cd6b0ce5c4b3460353d3ae58aaff9f511725d2397b9d37ab35957f3462f",
+    "Fix merged in r4471 (added an explicit wait on the cart spinner). 200 green runs since, safe to close once someone confirms.":
+      "b7249a24576c32f60e0039773bf504f5a3c4fc45500ad6bf6e01e9ec48a2dbaa",
+  };
+  const DEFAULT_DESCRIPTION = "See ticket for full repro steps.";
+
+  // ── Fixture issues: Sprint 14's open issues, as the Redmine Issues page
+  //    below shows them (Status: open, Target version: Sprint 14). ──────
   function initialIssues() {
+    const base = { author: ME, fixed_version: SPRINT, start_date: "2026-06-08" };
     return [
-      { id:4835, subject:"Dark mode contrast audit", tracker:"Task",
-        status:STATUS.NEW, priority:PRIO.LOW, assigned_to:null, author:ME, due_date:"2026-07-01" },
-      { id:4830, subject:"Add biometric login", tracker:"Feature",
-        status:STATUS.NEW, priority:PRIO.NORMAL, assigned_to:DEV, author:ME, due_date:"2026-06-27" },
-      { id:4821, subject:"Push notifications silently dropped on Android 14", tracker:"Bug",
-        status:STATUS.NEW, priority:PRIO.HIGH, assigned_to:null, author:ME, due_date:"2026-06-12" },
-      { id:4812, subject:"Fix flaky checkout E2E test", tracker:"Bug",
-        status:STATUS.INPROG, priority:PRIO.NORMAL, assigned_to:SAM, author:ME, due_date:"2026-06-18" },
-      { id:4807, subject:"Checkout crashes when coupon field is empty", tracker:"Bug",
-        status:STATUS.INPROG, priority:PRIO.URGENT, assigned_to:MAYA, author:ME, due_date:"2026-06-24" },
-      { id:4799, subject:"Migrate analytics SDK to v5", tracker:"Feature",
-        status:STATUS.INPROG, priority:PRIO.NORMAL, assigned_to:SAM, author:ME, due_date:"2026-06-24" },
+      { ...base, id:4835, subject:"Dark mode contrast audit", tracker:TRACKER.FEATURE,
+        status:STATUS.NEW, priority:PRIO.LOW, assigned_to:null, due_date:"2026-07-01", done_ratio:0 },
+      { ...base, id:4830, subject:"Add biometric login", tracker:TRACKER.FEATURE,
+        status:STATUS.NEW, priority:PRIO.NORMAL, assigned_to:DEV, due_date:"2026-06-27", done_ratio:0 },
+      { ...base, id:4821, subject:"Push notifications silently dropped on Android 14", tracker:TRACKER.BUG,
+        description:"Push notifications stop arriving after ~30 min on Android 14 (Pixel 8). FCM token looks valid. Repro: background the app, wait, send a test push. Nothing lands. Works on Android 13.",
+        status:STATUS.NEW, priority:PRIO.HIGH, assigned_to:null, due_date:"2026-06-12", done_ratio:0 },
+      { ...base, id:4812, subject:"Fix flaky checkout E2E test", tracker:TRACKER.BUG,
+        description:"The checkout E2E suite fails intermittently on CI (~1 run in 8), blocking the release pipeline.",
+        status:STATUS.INPROG, priority:PRIO.NORMAL, assigned_to:SAM, due_date:"2026-06-18", done_ratio:80 },
+      { ...base, id:4807, subject:"Checkout crashes when coupon field is empty", tracker:TRACKER.BUG,
+        status:STATUS.INPROG, priority:PRIO.URGENT, assigned_to:MAYA, due_date:"2026-06-24", done_ratio:30 },
+      { ...base, id:4799, subject:"Migrate analytics SDK to v5", tracker:TRACKER.FEATURE,
+        status:STATUS.INPROG, priority:PRIO.NORMAL, assigned_to:SAM, due_date:"2026-06-24", done_ratio:50 },
     ];
   }
   let board = initialIssues();
@@ -1355,66 +1377,83 @@ redmine-mcp-server</pre>
     const b = (0xa1b2c3d4e5f60000 + (_boundary++)).toString(16).slice(-16);
     return `<insecure-content-${b}>\n${text}\n</insecure-content-${b}>`;
   }
+  const ref = (o) => (o ? { id: o.id, name: o.name } : null);
+  // Mirrors _issue_to_dict: same keys, same order, same value formats.
+  // Redmine timestamps come back naive (no Z) through _safe_isoformat.
   function issueDict(i, fields) {
     const full = {
       id: i.id,
       subject: i.subject,
-      description: wrap(i.description || "See ticket for full repro steps."),
-      project: { id: PROJECT.id, name: PROJECT.name },
-      status: { id: i.status.id, name: i.status.name },
-      priority: { id: i.priority.id, name: i.priority.name },
-      author: { id: i.author.id, name: i.author.name },
-      assigned_to: i.assigned_to ? { id: i.assigned_to.id, name: i.assigned_to.name } : null,
-      created_on: "2026-06-02T09:14:23Z",
-      updated_on: TODAY + "T16:40:05Z",
+      description: wrap(i.description || DEFAULT_DESCRIPTION),
+      project: ref(PROJECT),
+      status: ref(i.status),
+      priority: ref(i.priority),
+      tracker: ref(i.tracker),
+      author: ref(i.author),
+      assigned_to: ref(i.assigned_to),
+      category: null,
+      fixed_version: ref(i.fixed_version),
+      parent: null,
+      start_date: i.start_date,
+      due_date: i.due_date,
+      done_ratio: i.done_ratio,
+      estimated_hours: null,
+      spent_hours: 0.0,
+      total_estimated_hours: null,
+      total_spent_hours: 0.0,
+      is_private: false,
+      closed_on: i.status.id === STATUS.CLOSED.id ? TODAY + "T16:52:11" : null,
+      created_on: "2026-06-02T09:14:23",
+      updated_on: TODAY + "T16:40:05",
     };
     if (!fields) return full;
     const out = {};
     fields.forEach(f => { if (f in full) out[f] = full[f]; });
     return out;
   }
+  // What get_redmine_issue returns: the issue, custom_fields, the digest of
+  // the raw description, then journals and attachments.
+  function issueDetail(i, journals, attachments) {
+    const d = issueDict(i);
+    d.custom_fields = [];
+    d.description_sha256 = DIGESTS[i.description || DEFAULT_DESCRIPTION];
+    d.journals = journals;
+    d.attachments = attachments;
+    return d;
+  }
+  function journal(id, user, createdOn, text) {
+    return { id, user: ref(user), notes: wrap(text), notes_sha256: DIGESTS[text],
+             created_on: createdOn, private_notes: false, details: [] };
+  }
 
   // ── The scripted scenario ─────────────────────────────────
   // Each step: narration, tool, args (request), result builder, apply (board mutation)
   const SCRIPT = [
     {
-      section: "discover — overdue, open issues in Sprint 14",
-      say: "I'll start by pulling the overdue, open tickets, highest priority first.",
+      section: "discover: overdue, open issues in Sprint 14",
+      say: "I'll start by pulling the overdue, open tickets in Sprint 14, highest priority first.",
       summary: "2 issues · #4821 (High), #4812 (Normal)",
       tool: "list_redmine_issues",
-      args: { project_id: 42, status_id: "open", due_date: "<=2026-06-20", sort: "priority:desc",
+      args: { project_id: 42, status_id: "open", fixed_version_id: 31,
+              filters: { due_date: "<=2026-06-19" }, sort: "priority:desc",
               fields: ["id","subject","status","priority","assigned_to","due_date"] },
-      result: () => [
-        { id:4821, subject:"Push notifications silently dropped on Android 14",
-          status:{id:1,name:"New"}, priority:{id:3,name:"High"},
-          assigned_to:null, due_date:"2026-06-12" },
-        { id:4812, subject:"Fix flaky checkout E2E test",
-          status:{id:2,name:"In Progress"}, priority:{id:2,name:"Normal"},
-          assigned_to:{id:4,name:"Sam Ruiz"}, due_date:"2026-06-18" },
-      ],
+      result: () => [4821, 4812].map(id => issueDict(byId(id),
+              ["id","subject","status","priority","assigned_to","due_date"])),
       apply: () => { flash([4821, 4812]); },
     },
     {
       section: "analyze & triage #4821",
-      say: "#4821 is the top one — High, overdue since Jun 12, still unassigned. Reading it.",
+      say: "#4821 is the top one: High, overdue since Jun 12, still unassigned. Reading it.",
       summary: "High · unassigned · 1 attachment (logcat) · journal from Sam",
       tool: "get_redmine_issue",
-      args: { issue_id: 4821, include_journals: true, include_attachments: true },
-      result: () => {
-        const d = issueDict(byId(4821));
-        d.description = wrap("Push notifications stop arriving after ~30 min on Android 14 (Pixel 8). FCM token looks valid. Repro: background the app, wait, send a test push — nothing lands. Works on Android 13.");
-        d.journals = [
-          { id: 90211, user: {id:4,name:"Sam Ruiz"}, created_on: "2026-06-13T11:02:40Z",
-            notes: wrap("Seeing this in crash-free sessions too — likely the foreground-service change in 14. Attached a logcat from a repro.") },
-        ];
-        d.attachments = [
-          { id: 7012, filename: "logcat-push-drop.txt", filesize: 48213, content_type: "text/plain",
+      args: { issue_id: 4821 },
+      result: () => issueDetail(byId(4821),
+        [ journal(90211, SAM, "2026-06-13T11:02:40",
+            "Seeing this in crash-free sessions too, likely the foreground-service change in 14. Attached a logcat from a repro.") ],
+        [ { id: 7012, filename: "logcat-push-drop.txt", filesize: 48213, content_type: "text/plain",
             description: wrap("logcat captured during a Pixel 8 repro session"),
             content_url: "https://redmine.cartly.io/attachments/download/7012/logcat-push-drop.txt",
-            author: { id: 4, name: "Sam Ruiz" }, created_on: "2026-06-13T11:05:12Z" },
-        ];
-        return d;
-      },
+            author: ref(SAM), created_on: "2026-06-13T11:05:12" } ]),
       apply: () => { flash([4821]); },
     },
     {
@@ -1428,14 +1467,14 @@ redmine-mcp-server</pre>
         filename: "logcat-push-drop.txt",
         content_type: "text/plain",
         size: 48213,
-        expires_at: TODAY + "T17:41:00Z",
+        expires_at: TODAY + "T17:41:00.482913+00:00",
         attachment_id: 7012,
       }),
       apply: () => { flash([4821]); },
     },
     {
       // reasoning-only turn (no tool call): the agent analyzes the downloaded log
-      say: "Reading the logcat: the FCM foreground service is killed about 30 minutes in, right after Android 14's stricter foreground-service timeout fires. That lines up with Sam's note — this is the regression, and it sits in the notifications module.",
+      say: "Reading the logcat: the FCM foreground service is killed about 30 minutes in, right after Android 14's stricter foreground-service timeout fires. That lines up with Sam's note. This is the regression, and it sits in the notifications module.",
       apply: () => { flash([4821]); },
     },
     {
@@ -1461,21 +1500,15 @@ redmine-mcp-server</pre>
       say: "Next, the other overdue ticket, #4812. Before touching it, reading why a test fix is still open.",
       summary: "In Progress · journal: Sam → fix merged in r4471, green since",
       tool: "get_redmine_issue",
-      args: { issue_id: 4812, include_journals: true },
-      result: () => {
-        const d = issueDict(byId(4812));
-        d.description = wrap("The checkout E2E suite fails intermittently on CI (~1 run in 8), blocking the release pipeline.");
-        d.journals = [
-          { id: 90255, user: {id:4,name:"Sam Ruiz"}, created_on: "2026-06-17T09:48:10Z",
-            notes: wrap("Fix merged in r4471 (added an explicit wait on the cart spinner). 200 green runs since — safe to close once someone confirms.") },
-        ];
-        d.attachments = [];
-        return d;
-      },
+      args: { issue_id: 4812 },
+      result: () => issueDetail(byId(4812),
+        [ journal(90255, SAM, "2026-06-17T09:48:10",
+            "Fix merged in r4471 (added an explicit wait on the cart spinner). 200 green runs since, safe to close once someone confirms.") ],
+        []),
       apply: () => { flash([4812]); },
     },
     {
-      say: "Sam's last note says the fix merged and has been green since — it just was never closed. Closing it with a reason.",
+      say: "Sam's last note says the fix merged and has been green since. It was just never closed, so I'm closing it with a reason.",
       summary: "#4812 → Closed · comment added",
       tool: "update_redmine_issue",
       args: { issue_id: 4812, fields: { status_id: 5, notes: "Closing: fix merged in r4471 and stable on CI per Sam's 2026-06-17 note. No further action needed." } },
