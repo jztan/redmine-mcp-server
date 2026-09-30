@@ -44,23 +44,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   filters as `list_redmine_issues`. A Refresh action re-fetches through the
   app-callable `get_project_timeline_data` tool. Read-only
   ([#350](https://github.com/jztan/redmine-mcp-server/issues/350)).
-- `manage_contact` takes `custom_field_ids` on `list`, returning only the
-  custom fields named in each contact's `custom_fields`. The choice was all of
-  them or none: a lookup needing two of them paid for every field the
-  instance defines, on every row. Additive, and the elision contract is
-  unchanged: named fields are requested fields, so `custom_fields` holds just
-  those with no `custom_fields_count`, and `[]` still means the contact
-  carries none of them
-  ([#352](https://github.com/jztan/redmine-mcp-server/issues/352)).
-- `manage_contact` takes `is_company` on `list`: `true` returns only
-  companies, `false` only people. The plugin's filter was documented as
-  broken, but it reads a value as true only in the database adapter's own
-  spelling of true, which varies by adapter and Rails version, so no fixed
-  literal such as the documented `"1"` means true on every database. The tool
-  sends `0` and `!0`, which mean false and not-false on every adapter.
-  `is_company` is now refused inside `filters`, like the other named
-  parameters; `create` is unchanged
-  ([#366](https://github.com/jztan/redmine-mcp-server/issues/366)).
+- `manage_contact(action="list")` takes two new parameters:
+  - `custom_field_ids` returns only the named custom fields in each contact's
+    `custom_fields`. The choice was all of them or none: a lookup needing two
+    of them paid for every field the instance defines, on every row. The
+    elision contract is unchanged: named fields are requested fields, so
+    `custom_fields` holds just those with no `custom_fields_count`, and `[]`
+    still means the contact carries none of them
+    ([#352](https://github.com/jztan/redmine-mcp-server/issues/352)).
+  - `is_company`: `true` returns only companies, `false` only people. The
+    plugin's filter was documented as broken, but it reads a value as true
+    only in the database adapter's own spelling of true, which varies by
+    adapter and Rails version, so no fixed literal such as the documented
+    `"1"` means true on every database. The tool sends `0` and `!0`, which
+    mean false and not-false on every adapter. `is_company` is now refused
+    inside `filters`, like the other named parameters; `create` is unchanged
+    ([#366](https://github.com/jztan/redmine-mcp-server/issues/366)).
 
 ### Changed
 - A failed tool call now comes back as an error result: `isError: true`, with
@@ -79,14 +78,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#381](https://github.com/jztan/redmine-mcp-server/issues/381)).
 
 ### Fixed
-- `create_redmine_issue` and `update_redmine_issue` reported plain success
-  for a `fields` key Redmine ignored. A snake_case key that is neither a
-  standard issue key nor a custom field name is still sent, so plugin
-  attributes such as `agile_data_attributes` keep working, but Redmine drops
-  one it does not know without an error: `customer_id`, tried as a way to set
-  a Helpdesk ticket's contact, changed nothing and said nothing. The response
-  now lists such keys in `unverified_fields`, omitted when there are none
-  ([#380](https://github.com/jztan/redmine-mcp-server/issues/380)).
+- `create_redmine_issue` and `update_redmine_issue` no longer report plain
+  success for a `fields` key Redmine ignores:
+  - A key meant as a custom field name that matches none is refused instead
+    of being passed on as a top-level attribute, so a misspelled name no
+    longer reports success for a write that changed nothing. The error
+    suggests the closest field name and lists the project's fields, and
+    nothing is written. A key with spaces or capitals, or a snake_case key
+    within a typo of a field name, is refused. Behavior change: a key like
+    `"Budget Code"` that matches no field now returns an error where it used
+    to be dropped silently
+    ([#370](https://github.com/jztan/redmine-mcp-server/issues/370)).
+  - Any other snake_case key is still sent, so plugin attributes such as
+    RedmineUP Agile's `agile_data_attributes` keep working, but Redmine drops
+    one it does not know without an error: `customer_id`, tried as a way to
+    set a Helpdesk ticket's contact, changed nothing and said nothing. The
+    response now lists such keys in `unverified_fields`, omitted when there
+    are none
+    ([#380](https://github.com/jztan/redmine-mcp-server/issues/380)).
 - `send_helpdesk_email_reply` returned `customer: null` on Helpdesk 4.3,
   which renamed the response's `customer` key to `contact`. The email was
   sent either way. The tool now reads `contact` and falls back to
@@ -156,9 +165,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `relations`. Results are unchanged
   ([#360](https://github.com/jztan/redmine-mcp-server/issues/360)).
 - `update_redmine_issue` reported a write Redmine had discarded as a success.
-  Redmine drops some fields without a validation error and saves the rest --
-  a status the workflow does not allow, a field the workflow makes read-only,
-  a custom field the user may not edit -- so the tool returned the unchanged
+  Redmine drops some fields without a validation error and saves the rest
+  (a status the workflow does not allow, a field the workflow makes read-only,
+  a custom field the user may not edit), so the tool returned the unchanged
   issue with nothing saying so. The response now carries `unapplied_fields`,
   listing each submitted field the updated issue does not reflect (custom
   fields as `cf_<id>`), and omits it when there is none, like
@@ -168,18 +177,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   status was dropped the same way and the rest written; it is now refused
   before anything is sent
   ([#368](https://github.com/jztan/redmine-mcp-server/issues/368)).
-- `create_redmine_issue` and `update_redmine_issue` refuse a `fields` key that
-  was meant as a custom field name but matches none, instead of passing it on
-  as a top-level attribute that Redmine ignores, so a misspelled name no
-  longer reports success for a write that changed nothing. The error suggests
-  the closest field name and lists the project's fields, and nothing is
-  written. A key with spaces or capitals, or a snake_case key within a typo
-  of a field name, is refused; any other snake_case key is still passed
-  through, so plugin attributes such as RedmineUP Agile's
-  `agile_data_attributes` keep working. Behavior change: a key like
-  `"Budget Code"` that matches no field now returns an error where it used
-  to be dropped silently
-  ([#370](https://github.com/jztan/redmine-mcp-server/issues/370)).
 
 ### Contributors
 - @mmahmed reported and fixed nine gaps across contacts, project members,
@@ -207,13 +204,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [#366](https://github.com/jztan/redmine-mcp-server/issues/366),
   [#367](https://github.com/jztan/redmine-mcp-server/pull/367),
   [#368](https://github.com/jztan/redmine-mcp-server/issues/368),
-  [#369](https://github.com/jztan/redmine-mcp-server/pull/369))).
+  [#369](https://github.com/jztan/redmine-mcp-server/pull/369)).
+- @siva01c proposed and implemented marking failed tool calls with
+  `isError: true` and giving every error envelope a `code`
+  ([#381](https://github.com/jztan/redmine-mcp-server/issues/381),
+  [#383](https://github.com/jztan/redmine-mcp-server/pull/383)).
+- @chesterXalan reported that `oauth-proxy` clients sharing one credential
+  store were forced to log in again every couple of hours, traced it to
+  refresh-token rotation, and added
+  `REDMINE_MCP_ACCESS_TOKEN_EXPIRY_SECONDS`
+  ([#382](https://github.com/jztan/redmine-mcp-server/issues/382),
+  [#377](https://github.com/jztan/redmine-mcp-server/pull/377)).
 - @goizper reported that `customer_id` passed to `update_redmine_issue` was
   dropped without a word, which led to `unverified_fields`, and asked for a
   way to read a Helpdesk ticket and change its contact, with the plugin
   behaviour worked out on a live instance
   ([#378](https://github.com/jztan/redmine-mcp-server/issues/378),
   [#380](https://github.com/jztan/redmine-mcp-server/issues/380)).
+- RedmineUP, provided evaluation copies of the Helpdesk PRO (4.3.1) and CRM
+  PRO (4.5.0) plugins so `send_helpdesk_email_reply` and
+  `manage_helpdesk_ticket` could be verified against a real Pro instance
+  ([#378](https://github.com/jztan/redmine-mcp-server/issues/378),
+  [#384](https://github.com/jztan/redmine-mcp-server/issues/384)).
 
 ## [2.17.0] - 2026-09-26
 ### Added
