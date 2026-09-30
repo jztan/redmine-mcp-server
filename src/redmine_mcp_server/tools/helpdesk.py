@@ -144,7 +144,11 @@ def send_helpdesk_email_reply(
 
     message = response.get("message") if isinstance(response, dict) else None
     message = message if isinstance(message, dict) else {}
-    customer = message.get("customer")
+    # Helpdesk 4.3 names the customer ``contact``; 4.2 called it ``customer``
+    # (#384). The result keeps ``customer`` for either.
+    customer = message.get("contact")
+    if not isinstance(customer, dict):
+        customer = message.get("customer")
     return {
         "success": True,
         "issue_id": issue_id,

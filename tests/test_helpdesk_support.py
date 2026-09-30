@@ -25,6 +25,17 @@ _SUCCESS_RESPONSE = {
     }
 }
 
+# Helpdesk 4.3.1 / Redmine 6.1.1 names the customer ``contact`` (#384).
+_SUCCESS_RESPONSE_4_3 = {
+    "message": {
+        "journal_id": 911,
+        "content": "raw shape check",
+        "to_address": "alice.probe@example.com",
+        "message_date": "09/30/2026",
+        "contact": {"id": 374, "name": "Alice Probe"},
+    }
+}
+
 _ON = {"REDMINE_HELPDESK_ENABLED": "true", "REDMINE_MCP_READ_ONLY": "false"}
 
 
@@ -67,6 +78,16 @@ class TestSendHelpdeskEmailReply:
         assert "Jane Doe" in result["customer"]["name"]
         assert result["customer"]["name"] != "Jane Doe"
         assert result["status_id"] is None
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_maps_contact_key_from_helpdesk_4_3(self, mock_redmine):
+        mock_redmine.engine.request.return_value = _SUCCESS_RESPONSE_4_3
+        with patch.dict(os.environ, _ON):
+            result = await send_helpdesk_email_reply(issue_id=804, content="Hi")
+        assert result["customer"]["id"] == 374
+        assert "Alice Probe" in result["customer"]["name"]
+        assert result["customer"]["name"] != "Alice Probe"
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.redmine")

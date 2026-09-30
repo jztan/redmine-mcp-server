@@ -843,7 +843,7 @@ Thank you to everyone who has helped improve this project through code, reviews,
 
 Per-release contributor credits are listed in the [Changelog](./CHANGELOG.md).
 
-Thanks also to [RedmineUP](https://www.redmineup.com) for providing an evaluation copy of CRM PRO, which let the CRM tools be verified against a real Pro instance.
+Thanks also to [RedmineUP](https://www.redmineup.com) for providing evaluation copies of CRM PRO and Helpdesk PRO, which let the CRM and Helpdesk tools be verified against real Pro instances.
 
 ## License
 

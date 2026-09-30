@@ -67,6 +67,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#381](https://github.com/jztan/redmine-mcp-server/issues/381)).
 
 ### Fixed
+- `send_helpdesk_email_reply` returned `customer: null` on Helpdesk 4.3,
+  which renamed the response's `customer` key to `contact`. The email was
+  sent either way. The tool now reads `contact` and falls back to
+  `customer`, so the result carries the customer on Helpdesk 4.2 and 4.3
+  alike
+  ([#384](https://github.com/jztan/redmine-mcp-server/issues/384)).
 - `manage_contact(action="get")` returns the `include` arrays it asks for.
   The CRM plugin renders `notes`, `contacts`, `deals` and `issues` on
   request, but the serializer dropped all four, so every include came back as
