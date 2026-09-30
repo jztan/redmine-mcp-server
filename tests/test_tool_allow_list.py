@@ -184,7 +184,7 @@ async def test_a_listed_tool_is_callable():
 @pytest.mark.asyncio
 async def test_an_unlisted_tool_is_refused_even_though_it_exists():
     async with Client(_isolated({"get_redmine_issue"})) as client:
-        result = await client.call_tool("list_time_entries", {})
+        result = await client.call_tool("list_time_entries", {}, raise_on_error=False)
     payload = json.loads(result.content[0].text)
     assert payload["code"] == "TOOL_NOT_ALLOWED"
     assert "list_time_entries" in payload["error"]
@@ -197,7 +197,7 @@ async def test_a_hidden_tool_cannot_be_reached_by_name():
     mcp = _isolated({"get_redmine_issue"})
     assert await _listed(mcp) == {"get_redmine_issue"}
     async with Client(mcp) as client:
-        result = await client.call_tool("list_time_entries", {})
+        result = await client.call_tool("list_time_entries", {}, raise_on_error=False)
     assert json.loads(result.content[0].text)["code"] == "TOOL_NOT_ALLOWED"
 
 

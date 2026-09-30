@@ -47,7 +47,8 @@ _SECRET_SCRUB_PATTERNS = [
 
 _READ_ONLY_ERROR = {
     "error": "This server is in read-only mode (REDMINE_MCP_READ_ONLY=true). "
-    "Write operations are disabled."
+    "Write operations are disabled.",
+    "code": "READ_ONLY",
 }
 
 
@@ -116,7 +117,8 @@ def _read_timeout_error(redmine_url: str) -> Dict[str, Any]:
             f"({_timeout_budget_hint()}). The server may be overloaded or "
             "the request too large. Raise or disable the limit with "
             "REDMINE_TIMEOUT."
-        )
+        ),
+        "code": "TIMEOUT",
     }
 
 
@@ -144,7 +146,8 @@ def _handle_redmine_error(
                 f"SSL/TLS error connecting to {redmine_url}. "
                 "Please check: 1) SSL certificate validity, "
                 "2) REDMINE_SSL_VERIFY setting, 3) REDMINE_SSL_CERT path"
-            )
+            ),
+            "code": "SSL_ERROR",
         }
 
     # Check Timeout BEFORE ConnectionError: ConnectTimeout inherits from both,
@@ -159,7 +162,8 @@ def _handle_redmine_error(
                     f"({_timeout_budget_hint()}). Please check: "
                     "1) The host and port are reachable, "
                     "2) No firewall or proxy is dropping the connection"
-                )
+                ),
+                "code": "TIMEOUT",
             }
         return _read_timeout_error(redmine_url)
 
@@ -188,7 +192,8 @@ def _handle_redmine_error(
                 f"Cannot connect to Redmine at {redmine_url}. "
                 "Please check: 1) URL is correct, 2) Network is accessible, "
                 "3) Redmine server is running"
-            )
+            ),
+            "code": "CONNECTION_FAILED",
         }
 
     # HTTP-level errors (from redminelib)
@@ -222,7 +227,8 @@ def _handle_redmine_error(
             "error": (
                 "Access denied. Your Redmine user lacks the required permission "
                 "for this action. Contact your Redmine administrator."
-            )
+            ),
+            "code": "FORBIDDEN",
         }
 
     if isinstance(e, ServerError):
@@ -231,19 +237,26 @@ def _handle_redmine_error(
             "error": (
                 "Redmine server returned an internal error (HTTP 500). "
                 "Check the Redmine server logs or contact your administrator."
-            )
+            ),
+            "code": "SERVER_ERROR",
         }
 
     if isinstance(e, ResourceNotFoundError):
         resource_type = context.get("resource_type", "resource")
         resource_id = context.get("resource_id", "")
         if resource_id:
-            return {"error": f"{resource_type.capitalize()} {resource_id} not found."}
-        return {"error": f"Requested {resource_type} not found."}
+            return {
+                "error": f"{resource_type.capitalize()} {resource_id} not found.",
+                "code": "NOT_FOUND",
+            }
+        return {"error": f"Requested {resource_type} not found.", "code": "NOT_FOUND"}
 
     if isinstance(e, ValidationError):
         logger.warning(f"Validation error during {operation}: {e}")
-        return {"error": f"Validation failed: {_scrub_error_message(str(e))}"}
+        return {
+            "error": f"Validation failed: {_scrub_error_message(str(e))}",
+            "code": "VALIDATION_FAILED",
+        }
 
     if isinstance(e, ConflictError):
         resource_type = context.get("resource_type", "resource")
@@ -252,11 +265,12 @@ def _handle_redmine_error(
             "error": (
                 f"Edit conflict: this {resource_type} changed on the server "
                 "since it was read. Re-read it and retry."
-            )
+            ),
+            "code": "CONFLICT",
         }
 
     if isinstance(e, VersionMismatchError):
-        return {"error": _scrub_error_message(str(e))}
+        return {"error": _scrub_error_message(str(e)), "code": "VERSION_MISMATCH"}
 
     if isinstance(e, HTTPProtocolError):
         logger.error(f"HTTP protocol error during {operation}: {e}")
@@ -264,12 +278,19 @@ def _handle_redmine_error(
             "error": (
                 "HTTP/HTTPS protocol mismatch. Ensure REDMINE_URL uses the correct "
                 "protocol (http:// or https://) matching your server configuration."
-            )
+            ),
+            "code": "PROTOCOL_MISMATCH",
         }
 
     if isinstance(e, UnknownError):
         logger.error(f"Unknown HTTP error during {operation}: status={e.status_code}")
-        return {"error": f"Redmine returned HTTP {e.status_code}. Check server logs."}
+        # python-redmine raises ServerError for 500 only; every other 5xx
+        # arrives here and is still a server-side failure.
+        is_server_error = isinstance(e.status_code, int) and 500 <= e.status_code < 600
+        return {
+            "error": f"Redmine returned HTTP {e.status_code}. Check server logs.",
+            "code": "SERVER_ERROR" if is_server_error else "UNKNOWN_ERROR",
+        }
 
     # Fallback — scrub the raw message before returning it to the caller.
     logger.error(f"Unexpected error during {operation}: {type(e).__name__}: {e}")
@@ -277,5 +298,6 @@ def _handle_redmine_error(
         "error": (
             f"An unexpected error occurred while {operation}: "
             f"{_scrub_error_message(str(e))}"
-        )
+        ),
+        "code": "UNKNOWN_ERROR",
     }

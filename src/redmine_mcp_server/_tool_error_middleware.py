@@ -1,4 +1,10 @@
-"""FastMCP middleware that converts raw Pydantic argument-validation
+"""FastMCP middlewares for the tool error envelope.
+
+``ToolErrorFlagMiddleware`` marks every result that carries an error
+envelope with ``isError: true`` and makes sure the envelope has a
+``code``.
+
+``CleanValidationErrorMiddleware`` converts raw Pydantic argument-validation
 errors into the project's standard ``{"error", "hint", "code"}``
 envelope.
 
@@ -13,12 +19,13 @@ be silently fed a "your input was wrong" message for them.
 """
 
 import json
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from fastmcp.server.middleware import Middleware
 from fastmcp.tools import ToolResult
 from mcp.types import TextContent
 from pydantic import ValidationError
+from pydantic_core import to_json
 
 try:
     # fastmcp >=3.4.3 wraps a tool's argument-validation failure in its
@@ -142,6 +149,7 @@ async def build_error_tool_result(context, payload: Dict[str, Any]) -> ToolResul
         content=[TextContent(type="text", text=json.dumps(payload))],
         structured_content=structured,
         meta=meta,
+        is_error=True,
     )
 
 
@@ -170,3 +178,82 @@ class CleanValidationErrorMiddleware(Middleware):
                 raise
             payload = _format_argument_error(pydantic_exc)
             return await build_error_tool_result(context, payload)
+
+
+UNKNOWN_ERROR_CODE = "UNKNOWN_ERROR"
+
+
+def _error_envelope(structured: Any) -> Optional[Dict[str, Any]]:
+    """The error envelope in a tool's structured content, or ``None``.
+
+    Looks at the top level and, for tools whose return type is not a plain
+    dict, under ``result`` (see ``build_error_tool_result``). An ``error``
+    of ``None`` is a payload saying there was none, not an envelope.
+    """
+    if not isinstance(structured, dict):
+        return None
+    if structured.get("error") is not None:
+        return structured
+    inner = structured.get("result")
+    if isinstance(inner, dict) and inner.get("error") is not None:
+        return inner
+    return None
+
+
+class ToolErrorFlagMiddleware(Middleware):
+    """Report a tool's error envelope as a failed call.
+
+    Tools signal failure by returning ``{"error": ...}`` rather than raising,
+    which FastMCP delivers with ``isError: false``. A client that follows the
+    MCP spec and checks only the flag would read a refused write as done, or
+    a failed read as an empty result. This sets ``is_error`` on any result
+    whose structured content carries an envelope, and fills in
+    ``code: "UNKNOWN_ERROR"`` when the tool gave none, so every failure has a
+    code to branch on. The envelope is otherwise returned as the tool built
+    it.
+    """
+
+    async def on_call_tool(self, context, call_next):
+        result = await call_next(context)
+        envelope = _error_envelope(getattr(result, "structured_content", None))
+        if envelope is None:
+            return result
+
+        content = result.content
+        structured = result.structured_content
+        # An empty or null code is no more use to a client than a missing one.
+        if not envelope.get("code"):
+            # Copies, not in-place edits: the dict may be a tool's constant.
+            coded = {**envelope, "code": UNKNOWN_ERROR_CODE}
+            content = self._with_code(content, envelope, coded)
+            structured = (
+                coded if structured is envelope else {**structured, "result": coded}
+            )
+
+        return ToolResult(
+            content=content,
+            structured_content=structured,
+            meta=result.meta,
+            is_error=True,
+        )
+
+    @staticmethod
+    def _with_code(content: Any, original: Dict[str, Any], envelope: Dict[str, Any]):
+        """Re-serialize the text block that mirrors the envelope.
+
+        Only a single text block holding exactly the original envelope is
+        rewritten; anything else a tool chose to put in ``content`` is left
+        alone.
+        """
+        if not (
+            isinstance(content, list)
+            and len(content) == 1
+            and isinstance(content[0], TextContent)
+        ):
+            return content
+        try:
+            if json.loads(content[0].text) != original:
+                return content
+        except ValueError:
+            return content
+        return [TextContent(type="text", text=to_json(envelope).decode())]

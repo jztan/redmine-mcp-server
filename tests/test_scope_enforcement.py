@@ -172,7 +172,9 @@ class TestCallToolGating:
         # The exact #185 repro: view+notes token must not edit.
         scoped_token(["view_issues", "add_issue_notes"])
         async with Client(_make_server()) as client:
-            result = await client.call_tool("update_redmine_issue", {"issue_id": 1})
+            result = await client.call_tool(
+                "update_redmine_issue", {"issue_id": 1}, raise_on_error=False
+            )
         payload = json.loads(result.content[0].text)
         assert payload["code"] == "INSUFFICIENT_SCOPE"
         assert "edit_issues" in payload["error"]
@@ -190,7 +192,9 @@ class TestCallToolGating:
         # Pre-#130 tokens introspect with scope: "" and must be denied.
         scoped_token([])
         async with Client(_make_server()) as client:
-            result = await client.call_tool("update_redmine_issue", {"issue_id": 1})
+            result = await client.call_tool(
+                "update_redmine_issue", {"issue_id": 1}, raise_on_error=False
+            )
         payload = json.loads(result.content[0].text)
         assert payload["code"] == "INSUFFICIENT_SCOPE"
 
@@ -205,7 +209,7 @@ class TestCallToolGating:
     async def test_unmapped_tool_denied(self, scoped_token):
         scoped_token(["view_issues", "edit_issues"])
         async with Client(_make_server()) as client:
-            result = await client.call_tool("not_in_map_tool", {})
+            result = await client.call_tool("not_in_map_tool", {}, raise_on_error=False)
         payload = json.loads(result.content[0].text)
         assert payload["code"] == "INSUFFICIENT_SCOPE"
         assert "not_in_map_tool" in payload["error"]
@@ -218,7 +222,9 @@ class TestCallToolGating:
                 "manage_document", {"action": "list", "project_id": "p"}
             )
             denied = await client.call_tool(
-                "manage_document", {"action": "create", "project_id": "p"}
+                "manage_document",
+                {"action": "create", "project_id": "p"},
+                raise_on_error=False,
             )
         assert ok.structured_content == {"action": "list"}
         payload = json.loads(denied.content[0].text)
@@ -273,6 +279,7 @@ class TestNotesOnlyCarveOut:
             result = await client.call_tool(
                 "update_redmine_issue",
                 {"issue_id": 1, "fields": {"notes": "hi"}},
+                raise_on_error=False,
             )
         payload = json.loads(result.content[0].text)
         assert payload["code"] == "INSUFFICIENT_SCOPE"
@@ -285,6 +292,7 @@ class TestNotesOnlyCarveOut:
             result = await client.call_tool(
                 "update_redmine_issue",
                 {"issue_id": 1, "fields": {"subject": "x", "notes": "hi"}},
+                raise_on_error=False,
             )
         payload = json.loads(result.content[0].text)
         assert payload["code"] == "INSUFFICIENT_SCOPE"
@@ -301,6 +309,7 @@ class TestNotesOnlyCarveOut:
                     "fields": {"notes": "hi"},
                     "uploads": [{"path": "f"}],
                 },
+                raise_on_error=False,
             )
         payload = json.loads(result.content[0].text)
         assert payload["code"] == "INSUFFICIENT_SCOPE"
@@ -314,6 +323,7 @@ class TestNotesOnlyCarveOut:
             result = await client.call_tool(
                 "update_redmine_issue",
                 {"issue_id": 1, "fields": {"notes": "hi"}},
+                raise_on_error=False,
             )
         payload = json.loads(result.content[0].text)
         assert payload["code"] == "INSUFFICIENT_SCOPE"

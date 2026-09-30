@@ -140,7 +140,7 @@ class TestUpdate:
         mock.engine.request.side_effect = ResourceNotFoundError()
         with patch.dict(os.environ, ON):
             r = await manage_deal_category(action="update", category_id=9, name="B")
-        assert r == {"error": "Deal category 9 not found."}
+        assert r == {"error": "Deal category 9 not found.", "code": "NOT_FOUND"}
 
 
 class TestDelete:

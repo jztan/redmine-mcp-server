@@ -37,6 +37,53 @@ They add and remove top-level fields relative to stock Redmine, so a tool may re
 less than your instance actually holds. Open an issue with a redacted raw response
 and I will take a look.
 
+## Error Results
+
+A tool that fails returns an error envelope and marks the call as failed:
+the MCP result carries `isError: true`, and the envelope sits in both
+`content` (as JSON text) and `structuredContent`. Tools whose return type is
+not a plain object carry it under `result` in `structuredContent`.
+
+```json
+{"error": "Access denied. Your Redmine user lacks the required permission for this action. Contact your Redmine administrator.", "code": "FORBIDDEN"}
+```
+
+`error` is a message for the reader, and some envelopes add a `hint` or other
+fields. `code` is always present and non-empty, and is the field to branch on.
+A successful call keeps `isError: false`, as does a result whose `error` is
+`null`.
+
+Codes returned for a failed Redmine request:
+
+| Code | Cause |
+|---|---|
+| `CONNECTION_FAILED` | Redmine could not be reached: connection refused, DNS failure |
+| `SSL_ERROR` | SSL/TLS handshake or certificate failure |
+| `TIMEOUT` | Connect or read timeout, including a download that stalled mid-body (see `REDMINE_TIMEOUT`) |
+| `AUTH_FAILED` | Redmine answered 401: the credentials or the bound API key were rejected |
+| `PER_USER_AUTH` | Per-user authentication could not resolve credentials for the caller |
+| `FORBIDDEN` | Redmine answered 403: the user lacks the permission |
+| `NOT_FOUND` | Redmine answered 404; some tools also use it for a resource they looked up and did not find |
+| `CONFLICT` | Redmine answered 409: the record changed since it was read |
+| `VALIDATION_FAILED` | Redmine answered 422 and rejected the submitted values |
+| `SERVER_ERROR` | Redmine answered with a 5xx status |
+| `PROTOCOL_MISMATCH` | `REDMINE_URL` uses the wrong scheme (`http` vs `https`) |
+| `VERSION_MISMATCH` | The feature needs a newer Redmine or plugin version |
+| `READ_ONLY` | A write was refused because `REDMINE_MCP_READ_ONLY=true` |
+| `UNKNOWN_ERROR` | Anything else, including a tool error that set no code of its own |
+
+Codes returned before a request is made:
+
+| Code | Cause |
+|---|---|
+| `INVALID_ARGUMENTS` | The arguments do not match the tool's schema |
+| `INSUFFICIENT_SCOPE` | The OAuth token lacks a scope the tool or action needs |
+| `TOOL_NOT_ALLOWED` | The tool is not on `REDMINE_MCP_ALLOW_TOOLS` |
+
+Some tools return their own codes, such as `CONFIRMATION_REQUIRED`,
+`CHILDREN_PRESENT` or `UPDATE_UNCONFIRMED`; each is documented with its tool
+below.
+
 ## Security Best Practices
 
 ### SSL/TLS Configuration
@@ -189,8 +236,8 @@ Block all write operations by setting the `REDMINE_MCP_READ_ONLY` environment va
 REDMINE_MCP_READ_ONLY=true
 ```
 
-When enabled, the following tools return an error instead of executing
-(write actions only — read actions within the same tool still work):
+When enabled, the following tools return an error with `code: "READ_ONLY"`
+instead of executing (write actions only — read actions within the same tool still work):
 
 **Fully blocked (all actions are writes):**
 - `create_redmine_issue`
