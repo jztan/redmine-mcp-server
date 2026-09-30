@@ -531,6 +531,23 @@ TOOL_SCOPES: Dict[str, ToolScopeEntry] = {
     # permission of its own (#301), so this scope is the only one in play;
     # a status_id change is left to Redmine) ---
     "send_helpdesk_email_reply": frozenset({"add_issue_notes"}),
+    # Helpdesk tickets (#378). Both actions read /issues/:id first (the
+    # plugin's own lookup skips issue visibility), then helpdesk_tickets#show,
+    # which only view_helpdesk_tickets grants; set_contact adds the contact
+    # lookup and helpdesk_tickets#update. The scopes are advertised under the
+    # same flag that makes the tool visible, so requiring them cannot hide it
+    # on a deployment that never advertises them.
+    "manage_helpdesk_ticket": {
+        "get": frozenset({"view_issues", "view_helpdesk_tickets"}),
+        "set_contact": frozenset(
+            {
+                "view_issues",
+                "view_helpdesk_tickets",
+                "edit_helpdesk_tickets",
+                "view_contacts",
+            }
+        ),
+    },
     # --- products / CRM (RedmineUP plugins; Redmine enforces its own
     # plugin permissions, so these stay unrequired here. CRM scopes ARE
     # advertised when REDMINE_CRM_ENABLED is set, so the token can reach

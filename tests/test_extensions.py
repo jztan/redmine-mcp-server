@@ -849,7 +849,11 @@ class TestAntiDriftWithAnExtensionLoaded:
         assert not set(TOOL_KINDS) - registered - conditional
         assert not set(TOOL_SCOPES) - registered - conditional
 
-    def test_every_enforced_scope_is_advertised(self, widgets):
+    def test_every_enforced_scope_is_advertised(self, widgets, monkeypatch):
+        # Plugin scopes are advertised only under their flag, and the Helpdesk
+        # ticket tool requires scopes of its own, so its flag is on here.
+        monkeypatch.setenv("REDMINE_HELPDESK_TICKETS_ENABLED", "true")
+        monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "false")
         enforced = set()
         for entry in TOOL_SCOPES.values():
             if isinstance(entry, dict):
