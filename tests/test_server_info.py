@@ -70,6 +70,7 @@ async def test_reflects_plugin_flags(monkeypatch):
         "deals",
         "dmsf",
         "helpdesk",
+        "helpdesk_tickets",
         "tags",
     }
 

@@ -10,7 +10,10 @@ from redminelib.exceptions import ResourceNotFoundError, ValidationError
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from redmine_mcp_server._env import _is_helpdesk_enabled  # noqa: E402
+from redmine_mcp_server._env import (  # noqa: E402
+    _is_helpdesk_enabled,
+    _is_helpdesk_tickets_enabled,
+)
 from redmine_mcp_server.tools.helpdesk import send_helpdesk_email_reply  # noqa: E402
 
 # The JSON response a Helpdesk 4.2.9 / Redmine 6.1.2 install returned for
@@ -48,6 +51,28 @@ class TestIsHelpdeskEnabled:
     def test_true_when_env_set(self):
         with patch.dict(os.environ, {"REDMINE_HELPDESK_ENABLED": "true"}):
             assert _is_helpdesk_enabled() is True
+
+
+class TestIsHelpdeskTicketsEnabled:
+    def test_false_by_default(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("REDMINE_HELPDESK_TICKETS_ENABLED", None)
+            assert _is_helpdesk_tickets_enabled() is False
+
+    def test_true_when_env_set(self):
+        with patch.dict(os.environ, {"REDMINE_HELPDESK_TICKETS_ENABLED": "true"}):
+            assert _is_helpdesk_tickets_enabled() is True
+
+    def test_independent_of_the_reply_flag(self):
+        with patch.dict(
+            os.environ,
+            {
+                "REDMINE_HELPDESK_ENABLED": "true",
+                "REDMINE_HELPDESK_TICKETS_ENABLED": "false",
+            },
+        ):
+            assert _is_helpdesk_enabled() is True
+            assert _is_helpdesk_tickets_enabled() is False
 
 
 class TestSendHelpdeskEmailReply:
