@@ -141,6 +141,7 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `REDMINE_OAUTH_CLIENT_SECRET` | No | – | Optional upstream Redmine OAuth client secret for `oauth-proxy`; defaults to `REDMINE_INTROSPECT_CLIENT_SECRET` |
 | `FASTMCP_HOME` | No | platform default (`/app/data/fastmcp` in Docker) | FastMCP data directory. In `oauth-proxy` mode, encrypted OAuthProxy state is stored below `FASTMCP_HOME/oauth-proxy/`, and in `api-key-login` mode below `FASTMCP_HOME/api-key-login/`. Either must be on a persistent volume to survive a container rebuild |
 | `REDMINE_MCP_ALLOWED_CLIENT_REDIRECT_URIS` | No | loopback only | `oauth-proxy` and `api-key-login` client redirect-URI allowlist (glob patterns, comma/space separated). Unset = `http://localhost:*` and `http://127.0.0.1:*`; `*` = allow any |
+| `REDMINE_MCP_ACCESS_TOKEN_EXPIRY_SECONDS` | No | Redmine's `expires_in` (2h) | `oauth-proxy` only. Lifetime of the access token the proxy issues to clients. Raise it (e.g. `604800`) so clients rarely refresh; the upstream Redmine token is still refreshed server-side. Unset or `0` mirrors Redmine |
 | `HEALTH_INTROSPECTION_TTL_SECONDS` | No | `30` | TTL (seconds) for the `/health` Doorkeeper introspection probe cache. Set to `0` to disable caching. |
 | `SERVER_HOST` | No | `0.0.0.0` | Host/IP the MCP server binds to |
 | `SERVER_PORT` | No | `8000` | Port the MCP server listens on |

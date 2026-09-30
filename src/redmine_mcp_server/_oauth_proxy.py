@@ -13,6 +13,7 @@ from pydantic import AnyHttpUrl
 
 from ._env import (
     get_allowed_client_redirect_uris,
+    get_oauth_proxy_access_token_expiry_seconds,
     get_required,
     get_required_secret,
     get_secret,
@@ -130,4 +131,7 @@ def build_oauth_proxy() -> OAuthProxy:
         valid_scopes=advertised_scopes(),
         require_authorization_consent="external",
         allowed_client_redirect_uris=get_allowed_client_redirect_uris(),
+        fastmcp_access_token_expiry_seconds=(
+            get_oauth_proxy_access_token_expiry_seconds()
+        ),
     )
