@@ -141,7 +141,7 @@ class TestListDealStatuses:
         )
         with patch.dict(os.environ, ENABLED):
             result = await list_deal_statuses(project_id="nope")
-        assert result == {"error": "Project nope not found."}
+        assert result == {"error": "Project nope not found.", "code": "NOT_FOUND"}
 
     @pytest.mark.asyncio
     async def test_rejects_bad_project_id(self):

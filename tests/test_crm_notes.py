@@ -178,7 +178,7 @@ class TestGet:
         mock_redmine.engine.request.side_effect = ResourceNotFoundError()
         with patch.dict(os.environ, BOTH_ON):
             result = await manage_crm_note(action="get", note_id=99)
-        assert result == {"error": "Note 99 not found."}
+        assert result == {"error": "Note 99 not found.", "code": "NOT_FOUND"}
 
     @pytest.mark.asyncio
     async def test_get_requires_note_id(self):
@@ -298,7 +298,10 @@ class TestCreate:
                 project_id="sales",
                 content="x",
             )
-        assert result == {"error": "Deal 999 not found (or project sales not found)."}
+        assert result == {
+            "error": "Deal 999 not found (or project sales not found).",
+            "code": "NOT_FOUND",
+        }
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")

@@ -39,6 +39,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parameters; `create` is unchanged
   ([#366](https://github.com/jztan/redmine-mcp-server/issues/366)).
 
+### Changed
+- A failed tool call now comes back as an error result: `isError: true`, with
+  the `{"error", "code", ...}` envelope unchanged in `content` and
+  `structuredContent`. It used to arrive with `isError: false`, so a client
+  that checks only the MCP flag read a refused write as done and a failed read
+  as an empty result. Every envelope now carries a `code`: each branch of the
+  Redmine error handler has its own (`CONNECTION_FAILED`, `SSL_ERROR`,
+  `TIMEOUT`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, `VALIDATION_FAILED`,
+  `SERVER_ERROR`, `PROTOCOL_MISMATCH`, `VERSION_MISMATCH`, `READ_ONLY`,
+  `UNKNOWN_ERROR`), existing codes are kept, and a tool error without one gets
+  `UNKNOWN_ERROR`. Clients that check `"error" in result` keep working;
+  clients such as the FastMCP `Client` that raise on `isError` now raise for
+  these calls. The codes are listed in
+  [Tool Reference - Error Results](docs/tool-reference.md#error-results)
+  ([#381](https://github.com/jztan/redmine-mcp-server/issues/381)).
+
 ### Fixed
 - `manage_contact(action="get")` returns the `include` arrays it asks for.
   The CRM plugin renders `notes`, `contacts`, `deals` and `issues` on
