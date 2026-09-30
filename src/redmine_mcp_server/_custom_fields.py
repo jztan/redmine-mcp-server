@@ -566,6 +566,24 @@ _PASSTHROUGH_ISSUE_ATTRIBUTES = frozenset(
 _NAME_TYPO_CUTOFF = 0.85
 
 
+def _unverified_issue_fields(payload: Dict[str, Any]) -> List[str]:
+    """Keys in a resolved issue payload that go to Redmine unchecked (#380).
+
+    ``_reject_unmatched_name`` lets a snake_case key through so plugin
+    attributes keep working, and Redmine ignores a key it does not know
+    without an error. Neither ``unapplied_fields`` nor the response can show
+    whether such a key landed, so the caller is told which ones were sent on
+    trust. Call it after name resolution, when matched custom field names are
+    gone from the payload and refused keys have raised.
+    """
+    return sorted(
+        key
+        for key in payload
+        if not _is_standard_issue_update_key(key)
+        and key not in _PASSTHROUGH_ISSUE_ATTRIBUTES
+    )
+
+
 def _reject_unmatched_name(
     candidate: str, by_normalized_name: Dict[str, Dict[str, Any]]
 ) -> None:

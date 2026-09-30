@@ -67,6 +67,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#381](https://github.com/jztan/redmine-mcp-server/issues/381)).
 
 ### Fixed
+- `create_redmine_issue` and `update_redmine_issue` reported plain success
+  for a `fields` key Redmine ignored. A snake_case key that is neither a
+  standard issue key nor a custom field name is still sent, so plugin
+  attributes such as `agile_data_attributes` keep working, but Redmine drops
+  one it does not know without an error: `customer_id`, tried as a way to set
+  a Helpdesk ticket's contact, changed nothing and said nothing. The response
+  now lists such keys in `unverified_fields`, omitted when there are none
+  ([#380](https://github.com/jztan/redmine-mcp-server/issues/380)).
 - `send_helpdesk_email_reply` returned `customer: null` on Helpdesk 4.3,
   which renamed the response's `customer` key to `contact`. The email was
   sent either way. The tool now reads `contact` and falls back to
@@ -188,6 +196,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [#367](https://github.com/jztan/redmine-mcp-server/pull/367),
   [#368](https://github.com/jztan/redmine-mcp-server/issues/368),
   [#369](https://github.com/jztan/redmine-mcp-server/pull/369))).
+- @goizper reported that `customer_id` passed to `update_redmine_issue` was
+  dropped without a word, which led to `unverified_fields`
+  ([#378](https://github.com/jztan/redmine-mcp-server/issues/378),
+  [#380](https://github.com/jztan/redmine-mcp-server/issues/380)).
 
 ## [2.17.0] - 2026-09-26
 ### Added
