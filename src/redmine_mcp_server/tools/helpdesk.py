@@ -311,9 +311,197 @@ def _get_ticket_action(issue_id: Any, **_: Any) -> Dict[str, Any]:
     return _ticket_to_dict(issue_id, ticket)
 
 
-@action_dispatch({"get": ActionMode.READ})
+# The CRM contact search is a substring match over several fields, and its
+# total_count ignores the search term, so paging stops on a short page, not
+# on total_count. Five pages keeps a vague address from walking the whole
+# contact list.
+_CONTACT_SEARCH_PAGE = 100
+_CONTACT_SEARCH_MAX_PAGES = 5
+
+
+def _find_contact_id_by_email(project_id: Any, email: str) -> int:
+    """The id of the one contact in ``project_id`` with this exact email."""
+    wanted = email.strip().lower()
+    matches = []
+    for page in range(_CONTACT_SEARCH_MAX_PAGES):
+        try:
+            payload = _api_get(
+                f"/projects/{project_id}/contacts.json",
+                {
+                    "search": email.strip(),
+                    "limit": _CONTACT_SEARCH_PAGE,
+                    "offset": page * _CONTACT_SEARCH_PAGE,
+                },
+            )
+        except ForbiddenError:
+            raise _Refusal(
+                "Looking up contacts needs view_contacts and the Contacts "
+                "module enabled on the issue's project."
+            )
+        contacts = payload.get("contacts") if isinstance(payload, dict) else None
+        contacts = contacts if isinstance(contacts, list) else []
+        for contact in contacts:
+            if not isinstance(contact, dict):
+                continue
+            addresses = {
+                str(entry.get("address", "")).strip().lower()
+                for entry in contact.get("emails") or []
+                if isinstance(entry, dict)
+            }
+            if wanted in addresses and contact.get("id") not in matches:
+                matches.append(contact.get("id"))
+        if len(contacts) < _CONTACT_SEARCH_PAGE:
+            break
+    else:
+        raise _Refusal(
+            f"More than {_CONTACT_SEARCH_PAGE * _CONTACT_SEARCH_MAX_PAGES} "
+            f"contacts match '{email.strip()}'. Pass contact_id instead."
+        )
+    if not matches:
+        raise _Refusal(
+            f"No contact in this issue's project has the email "
+            f"'{email.strip()}'. Create it with manage_contact(action=\"create\") "
+            "or link an existing one with "
+            'manage_contact(action="assign_to_project"), then retry.'
+        )
+    if len(matches) > 1:
+        ids = ", ".join(str(m) for m in matches)
+        raise _Refusal(
+            f"Several contacts in this issue's project have the email "
+            f"'{email.strip()}' (ids {ids}). Pass contact_id to choose one."
+        )
+    return matches[0]
+
+
+def _check_contact(contact_id: int, project_id: Any) -> Dict[str, Any]:
+    """Refuse a contact the plugin would accept but should not get.
+
+    The plugin assigns any contact id it can find, including one linked only
+    to another project (which the web UI would not offer) and one with no
+    email (whose nil from_address later breaks default_to_address).
+    """
+    try:
+        payload = _api_get(f"/contacts/{contact_id}.json")
+    except ResourceNotFoundError:
+        raise _Refusal(f"Contact {contact_id} not found.")
+    except ForbiddenError:
+        raise _Refusal(
+            f"Contact {contact_id} is not visible to you (it may be private, "
+            "or the Contacts module is off on its projects)."
+        )
+    contact = payload.get("contact") if isinstance(payload, dict) else None
+    if not isinstance(contact, dict):
+        raise _Refusal(f"Contact {contact_id} not found.")
+    # The CRM omits ``projects`` entirely for a contact with none.
+    linked = {p.get("id") for p in contact.get("projects") or [] if isinstance(p, dict)}
+    if project_id not in linked:
+        raise _Refusal(
+            f"Contact {contact_id} is not linked to this issue's project "
+            f"(id {project_id}). Link it with "
+            f'manage_contact(action="assign_to_project", contact_id={contact_id}, '
+            f"project_id={project_id}), then retry."
+        )
+    if not any(
+        isinstance(e, dict) and e.get("address") for e in contact.get("emails") or []
+    ):
+        raise _Refusal(
+            f"Contact {contact_id} has no email address, so Helpdesk could not "
+            'reply to it. Add one with manage_contact(action="update") first.'
+        )
+    return contact
+
+
+def _put_ticket_contact(issue_id: int, contact_id: int) -> Any:
+    """Point the ticket at ``contact_id``.
+
+    Always the numeric id as a string: an email would let the plugin create
+    a contact, and the ``helpdesk_ticket`` root key is required (without it
+    the controller raises a 500).
+    """
+    from .. import _client
+
+    client = _get_redmine_client()
+    return client.engine.request(
+        "put",
+        f"{_client.REDMINE_URL}/helpdesk_tickets/{issue_id}.json",
+        headers={"Content-Type": "application/json"},
+        data=json.dumps({"helpdesk_ticket": {"from_address": str(contact_id)}}),
+    )
+
+
+@offloaded
+def _set_contact_action(
+    issue_id: Any,
+    contact_id: Any = None,
+    email: Any = None,
+    **_: Any,
+) -> Dict[str, Any]:
+    if not _is_positive_int(issue_id):
+        return {"error": "issue_id must be a positive integer."}
+    if (contact_id is None) == (email is None):
+        return {"error": "set_contact needs exactly one of contact_id or email."}
+    if contact_id is not None and not _is_positive_int(contact_id):
+        return {"error": "contact_id must be a positive integer."}
+    if email is not None and (not isinstance(email, str) or not email.strip()):
+        return {"error": "email must be a non-blank string."}
+
+    context = f"changing the contact of Helpdesk ticket {issue_id}"
+    resource = {"resource_type": "issue", "resource_id": issue_id}
+    try:
+        issue = _fetch_visible_issue(issue_id)
+        project_id = (issue.get("project") or {}).get("id")
+        ticket = _fetch_ticket(issue_id)
+        previous = _contact_ref(ticket.get("contact"))
+        target = (
+            contact_id
+            if contact_id is not None
+            else _find_contact_id_by_email(project_id, email)
+        )
+        _check_contact(target, project_id)
+    except _Refusal as refusal:
+        return {"error": refusal.message}
+    except Exception as e:
+        return _handle_redmine_error(e, context, resource)
+
+    try:
+        response = _put_ticket_contact(issue_id, target)
+    except ForbiddenError:
+        return {
+            "error": (
+                f"Changing Helpdesk ticket {issue_id} needs edit_helpdesk_tickets "
+                "and the Helpdesk module enabled on the issue's project."
+            )
+        }
+    except ValidationError as e:
+        # The plugin renders @issue.errors, which is empty for a ticket
+        # save failure, so python-redmine raises ValidationError("").
+        if not str(e).strip():
+            return {
+                "error": (
+                    "Helpdesk rejected the change without giving a reason. "
+                    "Nothing was changed."
+                )
+            }
+        return _handle_redmine_error(e, context, resource)
+    except Exception as e:
+        return _handle_redmine_error(e, context, resource)
+
+    updated = response.get("helpdesk_ticket") if isinstance(response, dict) else None
+    if not isinstance(updated, dict):
+        try:
+            updated = _fetch_ticket(issue_id)
+        except _Refusal as refusal:
+            return {"error": refusal.message}
+        except Exception as e:
+            return _handle_redmine_error(e, context, resource)
+    result = _ticket_to_dict(issue_id, updated)
+    result["previous_contact"] = previous
+    return result
+
+
+@action_dispatch({"get": ActionMode.READ, "set_contact": ActionMode.WRITE})
 async def _manage_helpdesk_ticket_dispatch(action: str, **kwargs: Any) -> Any:
-    return {"get": _get_ticket_action}
+    return {"get": _get_ticket_action, "set_contact": _set_contact_action}
 
 
 @mcp.tool(tags={plugin_tag("helpdesk_tickets")})
