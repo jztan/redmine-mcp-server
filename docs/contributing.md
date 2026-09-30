@@ -99,7 +99,7 @@ Tools live under `src/redmine_mcp_server/tools/`, one file per Redmine resource;
 | `apps/project_dashboard.py` | Interactive project dashboard MCP App (2 tools) |
 | `apps/project_timeline.py` | Interactive project timeline (Gantt) MCP App (2 tools) |
 
-Total: **53 core MCP tools** always registered, **15 plugin-gated** tools registered with a family tag and listed only when their `REDMINE_*_ENABLED` flag is set (68 with every plugin on), **plus 1 admin-gated** (`cleanup_attachment_files`, enabled by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`) for a maximum of 68.
+Total: **53 core MCP tools** always registered, **15 plugin-gated** tools registered with a family tag and listed only when their `REDMINE_*_ENABLED` flag is set (68 with every plugin on), **plus 1 admin-gated** (`cleanup_attachment_files`, enabled by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`) for a maximum of 69.
 
 Each `tools/<resource>.py` also owns its resource-specific serializers (`_X_to_dict` helpers).
 

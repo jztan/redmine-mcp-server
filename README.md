@@ -647,7 +647,7 @@ Tools for a Redmine plugin written in house can be added from a separate package
 
 A deployment can expose a subset of these with `REDMINE_MCP_ALLOW_TOOLS`; everything else disappears from `tools/list` and is refused by `call_tool`.
 
-This MCP server provides 53 core tools for interacting with Redmine, plus 15 plugin tools that are listed only when the matching `REDMINE_*_ENABLED` flag is set (68 in total), and 1 operator tool exposed by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true` (maximum of 68). A client connected to a vanilla Redmine sees just the 53 core tools. For full documentation of every tool, see the [Tool Reference](./docs/tool-reference.md).
+This MCP server provides 53 core tools for interacting with Redmine, plus 15 plugin tools that are listed only when the matching `REDMINE_*_ENABLED` flag is set (68 in total), and 1 operator tool exposed by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true` (maximum of 69). A client connected to a vanilla Redmine sees just the 53 core tools. For full documentation of every tool, see the [Tool Reference](./docs/tool-reference.md).
 
 **Core tools (53, always available):** Project Management (10), Issue Operations (13), Time Tracking (4), Discovery / Enumeration (7), Search & Wiki (2), News (4), File Operations (5), Gantt (1), Interactive Apps (6), Meta (1).
 

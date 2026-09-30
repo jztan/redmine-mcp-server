@@ -15,6 +15,7 @@ from typing import Any, Dict, Literal, Optional
 
 from redminelib.exceptions import (
     ForbiddenError,
+    JSONDecodeError,
     ResourceNotFoundError,
     ValidationError,
 )
@@ -465,6 +466,9 @@ def _set_contact_action(
 
     try:
         response = _put_ticket_contact(issue_id, target)
+    except JSONDecodeError:
+        # A 200 whose body is not JSON: the write went through.
+        response = None
     except ForbiddenError:
         return {
             "error": (
@@ -490,10 +494,19 @@ def _set_contact_action(
     if not isinstance(updated, dict):
         try:
             updated = _fetch_ticket(issue_id)
-        except _Refusal as refusal:
-            return {"error": refusal.message}
-        except Exception as e:
-            return _handle_redmine_error(e, context, resource)
+        except Exception:
+            # The PUT succeeded, so reporting an error here would claim a
+            # change that happened had failed, and lose previous_contact,
+            # the only record of the old contact.
+            return {
+                "issue_id": issue_id,
+                "contact": {"id": target, "name": None},
+                "previous_contact": previous,
+                "warning": (
+                    "The contact was changed, but the updated ticket could "
+                    "not be re-read. Call action='get' to see it."
+                ),
+            }
     result = _ticket_to_dict(issue_id, updated)
     result["previous_contact"] = previous
     return result

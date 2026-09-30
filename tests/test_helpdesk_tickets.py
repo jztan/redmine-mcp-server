@@ -13,7 +13,9 @@ from unittest.mock import patch
 import pytest
 from redminelib.exceptions import (
     ForbiddenError,
+    JSONDecodeError,
     ResourceNotFoundError,
+    ServerError,
     ValidationError,
 )
 
@@ -458,6 +460,59 @@ class TestSetContactById:
         assert result["contact"]["id"] == 375
         assert result["previous_contact"]["id"] == 374
         assert calls[-1][:2] == ("get", "/helpdesk_tickets/804.json")
+
+
+@patch("redmine_mcp_server._client.redmine")
+class TestWriteThatCannotBeReadBack:
+    """The PUT went through, so the result must say so even when the
+    updated ticket cannot be read back; previous_contact is the only record
+    of the old contact."""
+
+    async def test_failed_reread_after_empty_put_still_reports_success(
+        self, mock_redmine
+    ):
+        reads = iter([TICKET_804, ServerError()])
+
+        def read(kw):
+            value = next(reads)
+            if isinstance(value, Exception):
+                raise value
+            return value
+
+        result, _ = await call(
+            mock_redmine,
+            base_routes(
+                {
+                    ("get", "/helpdesk_tickets/804.json"): read,
+                    ("put", "/helpdesk_tickets/804.json"): True,
+                }
+            ),
+            action="set_contact",
+            issue_id=804,
+            contact_id=375,
+        )
+        assert "error" not in result
+        assert result["contact"] == {"id": 375, "name": None}
+        assert result["previous_contact"]["id"] == 374
+        assert "could not be re-read" in result["warning"]
+
+    async def test_non_json_put_body_counts_as_written(self, mock_redmine):
+        reads = iter([TICKET_804, TICKET_804_BOB])
+        result, _ = await call(
+            mock_redmine,
+            base_routes(
+                {
+                    ("get", "/helpdesk_tickets/804.json"): lambda kw: next(reads),
+                    ("put", "/helpdesk_tickets/804.json"): JSONDecodeError(None),
+                }
+            ),
+            action="set_contact",
+            issue_id=804,
+            contact_id=375,
+        )
+        assert "error" not in result
+        assert result["contact"]["id"] == 375
+        assert result["previous_contact"]["id"] == 374
 
 
 @patch("redmine_mcp_server._client.redmine")
