@@ -53,8 +53,22 @@ class TestToolScopesMap:
         stale = mapped - registered - conditional
         assert not stale, f"stale TOOL_SCOPES entries: {stale}"
 
-    def test_every_enforced_scope_is_advertised(self):
-        """Enforcement must never demand a scope the consent screen can't grant."""
+    def test_every_enforced_scope_is_advertised(self, monkeypatch):
+        """Enforcement must never demand a scope the consent screen can't grant.
+
+        Plugin scopes are advertised only while their plugin flag is on, and
+        a plugin tool is only visible then, so the check runs with every
+        plugin flag on.
+        """
+        for flag in (
+            "REDMINE_AGILE_ENABLED",
+            "REDMINE_TAGS_ENABLED",
+            "REDMINE_CRM_ENABLED",
+            "REDMINE_DEALS_ENABLED",
+            "REDMINE_HELPDESK_TICKETS_ENABLED",
+        ):
+            monkeypatch.setenv(flag, "true")
+        monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "false")
         enforced: set = set()
         for entry in TOOL_SCOPES.values():
             if isinstance(entry, dict):
@@ -62,7 +76,6 @@ class TestToolScopesMap:
                     enforced |= req
             else:
                 enforced |= entry
-        # Baseline advertisement: read-only off, plugin flags off.
         advertised = set(advertised_scopes())
         assert (
             enforced <= advertised
