@@ -29,6 +29,7 @@ from .._custom_fields import (
     _map_named_custom_fields_for_update,
     _parse_create_issue_fields,
     _parse_optional_object_payload,
+    _unverified_issue_fields,
 )
 from .._decorators import ActionMode, action_dispatch
 from .._env import _is_agile_enabled, _is_read_only_mode, _is_tags_enabled
@@ -1936,6 +1937,10 @@ async def create_redmine_issue(
       additional_tags tags on the new issue. Requires the
       ``create_issue_tags``/``edit_issue_tags`` permission; silently ignored
       when the feature is disabled (default).
+    - A snake_case ``fields`` key that is neither a standard issue key nor a
+      custom field name is sent as a top-level attribute, which Redmine
+      ignores without an error if it does not know it. Such keys are listed
+      in ``unverified_fields``, omitted when there are none.
 
     Args:
         project_id: Project the issue belongs to (numeric ID).
@@ -2206,7 +2211,14 @@ async def create_redmine_issue(
         except Exception as e:
             return _handle_redmine_error(e, f"creating issue in project {project_id}")
 
-    return await in_thread(_run)
+    result = await in_thread(_run)
+    # ``_run`` rebinds ``issue_fields`` to the resolved payload, so this sees
+    # what was sent.
+    if isinstance(result, dict) and "error" not in result:
+        unverified = _unverified_issue_fields(issue_fields)
+        if unverified:
+            result["unverified_fields"] = unverified
+    return result
 
 
 def _normalized_newlines(text: str) -> str:
@@ -2605,6 +2617,11 @@ async def update_redmine_issue(
     custom field values are checked, never notes, uploads, watchers or plugin
     fields. An unknown ``status_name`` is refused before anything is written.
 
+    A snake_case key that is neither a standard issue key nor a custom field
+    name is sent as a top-level attribute, which Redmine ignores without an
+    error if it does not know it. Such keys are listed in
+    ``unverified_fields``, omitted when there are none.
+
     Args:
         issue_id: The issue to update.
         fields: The fields to change, including ``notes`` for a comment.
@@ -2843,6 +2860,9 @@ async def update_redmine_issue(
         def _with_unapplied(result: Dict[str, Any], issue: Any) -> Dict[str, Any]:
             # Compared with what the caller asked for, after name resolution
             # but before any required-field autofill a retry adds.
+            unverified = _unverified_issue_fields(update_fields)
+            if unverified:
+                result["unverified_fields"] = unverified
             try:
                 payload = issue.raw()
             except Exception:
