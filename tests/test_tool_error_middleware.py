@@ -174,6 +174,14 @@ def flagged_server():
         return {"error": "Something went wrong."}
 
     @mcp.tool()
+    async def error_with_empty_code() -> Dict[str, Any]:
+        return {"error": "Something went wrong.", "code": ""}
+
+    @mcp.tool()
+    async def null_error() -> Dict[str, Any]:
+        return {"id": 1, "error": None}
+
+    @mcp.tool()
     async def success() -> Dict[str, Any]:
         return {"id": 1, "subject": "fine"}
 
@@ -235,6 +243,26 @@ class TestToolErrorFlagMiddleware:
         expected = {"error": "Something went wrong.", "code": "UNKNOWN_ERROR"}
         assert result.structured_content == {"result": expected}
         assert json.loads(result.content[0].text) == expected
+
+    @pytest.mark.asyncio
+    async def test_empty_code_becomes_unknown_error(self, flagged_server):
+        async with Client(flagged_server) as client:
+            result = await client.call_tool(
+                "error_with_empty_code", {}, raise_on_error=False
+            )
+
+        assert result.is_error
+        expected = {"error": "Something went wrong.", "code": "UNKNOWN_ERROR"}
+        assert result.structured_content == expected
+        assert json.loads(result.content[0].text) == expected
+
+    @pytest.mark.asyncio
+    async def test_null_error_is_not_an_error(self, flagged_server):
+        async with Client(flagged_server) as client:
+            result = await client.call_tool("null_error", {})
+
+        assert result.is_error is False
+        assert result.structured_content == {"id": 1, "error": None}
 
     @pytest.mark.asyncio
     async def test_success_stays_not_an_error(self, flagged_server):

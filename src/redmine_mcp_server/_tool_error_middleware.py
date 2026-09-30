@@ -187,14 +187,15 @@ def _error_envelope(structured: Any) -> Optional[Dict[str, Any]]:
     """The error envelope in a tool's structured content, or ``None``.
 
     Looks at the top level and, for tools whose return type is not a plain
-    dict, under ``result`` (see ``build_error_tool_result``).
+    dict, under ``result`` (see ``build_error_tool_result``). An ``error``
+    of ``None`` is a payload saying there was none, not an envelope.
     """
     if not isinstance(structured, dict):
         return None
-    if "error" in structured:
+    if structured.get("error") is not None:
         return structured
     inner = structured.get("result")
-    if isinstance(inner, dict) and "error" in inner:
+    if isinstance(inner, dict) and inner.get("error") is not None:
         return inner
     return None
 
@@ -220,7 +221,8 @@ class ToolErrorFlagMiddleware(Middleware):
 
         content = result.content
         structured = result.structured_content
-        if "code" not in envelope:
+        # An empty or null code is no more use to a client than a missing one.
+        if not envelope.get("code"):
             # Copies, not in-place edits: the dict may be a tool's constant.
             coded = {**envelope, "code": UNKNOWN_ERROR_CODE}
             content = self._with_code(content, envelope, coded)

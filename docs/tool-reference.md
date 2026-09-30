@@ -49,8 +49,9 @@ not a plain object carry it under `result` in `structuredContent`.
 ```
 
 `error` is a message for the reader, and some envelopes add a `hint` or other
-fields. `code` is always present and is the field to branch on. A successful
-call keeps `isError: false`.
+fields. `code` is always present and non-empty, and is the field to branch on.
+A successful call keeps `isError: false`, as does a result whose `error` is
+`null`.
 
 Codes returned for a failed Redmine request:
 
