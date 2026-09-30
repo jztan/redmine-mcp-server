@@ -368,22 +368,24 @@ def get_oauth_proxy_access_token_expiry_seconds() -> int | None:
     request and refreshed server-side when it expires, so revoking the grant
     in Redmine still takes effect immediately.
 
-    A value that is not an integer raises at startup rather than silently
-    falling back, since the fallback would bring the re-auth churn back
-    without any sign of why.
+    A value that is not a non-negative integer raises at startup rather than
+    silently falling back, since the fallback would bring the re-auth churn
+    back without any sign of why.
     """
     raw = os.getenv("REDMINE_MCP_ACCESS_TOKEN_EXPIRY_SECONDS")
     if raw is None or not raw.strip():
         return None
     try:
         seconds = int(raw.strip())
+        if seconds < 0:
+            raise ValueError(raw)
     except ValueError:
         raise RuntimeError(
-            "REDMINE_MCP_ACCESS_TOKEN_EXPIRY_SECONDS must be an integer number "
-            f"of seconds, got {raw!r}. Unset it or use 0 to mirror Redmine's "
-            "expires_in."
+            "REDMINE_MCP_ACCESS_TOKEN_EXPIRY_SECONDS must be a non-negative "
+            f"integer number of seconds, got {raw!r}. Unset it or use 0 to "
+            "mirror Redmine's expires_in."
         ) from None
-    return seconds if seconds > 0 else None
+    return seconds or None
 
 
 def get_allowed_client_redirect_uris() -> list[str] | None:

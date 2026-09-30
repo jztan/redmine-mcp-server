@@ -16,7 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   client's credentials raced and the losers were forced to log in again. The
   upstream Redmine token is still validated per request and refreshed
   server-side, so revoking the grant in Redmine still takes effect at once.
-  Unset or `0` keeps the old behaviour; a non-integer value fails at startup.
+  Unset or `0` keeps the old behaviour; a negative or non-integer value
+  fails at startup
+  ([#382](https://github.com/jztan/redmine-mcp-server/issues/382)).
 - Interactive `project-timeline` MCP App: the new `show_project_timeline` tool
   renders a project's schedule as a timeline in clients that support the MCP
   Apps extension. Issue bars run from start to due date, grouped by target

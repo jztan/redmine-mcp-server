@@ -70,7 +70,6 @@ def test_build_oauth_proxy_mirrors_upstream_token_expiry_by_default(
         ("604800", 604800),
         (" 86400 ", 86400),
         ("0", None),
-        ("-5", None),
         ("", None),
     ],
 )
@@ -85,11 +84,12 @@ def test_build_oauth_proxy_applies_access_token_expiry(
     assert proxy._fastmcp_access_token_expiry_seconds == expected
 
 
-def test_build_oauth_proxy_rejects_non_integer_access_token_expiry(
-    monkeypatch, tmp_path
+@pytest.mark.parametrize("raw", ["7d", "-5"])
+def test_build_oauth_proxy_rejects_invalid_access_token_expiry(
+    monkeypatch, tmp_path, raw
 ):
     _set_proxy_env(monkeypatch, tmp_path)
-    monkeypatch.setenv("REDMINE_MCP_ACCESS_TOKEN_EXPIRY_SECONDS", "7d")
+    monkeypatch.setenv("REDMINE_MCP_ACCESS_TOKEN_EXPIRY_SECONDS", raw)
 
     with pytest.raises(RuntimeError, match="REDMINE_MCP_ACCESS_TOKEN_EXPIRY_SECONDS"):
         build_oauth_proxy()
