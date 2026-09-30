@@ -38,6 +38,7 @@ from ._env import (
     _is_agile_enabled,
     _is_crm_enabled,
     _is_deals_enabled,
+    _is_helpdesk_tickets_enabled,
     _is_read_only_mode,
     _is_tags_enabled,
 )
@@ -229,6 +230,30 @@ CRM_NOTES_WRITE_SCOPES: list[str] = [
     "delete_own_notes",  # same, for the note's author
 ]
 
+# RedmineUP Helpdesk ticket permissions, advertised only when
+# REDMINE_HELPDESK_TICKETS_ENABLED is set (#378). The flag is separate from
+# REDMINE_HELPDESK_ENABLED so that upgrading a deployment that only uses
+# send_helpdesk_email_reply advertises nothing new: a Redmine OAuth
+# application that does not grant an advertised scope fails consent with
+# invalid_scope for the whole list.
+#
+# HelpdeskTicketsController runs ``before_action :authorize`` on show and
+# update, and the plugin maps helpdesk_tickets#show to view_helpdesk_tickets
+# and #update to edit_helpdesk_tickets. manage_helpdesk_ticket(set_contact)
+# also looks the contact up through the CRM plugin, which maps contacts#index
+# and #show to view_contacts; view_private_contacts keeps private contacts
+# from silently dropping out of that search (the same gap noted for CRM
+# above). advertised_scopes() deduplicates against the CRM lists.
+HELPDESK_TICKETS_READ_SCOPES: list[str] = [
+    "view_helpdesk_tickets",  # manage_helpdesk_ticket(action=get|set_contact)
+    "view_contacts",  # manage_helpdesk_ticket(action=set_contact) lookup
+    "view_private_contacts",  # same lookup, private contacts
+]
+
+HELPDESK_TICKETS_WRITE_SCOPES: list[str] = [
+    "edit_helpdesk_tickets",  # manage_helpdesk_ticket(action=set_contact)
+]
+
 
 def advertised_scopes() -> list[str]:
     """Return the OAuth scopes to advertise in discovery documents.
@@ -250,8 +275,11 @@ def advertised_scopes() -> list[str]:
     :data:`DEALS_WRITE_SCOPES` follow the same shape under a flag of their
     own, ``REDMINE_DEALS_ENABLED`` (per :func:`_is_deals_enabled`), because
     the CRM plugin's Light edition does not define the deal permissions at
-    all. Extensions registered through :mod:`.extensions` append their own
-    lists last, under the same enabled/read-only rule, which is where a
+    all. :data:`HELPDESK_TICKETS_READ_SCOPES` and
+    :data:`HELPDESK_TICKETS_WRITE_SCOPES` follow the same shape under
+    ``REDMINE_HELPDESK_TICKETS_ENABLED``. Extensions registered through
+    :mod:`.extensions` append their own lists last, under the same
+    enabled/read-only rule, which is where a
     permission an in-house plugin declares for itself enters the list.
     Always returns a fresh list so callers cannot mutate the source of
     truth.
@@ -276,6 +304,10 @@ def advertised_scopes() -> list[str]:
             scopes += list(DEALS_WRITE_SCOPES)
     if (_is_crm_enabled() or _is_deals_enabled()) and not _is_read_only_mode():
         scopes += list(CRM_NOTES_WRITE_SCOPES)
+    if _is_helpdesk_tickets_enabled():
+        scopes += list(HELPDESK_TICKETS_READ_SCOPES)
+        if not _is_read_only_mode():
+            scopes += list(HELPDESK_TICKETS_WRITE_SCOPES)
 
     # Registered extensions come last, in registration order, so a stock
     # deployment -- where there are none -- gets exactly the list above.
@@ -499,6 +531,23 @@ TOOL_SCOPES: Dict[str, ToolScopeEntry] = {
     # permission of its own (#301), so this scope is the only one in play;
     # a status_id change is left to Redmine) ---
     "send_helpdesk_email_reply": frozenset({"add_issue_notes"}),
+    # Helpdesk tickets (#378). Both actions read /issues/:id first (the
+    # plugin's own lookup skips issue visibility), then helpdesk_tickets#show,
+    # which only view_helpdesk_tickets grants; set_contact adds the contact
+    # lookup and helpdesk_tickets#update. The scopes are advertised under the
+    # same flag that makes the tool visible, so requiring them cannot hide it
+    # on a deployment that never advertises them.
+    "manage_helpdesk_ticket": {
+        "get": frozenset({"view_issues", "view_helpdesk_tickets"}),
+        "set_contact": frozenset(
+            {
+                "view_issues",
+                "view_helpdesk_tickets",
+                "edit_helpdesk_tickets",
+                "view_contacts",
+            }
+        ),
+    },
     # --- products / CRM (RedmineUP plugins; Redmine enforces its own
     # plugin permissions, so these stay unrequired here. CRM scopes ARE
     # advertised when REDMINE_CRM_ENABLED is set, so the token can reach

@@ -93,6 +93,19 @@ def _is_helpdesk_enabled() -> bool:
     return _is_true_env("REDMINE_HELPDESK_ENABLED", "false")
 
 
+def _is_helpdesk_tickets_enabled() -> bool:
+    """Check if RedmineUP Helpdesk *ticket* support is enabled (#378).
+
+    Separate from :func:`_is_helpdesk_enabled`, which gates only
+    ``send_helpdesk_email_reply``. Turning this on also advertises the
+    Helpdesk ticket OAuth scopes, and a Redmine OAuth application that does
+    not grant an advertised scope fails consent for the whole list, so it
+    has to be an opt-in of its own rather than a change under the older
+    flag.
+    """
+    return _is_true_env("REDMINE_HELPDESK_TICKETS_ENABLED", "false")
+
+
 # The built-in half of ``get_mcp_server_info``'s ``plugin_flags``: flag name
 # -> the accessor whose answer that key carries, in the order the response
 # lists them. Two things read it. The tool builds those keys from here
@@ -115,6 +128,7 @@ SERVER_INFO_PLUGIN_FLAGS: dict[str, Callable[[], bool]] = {
     "deals": _is_deals_enabled,
     "dmsf": _is_dmsf_enabled,
     "helpdesk": _is_helpdesk_enabled,
+    "helpdesk_tickets": _is_helpdesk_tickets_enabled,
     "tags": _is_tags_enabled,
 }
 

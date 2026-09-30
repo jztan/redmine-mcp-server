@@ -254,6 +254,16 @@ Notes:
   `enforce_configured_scopes`, so on Light a deal scope cannot be held by
   the OAuth application and requesting it fails consent with
   `invalid_scope` -- which would break `manage_contact` too.
+- `manage_helpdesk_ticket` sits behind `REDMINE_HELPDESK_TICKETS_ENABLED`,
+  which advertises `view_helpdesk_tickets`, `view_contacts` and
+  `view_private_contacts`, plus `edit_helpdesk_tickets` unless the server is
+  read-only. Tick them on the Redmine OAuth application before turning the
+  flag on, or narrow `REDMINE_MCP_SCOPES`; otherwise consent fails with
+  `invalid_scope`. `REDMINE_HELPDESK_ENABLED` on its own advertises nothing
+  extra. Unlike the CRM tools, this one does require its scopes (`get`:
+  `view_issues` and `view_helpdesk_tickets`; `set_contact` adds
+  `edit_helpdesk_tickets` and `view_contacts`), since they are only
+  advertised under the flag that also lists the tool.
 - A notes-only `update_redmine_issue` call (fields containing nothing but
   `notes` / `private_notes`, no uploads) requires `add_issue_notes` instead
   of `edit_issues`, mirroring Redmine's own note-adding permission.

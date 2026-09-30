@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- `manage_helpdesk_ticket` reads a RedmineUP Helpdesk ticket and moves it to
+  another existing contact, behind a new flag, `REDMINE_HELPDESK_TICKETS_ENABLED`.
+  `get` returns the Helpdesk data `get_redmine_issue` leaves out: the ticket's
+  contact, where replies go, the source and the response-time metrics.
+  `set_contact` takes a `contact_id` or an email and refuses rather than let
+  the plugin create a contact, turn a plain issue into a ticket, or assign a
+  contact from another project or without an email address. The flag is
+  separate from `REDMINE_HELPDESK_ENABLED` because under OAuth it advertises
+  four more scopes (`view_helpdesk_tickets`, `view_contacts`,
+  `view_private_contacts`, `edit_helpdesk_tickets`), which the Redmine OAuth
+  application must grant first
+  ([#378](https://github.com/jztan/redmine-mcp-server/issues/378)).
 - `REDMINE_MCP_ACCESS_TOKEN_EXPIRY_SECONDS` sets the lifetime of the access
   token `oauth-proxy` issues to clients, passed to FastMCP's `OAuthProxy` as
   `fastmcp_access_token_expiry_seconds`. It used to mirror Redmine's
@@ -197,7 +209,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [#368](https://github.com/jztan/redmine-mcp-server/issues/368),
   [#369](https://github.com/jztan/redmine-mcp-server/pull/369))).
 - @goizper reported that `customer_id` passed to `update_redmine_issue` was
-  dropped without a word, which led to `unverified_fields`
+  dropped without a word, which led to `unverified_fields`, and asked for a
+  way to read a Helpdesk ticket and change its contact, with the plugin
+  behaviour worked out on a live instance
   ([#378](https://github.com/jztan/redmine-mcp-server/issues/378),
   [#380](https://github.com/jztan/redmine-mcp-server/issues/380)).
 

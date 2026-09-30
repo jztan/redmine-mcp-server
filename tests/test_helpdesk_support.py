@@ -10,7 +10,10 @@ from redminelib.exceptions import ResourceNotFoundError, ValidationError
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from redmine_mcp_server._env import _is_helpdesk_enabled  # noqa: E402
+from redmine_mcp_server._env import (  # noqa: E402
+    _is_helpdesk_enabled,
+    _is_helpdesk_tickets_enabled,
+)
 from redmine_mcp_server.tools.helpdesk import send_helpdesk_email_reply  # noqa: E402
 
 # The JSON response a Helpdesk 4.2.9 / Redmine 6.1.2 install returned for
@@ -48,6 +51,28 @@ class TestIsHelpdeskEnabled:
     def test_true_when_env_set(self):
         with patch.dict(os.environ, {"REDMINE_HELPDESK_ENABLED": "true"}):
             assert _is_helpdesk_enabled() is True
+
+
+class TestIsHelpdeskTicketsEnabled:
+    def test_false_by_default(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("REDMINE_HELPDESK_TICKETS_ENABLED", None)
+            assert _is_helpdesk_tickets_enabled() is False
+
+    def test_true_when_env_set(self):
+        with patch.dict(os.environ, {"REDMINE_HELPDESK_TICKETS_ENABLED": "true"}):
+            assert _is_helpdesk_tickets_enabled() is True
+
+    def test_independent_of_the_reply_flag(self):
+        with patch.dict(
+            os.environ,
+            {
+                "REDMINE_HELPDESK_ENABLED": "true",
+                "REDMINE_HELPDESK_TICKETS_ENABLED": "false",
+            },
+        ):
+            assert _is_helpdesk_enabled() is True
+            assert _is_helpdesk_tickets_enabled() is False
 
 
 class TestSendHelpdeskEmailReply:
@@ -183,3 +208,62 @@ class TestSendHelpdeskEmailReply:
             result = await send_helpdesk_email_reply(**kwargs)
         assert message in result["error"]
         mock_redmine.engine.request.assert_not_called()
+
+
+from redmine_mcp_server.oauth_scopes import (  # noqa: E402
+    HELPDESK_TICKETS_READ_SCOPES,
+    HELPDESK_TICKETS_WRITE_SCOPES,
+    advertised_scopes,
+)
+
+
+class TestHelpdeskTicketScopes:
+    _OFF = {
+        "REDMINE_HELPDESK_TICKETS_ENABLED": "false",
+        "REDMINE_MCP_READ_ONLY": "false",
+    }
+
+    def test_lists(self):
+        assert HELPDESK_TICKETS_READ_SCOPES == [
+            "view_helpdesk_tickets",
+            "view_contacts",
+            "view_private_contacts",
+        ]
+        assert HELPDESK_TICKETS_WRITE_SCOPES == ["edit_helpdesk_tickets"]
+
+    def test_not_advertised_when_off(self):
+        with patch.dict(os.environ, self._OFF):
+            scopes = set(advertised_scopes())
+        assert "view_helpdesk_tickets" not in scopes
+        assert "edit_helpdesk_tickets" not in scopes
+
+    def test_reply_flag_alone_changes_nothing(self):
+        """Upgrading with only REDMINE_HELPDESK_ENABLED set must advertise
+        exactly what it did before #378, or OAuth consent breaks."""
+        off = {**self._OFF, "REDMINE_HELPDESK_ENABLED": "false"}
+        with patch.dict(os.environ, off):
+            before = advertised_scopes()
+        on = {**self._OFF, "REDMINE_HELPDESK_ENABLED": "true"}
+        with patch.dict(os.environ, on):
+            after = advertised_scopes()
+        assert after == before
+
+    def test_advertised_when_on(self):
+        with patch.dict(
+            os.environ, {**self._OFF, "REDMINE_HELPDESK_TICKETS_ENABLED": "true"}
+        ):
+            scopes = advertised_scopes()
+        for scope in HELPDESK_TICKETS_READ_SCOPES + HELPDESK_TICKETS_WRITE_SCOPES:
+            assert scopes.count(scope) == 1
+
+    def test_read_only_drops_the_write_scope(self):
+        with patch.dict(
+            os.environ,
+            {
+                "REDMINE_HELPDESK_TICKETS_ENABLED": "true",
+                "REDMINE_MCP_READ_ONLY": "true",
+            },
+        ):
+            scopes = set(advertised_scopes())
+        assert "view_helpdesk_tickets" in scopes
+        assert "edit_helpdesk_tickets" not in scopes
