@@ -62,7 +62,7 @@ Codes returned for a failed Redmine request:
 | `AUTH_FAILED` | Redmine answered 401: the credentials or the bound API key were rejected |
 | `PER_USER_AUTH` | Per-user authentication could not resolve credentials for the caller |
 | `FORBIDDEN` | Redmine answered 403: the user lacks the permission |
-| `NOT_FOUND` | Redmine answered 404, or the tool could not find the named resource |
+| `NOT_FOUND` | Redmine answered 404; some tools also use it for a resource they looked up and did not find |
 | `CONFLICT` | Redmine answered 409: the record changed since it was read |
 | `VALIDATION_FAILED` | Redmine answered 422 and rejected the submitted values |
 | `SERVER_ERROR` | Redmine answered with a 5xx status |
