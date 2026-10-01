@@ -178,6 +178,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   before anything is sent
   ([#368](https://github.com/jztan/redmine-mcp-server/issues/368)).
 
+### Security
+- Raise the `pyjwt[crypto]` floor to `>=2.15.0,<3` (locked at 2.15.1). The
+  locked 2.13.0 matched 13 advisories, including algorithm confusion between
+  symmetric and asymmetric keys, unvalidated JWKS redirects, lenient Base64URL
+  signature decoding and a ReDoS in `is_pem_format`, and failed the dependency
+  audit. `pyjwt` is reached through `mcp[crypto]`; nothing in this server
+  imports it directly. Verified that 2.15.1 is published by Trusted Publishing
+  from `jpadilla/pyjwt`, with a signed release commit by maintainer Jose Padilla
+  ([#388](https://github.com/jztan/redmine-mcp-server/issues/388)).
+
 ### Contributors
 - @mmahmed reported and fixed nine gaps across contacts, project members,
   custom fields, products, documents and issues: contact lists select which
