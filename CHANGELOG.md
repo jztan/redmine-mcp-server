@@ -188,6 +188,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from `jpadilla/pyjwt`, with a signed release commit by maintainer Jose Padilla
   ([#388](https://github.com/jztan/redmine-mcp-server/issues/388)).
 
+### Dependencies
+- Bump `fastmcp` and `fastmcp-slim` from 4.0.5 to 4.0.10, `starlette` from
+  1.6.0 to 1.7.0, `uvicorn` from 0.53.0 to 0.54.0 and `flake8` from 7.3.0 to
+  7.4.1, all lockfile-only moves within the existing bounds, combining
+  Dependabot PRs [#373](https://github.com/jztan/redmine-mcp-server/pull/373),
+  [#374](https://github.com/jztan/redmine-mcp-server/pull/374),
+  [#375](https://github.com/jztan/redmine-mcp-server/pull/375) and
+  [#376](https://github.com/jztan/redmine-mcp-server/pull/376)
+  ([#390](https://github.com/jztan/redmine-mcp-server/pull/390)).
+
 ### Contributors
 - @mmahmed reported and fixed nine gaps across contacts, project members,
   custom fields, products, documents and issues: contact lists select which
