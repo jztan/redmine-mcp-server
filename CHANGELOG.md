@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [2.18.0] - 2026-10-03
 ### Added
 - `manage_helpdesk_ticket` reads a RedmineUP Helpdesk ticket and moves it to
   another existing contact, behind a new flag, `REDMINE_HELPDESK_TICKETS_ENABLED`.
@@ -2286,6 +2288,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive authentication support (username/password and API key)
 - Docker containerization support
 
+[2.18.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.18.0
 [2.17.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.17.0
 [2.16.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.16.0
 [2.15.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.15.0
