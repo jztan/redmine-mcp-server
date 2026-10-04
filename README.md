@@ -872,5 +872,6 @@ Background, design notes, and postmortems from building this server:
 
 **Production**
 
+- [MCP File Upload: Why Base64 Tool Arguments Can Corrupt Files](https://blog.jztan.com/mcp-file-upload-base64-corruption/?utm_source=github&utm_medium=referral&utm_campaign=redmine-mcp-server): Why a 3 KB PNG silently lost 32 characters when the model retyped its base64, and the side-channel upload with SHA-256 checks that replaced it
 - [How to Evaluate an MCP Server With an LLM: 17 Bugs Found and Fixed](https://blog.jztan.com/evaluate-mcp-server-with-llm/?utm_source=github&utm_medium=referral&utm_campaign=redmine-mcp-server): Driving the server with an agent surfaced 17 problems the test suite missed, including a `role_ids=[True]` bug that quietly assigned an elevated role
 - [What It Actually Takes to Ship a Production MCP Server for Redmine](https://blog.jztan.com/what-it-actually-takes-to-ship-a-production-mcp-server-for-redmine/?utm_source=github&utm_medium=referral&utm_campaign=redmine-mcp-server): The full journey from prototype to production
