@@ -79,9 +79,8 @@ class TestTicketStore:
     ):
         """``os.path.basename("..")`` is ``".."`` -- a directory, not a file.
 
-        Left alone it resolves the staged path to the *parent* of
-        ATTACHMENTS_DIR, so the upload lands outside the tree the cleanup
-        manager sweeps and stays there.
+        It falls back to the generated name, and the staged bytes stay in the
+        upload's own directory, inside the tree the cleanup manager sweeps.
         """
         ticket = _upload_store.create_ticket(filename="..")
 
@@ -289,6 +288,156 @@ class TestStagedUploadsAreNotServed:
         assert posted.status_code == 200
         assert served.status_code == 404
         assert b"the staged bytes" not in served.content
+
+
+@pytest.mark.unit
+class TestStagedNameIsChosenByTheServer:
+    """The caller's filename is a display name, never a path on this server.
+
+    The staged bytes share a directory with the slot's own ``metadata.json``.
+    Had the caller's name been used for them, ``filename="metadata.json"``
+    would stage the upload *onto* the record: ``read_staged`` would then hand
+    back the record instead of the file, and in the moment between the bytes
+    landing and ``mark_ready`` rewriting the record, a body shaped like a
+    ready record would be taken for one -- with a ``file_path`` of its
+    choosing.
+    """
+
+    HOSTILE_NAMES = [
+        "metadata.json",
+        "metadata.json.tmp",
+        "./metadata.json",
+        "../x/metadata.json",
+        "",
+        ".",
+        "..",
+    ]
+
+    @pytest.mark.parametrize("filename", HOSTILE_NAMES)
+    def test_staged_path_never_lands_on_the_record(self, attachments_dir, filename):
+        issued = _upload_store.create_ticket(filename=filename)
+        upload_id = issued["upload_id"]
+        uuid_dir = (attachments_dir / upload_id).resolve()
+        record = _upload_store._read_record(upload_id)
+
+        staged = _upload_store.staged_path(record).resolve()
+        # What receive_upload streams into before the rename.
+        staged_temp = staged.with_suffix(staged.suffix + ".tmp")
+        record_files = {
+            _upload_store._record_path(upload_id).resolve(),
+            uuid_dir / "metadata.json.tmp",
+        }
+
+        assert staged == uuid_dir / f"upload_{upload_id}"
+        assert staged not in record_files
+        assert staged_temp not in record_files
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("filename", ["metadata.json", "metadata.json.tmp"])
+    async def test_record_named_upload_round_trips(
+        self, app, attachments_dir, filename
+    ):
+        payload = b"not a record, just a file called " + filename.encode("ascii")
+        issued = _upload_store.create_ticket(filename=filename)
+        upload_id = issued["upload_id"]
+
+        async with _client(app) as client:
+            response = await client.post(
+                f"/uploads/{upload_id}",
+                content=payload,
+                headers={"X-Upload-Ticket": issued["ticket"]},
+            )
+
+        assert response.status_code == 200
+        assert issued["filename"] == filename
+        assert response.json()["filename"] == filename
+
+        staged, name, error = _upload_store.read_staged(upload_id)
+        assert error is None
+        assert staged == payload
+        assert name == filename
+
+        record = json.loads(
+            (attachments_dir / upload_id / "metadata.json").read_text(encoding="utf-8")
+        )
+        assert record["kind"] == "upload"
+        assert record["state"] == "ready"
+        assert record["sha256"] == hashlib.sha256(payload).hexdigest()
+
+    @pytest.mark.asyncio
+    async def test_a_forged_record_in_the_body_is_never_followed(
+        self, app, attachments_dir, tmp_path, monkeypatch
+    ):
+        """Read the slot in the window between the rename and ``mark_ready``.
+
+        That is where a concurrent ``*_upload_id`` consumer could land. The
+        body is a ready record pointing at a file outside the attachments
+        tree; it must come back as the bytes that were sent, and the secret
+        must not come back at all.
+        """
+        secret = tmp_path / "secret.txt"
+        secret.write_bytes(b"server-side secret")
+        forged = json.dumps(
+            {
+                "kind": "upload",
+                "state": "ready",
+                "file_path": str(secret),
+                "original_filename": "secret.txt",
+            }
+        ).encode("utf-8")
+
+        issued = _upload_store.create_ticket(filename="metadata.json")
+        upload_id = issued["upload_id"]
+
+        seen_in_window = []
+        real_mark_ready = _upload_store.mark_ready
+
+        def mark_ready_after_a_concurrent_read(*args, **kwargs):
+            seen_in_window.append(_upload_store.read_staged(upload_id))
+            return real_mark_ready(*args, **kwargs)
+
+        monkeypatch.setattr(
+            _upload_store, "mark_ready", mark_ready_after_a_concurrent_read
+        )
+
+        async with _client(app) as client:
+            response = await client.post(
+                f"/uploads/{upload_id}",
+                content=forged,
+                headers={"X-Upload-Ticket": issued["ticket"]},
+            )
+
+        assert response.status_code == 200
+        assert len(seen_in_window) == 1
+        in_window, _, window_error = seen_in_window[0]
+        assert b"server-side secret" not in in_window
+        # The record is still the server's own, so the slot is not ready yet.
+        assert window_error is not None
+
+        staged, name, error = _upload_store.read_staged(upload_id)
+        assert error is None
+        assert staged == forged
+        assert name == "metadata.json"
+
+    @pytest.mark.asyncio
+    async def test_an_expired_slot_is_swept_with_its_file(self, app, attachments_dir):
+        from redmine_mcp_server.file_manager import AttachmentFileManager
+
+        issued = _upload_store.create_ticket(filename="metadata.json")
+        upload_id = issued["upload_id"]
+        async with _client(app) as client:
+            await client.post(
+                f"/uploads/{upload_id}",
+                content=b"bytes",
+                headers={"X-Upload-Ticket": issued["ticket"]},
+            )
+        _expire(attachments_dir, upload_id)
+
+        stats = AttachmentFileManager(str(attachments_dir)).cleanup_expired_files()
+
+        assert stats["cleaned_files"] == 1
+        assert stats["cleaned_bytes"] == len(b"bytes")
+        assert not (attachments_dir / upload_id).exists()
 
 
 @pytest.mark.unit
