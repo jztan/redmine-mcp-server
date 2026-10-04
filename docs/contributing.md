@@ -117,7 +117,7 @@ Cross-cutting utilities live as flat private modules:
 | `_custom_fields.py` | Custom-field parsing, autofill, and update coercion |
 | `_ssrf.py` | SSRF protection for `upload_file`'s `source_url` |
 | `_cleanup.py` | Background cleanup task |
-| `_http_routes.py` | Starlette routes (`/health` with a Doorkeeper introspection probe in `oauth` / `oauth-proxy` modes, a reachability probe in `legacy-per-user` / `api-key-login` modes, and a Redmine credential probe in legacy mode, `/files/{id}`, `/cleanup/status`) |
+| `_http_routes.py` | Starlette routes (`/health` with a Doorkeeper introspection probe in `oauth` / `oauth-proxy` modes, a reachability probe in `legacy-per-user` / `api-key-login` modes, and a Redmine credential probe in legacy mode, `/files/{id}`, `/uploads/{id}`, `/cleanup/status`) |
 | `_decorators.py` | `@action_dispatch` decorator + `ActionMode` enum |
 | `_offload.py` | `@offloaded` decorator and `in_thread()`: run blocking python-redmine work in a worker thread instead of on the event loop |
 | `_auth.py` | `RedmineAuthProvider` (a `RemoteAuthProvider` subclass) and its `build_remote_auth()` factory: composes `IntrospectionTokenVerifier` (RFC 7662) and adds the RFC 8414 AS-metadata mirror plus the RFC 7009 `/revoke` route. Used by `oauth` mode. |
@@ -684,7 +684,7 @@ redmine-mcp-server/
 │   ├── _custom_fields.py    # Custom-field parsing/coercion
 │   ├── _ssrf.py             # SSRF protection for upload_file source_url
 │   ├── _cleanup.py          # Background attachment cleanup task
-│   ├── _http_routes.py      # Starlette routes (/health w/ introspection + legacy redmine probe, /files, /cleanup/status)
+│   ├── _http_routes.py      # Starlette routes (/health w/ introspection + legacy redmine probe, /files, /uploads, /cleanup/status)
 │   ├── _decorators.py       # `@action_dispatch` decorator + `ActionMode` enum
 │   ├── _offload.py          # `@offloaded` / `in_thread()`: keep blocking calls off the event loop
 │   ├── _tool_error_middleware.py  # FastMCP middleware that normalizes tool validation errors
@@ -706,7 +706,7 @@ redmine-mcp-server/
 
 ### Core Components
 
-- **`main.py`**: Entry point. In an authenticated mode (`oauth`, `oauth-proxy` or `api-key-login`), `build_authenticated_app()` mounts the FastMCP app under the `REDMINE_MCP_BASE_URL` path prefix and adds the provider's `get_well_known_routes()` (discovery) plus `/health`, `/files`, `/cleanup/status`; in legacy mode it returns `mcp.http_app(stateless_http=True)`. Tool registration is triggered via `from . import tools`. No Starlette middleware is added; auth lives inside FastMCP via the `auth=` constructor parameter.
+- **`main.py`**: Entry point. In an authenticated mode (`oauth`, `oauth-proxy` or `api-key-login`), `build_authenticated_app()` mounts the FastMCP app under the `REDMINE_MCP_BASE_URL` path prefix and adds the provider's `get_well_known_routes()` (discovery) plus `/health`, `/files`, `/uploads`, `/cleanup/status`; in legacy mode it returns `mcp.http_app(stateless_http=True)`. Tool registration is triggered via `from . import tools`. No Starlette middleware is added; auth lives inside FastMCP via the `auth=` constructor parameter.
 - **`server.py`**: Owns the shared `mcp = FastMCP("redmine_mcp_tools", auth=...)` instance imported by every tool module. `_select_auth_provider(auth_mode)` returns `build_remote_auth()` (a `RedmineAuthProvider`) for `oauth`, `build_oauth_proxy()` (a FastMCP `OAuthProxy`) for `oauth-proxy`, `build_api_key_login()` (an `ApiKeyLoginProvider`) for `api-key-login`, and `None` for legacy.
 - **`_auth.py`** (`oauth` mode): `build_remote_auth()` returns a `RedmineAuthProvider`, a `RemoteAuthProvider` subclass that composes `IntrospectionTokenVerifier` (RFC 7662 against Doorkeeper's `/oauth/introspect`) and additionally serves the RFC 8414 AS-metadata mirror and the RFC 7009 `/revoke` route. Reads `REDMINE_INTROSPECT_CLIENT_ID` / `_SECRET` via `_env.require_introspection_credentials()` (fail-fast on startup).
 - **`_oauth_proxy.py`** (`oauth-proxy` mode): `build_oauth_proxy()` returns a FastMCP `OAuthProxy` that makes the MCP server the OAuth authorization server for clients (DCR + `/authorize` / `/token` / `/register`) and proxies upstream to Redmine/Doorkeeper, validating tokens with the same `IntrospectionTokenVerifier`. Keeps consent external (`require_authorization_consent="external"`), requires `REDMINE_MCP_JWT_SIGNING_KEY`, and restricts client redirect URIs to loopback by default (`get_allowed_client_redirect_uris()`).
