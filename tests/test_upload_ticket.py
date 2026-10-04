@@ -420,6 +420,45 @@ class TestStagedNameIsChosenByTheServer:
         assert name == "metadata.json"
 
     @pytest.mark.asyncio
+    async def test_a_slot_reserved_with_the_callers_name_still_round_trips(
+        self, app, attachments_dir
+    ):
+        """A ticket issued before the change can still be pending afterwards.
+
+        Its record names the caller's file -- here the record itself, as the
+        old code wrote it for ``filename="metadata.json"``. The upload must
+        land at the computed path regardless, and the record must survive.
+        """
+        payload = b"bytes for a slot reserved the old way"
+        issued = _upload_store.create_ticket(filename="metadata.json")
+        upload_id = issued["upload_id"]
+        record_file = attachments_dir / upload_id / "metadata.json"
+        record = json.loads(record_file.read_text(encoding="utf-8"))
+        record["file_path"] = str(record_file.resolve())
+        record_file.write_text(json.dumps(record), encoding="utf-8")
+
+        async with _client(app) as client:
+            response = await client.post(
+                f"/uploads/{upload_id}",
+                content=payload,
+                headers={"X-Upload-Ticket": issued["ticket"]},
+            )
+
+        assert response.status_code == 200
+
+        staged, name, error = _upload_store.read_staged(upload_id)
+        assert error is None
+        assert staged == payload
+        assert name == "metadata.json"
+
+        record = json.loads(record_file.read_text(encoding="utf-8"))
+        assert record["kind"] == "upload"
+        assert record["state"] == "ready"
+        assert record["file_path"] == str(
+            (attachments_dir / upload_id).resolve() / f"upload_{upload_id}"
+        )
+
+    @pytest.mark.asyncio
     async def test_an_expired_slot_is_swept_with_its_file(self, app, attachments_dir):
         from redmine_mcp_server.file_manager import AttachmentFileManager
 

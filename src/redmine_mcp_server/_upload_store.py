@@ -221,7 +221,17 @@ def redeem_ticket(
 
 
 def staged_path(record: Dict[str, Any]) -> Path:
-    return Path(record["file_path"])
+    """Where a slot's bytes are, computed from its id rather than read back.
+
+    The record's ``file_path`` is only there for ``AttachmentFileManager``.
+    Records are written by this server alone now, but a slot reserved before
+    the staged name stopped being the caller's can still be pending, for one
+    ticket lifetime, with a caller-named ``file_path`` -- ``metadata.json``
+    among them. A path that is computed cannot be forged; one that is read
+    back is only as good as the file it was read from. The id is parsed as a
+    UUID first, so it cannot carry a separator into the path either.
+    """
+    return _staged_target(str(uuid.UUID(record["file_id"])))
 
 
 def mark_ready(upload_id: str, record: Dict[str, Any], size: int, sha256: str) -> None:
@@ -236,6 +246,9 @@ def mark_ready(upload_id: str, record: Dict[str, Any], size: int, sha256: str) -
     record["state"] = _STATE_READY
     record["size"] = size
     record["sha256"] = sha256
+    # Point the cleanup manager at where the bytes really are, for a slot
+    # reserved while the record still carried the caller's name.
+    record["file_path"] = str(staged_path(record))
     _write_record(upload_id, record)
 
 
