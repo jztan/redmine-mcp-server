@@ -467,6 +467,58 @@ class TestCleanupExpiredFilesErrorHandling:
 
 
 @pytest.mark.unit
+class TestCleanupExpiredFilesContainment:
+    """The sweep only deletes a ``file_path`` inside the record's own dir."""
+
+    @pytest.fixture
+    def attachments_dir(self, tmp_path):
+        path = tmp_path / "attachments"
+        path.mkdir()
+        return path
+
+    @pytest.fixture
+    def file_manager(self, attachments_dir):
+        return AttachmentFileManager(str(attachments_dir))
+
+    def test_cleanup_never_deletes_a_file_outside_the_record_dir(
+        self, tmp_path, attachments_dir, file_manager, caplog
+    ):
+        outside = tmp_path / "outside.txt"
+        outside.write_bytes(b"not this server's to delete")
+        expired_time = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        uuid_dir = create_attachment(attachments_dir, "uuid-outside", b"", expired_time)
+        (uuid_dir / "test_file.txt").unlink()
+        metadata_path = uuid_dir / "metadata.json"
+        metadata = json.loads(metadata_path.read_text())
+        metadata["file_path"] = str(outside)
+        metadata_path.write_text(json.dumps(metadata))
+
+        result = file_manager.cleanup_expired_files()
+
+        assert outside.read_bytes() == b"not this server's to delete"
+        assert not uuid_dir.exists()
+        # The record is still swept; the outside file's bytes were never ours.
+        assert result["cleaned_files"] == 1
+        assert result["cleaned_bytes"] == 0
+        assert "attachment_cleanup_refused" in caplog.text
+
+    def test_cleanup_still_deletes_a_file_inside_the_record_dir(
+        self, attachments_dir, file_manager
+    ):
+        content = b"Expired content"
+        expired_time = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        uuid_dir = create_attachment(
+            attachments_dir, "uuid-inside", content, expired_time
+        )
+
+        result = file_manager.cleanup_expired_files()
+
+        assert result["cleaned_files"] == 1
+        assert result["cleaned_bytes"] == len(content)
+        assert not uuid_dir.exists()
+
+
+@pytest.mark.unit
 class TestCleanupExpiredFilesTimezone:
     """Test cases for cleanup_expired_files - timezone handling."""
 

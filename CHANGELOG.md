@@ -24,7 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   was overwritten by the download's record and served back in its place,
   and one called `metadata.json.tmp` was lost. The attachment's name is
   still the `filename` returned and the name `GET /files/{file_id}` offers
-  the download under.
+  the download under. The two places that delete an expired record's
+  `file_path`, the expiry branch of `GET /files/{file_id}` and the cleanup
+  manager's sweep, now refuse one outside the record's own directory, so a
+  record naming a file elsewhere cannot turn either into a delete of it.
 
 ## [2.18.0] - 2026-10-03
 ### Added
