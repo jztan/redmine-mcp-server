@@ -42,7 +42,11 @@ class TestGetRedmineAttachmentSecurity:
     async def test_path_traversal_filename_sanitized(
         self, mock_cleanup, mock_redmine, tmp_path, monkeypatch
     ):
-        """A filename like ../../etc/passwd must be reduced to basename only."""
+        """A filename like ../../etc/passwd is reduced to a basename.
+
+        It is a display name only: the bytes are stored under a name the
+        server picks, inside the download's own directory.
+        """
         monkeypatch.setenv("ATTACHMENTS_DIR", str(tmp_path))
         monkeypatch.delenv("PUBLIC_HOST", raising=False)
 
@@ -54,11 +58,13 @@ class TestGetRedmineAttachmentSecurity:
         result = await get_redmine_attachment(1)
 
         assert "error" not in result
-        # The file written to disk must live inside the UUID dir, not escape it
+        # The caller hears back the basename, not a traversal component
+        assert result["filename"] == "passwd"
+        # The file written to disk lives inside the UUID dir, under the
+        # server's name rather than the attachment's
         file_path = result.get("file_path", "")
         assert "etc" not in file_path or file_path.startswith(str(tmp_path))
-        # Basename of path must be "passwd", not a traversal component
-        assert os.path.basename(file_path) == "passwd"
+        assert os.path.basename(file_path).startswith("attachment_")
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.redmine")

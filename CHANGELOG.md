@@ -17,7 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   moment between the bytes landing and the record being rewritten, a body
   shaped like a ready record could point an `*_upload_id` consumer at any
   file the server process can read. The caller's `filename` is still what
-  the attachment is called in Redmine.
+  the attachment is called in Redmine. `get_redmine_attachment` likewise
+  saves a download as `attachment_<file_id>` instead of under the
+  attachment's name, which is chosen by whoever attached the file in
+  Redmine and so needs no MCP access: an attachment called `metadata.json`
+  was overwritten by the download's record and served back in its place,
+  and one called `metadata.json.tmp` was lost. The attachment's name is
+  still the `filename` returned and the name `GET /files/{file_id}` offers
+  the download under.
 
 ## [2.18.0] - 2026-10-03
 ### Added

@@ -473,7 +473,11 @@ async def get_redmine_attachment(
                     "attachment_id": attachment_id,
                 }
 
-            # Sanitize filename: basename only (path traversal protection)
+            # The attachment's name is a display name only: it is what the
+            # caller hears back and what the download is offered as, never a
+            # path on this server. It is still cut down to a basename so a
+            # name like "../../etc/passwd" comes back as "passwd". The
+            # fallback for an empty name is likewise display-only.
             raw_filename = getattr(attachment, "filename", "") or ""
             original_filename = os.path.basename(raw_filename)
             if not original_filename:
@@ -491,8 +495,16 @@ async def get_redmine_attachment(
             uuid_dir = attachments_dir / file_id
             uuid_dir.mkdir(exist_ok=True)
 
-            temp_path = uuid_dir / f"{original_filename}.tmp"
-            final_path = uuid_dir / original_filename
+            # The bytes are stored under a name the server picks, never the
+            # attachment's. That name comes from whoever attached the file in
+            # Redmine, and the bytes share this directory with the record:
+            # an attachment called "metadata.json" would be overwritten by
+            # the record, and one called "metadata.json.tmp" would be where
+            # the record's temp file is written and then renamed away from.
+            # "attachment_<uuid>" has no dot in it, so neither it nor its
+            # ".tmp" sibling can be the record or the record's temp file.
+            final_path = uuid_dir / f"attachment_{file_id}"
+            temp_path = uuid_dir / f"attachment_{file_id}.tmp"
 
             # Stream download with byte-cap abort
             max_bytes = _get_int_env(
@@ -567,9 +579,9 @@ async def get_redmine_attachment(
             use_file_mode = public_base is None
 
             expires_str = expires_at.isoformat()
-            # filename is structured metadata (used for paths, URLs,
-            # identifiers); not wrapped per #109. Path-traversal sanitization
-            # already ran above via os.path.basename().
+            # filename is structured metadata (used for URLs and the
+            # download's name); not wrapped per #109. It was cut down to a
+            # basename above, and it is not part of any path on this server.
             safe_filename = original_filename
 
             if use_file_mode:

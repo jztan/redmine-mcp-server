@@ -9,6 +9,7 @@ Covers:
 """
 
 import base64
+import json
 import os
 import sys
 
@@ -898,9 +899,9 @@ class TestGetRedmineAttachment:
     async def test_filename_returned_verbatim(
         self, mock_cleanup, mock_redmine, tmp_path, monkeypatch
     ):
-        # filename is structured metadata (used for paths, URLs,
-        # identifiers); not wrapped per #109. Path-traversal sanitization
-        # still runs via os.path.basename() before this point.
+        # filename is structured metadata (used for URLs and the
+        # download's name); not wrapped per #109. It is a display name only;
+        # the bytes are stored under a name the server picks.
         monkeypatch.setenv("ATTACHMENTS_DIR", str(tmp_path))
         monkeypatch.delenv("PUBLIC_HOST", raising=False)
 
@@ -976,3 +977,60 @@ class TestGetRedmineAttachment:
         # Hint must mention the embed workaround so an LLM caller can
         # recover without an additional round-trip on the wrong tool.
         assert "include_attachments" in result["hint"]
+
+
+@pytest.mark.unit
+class TestDownloadedNameIsChosenByTheServer:
+    """An attachment's filename is a display name, never a path on this server.
+
+    It comes from whoever attached the file in Redmine, and the downloaded
+    bytes share a directory with the download's own ``metadata.json``. Had
+    that name been used for them, an attachment called ``metadata.json``
+    would be written where the record goes and then overwritten by it, and
+    one called ``metadata.json.tmp`` would be where the record's temp file
+    is written and then renamed away from.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("filename", ["metadata.json", "metadata.json.tmp"])
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    async def test_record_named_attachment_round_trips(
+        self, mock_cleanup, mock_redmine, filename, tmp_path, monkeypatch
+    ):
+        from httpx import ASGITransport, AsyncClient
+
+        from redmine_mcp_server.main import app
+
+        payload = b"not a record, just a file called " + filename.encode("ascii")
+        monkeypatch.setenv("ATTACHMENTS_DIR", str(tmp_path))
+        monkeypatch.delenv("PUBLIC_HOST", raising=False)
+        monkeypatch.delenv("SERVER_HOST", raising=False)
+
+        mock_redmine.attachment.get.return_value = _mock_attachment(filename=filename)
+        mock_redmine.download.return_value = _mock_stream([payload])
+
+        result = await get_redmine_attachment(1)
+
+        assert "error" not in result
+        assert result["filename"] == filename
+        record_files = list(tmp_path.rglob("metadata.json"))
+        assert len(record_files) == 1
+        uuid_dir = record_files[0].parent
+        file_id = uuid_dir.name
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            served = await client.get(f"/files/{file_id}")
+
+        assert served.status_code == 200
+        assert served.content == payload
+
+        record = json.loads(record_files[0].read_text(encoding="utf-8"))
+        assert record["file_id"] == file_id
+        assert record["original_filename"] == filename
+        assert record["size"] == len(payload)
+        assert result["file_path"] == record["file_path"]
+        assert result["file_path"] == str(uuid_dir.resolve() / f"attachment_{file_id}")
+        assert f'filename="{filename}"' in served.headers["content-disposition"]
