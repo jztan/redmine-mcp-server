@@ -61,10 +61,12 @@ class TestGetRedmineAttachmentSecurity:
         # The caller hears back the basename, not a traversal component
         assert result["filename"] == "passwd"
         # The file written to disk lives inside the UUID dir, under the
-        # server's name rather than the attachment's
+        # server's name rather than the attachment's; "passwd" has no
+        # extension to carry over
         file_path = result.get("file_path", "")
         assert "etc" not in file_path or file_path.startswith(str(tmp_path))
         assert os.path.basename(file_path).startswith("attachment_")
+        assert "." not in os.path.basename(file_path)
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.redmine")

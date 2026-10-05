@@ -988,15 +988,19 @@ class TestDownloadedNameIsChosenByTheServer:
     that name been used for them, an attachment called ``metadata.json``
     would be written where the record goes and then overwritten by it, and
     one called ``metadata.json.tmp`` would be where the record's temp file
-    is written and then renamed away from.
+    is written and then renamed away from. Only a plain last extension is
+    carried over, so a tool that opens files by suffix still can.
     """
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("filename", ["metadata.json", "metadata.json.tmp"])
+    @pytest.mark.parametrize(
+        "filename, ext",
+        [("metadata.json", ".json"), ("metadata.json.tmp", ".tmp")],
+    )
     @patch("redmine_mcp_server._client.redmine")
     @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
     async def test_record_named_attachment_round_trips(
-        self, mock_cleanup, mock_redmine, filename, tmp_path, monkeypatch
+        self, mock_cleanup, mock_redmine, filename, ext, tmp_path, monkeypatch
     ):
         from httpx import ASGITransport, AsyncClient
 
@@ -1032,5 +1036,48 @@ class TestDownloadedNameIsChosenByTheServer:
         assert record["original_filename"] == filename
         assert record["size"] == len(payload)
         assert result["file_path"] == record["file_path"]
-        assert result["file_path"] == str(uuid_dir.resolve() / f"attachment_{file_id}")
+        assert result["file_path"] == str(
+            uuid_dir.resolve() / f"attachment_{file_id}{ext}"
+        )
         assert f'filename="{filename}"' in served.headers["content-disposition"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "filename, ext",
+        [
+            ("report.pdf", ".pdf"),
+            ("scan.PDF", ".PDF"),
+            # Only the last suffix is kept.
+            ("archive.tar.gz", ".gz"),
+            # Anything but a plain extension is dropped, not cleaned up.
+            ("data.json;rm", ""),
+            ("report.p df", ""),
+            ("notes." + "a" * 17, ""),
+            ("photo.jp\u00e9g", ""),
+            ("passwd", ""),
+            ("trailing.", ""),
+        ],
+    )
+    @patch("redmine_mcp_server._client.redmine")
+    @patch("redmine_mcp_server._cleanup._ensure_cleanup_started")
+    async def test_only_a_plain_extension_reaches_the_name_on_disk(
+        self, mock_cleanup, mock_redmine, filename, ext, tmp_path, monkeypatch
+    ):
+        monkeypatch.setenv("ATTACHMENTS_DIR", str(tmp_path))
+        monkeypatch.delenv("PUBLIC_HOST", raising=False)
+        monkeypatch.delenv("SERVER_HOST", raising=False)
+
+        mock_redmine.attachment.get.return_value = _mock_attachment(filename=filename)
+        mock_redmine.download.return_value = _mock_stream([b"bytes"])
+
+        result = await get_redmine_attachment(1)
+
+        assert "error" not in result
+        assert result["filename"] == filename
+        uuid_dir = next(tmp_path.rglob("metadata.json")).parent
+        assert os.path.basename(result["file_path"]) == (
+            f"attachment_{uuid_dir.name}{ext}"
+        )
+        assert sorted(p.name for p in uuid_dir.iterdir()) == sorted(
+            ["metadata.json", f"attachment_{uuid_dir.name}{ext}"]
+        )

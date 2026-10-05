@@ -8,6 +8,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -400,6 +401,12 @@ def _public_base_url() -> Optional[str]:
 
 _ATTACHMENT_MAX_DOWNLOAD_BYTES_DEFAULT = 200 * 1024 * 1024  # 200 MB
 
+# The one part of an attachment's name that reaches the downloaded file's
+# name on disk: its last suffix, and only when it is a plain one. Anything
+# else -- a space, a semicolon, non-ASCII, more than 16 characters -- is
+# dropped rather than cleaned up.
+_PLAIN_EXTENSION = re.compile(r"\.[A-Za-z0-9]{1,16}\Z")
+
 
 @mcp.tool()
 async def get_redmine_attachment(
@@ -423,6 +430,10 @@ async def get_redmine_attachment(
     Returns a dict with ``file_path`` (absolute), ``uri_type: "file"``,
     filename, content_type, size, expires_at, and attachment_id.
     The path can be passed directly to Claude Code's ``Read`` tool or pdf-mcp.
+    The file on disk is named ``attachment_<file_id><ext>``, not after the
+    attachment, so to upload the download again with ``upload_file``, pass
+    the returned ``filename`` as ``filename``; that tool otherwise names the
+    attachment after the path.
 
     Downloads are capped at ``ATTACHMENT_MAX_DOWNLOAD_BYTES`` (default 200 MB).
     Files are cleaned up automatically by the background cleanup manager.
@@ -501,10 +512,14 @@ async def get_redmine_attachment(
             # an attachment called "metadata.json" would be overwritten by
             # the record, and one called "metadata.json.tmp" would be where
             # the record's temp file is written and then renamed away from.
-            # "attachment_<uuid>" has no dot in it, so neither it nor its
-            # ".tmp" sibling can be the record or the record's temp file.
-            final_path = uuid_dir / f"attachment_{file_id}"
-            temp_path = uuid_dir / f"attachment_{file_id}.tmp"
+            # A plain extension is kept so tools that pick how to open a
+            # file from its suffix still can. The stem "attachment_<uuid>"
+            # is never "metadata", so no extension makes this name, or its
+            # ".tmp" sibling, the record or the record's temp file.
+            match = _PLAIN_EXTENSION.search(original_filename)
+            ext = match.group(0) if match else ""
+            final_path = uuid_dir / f"attachment_{file_id}{ext}"
+            temp_path = uuid_dir / f"attachment_{file_id}{ext}.tmp"
 
             # Stream download with byte-cap abort
             max_bytes = _get_int_env(
