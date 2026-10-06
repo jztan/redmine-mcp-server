@@ -9,6 +9,7 @@ from redminelib.exceptions import (
     ConflictError,
     ForbiddenError,
     HTTPProtocolError,
+    ImpersonateError,
     ResourceNotFoundError,
     ServerError,
     UnknownError,
@@ -137,6 +138,19 @@ def _handle_redmine_error(
 
     if isinstance(e, PerUserAuthError):
         return {"error": e.message, "code": "PER_USER_AUTH"}
+
+    # Redmine answers 412 when X-Redmine-Switch-User names a login that does
+    # not exist or is locked (trusted-header mode).
+    if isinstance(e, ImpersonateError):
+        logger.warning(f"Redmine refused to switch user during {operation}")
+        return {
+            "error": (
+                "Redmine refused to run this request as the user named by the "
+                "authenticating proxy: that login does not exist in Redmine or "
+                "the account is locked."
+            ),
+            "code": "PER_USER_AUTH",
+        }
 
     # Check SSLError BEFORE ConnectionError (SSLError inherits from ConnectionError)
     if isinstance(e, RequestsSSLError):

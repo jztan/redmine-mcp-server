@@ -371,6 +371,10 @@ def build_app():
         from ._per_user import assert_startup_attestation
 
         assert_startup_attestation()
+    elif REDMINE_AUTH_MODE == "trusted-header":
+        from ._trusted_header import assert_startup_requirements
+
+        assert_startup_requirements()
 
     if REDMINE_AUTH_MODE in AUTHENTICATED_AUTH_MODES and AUTH_PROVIDER is not None:
         return build_authenticated_app(mcp, AUTH_PROVIDER)
