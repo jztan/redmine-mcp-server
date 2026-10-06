@@ -7,6 +7,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `redmine_mcp_server.extensions` exports `text_from_staged_upload` and
+  `read_staged`, so an extension tool can take an `upload_id` from
+  `create_upload_ticket` the way the built-in ones do. `text_from_staged_upload`
+  is what `description_upload_id`, `notes_upload_id` and `text_upload_id`
+  already read through: the file becomes the new text of a field, and bytes
+  that are not UTF-8 are refused with the field named. `read_staged` returns
+  the raw bytes and the uploaded filename, for a file that is attached rather
+  than read. Before, an extension had to import the private reader from
+  `tools.issues`, a name that can move in any release
+  ([#391](https://github.com/jztan/redmine-mcp-server/issues/391)).
 
 ## [2.18.1] - 2026-10-06
 ### Security

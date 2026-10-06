@@ -87,9 +87,9 @@ private module layout, is what it depends on.
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Dict, NoReturn
+from typing import Any, Dict, NoReturn
 
-from . import _client
+from . import _client, _upload_store
 from ._annotations import TOOL_KINDS, ToolKind
 from ._decorators import ActionMode, action_dispatch
 from ._env import (
@@ -123,8 +123,10 @@ __all__ = [
     "mcp",
     "offloaded",
     "plugin_tag",
+    "read_staged",
     "redmine_url",
     "register_extension",
+    "text_from_staged_upload",
     "wrap_insecure_content",
 ]
 
@@ -139,6 +141,12 @@ is_positive_int = _is_positive_int
 is_read_only_mode = _is_read_only_mode
 is_true_env = _is_true_env
 
+# The raw reader behind every built-in ``upload_id``: the bytes and the
+# filename the ticket was created with, for a tool that attaches the file
+# rather than reading it as text. A binding like the ones above, since
+# ``_upload_store`` imports nothing from the rest of the package.
+read_staged = _upload_store.read_staged
+
 
 def redmine_url() -> str | None:
     """The configured Redmine base URL, read at call time.
@@ -150,6 +158,37 @@ def redmine_url() -> str | None:
     built-in plugin tool reads it through the module for the same reason.
     """
     return _client.REDMINE_URL
+
+
+def text_from_staged_upload(
+    upload_id: str, label: str
+) -> tuple[str | None, Dict[str, Any] | None]:
+    """Read a staged upload as the whole new text of a field.
+
+    What every built-in ``*_upload_id`` parameter reads through, so an
+    extension tool that takes one behaves the same way: the caller writes
+    the text to a file, sends it with ``create_upload_ticket``'s route, and
+    names the ``upload_id`` instead of writing the text into an argument.
+
+    Returns ``(text, None)``, the file decoded as UTF-8, or
+    ``(None, {"error": ...})``. ``label`` names the field in the one error
+    this function writes itself, for bytes that are not valid UTF-8 ("The
+    file staged for notes is not valid UTF-8 ..."). Every other error -- an
+    id that is not a UUID, an unknown upload, a slot that never received a
+    file, an expired one -- is :func:`read_staged`'s, unchanged, so it reads
+    the same from an extension's tool as from a built-in one. The file is
+    left in place either way.
+
+    A wrapper rather than a binding, unlike the aliases above, because the
+    reader lives in ``tools.issues``, and importing that at module level
+    would make importing this module import the whole tool tree -- the
+    reason :func:`_check_issue_seams` imports it locally too. Resolving the
+    name per call also means a test that patches the private reader patches
+    this one with it.
+    """
+    from .tools.issues import _text_from_staged_upload
+
+    return _text_from_staged_upload(upload_id, label)
 
 
 @dataclass(frozen=True, kw_only=True)

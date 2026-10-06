@@ -13,6 +13,7 @@ import logging
 import os
 import subprocess
 import sys
+import uuid
 
 import httpx
 import pytest
@@ -965,6 +966,91 @@ class TestReExportedSurface:
         )
         assert spec.advertised_read_scopes == ()
         assert spec.advertised_write_scopes == ()
+
+
+class TestStagedUploadReaders:
+    """The two ways a built-in tool reads an ``upload_id``, for an extension's.
+
+    ``text_from_staged_upload`` is a wrapper rather than a binding, so it is
+    held to the private reader by what it returns for each kind of slot:
+    a ready file, an id nobody issued, a slot that never got its bytes, and
+    bytes that are not text.
+    """
+
+    @pytest.fixture
+    def attachments_dir(self, tmp_path, monkeypatch):
+        path = tmp_path / "attachments"
+        path.mkdir()
+        monkeypatch.setenv("ATTACHMENTS_DIR", str(path))
+        return path
+
+    @staticmethod
+    def _reserve():
+        from redmine_mcp_server import _upload_store
+
+        issued = _upload_store.create_ticket(filename="widget-notes.md")
+        record, reason = _upload_store.redeem_ticket(
+            issued["upload_id"], issued["ticket"]
+        )
+        assert reason is None
+        return issued["upload_id"], record
+
+    def _stage(self, content):
+        from redmine_mcp_server import _upload_store
+
+        upload_id, record = self._reserve()
+        _upload_store.staged_path(record).write_bytes(content)
+        _upload_store.mark_ready(upload_id, record, len(content), "x")
+        return upload_id
+
+    @staticmethod
+    def _both(upload_id, label):
+        from redmine_mcp_server.tools.issues import _text_from_staged_upload
+
+        public = extensions.text_from_staged_upload(upload_id, label)
+        assert public == _text_from_staged_upload(upload_id, label)
+        return public
+
+    def test_both_readers_are_exported(self):
+        assert "text_from_staged_upload" in extensions.__all__
+        assert "read_staged" in extensions.__all__
+        assert callable(extensions.text_from_staged_upload)
+
+    def test_read_staged_is_the_store_s_own(self):
+        from redmine_mcp_server import _upload_store
+
+        assert extensions.read_staged is _upload_store.read_staged
+
+    def test_a_ready_file_comes_back_as_text(self, attachments_dir):
+        upload_id = self._stage("Widget-Notiz mit Ümläuten.".encode("utf-8"))
+
+        text, error = self._both(upload_id, "notes")
+
+        assert error is None
+        assert text == "Widget-Notiz mit Ümläuten."
+
+    def test_an_unknown_upload_points_at_create_upload_ticket(self, attachments_dir):
+        text, error = self._both(str(uuid.uuid4()), "notes")
+
+        assert text is None
+        assert "create_upload_ticket" in error["error"]
+
+    def test_a_slot_that_never_got_its_file_is_refused(self, attachments_dir):
+        upload_id, _ = self._reserve()
+
+        text, error = self._both(upload_id, "notes")
+
+        assert text is None
+        assert "never received a file" in error["error"]
+
+    def test_bytes_that_are_not_utf8_name_the_field(self, attachments_dir):
+        upload_id = self._stage(bytes([0xFF, 0xFE]) + b" not text")
+
+        text, error = self._both(upload_id, "widget_body")
+
+        assert text is None
+        assert "not valid UTF-8" in error["error"]
+        assert "staged for widget_body" in error["error"]
 
 
 async def _listed() -> set:
