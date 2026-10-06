@@ -27,6 +27,7 @@ from ._env import (
     get_health_introspection_ttl_seconds,
     get_introspection_credentials,
 )
+from .file_manager import contained_file_path
 from .server import mcp
 
 logger = logging.getLogger("redmine_mcp_server")
@@ -272,10 +273,19 @@ async def serve_attachment(request):
         if expires_at_str:
             expires_at = datetime.fromisoformat(expires_at_str.replace("Z", "+00:00"))
             if datetime.now(timezone.utc) > expires_at:
-                # Clean up expired files
+                # Clean up expired files. The data file goes only if it is
+                # inside this UUID directory, the same rule as serving it
+                # below, so a record naming a file elsewhere cannot turn
+                # this GET into a delete of that file.
                 try:
-                    file_path = Path(metadata["file_path"])
-                    if file_path.exists():
+                    file_path = contained_file_path(metadata["file_path"], uuid_dir)
+                    if file_path is None:
+                        logger.warning(
+                            "attachment_cleanup_refused file_id=%s "
+                            "reason=file_path_outside_uuid_dir",
+                            file_id,
+                        )
+                    elif file_path.exists():
                         file_path.unlink()
                     metadata_file.unlink()
                     # Remove UUID directory if empty
@@ -286,11 +296,8 @@ async def serve_attachment(request):
                 raise HTTPException(status_code=404, detail="File expired")
 
         # Validate file path security (must be within UUID directory)
-        file_path = Path(metadata["file_path"]).resolve()
-        uuid_dir_resolved = uuid_dir.resolve()
-        try:
-            file_path.relative_to(uuid_dir_resolved)
-        except ValueError:
+        file_path = contained_file_path(metadata["file_path"], uuid_dir)
+        if file_path is None:
             raise HTTPException(status_code=403, detail="Access denied")
 
         # Serve file

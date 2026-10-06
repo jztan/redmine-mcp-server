@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- A file sent to `POST /uploads/{upload_id}` is now staged under a name the
+  server picks, `upload_<upload_id>`, instead of the `filename` given to
+  `create_upload_ticket`. The staged file shares its directory with the
+  slot's `metadata.json`, so a ticket for `metadata.json` staged the upload
+  onto that record: the attached file came back as the record, and for the
+  moment between the bytes landing and the record being rewritten, a body
+  shaped like a ready record could point an `*_upload_id` consumer at any
+  file the server process can read. The caller's `filename` is still what
+  the attachment is called in Redmine. `get_redmine_attachment` likewise
+  saves a download as `attachment_<file_id>`, plus the attachment's
+  extension when it is a plain one, instead of under the attachment's
+  name, which is chosen by whoever attached the file in Redmine and so
+  needs no MCP access: an attachment called `metadata.json` was overwritten
+  by the download's record and served back in its place, and one called
+  `metadata.json.tmp` was lost. The attachment's name is still the
+  `filename` returned and the name `GET /files/{file_id}` offers the
+  download under. The two places that delete an expired record's
+  `file_path`, the expiry branch of `GET /files/{file_id}` and the cleanup
+  manager's sweep, now refuse one outside the record's own directory, so a
+  record naming a file elsewhere cannot turn either into a delete of it.
+
 ## [2.18.0] - 2026-10-03
 ### Added
 - `manage_helpdesk_ticket` reads a RedmineUP Helpdesk ticket and moves it to

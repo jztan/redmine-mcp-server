@@ -14,6 +14,14 @@ back, and nothing long passes through it.
 Staged files live under ``ATTACHMENTS_DIR`` in the same UUID directories with
 the same ``metadata.json`` shape the download path writes, so
 ``AttachmentFileManager`` expires and sweeps them without knowing they exist.
+
+The bytes are stored as ``upload_<upload_id>``, a name the server picks, and
+never under the caller's filename. They share a directory with the slot's own
+record, so a caller-chosen name could address that record: an upload called
+``metadata.json`` would land on it, and for the moment between the bytes
+arriving and ``mark_ready`` rewriting it, the caller's body would be the
+record -- ``file_path`` included. The caller's name is kept only as the name
+the attachment gets in Redmine.
 """
 
 import hashlib
@@ -108,14 +116,14 @@ def _is_expired(record: Dict[str, Any]) -> bool:
 
 
 def _safe_filename(filename: Optional[str], upload_id: str) -> str:
-    """Reduce a caller's filename to something safe to use as a path segment.
+    """Reduce a caller's filename to the name the attachment gets in Redmine.
 
-    A basename is not enough on its own: ``os.path.basename("..")`` is ``".."``
-    and ``os.path.basename(".")`` is ``"."``, and both name a directory rather
-    than a file. ``".."`` would resolve the staged path to the *parent* of
-    ``ATTACHMENTS_DIR``, putting the temporary file outside the tree the
-    cleanup manager sweeps; ``"."`` would land it at the top of the upload's
-    own directory. Both fall back to the generated name instead.
+    This is a display name only; it never becomes a path on this server (see
+    ``_staged_target``). It is still cut down to a basename, so a caller that
+    sends ``../../etc/passwd`` hears back the ``passwd`` that Redmine will
+    show. ``""``, ``"."`` and ``".."`` leave no usable name -- the last two
+    survive ``os.path.basename`` unchanged -- and fall back to the generated
+    one.
     """
     candidate = os.path.basename((filename or "").strip())
     if candidate in ("", ".", ".."):
@@ -123,18 +131,20 @@ def _safe_filename(filename: Optional[str], upload_id: str) -> str:
     return candidate
 
 
-def _staged_target(upload_id: str, name: str) -> Path:
-    """Where the staged bytes go, verified to stay inside the upload's own dir.
+def _staged_target(upload_id: str) -> Path:
+    """Where the staged bytes go: a name the server picks, never the caller's.
 
-    ``_safe_filename`` already refuses the two names that escape, so this is
-    belt and braces -- but the path is built from caller input and ends up in
-    an ``open()``, which is not the place to rely on one check.
+    The bytes share the upload's directory with ``metadata.json``, and
+    ``_write_record`` and ``receive_upload`` each write a ``.tmp`` sibling
+    first. ``upload_<uuid>`` has no dot in it, so neither it nor its
+    ``upload_<uuid>.tmp`` can be the record or the record's temp file,
+    whatever the caller called its file.
+
+    There is no containment check because there is nothing to contain:
+    nothing of the caller's is in this path, and its only variable segment
+    is the uuid4 ``create_ticket`` has just minted.
     """
-    uuid_dir = (_attachments_dir() / upload_id).resolve()
-    target = (uuid_dir / name).resolve()
-    if target.parent != uuid_dir:
-        target = uuid_dir / f"upload_{upload_id}"
-    return target
+    return (_attachments_dir() / upload_id).resolve() / f"upload_{upload_id}"
 
 
 def create_ticket(
@@ -161,7 +171,7 @@ def create_ticket(
             "original_filename": name,
             # AttachmentFileManager expects this key; the file is not there
             # yet, and its cleanup guards on existence.
-            "file_path": str(_staged_target(upload_id, name)),
+            "file_path": str(_staged_target(upload_id)),
             "content_type": content_type or "application/octet-stream",
             "size": 0,
             "created_at": now.isoformat(),
@@ -211,7 +221,17 @@ def redeem_ticket(
 
 
 def staged_path(record: Dict[str, Any]) -> Path:
-    return Path(record["file_path"])
+    """Where a slot's bytes are, computed from its id rather than read back.
+
+    The record's ``file_path`` is only there for ``AttachmentFileManager``.
+    Records are written by this server alone now, but a slot reserved before
+    the staged name stopped being the caller's can still be pending, for one
+    ticket lifetime, with a caller-named ``file_path`` -- ``metadata.json``
+    among them. A path that is computed cannot be forged; one that is read
+    back is only as good as the file it was read from. The id is parsed as a
+    UUID first, so it cannot carry a separator into the path either.
+    """
+    return _staged_target(str(uuid.UUID(record["file_id"])))
 
 
 def mark_ready(upload_id: str, record: Dict[str, Any], size: int, sha256: str) -> None:
@@ -226,6 +246,9 @@ def mark_ready(upload_id: str, record: Dict[str, Any], size: int, sha256: str) -
     record["state"] = _STATE_READY
     record["size"] = size
     record["sha256"] = sha256
+    # Point the cleanup manager at where the bytes really are, for a slot
+    # reserved while the record still carried the caller's name.
+    record["file_path"] = str(staged_path(record))
     _write_record(upload_id, record)
 
 
