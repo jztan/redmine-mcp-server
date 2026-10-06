@@ -28,7 +28,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   download under. The two places that delete an expired record's
   `file_path`, the expiry branch of `GET /files/{file_id}` and the cleanup
   manager's sweep, now refuse one outside the record's own directory, so a
-  record naming a file elsewhere cannot turn either into a delete of it.
+  record naming a file elsewhere cannot turn either into a delete of it
+  (GHSA-j95c-gm2m-rpgm).
+
+### Contributors
+- @mmahmed, reported and fixed the staged upload and downloaded attachment
+  names that could land on their own `metadata.json` record, and the expiry
+  deletes that followed a record's `file_path` outside its directory
+  ([GHSA-j95c-gm2m-rpgm](https://github.com/jztan/redmine-mcp-server/security/advisories/GHSA-j95c-gm2m-rpgm))
 
 ## [2.18.0] - 2026-10-03
 ### Added
