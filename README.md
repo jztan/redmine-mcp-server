@@ -121,7 +121,7 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `REDMINE_URL` | Yes | – | Base URL of your Redmine instance |
-| `REDMINE_AUTH_MODE` | No | `legacy` | Authentication mode: `legacy`, `legacy-per-user`, `oauth`, `oauth-proxy`, or `api-key-login` (see [Authentication](#authentication)) |
+| `REDMINE_AUTH_MODE` | No | `legacy` | Authentication mode: `legacy`, `legacy-per-user`, `oauth`, `oauth-proxy`, `api-key-login`, or `trusted-header` (see [Authentication](#authentication)) |
 | `REDMINE_PER_USER_TRUST_PROXY` | Yes* | `false` | Required for `legacy-per-user` mode. Operator attestation: "this server sits behind TLS and my proxy does not forward client `X-Forwarded-Proto`." |
 | `REDMINE_PER_USER_AUDIT_IDENTITY` | No | `false` | `legacy-per-user` only: resolve and log the Redmine user ID per request (adds one extra round-trip) |
 | `REDMINE_API_KEY_LOGIN_ALLOW_ADMIN` | No | `false` | `api-key-login` only: accept the API keys of Redmine administrators. Tokens never carry the `admin` scope either way ([details](docs/api-key-login-auth.md#administrator-accounts)) |
@@ -129,7 +129,10 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `REDMINE_API_KEY_LOGIN_SESSION_DAYS` | No | `30` | `api-key-login` only: how long a session lasts before the user logs in again. Must be positive |
 | `REDMINE_API_KEY_LOGIN_RATE_LIMIT` | No | `300` | `api-key-login` only: login attempts per minute, a process-wide safety ceiling |
 | `REDMINE_API_KEY_LOGIN_BINDING_CRYPTO` | No | `server-secret` | `api-key-login` only: `server-secret` or `token-derived`. `token-derived` puts stored API keys beyond the reach of the volume plus the signing key, at the cost of any server-side read ([details](docs/api-key-login-auth.md#binding-protection)) |
-| `REDMINE_API_KEY` | Yes† | – | API key (legacy mode only) |
+| `REDMINE_TRUSTED_HEADER_TRUST_PROXY` | Yes‖ | `false` | Required for `trusted-header` mode. Operator attestation: "only my authenticating proxy can reach this server, and it overwrites the user header on every request." |
+| `REDMINE_TRUSTED_HEADER_NAME` | No | `X-Forwarded-User` | `trusted-header` only: the request header that names the user |
+| `REDMINE_TRUSTED_HEADER_MATCH` | No | `login` | `trusted-header` only: `login` (the header carries the Redmine login) or `mail` (it carries the user's primary email address) ([details](docs/trusted-header-auth.md#matching-by-email)) |
+| `REDMINE_API_KEY` | Yes†‖ | – | API key (legacy mode; in `trusted-header` mode, the key of a Redmine administrator) |
 | `REDMINE_USERNAME` | Yes† | – | Username for basic auth (legacy mode only) |
 | `REDMINE_PASSWORD` | Yes† | – | Password for basic auth (legacy mode only) |
 | `REDMINE_MCP_BASE_URL` | Yes‡¶ | `http://localhost:3040` | Public base URL of this server, no trailing slash (OAuth modes and `api-key-login`) |
@@ -188,6 +191,7 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 *‡ Required when `REDMINE_AUTH_MODE=oauth` or `REDMINE_AUTH_MODE=oauth-proxy`.*
 *§ Required when `REDMINE_AUTH_MODE=oauth-proxy`.*
 *¶ Required when `REDMINE_AUTH_MODE=api-key-login`.*
+*‖ Required when `REDMINE_AUTH_MODE=trusted-header`.*
 Secret values can also be supplied with Docker/Kubernetes-style file variables: `REDMINE_INTROSPECT_CLIENT_SECRET_FILE`, `REDMINE_MCP_JWT_SIGNING_KEY_FILE`, and `REDMINE_OAUTH_CLIENT_SECRET_FILE`.
 
 When `REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true`, `create_redmine_issue` retries once on relevant custom-field validation errors (for example `<Field Name> cannot be blank` or `<Field Name> is not included in the list`) and fills values only from:
@@ -260,7 +264,7 @@ For SSL troubleshooting, see the [Troubleshooting Guide](./docs/troubleshooting.
 
 ## Authentication
 
-The server supports five authentication modes, selected via `REDMINE_AUTH_MODE`. It defaults to `legacy`, so existing deployments keep working with no changes; OAuth2 support is purely additive.
+The server supports six authentication modes, selected via `REDMINE_AUTH_MODE`. It defaults to `legacy`, so existing deployments keep working with no changes; OAuth2 support is purely additive.
 
 | Your situation | Mode | Redmine |
 |---|---|---|
@@ -269,8 +273,9 @@ The server supports five authentication modes, selected via `REDMINE_AUTH_MODE`.
 | Hosted server, clients self-register (DCR) | `oauth-proxy` | 6.1+ |
 | Multi-user, no OAuth on your Redmine, users log in in a browser | `api-key-login` | any, incl. Easy Redmine |
 | Multi-user, no OAuth on your Redmine, users set their key in the client | `legacy-per-user` | any |
+| Multi-user, an authenticating proxy in front already knows the user | `trusted-header` | 4.0+ |
 
-The advanced modes are collapsed below. For full setup, the [OAuth2 Setup Guide](./docs/oauth-setup.md) covers `oauth` and `oauth-proxy`, the [api-key-login guide](./docs/api-key-login-auth.md) covers `api-key-login`, and the [legacy-per-user guide](./docs/legacy-per-user-auth.md) covers `legacy-per-user`.
+The advanced modes are collapsed below. For full setup, the [OAuth2 Setup Guide](./docs/oauth-setup.md) covers `oauth` and `oauth-proxy`, the [api-key-login guide](./docs/api-key-login-auth.md) covers `api-key-login`, the [legacy-per-user guide](./docs/legacy-per-user-auth.md) covers `legacy-per-user`, and the [trusted-header guide](./docs/trusted-header-auth.md) covers `trusted-header`.
 
 ### Legacy mode (default)
 
@@ -379,6 +384,24 @@ Use `.vscode/mcp.json` (workspace file) or the user profile `mcp.json`. The work
 ```
 
 **Unsupported:** any client that cannot set a custom request header, or that reserves the `Authorization` header for its own OAuth flow.
+
+</details>
+
+<details>
+<summary><strong>trusted-header mode</strong> (behind an authenticating proxy that already knows the user)</summary>
+
+An authenticating proxy in front of the server, such as an SSO gateway, names the user in a request header. The server calls Redmine with one administrator API key plus `X-Redmine-Switch-User`, Redmine's built-in user impersonation, so each request runs with that user's own permissions. No user handles an API key.
+
+```bash
+REDMINE_AUTH_MODE=trusted-header
+REDMINE_URL=https://redmine.example.com
+REDMINE_API_KEY=<API key of a Redmine administrator>
+REDMINE_TRUSTED_HEADER_TRUST_PROXY=true
+# REDMINE_TRUSTED_HEADER_NAME=X-Forwarded-User   # header that names the user
+# REDMINE_TRUSTED_HEADER_MATCH=mail              # header carries an email address instead of a login
+```
+
+**This is an advanced, opt-in mode.** The server trusts the header, so only the proxy may reach it, and the proxy must overwrite the header on every request. Read [`docs/trusted-header-auth.md`](docs/trusted-header-auth.md) for the security requirements and the administrator key before enabling it.
 
 </details>
 
