@@ -8,7 +8,6 @@ byte-for-byte on the way into ``uploads``.
 
 import hashlib
 import json
-import os
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -64,9 +63,10 @@ class TestTicketStore:
 
         assert "ticket" not in record
         assert ticket["ticket"] not in json.dumps(record)
-        assert record["ticket_sha256"] == hashlib.sha256(
-            ticket["ticket"].encode("utf-8")
-        ).hexdigest()
+        assert (
+            record["ticket_sha256"]
+            == hashlib.sha256(ticket["ticket"].encode("utf-8")).hexdigest()
+        )
 
     def test_filename_is_reduced_to_a_basename(self, attachments_dir):
         ticket = _upload_store.create_ticket(filename="../../etc/passwd")
@@ -74,9 +74,7 @@ class TestTicketStore:
         assert ticket["filename"] == "passwd"
         assert ".." not in ticket["filename"]
 
-    def test_dotdot_filename_cannot_escape_the_attachments_dir(
-        self, attachments_dir
-    ):
+    def test_dotdot_filename_cannot_escape_the_attachments_dir(self, attachments_dir):
         """``os.path.basename("..")`` is ``".."`` -- a directory, not a file.
 
         It falls back to the generated name, and the staged bytes stay in the
@@ -90,9 +88,7 @@ class TestTicketStore:
         staged = _upload_store.staged_path(record).resolve()
         assert staged.parent == (attachments_dir / ticket["upload_id"]).resolve()
 
-    def test_dot_filename_does_not_land_on_the_directory_itself(
-        self, attachments_dir
-    ):
+    def test_dot_filename_does_not_land_on_the_directory_itself(self, attachments_dir):
         ticket = _upload_store.create_ticket(filename=".")
 
         assert ticket["filename"] == f"upload_{ticket['upload_id']}"
