@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.18.1] - 2026-10-06
 ### Security
 - A file sent to `POST /uploads/{upload_id}` is now staged under a name the
   server picks, `upload_<upload_id>`, instead of the `filename` given to
@@ -2317,6 +2318,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive authentication support (username/password and API key)
 - Docker containerization support
 
+[2.18.1]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.18.1
 [2.18.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.18.0
 [2.17.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.17.0
 [2.16.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.16.0
