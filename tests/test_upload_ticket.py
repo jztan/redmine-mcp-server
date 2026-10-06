@@ -265,6 +265,78 @@ class TestUploadRoute:
         assert response.status_code == 404
 
 
+class _NoDiscoveryAuth:
+    """Stands in for the auth provider; these tests are about the routes."""
+
+    def get_well_known_routes(self, mcp_path=None):
+        return []
+
+
+@pytest.fixture
+def authenticated_app(monkeypatch):
+    """The app the authenticated modes serve, with a path in the base URL.
+
+    There the MCP app is mounted under that path, so a route it registers
+    for itself answers under the path too, not where ``upload_url`` points.
+    """
+    monkeypatch.setenv("REDMINE_MCP_BASE_URL", "http://test/redmine")
+    monkeypatch.setenv("FASTMCP_STREAMABLE_HTTP_PATH", "/mcp")
+
+    from redmine_mcp_server.main import build_authenticated_app
+    from redmine_mcp_server.server import mcp
+
+    return build_authenticated_app(mcp, _NoDiscoveryAuth())
+
+
+@pytest.mark.unit
+class TestUploadRouteInAuthenticatedApp:
+    @pytest.mark.asyncio
+    async def test_upload_url_is_served_when_the_base_url_has_a_path(
+        self, authenticated_app, attachments_dir, monkeypatch
+    ):
+        """The ``upload_url`` a ticket hands out must reach the route.
+
+        It is built at the root of the public origin, like ``/files/{id}``,
+        so the authenticated app has to serve ``/uploads/{id}`` there as
+        well as under the mount (#393).
+        """
+        monkeypatch.setenv("PUBLIC_HOST", "test")
+        monkeypatch.setenv("PUBLIC_PORT", "80")
+        monkeypatch.delenv("PUBLIC_SCHEME", raising=False)
+        monkeypatch.delenv("REDMINE_MCP_READ_ONLY", raising=False)
+        payload = b"hello world"
+
+        issued = await create_upload_ticket(filename="note.txt")
+
+        async with _client(authenticated_app) as client:
+            response = await client.post(
+                issued["upload_url"],
+                content=payload,
+                headers={"X-Upload-Ticket": issued["ticket"]},
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["upload_id"] == issued["upload_id"]
+        assert body["size"] == len(payload)
+        assert body["sha256"] == hashlib.sha256(payload).hexdigest()
+
+    @pytest.mark.asyncio
+    async def test_unknown_upload_id_at_the_root_reaches_the_route(
+        self, authenticated_app, attachments_dir
+    ):
+        """A refusal from the route itself, not Starlette's bare Not Found."""
+        async with _client(authenticated_app) as client:
+            response = await client.post(
+                f"/uploads/{uuid.uuid4()}",
+                content=b"payload",
+                headers={"X-Upload-Ticket": "anything"},
+            )
+
+        assert response.status_code == 404
+        assert response.json() == {"error": "Unknown upload_id or invalid ticket."}
+
+
 @pytest.mark.unit
 class TestStagedUploadsAreNotServed:
     @pytest.mark.asyncio

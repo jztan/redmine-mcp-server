@@ -336,6 +336,11 @@ def build_authenticated_app(mcp_instance, auth_provider):
                 methods=["GET"],
             ),
             Route(
+                "/uploads/{upload_id}",
+                _http_routes.receive_upload,
+                methods=["POST"],
+            ),
+            Route(
                 "/cleanup/status",
                 _http_routes.cleanup_status,
                 methods=["GET"],

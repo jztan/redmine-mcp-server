@@ -18,6 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   than read. Before, an extension had to import the private reader from
   `tools.issues`, a name that can move in any release
   ([#391](https://github.com/jztan/redmine-mcp-server/issues/391)).
+### Fixed
+- An upload to the `upload_url` from `create_upload_ticket` failed with a
+  plain `404 Not Found` in `oauth`, `oauth-proxy` and `api-key-login` modes
+  when `REDMINE_MCP_BASE_URL` has a path. The URL points at
+  `/uploads/{id}` on the server's root, but those modes serve the route only
+  under the base URL's path. The route is now also served at the root, as
+  `/files/{id}` already was
+  ([#393](https://github.com/jztan/redmine-mcp-server/issues/393)).
 
 ## [2.18.1] - 2026-10-06
 ### Security
