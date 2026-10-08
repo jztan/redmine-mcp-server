@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- `REDMINE_MCP_TRANSPORT=stdio` runs the server over stdin/stdout, so a
+  client that starts MCP servers itself (Claude Code, Claude Desktop, Codex
+  CLI, Kiro) can launch it directly, with no server to keep running and no
+  HTTP bridge. `legacy` mode only; the other modes authenticate each HTTP
+  request and refuse to start over stdio, as does any value other than
+  `http` or `stdio`. Under stdio, `get_redmine_attachment` always returns a
+  local `file_path` and `create_upload_ticket` declines, even with
+  `PUBLIC_HOST` set, because no HTTP server is there to serve the URL.
+  The default stays `http`
+  ([#400](https://github.com/jztan/redmine-mcp-server/issues/400)).
 - `redmine_mcp_server.extensions` exports `text_from_staged_upload` and
   `read_staged`, so an extension tool can take an `upload_id` from
   `create_upload_ticket` the way the built-in ones do. `text_from_staged_upload`

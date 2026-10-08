@@ -2670,7 +2670,7 @@ Reserve a slot for a file on the caller's own machine and return the URL to send
 - `filename` (string, optional): Name the attachment should get. Overridable later, but passing it now keeps the staged file recognisable.
 - `content_type` (string, optional): MIME type recorded with the staged file.
 
-**Returns:** `{upload_url, upload_id, ticket, filename, expires_at, max_bytes}`, or `{"error": ...}` when the server has no publicly reachable address (neither `PUBLIC_HOST` nor a routable `SERVER_HOST`) and therefore no URL to hand out, or when it cannot identify the caller to bind the slot to (see the notes below).
+**Returns:** `{upload_url, upload_id, ticket, filename, expires_at, max_bytes}`, or `{"error": ...}` when the server has no publicly reachable address (`REDMINE_MCP_TRANSPORT=stdio`, or neither `PUBLIC_HOST` nor a routable `SERVER_HOST`) and therefore no URL to hand out, or when it cannot identify the caller to bind the slot to (see the notes below).
 
 **Flow:**
 1. Call `create_upload_ticket`.
@@ -2797,7 +2797,7 @@ Download a Redmine attachment and return a usable reference to it. Works in both
 }
 ```
 
-**Returns (stdio mode** — neither `PUBLIC_HOST` nor a non-loopback `SERVER_HOST` set):
+**Returns (stdio mode** — `REDMINE_MCP_TRANSPORT=stdio`, or neither `PUBLIC_HOST` nor a non-loopback `SERVER_HOST` set):
 ```json
 {
     "file_path": "/absolute/local/path/uuid/document.pdf",
@@ -2813,6 +2813,7 @@ Download a Redmine attachment and return a usable reference to it. Works in both
 Callers distinguish the two shapes via `uri_type`: `"http"` or `"file"`. Per the #109 wrap policy, `filename` is structured metadata and is returned verbatim (not wrapped in `<insecure-content>` tags).
 
 **Mode detection (post-#105):**
+- **`REDMINE_MCP_TRANSPORT=stdio`** always selects stdio mode, even with `PUBLIC_HOST` set: no HTTP server is running to serve the URL.
 - An **explicit `PUBLIC_HOST`** (any value, including `localhost` / `127.0.0.1`) selects HTTP mode. This is the correct behavior for Docker port-forwarded deployments where `localhost` on the host actually does reach the container's HTTP server.
 - Otherwise, `SERVER_HOST` is consulted; non-loopback values promote to HTTP mode. Loopback values (`localhost`, `127.0.0.1`, `0.0.0.0`) keep stdio mode because `SERVER_HOST` is the bind address and `0.0.0.0` is not a reachable URL host.
 - Otherwise stdio mode is used and `file_path` is returned.

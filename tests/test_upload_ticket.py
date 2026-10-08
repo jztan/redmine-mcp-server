@@ -706,6 +706,22 @@ class TestCreateUploadTicketTool:
         assert "file_path" in result["error"]
 
     @pytest.mark.asyncio
+    async def test_stdio_transport_has_no_url_even_with_public_host(
+        self, attachments_dir, monkeypatch
+    ):
+        # No HTTP server is listening under stdio, so PUBLIC_HOST must not
+        # turn into an upload_url that leads nowhere.
+        monkeypatch.setenv("REDMINE_MCP_TRANSPORT", "stdio")
+        monkeypatch.setenv("PUBLIC_HOST", "mcp.example.com")
+        monkeypatch.delenv("REDMINE_MCP_READ_ONLY", raising=False)
+
+        result = await create_upload_ticket(filename="mockup.png")
+
+        assert "upload_url" not in result
+        assert "stdio" in result["error"]
+        assert "file_path" in result["error"]
+
+    @pytest.mark.asyncio
     async def test_read_only_mode_refuses(self, attachments_dir, monkeypatch):
         monkeypatch.setenv("PUBLIC_HOST", "mcp.example.com")
         monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "true")
