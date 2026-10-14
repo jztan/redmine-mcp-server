@@ -27,8 +27,8 @@ def attachments_dir(tmp_path, monkeypatch):
     return path
 
 
-def _stage(content: bytes) -> str:
-    issued = _upload_store.create_ticket(filename="description.html")
+def _stage(content: bytes, owner: str | None = None) -> str:
+    issued = _upload_store.create_ticket(filename="description.html", owner=owner)
     record, reason = _upload_store.redeem_ticket(issued["upload_id"], issued["ticket"])
     assert reason is None
     _upload_store.staged_path(record).write_bytes(content)
@@ -255,3 +255,62 @@ class TestTheOrdinaryCallIsUnchanged:
 
             sent = mock_redmine.issue.create.call_args
             assert sent.kwargs["description"] == ""
+
+
+def _signed_in_as(user_id):
+    """Run as an api-key-login caller whose binding names ``user_id``."""
+    from contextlib import ExitStack
+
+    from redmine_mcp_server import _client
+
+    token = MagicMock()
+    token.claims = {"redmine_user_id": user_id}
+    stack = ExitStack()
+    stack.enter_context(patch.object(_client, "REDMINE_AUTH_MODE", "api-key-login"))
+    stack.enter_context(
+        patch("redmine_mcp_server._caller.get_access_token", return_value=token)
+    )
+    return stack
+
+
+@pytest.mark.unit
+class TestSomeoneElsesUpload:
+    """A staged file belongs to the caller who created its ticket."""
+
+    @pytest.mark.asyncio
+    async def test_it_reads_as_unknown_and_nothing_is_created(self, attachments_dir):
+        upload_id = _stage(b"<p>Nicht deins.</p>", owner="redmine-user:5")
+
+        with (
+            _signed_in_as(6),
+            patch("redmine_mcp_server._client.redmine") as mock_redmine,
+        ):
+            result = await create_redmine_issue(
+                project_id=1, subject="Neu", description_upload_id=upload_id
+            )
+
+            assert result == {
+                "error": (
+                    f"No staged upload {upload_id}. Create one with "
+                    "create_upload_ticket and POST the file to the returned "
+                    "upload_url before attaching it."
+                )
+            }
+            mock_redmine.issue.create.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_the_owner_s_own_still_arrives(self, attachments_dir):
+        upload_id = _stage(b"<p>Meins.</p>", owner="redmine-user:5")
+
+        with (
+            _signed_in_as(5),
+            patch("redmine_mcp_server._client.redmine") as mock_redmine,
+        ):
+            mock_redmine.issue.create.return_value = _created_issue()
+
+            await create_redmine_issue(
+                project_id=1, subject="Neu", description_upload_id=upload_id
+            )
+
+            sent = mock_redmine.issue.create.call_args
+            assert sent.kwargs["description"] == "<p>Meins.</p>"

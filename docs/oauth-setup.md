@@ -61,7 +61,19 @@ Restart Redmine after the change.
 >
 > The only safe way to override a single Doorkeeper option in a Redmine deployment is to edit the existing `Doorkeeper.configure` block in `30-redmine.rb` in place. Track the change as a deployment patch (e.g., a Dockerfile `RUN sed -i ...` step) so it survives Redmine upgrades.
 
-### 2c. Verify
+### 2c. Optional: name the user in the introspection response
+
+A file staged with [`create_upload_ticket`](tool-reference.md#create_upload_ticket) is bound to the user who created the ticket, so the server needs to know who that is. Doorkeeper's introspection response says which application a token belongs to but not which user, so by default the server asks Redmine with one `GET /users/current.json` each time a ticket is created and each time a staged file is read back. To spare that request, have Doorkeeper include the user's id as `sub`. In the same `Doorkeeper.configure` block of `config/initializers/30-redmine.rb` you edited in Step 2b, add:
+
+```ruby
+    custom_introspection_response do |token, _context|
+      { sub: token.resource_owner_id.to_s }
+    end
+```
+
+Doorkeeper merges this into the response it already sends. The value has to be the Redmine user id, as above, and not the login: it names the same user the lookup would, so slots created before and after the change still match. Restart Redmine after the change. Nothing on the MCP server needs to be configured; it uses `sub` whenever the response carries one.
+
+### 2d. Verify
 
 ```bash
 curl -X POST $REDMINE_URL/oauth/introspect \

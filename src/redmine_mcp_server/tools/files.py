@@ -17,6 +17,11 @@ from typing import Any, Dict, List, Optional, Union
 from redminelib.exceptions import ResourceNotFoundError
 
 from .._cleanup import _ensure_cleanup_started
+from .._caller import (
+    identity_expected,
+    resolve_staged_upload_owner,
+    unidentified_caller_error,
+)
 from .._client import _get_redmine_client, logger
 from .._env import (
     _admin_tools_enabled,
@@ -68,6 +73,35 @@ def _base64_max_bytes() -> int:
     return value if value > 0 else _FILE_UPLOAD_MAX_SIZE_BYTES
 
 
+def _is_upload_store_file(resolved: str) -> bool:
+    """Whether a resolved path is one of the upload store's own files.
+
+    ``ATTACHMENTS_DIR`` is an upload root by default because downloaded
+    attachments land there, as ``attachment_<uuid><ext>``, and attaching one
+    by path is a legitimate thing to do. The same tree also holds every
+    staged upload: its bytes (``upload_<uuid>``), its record
+    (``metadata.json``, which carries the owner and the ticket's hash) and
+    the ``.tmp`` files both are written through. Those are reachable only
+    through ``read_staged``, because that is where a slot's binding to its
+    creator is checked; read by path, a staged file would go to anyone who
+    saw its id in an access log. Every directory under the root is covered
+    as well, and so is a download's record, so that a ``file_path`` cannot
+    tell an id that exists from one that does not.
+    """
+    store = os.path.realpath(os.getenv("ATTACHMENTS_DIR", "./attachments"))
+    try:
+        if os.path.commonpath([resolved, store]) != store or resolved == store:
+            return False
+    except ValueError:
+        return False
+    if os.path.isdir(resolved):
+        return True
+    name = os.path.basename(resolved)
+    return (
+        name == "metadata.json" or name.endswith(".tmp") or name.startswith("upload_")
+    )
+
+
 def _resolve_local_file(
     file_path: str,
 ) -> tuple[bytes, Optional[str], Optional[Dict[str, Any]]]:
@@ -75,6 +109,10 @@ def _resolve_local_file(
 
     Returns ``(content_bytes, basename, None)`` on success or
     ``(b"", None, {"error": ...})`` on any validation failure.
+
+    Inside ``ATTACHMENTS_DIR``, a staged upload's files answer exactly as a
+    missing file does (see ``_is_upload_store_file``), so a staged file and
+    no file read the same.
     """
     resolved = os.path.realpath(file_path)
     roots = _get_upload_file_roots()
@@ -105,6 +143,8 @@ def _resolve_local_file(
                 )
             },
         )
+    if _is_upload_store_file(resolved):
+        return b"", None, {"error": f"file_path does not exist: {file_path}"}
     if os.path.isdir(resolved):
         return b"", None, {"error": "file_path refers to a directory, not a file."}
     if not os.path.isfile(resolved):
@@ -139,6 +179,7 @@ async def _resolve_upload_content(
     source_url: Optional[str] = None,
     file_path: Optional[str] = None,
     upload_id: Optional[str] = None,
+    owner: Optional[str] = None,
 ) -> tuple[bytes, Optional[str], Optional[Dict[str, Any]]]:
     """Resolve exactly one of the four content sources to bytes.
 
@@ -147,6 +188,11 @@ async def _resolve_upload_content(
     explicit ``filename``; source_url falls back to the fetch-inferred filename;
     file_path falls back to the basename; upload_id falls back to the name the
     ticket was created with. An explicit ``filename`` always wins.
+
+    ``owner`` is the caller's identity from ``resolve_staged_upload_owner``,
+    and only matters for ``upload_id``. It is passed in rather than resolved
+    here so a caller with several entries asks once, and so that one which
+    forgets it is refused a bound slot instead of being handed it.
     """
     sources = [s for s in (content_base64, source_url, file_path, upload_id) if s]
     if len(sources) != 1:
@@ -164,7 +210,9 @@ async def _resolve_upload_content(
     explicit = filename.strip() if filename and filename.strip() else None
 
     if upload_id:
-        content_bytes, staged_name, staged_err = _upload_store.read_staged(upload_id)
+        content_bytes, staged_name, staged_err = _upload_store.read_staged(
+            upload_id, owner=owner
+        )
         if staged_err is not None:
             return b"", None, staged_err
         return content_bytes, explicit or staged_name, None
@@ -300,6 +348,14 @@ async def _build_upload_descriptors(
     # cannot move to a worker wholesale like a tool body. Each blocking step
     # gets its own hop instead (issue #216).
     client = await in_thread(_get_redmine_client)
+    # Asked once for the whole list, and only when some entry names a staged
+    # upload: in the OAuth modes the answer can cost a Redmine request, which
+    # a list of URLs or base64 payloads has no use for.
+    owner = (
+        await resolve_staged_upload_owner()
+        if any(entry.get("upload_id") for entry in uploads)
+        else None
+    )
     descriptors: List[Dict[str, Any]] = []
     for index, entry in enumerate(uploads):
         content_bytes, final_name, resolve_error = await _resolve_upload_content(
@@ -308,6 +364,7 @@ async def _build_upload_descriptors(
             source_url=entry.get("source_url"),
             file_path=entry.get("file_path"),
             upload_id=entry.get("upload_id"),
+            owner=owner,
         )
         if resolve_error is not None:
             return [], {"error": f"uploads[{index}]: {resolve_error['error']}"}
@@ -729,7 +786,10 @@ async def create_upload_ticket(
     (``REDMINE_MCP_UPLOAD_TICKET_MINUTES``, default 15), up to
     ``max_bytes``. It authorises nothing else. The staged file is swept on
     the same expiry as a downloaded attachment, so a failed attach can be
-    retried without sending the file again.
+    retried without sending the file again. Only the user who called this
+    can name the ``upload_id`` afterwards; anyone else is told it does not
+    exist. If the server cannot tell who that user is, it refuses the ticket
+    rather than reserve a slot anyone could read.
 
     Returns:
         ``{upload_url, upload_id, ticket, filename, expires_at, max_bytes}``,
@@ -759,7 +819,18 @@ async def create_upload_ticket(
             )
         }
 
-    ticket = _upload_store.create_ticket(filename=filename, content_type=content_type)
+    # Bind the slot to this caller. The POST that fills it stays ticket-only
+    # -- it is often sent by another process than this one -- but reading
+    # the file back is a tool call, and the upload_id it takes sits in the
+    # upload_url's path, where access logs keep it.
+    owner = await resolve_staged_upload_owner()
+    if owner is None and identity_expected():
+        # Fail closed, as a read does. An unbound slot here would be one
+        # anyone could read, and nothing would say it had happened.
+        return unidentified_caller_error()
+    ticket = _upload_store.create_ticket(
+        filename=filename, content_type=content_type, owner=owner
+    )
     await _ensure_cleanup_started()
     return {
         "upload_url": f"{base}/uploads/{ticket['upload_id']}",
@@ -882,12 +953,14 @@ async def upload_file(
     if _is_read_only_mode():
         return dict(_READ_ONLY_ERROR)
 
+    owner = await resolve_staged_upload_owner() if upload_id else None
     content_bytes, filename, resolve_error = await _resolve_upload_content(
         filename=filename,
         content_base64=content_base64,
         source_url=source_url,
         file_path=file_path,
         upload_id=upload_id,
+        owner=owner,
     )
     if resolve_error is not None:
         return resolve_error

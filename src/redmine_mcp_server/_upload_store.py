@@ -22,6 +22,20 @@ record, so a caller-chosen name could address that record: an upload called
 arriving and ``mark_ready`` rewriting it, the caller's body would be the
 record -- ``file_path`` included. The caller's name is kept only as the name
 the attachment gets in Redmine.
+
+A slot also records who reserved it, and only that caller can read it back.
+The ``upload_id`` is the path of the ``upload_url``, so it ends up in proxy
+access logs and shell history, and without the binding anyone signed in to
+this server who saw one could attach that file under their own name. The
+POST stays ticket-only on purpose: the bytes are often sent by a different
+process than the one that asked for the ticket, and the ticket already
+limits that request to one upload of a bounded size. The owner is a string
+the caller works out (see ``_caller``) and passes in; this module imports
+nothing from the rest of the package and compares what it is given. Deciding
+when a missing owner is acceptable is the caller's job too:
+``create_upload_ticket`` refuses a ticket it cannot bind in any mode that
+tells callers apart, so an unbound slot comes only from ``legacy`` mode or
+from before slots were bound.
 """
 
 import hashlib
@@ -150,10 +164,16 @@ def _staged_target(upload_id: str) -> Path:
 def create_ticket(
     filename: Optional[str] = None,
     content_type: Optional[str] = None,
+    owner: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Reserve an upload slot and return the ticket that redeems it.
 
-    The ticket is returned once and never stored in the clear.
+    The ticket is returned once and never stored in the clear. ``owner`` is
+    the identity of the caller reserving the slot, recorded so that
+    ``read_staged`` hands the file back to that caller alone. ``None`` leaves
+    the slot unbound, which is right only where every caller shares one
+    identity anyway; ``create_upload_ticket`` does not pass it anywhere
+    else. The owner stays in the record and is not part of the answer.
     """
     upload_id = str(uuid.uuid4())
     ticket = secrets.token_urlsafe(_TICKET_BYTES)
@@ -176,6 +196,7 @@ def create_ticket(
             "size": 0,
             "created_at": now.isoformat(),
             "expires_at": expires_at.isoformat(),
+            "owner": owner,
         },
     )
 
@@ -264,14 +285,42 @@ def discard(upload_id: str) -> None:
         pass
 
 
+def _owned_by(record: Dict[str, Any], owner: Optional[str]) -> bool:
+    """Whether ``owner`` may read a slot.
+
+    A slot with no owner is open to whoever names it: it was reserved where
+    there is only one identity, or before slots were bound at all. A bound
+    slot needs the same owner back, and an unidentified caller (``None``) is
+    not the same as anyone. Compared as bytes, because ``compare_digest``
+    refuses a ``str`` with anything outside ASCII in it, and an OAuth
+    ``sub`` is whatever the authorization server chose to emit.
+    """
+    expected = record.get("owner")
+    if not expected:
+        return True
+    if not owner:
+        return False
+    return hmac.compare_digest(
+        str(expected).encode("utf-8"), str(owner).encode("utf-8")
+    )
+
+
 def read_staged(
     upload_id: str,
+    owner: Optional[str] = None,
 ) -> Tuple[bytes, Optional[str], Optional[Dict[str, str]]]:
     """Read a staged upload for attaching.
 
     Returns ``(content_bytes, filename, None)`` or ``(b"", None, {"error": ...})``.
     The file is left in place; the cleanup manager expires it on the TTL, so a
     retry after a failed Redmine call does not need a fresh upload.
+
+    ``owner`` is the identity of the caller asking, worked out the same way
+    it was when the ticket was created. A slot bound to someone else answers
+    exactly as an unknown id does, and it does so before the state and expiry
+    checks, whose messages would otherwise tell a stranger that the id is
+    real. The default of ``None`` fails closed: a caller that forgets to pass
+    its identity can still read an unbound slot, but never a bound one.
     """
     try:
         uuid.UUID(upload_id)
@@ -279,7 +328,7 @@ def read_staged(
         return b"", None, {"error": f"upload_id is not a valid id: {upload_id}"}
 
     record = _read_record(upload_id)
-    if record is None or record.get("kind") != "upload":
+    if record is None or record.get("kind") != "upload" or not _owned_by(record, owner):
         return (
             b"",
             None,

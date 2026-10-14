@@ -8,13 +8,15 @@ byte-for-byte on the way into ``uploads``.
 
 import hashlib
 import json
+import os
 import uuid
 from datetime import datetime, timedelta, timezone
+from unittest.mock import Mock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from redmine_mcp_server import _upload_store
+from redmine_mcp_server import _caller, _upload_store
 from redmine_mcp_server.tools.files import (
     _resolve_upload_content,
     _verify_integrity,
@@ -743,3 +745,605 @@ class TestBase64Cap:
 
         assert error is None
         assert content == b"x" * 64
+
+
+# ---------------------------------------------------------------------------
+# A staged upload belongs to the caller that created its ticket.
+#
+# The upload_id is the path of the upload_url, so it is in every proxy access
+# log the POST passed through. Before slots were bound, anyone signed in who
+# read such a log could attach that file as their own.
+# ---------------------------------------------------------------------------
+
+
+def _unknown(upload_id):
+    """The error an id nobody ever reserved gets, word for word."""
+    return {
+        "error": (
+            f"No staged upload {upload_id}. Create one with create_upload_ticket "
+            "and POST the file to the returned upload_url before attaching it."
+        )
+    }
+
+
+def _signed_in_as(user_id):
+    """Run as an api-key-login caller whose binding names ``user_id``.
+
+    The mode where the server knows the caller without asking Redmine, so
+    these tests need nothing but the token.
+    """
+    from contextlib import ExitStack
+
+    from redmine_mcp_server import _client
+
+    token = Mock()
+    token.claims = {"redmine_user_id": user_id}
+    stack = ExitStack()
+    stack.enter_context(patch.object(_client, "REDMINE_AUTH_MODE", "api-key-login"))
+    stack.enter_context(
+        patch("redmine_mcp_server._caller.get_access_token", return_value=token)
+    )
+    return stack
+
+
+async def _post(app, issued, payload=b"bytes"):
+    async with _client(app) as client:
+        response = await client.post(
+            f"/uploads/{issued['upload_id']}",
+            content=payload,
+            headers={"X-Upload-Ticket": issued["ticket"]},
+        )
+    assert response.status_code == 200
+    return response
+
+
+@pytest.fixture
+def public_address(monkeypatch):
+    monkeypatch.setenv("PUBLIC_HOST", "mcp.example.com")
+    monkeypatch.setenv("PUBLIC_PORT", "443")
+    monkeypatch.delenv("REDMINE_MCP_READ_ONLY", raising=False)
+
+
+@pytest.mark.unit
+class TestStagedUploadOwner:
+    def test_the_record_names_the_owner(self, attachments_dir):
+        issued = _upload_store.create_ticket(filename="a.txt", owner="redmine-user:5")
+
+        record = _upload_store._read_record(issued["upload_id"])
+
+        assert record["owner"] == "redmine-user:5"
+        assert "owner" not in issued
+
+    @pytest.mark.asyncio
+    async def test_the_owner_reads_it_back(self, app, attachments_dir):
+        issued = _upload_store.create_ticket(filename="a.txt", owner="redmine-user:5")
+        await _post(app, issued, b"mine")
+
+        content, name, error = _upload_store.read_staged(
+            issued["upload_id"], owner="redmine-user:5"
+        )
+
+        assert error is None
+        assert content == b"mine"
+        assert name == "a.txt"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("state", ["ready", "pending", "expired"])
+    @pytest.mark.parametrize("stranger", ["redmine-user:6", None])
+    async def test_a_stranger_cannot_tell_it_from_an_unknown_id(
+        self, app, attachments_dir, state, stranger
+    ):
+        """Another caller, or one the server could not identify, gets the
+        words an id nobody reserved gets, so the refusal cannot be used to
+        learn which ids are real.
+
+        The owner check comes before the state and expiry messages. Those say
+        "reserved but never received a file" and "has expired", which would
+        confirm to anyone that the id exists.
+        """
+        issued = _upload_store.create_ticket(filename="a.txt", owner="redmine-user:5")
+        upload_id = issued["upload_id"]
+        if state != "pending":
+            await _post(app, issued)
+        if state == "expired":
+            _expire(attachments_dir, upload_id)
+
+        assert _upload_store.read_staged(upload_id, owner=stranger) == (
+            b"",
+            None,
+            _unknown(upload_id),
+        )
+
+    @pytest.mark.asyncio
+    async def test_leaving_the_owner_out_is_refused_a_bound_slot(
+        self, app, attachments_dir
+    ):
+        issued = _upload_store.create_ticket(filename="a.txt", owner="redmine-user:5")
+        await _post(app, issued)
+
+        _, _, error = _upload_store.read_staged(issued["upload_id"])
+
+        assert error == _unknown(issued["upload_id"])
+
+    def test_the_owner_still_hears_why_a_pending_slot_is_not_ready(
+        self, attachments_dir
+    ):
+        issued = _upload_store.create_ticket(filename="a.txt", owner="redmine-user:5")
+
+        _, _, owner = _upload_store.read_staged(
+            issued["upload_id"], owner="redmine-user:5"
+        )
+
+        assert "never received a file" in owner["error"]
+
+    @pytest.mark.asyncio
+    async def test_an_unbound_slot_is_open_to_anyone(self, app, attachments_dir):
+        """Legacy mode, and slots reserved before slots were bound."""
+        issued = _upload_store.create_ticket(filename="a.txt")
+        await _post(app, issued, b"shared")
+
+        for owner in (None, "redmine-user:5", "api-key:" + "0" * 64):
+            content, _, error = _upload_store.read_staged(
+                issued["upload_id"], owner=owner
+            )
+            assert error is None
+            assert content == b"shared"
+
+    @pytest.mark.asyncio
+    async def test_an_owner_outside_ascii_still_compares(self, app, attachments_dir):
+        """``compare_digest`` refuses a non-ASCII ``str``; a ``sub`` can be one."""
+        issued = _upload_store.create_ticket(
+            filename="a.txt", owner="redmine-user:jürgen"
+        )
+        upload_id = issued["upload_id"]
+        await _post(app, issued)
+
+        _, _, mine = _upload_store.read_staged(upload_id, owner="redmine-user:jürgen")
+        _, _, other = _upload_store.read_staged(upload_id, owner="redmine-user:jurgen")
+
+        assert mine is None
+        assert other == _unknown(upload_id)
+
+    @pytest.mark.asyncio
+    async def test_the_post_stays_ticket_only(self, app, attachments_dir):
+        """Whoever holds the ticket may send the bytes; reading is what binds."""
+        issued = _upload_store.create_ticket(filename="a.txt", owner="redmine-user:5")
+
+        response = await _post(app, issued)
+
+        assert "owner" not in response.json()
+        record = _upload_store._read_record(issued["upload_id"])
+        assert record["state"] == "ready"
+        assert record["owner"] == "redmine-user:5"
+
+
+@pytest.mark.unit
+class TestCallerIdentity:
+    """What the server can name the caller by, mode by mode."""
+
+    @staticmethod
+    def _token(subject=None, claims=None):
+        token = Mock()
+        token.subject = subject
+        token.claims = claims if claims is not None else {}
+        return token
+
+    @staticmethod
+    def _mode(mode):
+        from redmine_mcp_server import _client
+
+        return patch.object(_client, "REDMINE_AUTH_MODE", mode)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "mode, token, expected",
+        [
+            ("api-key-login", {"claims": {"redmine_user_id": 7}}, "redmine-user:7"),
+            ("oauth", {"subject": "5"}, "redmine-user:5"),
+            ("oauth-proxy", {"subject": "5"}, "redmine-user:5"),
+            # Without a token the client would fall back to the configured
+            # account, so there is no one to look up.
+            ("oauth", None, None),
+            ("legacy", None, None),
+        ],
+    )
+    async def test_answers_without_asking_redmine(self, mode, token, expected):
+        token = self._token(**token) if token is not None else None
+        with (
+            self._mode(mode),
+            patch.object(_caller, "get_access_token", return_value=token),
+            patch("redmine_mcp_server._client.redmine") as mock_redmine,
+        ):
+            assert _caller.staged_upload_owner() == expected
+            assert await _caller.resolve_staged_upload_owner() == expected
+            mock_redmine.user.get.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("mode", ["oauth", "oauth-proxy"])
+    async def test_oauth_without_a_subject_asks_redmine_who_it_is(self, mode):
+        """Doorkeeper's introspection has no ``sub`` unless it is configured."""
+        with (
+            self._mode(mode),
+            patch.object(_caller, "get_access_token", return_value=self._token()),
+            patch("redmine_mcp_server._client.redmine") as mock_redmine,
+        ):
+            mock_redmine.user.get.return_value.id = 5
+
+            assert _caller.staged_upload_owner() is None
+            assert await _caller.resolve_staged_upload_owner() == "redmine-user:5"
+            mock_redmine.user.get.assert_called_once_with("current")
+
+    @pytest.mark.asyncio
+    async def test_the_blocking_form_asks_the_same_question(self):
+        """For a tool body that is already in a worker thread."""
+        import asyncio
+
+        with (
+            self._mode("oauth-proxy"),
+            patch.object(_caller, "get_access_token", return_value=self._token()),
+            patch("redmine_mcp_server._client.redmine") as mock_redmine,
+        ):
+            mock_redmine.user.get.return_value.id = 5
+
+            owner = await asyncio.to_thread(
+                _caller.resolve_staged_upload_owner_blocking
+            )
+
+        assert owner == "redmine-user:5"
+
+    @pytest.mark.asyncio
+    async def test_a_failed_lookup_leaves_the_caller_unidentified(self):
+        with (
+            self._mode("oauth-proxy"),
+            patch.object(_caller, "get_access_token", return_value=self._token()),
+            patch("redmine_mcp_server._client.redmine") as mock_redmine,
+        ):
+            mock_redmine.user.get.side_effect = ConnectionError("down")
+
+            assert await _caller.resolve_staged_upload_owner() is None
+
+    @pytest.mark.asyncio
+    async def test_legacy_per_user_uses_a_digest_of_the_key(self):
+        from types import SimpleNamespace
+
+        key = "a1b2c3d4e5" * 4
+        request = SimpleNamespace(headers={"X-Redmine-API-Key": key})
+        with (
+            self._mode("legacy-per-user"),
+            patch.object(_caller, "get_http_request", return_value=request),
+        ):
+            owner = await _caller.resolve_staged_upload_owner()
+
+        assert owner == "api-key:" + hashlib.sha256(key.encode()).hexdigest()
+        assert key not in owner
+
+    @pytest.mark.parametrize(
+        "headers",
+        [
+            {"X-Redmine-API-Key": "not a key!"},
+            {"X-Redmine-API-Key": "a1b2c3d4e5" * 4, "X-Forwarded-Proto": "http"},
+            {},
+        ],
+        ids=["malformed", "plaintext", "missing"],
+    )
+    def test_legacy_per_user_binds_only_a_header_the_call_would_accept(self, headers):
+        """The checks every tool call makes first; a slot bound to the digest
+        of a header that call refuses would belong to nobody."""
+        from types import SimpleNamespace
+
+        request = SimpleNamespace(headers=headers)
+        with (
+            self._mode("legacy-per-user"),
+            patch.object(_caller, "get_http_request", return_value=request),
+        ):
+            assert _caller.staged_upload_owner() is None
+
+    def test_legacy_per_user_outside_a_request_is_unidentified(self):
+        with (
+            self._mode("legacy-per-user"),
+            patch.object(
+                _caller, "get_http_request", side_effect=RuntimeError("no request")
+            ),
+        ):
+            assert _caller.staged_upload_owner() is None
+
+    @pytest.mark.parametrize(
+        "mode, has_token, expected",
+        [
+            ("api-key-login", True, True),
+            ("legacy-per-user", False, True),
+            ("oauth", True, True),
+            ("oauth-proxy", True, True),
+            ("oauth", False, False),
+            ("oauth-proxy", False, False),
+            ("legacy", False, False),
+        ],
+    )
+    def test_where_an_identity_is_expected(self, mode, has_token, expected):
+        """Where it is, a ticket nobody can be bound to is refused."""
+        token = self._token() if has_token else None
+        with (
+            self._mode(mode),
+            patch.object(_caller, "get_access_token", return_value=token),
+        ):
+            assert _caller.identity_expected() is expected
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("public_address")
+class TestCreateUploadTicketBindsTheCaller:
+    @pytest.mark.asyncio
+    async def test_the_slot_records_who_asked(self, attachments_dir):
+        with _signed_in_as(5):
+            result = await create_upload_ticket(filename="mockup.png")
+
+        record = _upload_store._read_record(result["upload_id"])
+        assert record["owner"] == "redmine-user:5"
+
+    @pytest.mark.asyncio
+    async def test_the_answer_does_not_change(self, attachments_dir):
+        with _signed_in_as(5):
+            result = await create_upload_ticket(filename="mockup.png")
+
+        assert set(result) == {
+            "upload_url",
+            "upload_id",
+            "ticket",
+            "filename",
+            "expires_at",
+            "max_bytes",
+        }
+
+    @pytest.mark.asyncio
+    async def test_an_unidentified_caller_gets_no_ticket(self, attachments_dir):
+        """Fail closed, as a read does: an unbound slot in a per-user mode
+        would be one anyone could read, with nothing to say so."""
+        from redmine_mcp_server import _client
+
+        token = Mock()
+        token.subject = None
+        with (
+            patch.object(_client, "REDMINE_AUTH_MODE", "oauth-proxy"),
+            patch("redmine_mcp_server._caller.get_access_token", return_value=token),
+            patch("redmine_mcp_server._client.redmine") as mock_redmine,
+        ):
+            mock_redmine.user.get.side_effect = ConnectionError("down")
+            result = await create_upload_ticket(filename="mockup.png")
+
+        assert result == {
+            "error": (
+                "Could not identify the caller to bind this upload to. Try "
+                "again; if it persists, check that the token can read "
+                "GET /users/current.json."
+            )
+        }
+        assert list(attachments_dir.iterdir()) == []
+
+    @pytest.mark.asyncio
+    async def test_api_key_login_without_a_user_says_to_sign_in_again(
+        self, attachments_dir
+    ):
+        from redmine_mcp_server import _client
+
+        token = Mock()
+        token.claims = {}
+        with (
+            patch.object(_client, "REDMINE_AUTH_MODE", "api-key-login"),
+            patch("redmine_mcp_server._caller.get_access_token", return_value=token),
+        ):
+            result = await create_upload_ticket(filename="mockup.png")
+
+        assert result == {
+            "error": (
+                "Could not identify the caller to bind this upload to. The "
+                "session is not bound to a Redmine user. Reconnect to sign in "
+                "again."
+            )
+        }
+        assert list(attachments_dir.iterdir()) == []
+
+    @pytest.mark.asyncio
+    async def test_legacy_per_user_with_a_bad_header_names_the_header(
+        self, attachments_dir
+    ):
+        """Not "try again": the next request would carry the same header."""
+        from types import SimpleNamespace
+
+        from redmine_mcp_server import _client
+
+        request = SimpleNamespace(headers={"X-Redmine-API-Key": "not a key!"})
+        with (
+            patch.object(_client, "REDMINE_AUTH_MODE", "legacy-per-user"),
+            patch.object(_caller, "get_http_request", return_value=request),
+        ):
+            result = await create_upload_ticket(filename="mockup.png")
+
+        assert result == {
+            "error": (
+                "Could not identify the caller to bind this upload to. Send "
+                "your Redmine API key in the X-Redmine-API-Key header, over TLS."
+            )
+        }
+        assert "Try again" not in result["error"]
+        assert list(attachments_dir.iterdir()) == []
+
+    @pytest.mark.asyncio
+    async def test_legacy_leaves_the_slot_unbound(self, attachments_dir):
+        from redmine_mcp_server import _client
+
+        with patch.object(_client, "REDMINE_AUTH_MODE", "legacy"):
+            result = await create_upload_ticket(filename="mockup.png")
+
+        assert _upload_store._read_record(result["upload_id"])["owner"] is None
+
+
+@pytest.mark.unit
+@pytest.mark.usefixtures("public_address")
+class TestAnotherUsersUploadId:
+    """The tools refuse someone else's upload_id as if it did not exist."""
+
+    async def _staged_by(self, app, user_id, payload=b"bytes"):
+        with _signed_in_as(user_id):
+            issued = await create_upload_ticket(filename="report.pdf")
+        await _post(app, issued, payload)
+        return issued["upload_id"]
+
+    @pytest.mark.asyncio
+    async def test_upload_file_refuses_it(self, app, attachments_dir):
+        from redmine_mcp_server.tools.files import upload_file
+
+        upload_id = await self._staged_by(app, 5)
+
+        with (
+            _signed_in_as(6),
+            patch("redmine_mcp_server._client.redmine") as mock_redmine,
+        ):
+            result = await upload_file(project_id="web", upload_id=upload_id)
+
+        assert result == _unknown(upload_id)
+        mock_redmine.upload.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_upload_file_takes_the_owner_s_own(self, app, attachments_dir):
+        from redmine_mcp_server.tools.files import upload_file
+
+        upload_id = await self._staged_by(app, 5, b"%PDF-1.7")
+
+        with (
+            _signed_in_as(5),
+            patch("redmine_mcp_server._client.redmine") as mock_redmine,
+        ):
+            mock_redmine.upload.return_value = {"token": "tok-1"}
+            result = await upload_file(project_id="web", upload_id=upload_id)
+
+        assert "error" not in result
+        sent = mock_redmine.upload.call_args
+        assert sent.args[0].getvalue() == b"%PDF-1.7"
+
+    @pytest.mark.asyncio
+    async def test_an_uploads_entry_refuses_it(self, app, attachments_dir):
+        from redmine_mcp_server.tools.files import _build_upload_descriptors
+
+        upload_id = await self._staged_by(app, 5)
+
+        with (
+            _signed_in_as(6),
+            patch("redmine_mcp_server._client.redmine") as mock_redmine,
+        ):
+            descriptors, error = await _build_upload_descriptors(
+                [{"upload_id": upload_id}]
+            )
+
+        assert descriptors == []
+        assert error["error"] == f"uploads[0]: {_unknown(upload_id)['error']}"
+        mock_redmine.upload.assert_not_called()
+
+    @staticmethod
+    def _local(attachments_dir, upload_id, name):
+        """The path a stranger would try, relative to the working directory
+        the way a caller reading an access log would write it."""
+        return os.path.relpath(attachments_dir / upload_id / name)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("name", ["upload_{id}", "metadata.json"])
+    async def test_upload_file_cannot_take_it_by_path(self, app, attachments_dir, name):
+        """``ATTACHMENTS_DIR`` is an upload root, so without this a staged
+        file or its record was one ``file_path`` away from anyone."""
+        from redmine_mcp_server.tools.files import upload_file
+
+        upload_id = await self._staged_by(app, 5)
+        path = self._local(attachments_dir, upload_id, name.format(id=upload_id))
+        missing = self._local(attachments_dir, str(uuid.uuid4()), "upload_x")
+
+        with (
+            _signed_in_as(6),
+            patch("redmine_mcp_server._client.redmine") as mock_redmine,
+        ):
+            result = await upload_file(project_id="web", file_path=path)
+            nothing = await upload_file(project_id="web", file_path=missing)
+
+        assert result == {"error": f"file_path does not exist: {path}"}
+        # Worded as for a file that is not there, so the path is no oracle.
+        assert nothing == {"error": f"file_path does not exist: {missing}"}
+        mock_redmine.upload.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_an_uploads_entry_cannot_take_it_by_path(self, app, attachments_dir):
+        from redmine_mcp_server.tools.files import _build_upload_descriptors
+
+        upload_id = await self._staged_by(app, 5)
+        path = self._local(attachments_dir, upload_id, f"upload_{upload_id}")
+
+        with (
+            _signed_in_as(6),
+            patch("redmine_mcp_server._client.redmine") as mock_redmine,
+        ):
+            descriptors, error = await _build_upload_descriptors([{"file_path": path}])
+
+        assert descriptors == []
+        assert error == {"error": f"uploads[0]: file_path does not exist: {path}"}
+        mock_redmine.upload.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_a_slot_directory_reads_as_missing_too(self, app, attachments_dir):
+        from redmine_mcp_server.tools.files import upload_file
+
+        upload_id = await self._staged_by(app, 5)
+        path = os.path.relpath(attachments_dir / upload_id)
+
+        with _signed_in_as(6), patch("redmine_mcp_server._client.redmine"):
+            result = await upload_file(project_id="web", file_path=path)
+
+        assert result == {"error": f"file_path does not exist: {path}"}
+
+    @pytest.mark.asyncio
+    async def test_a_downloaded_attachment_still_uploads_by_path(self, attachments_dir):
+        """Downloads are why ``ATTACHMENTS_DIR`` is a root in the first place."""
+        from redmine_mcp_server.tools.files import upload_file
+
+        file_id = str(uuid.uuid4())
+        (attachments_dir / file_id).mkdir()
+        target = attachments_dir / file_id / f"attachment_{file_id}.txt"
+        target.write_bytes(b"downloaded")
+        (attachments_dir / file_id / "metadata.json").write_text("{}")
+
+        with (
+            _signed_in_as(6),
+            patch("redmine_mcp_server._client.redmine") as mock_redmine,
+        ):
+            mock_redmine.upload.return_value = {"token": "tok-1"}
+            result = await upload_file(project_id="web", file_path=str(target))
+
+        assert "error" not in result
+        sent = mock_redmine.upload.call_args
+        assert sent.args[0].getvalue() == b"downloaded"
+        assert sent.kwargs["filename"] == f"attachment_{file_id}.txt"
+
+    @pytest.mark.asyncio
+    async def test_no_staged_file_means_no_lookup(self, attachments_dir):
+        """The lookup costs a Redmine request in the OAuth modes; a list of
+        base64 payloads has no use for it."""
+        import base64
+        from redmine_mcp_server import _client
+        from redmine_mcp_server.tools.files import _build_upload_descriptors
+
+        token = Mock()
+        token.subject = None
+        with (
+            patch.object(_client, "REDMINE_AUTH_MODE", "oauth-proxy"),
+            patch("redmine_mcp_server._caller.get_access_token", return_value=token),
+            patch("redmine_mcp_server._client.redmine") as mock_redmine,
+        ):
+            mock_redmine.upload.return_value = {"token": "tok-1"}
+            descriptors, error = await _build_upload_descriptors(
+                [
+                    {
+                        "filename": "a.csv",
+                        "content_base64": base64.b64encode(b"id").decode("ascii"),
+                    }
+                ]
+            )
+
+        assert error is None
+        assert descriptors == [{"token": "tok-1", "filename": "a.csv"}]
+        mock_redmine.user.get.assert_not_called()

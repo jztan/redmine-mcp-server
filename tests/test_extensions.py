@@ -985,20 +985,20 @@ class TestStagedUploadReaders:
         return path
 
     @staticmethod
-    def _reserve():
+    def _reserve(owner=None):
         from redmine_mcp_server import _upload_store
 
-        issued = _upload_store.create_ticket(filename="widget-notes.md")
+        issued = _upload_store.create_ticket(filename="widget-notes.md", owner=owner)
         record, reason = _upload_store.redeem_ticket(
             issued["upload_id"], issued["ticket"]
         )
         assert reason is None
         return issued["upload_id"], record
 
-    def _stage(self, content):
+    def _stage(self, content, owner=None):
         from redmine_mcp_server import _upload_store
 
-        upload_id, record = self._reserve()
+        upload_id, record = self._reserve(owner)
         _upload_store.staged_path(record).write_bytes(content)
         _upload_store.mark_ready(upload_id, record, len(content), "x")
         return upload_id
@@ -1051,6 +1051,31 @@ class TestStagedUploadReaders:
         assert text is None
         assert "not valid UTF-8" in error["error"]
         assert "staged for widget_body" in error["error"]
+
+    def test_the_owner_resolvers_are_exported(self):
+        from redmine_mcp_server import _caller
+
+        assert "resolve_staged_upload_owner" in extensions.__all__
+        assert "staged_upload_owner" in extensions.__all__
+        assert (
+            extensions.resolve_staged_upload_owner
+            is _caller.resolve_staged_upload_owner
+        )
+        assert extensions.staged_upload_owner is _caller.staged_upload_owner
+
+    def test_the_owner_is_passed_through(self, attachments_dir):
+        upload_id = self._stage(b"Widget-Notiz", owner="redmine-user:5")
+
+        mine = extensions.text_from_staged_upload(
+            upload_id, "notes", owner="redmine-user:5"
+        )
+        theirs = extensions.text_from_staged_upload(
+            upload_id, "notes", owner="redmine-user:6"
+        )
+
+        assert mine == ("Widget-Notiz", None)
+        assert theirs[0] is None
+        assert theirs[1]["error"].startswith(f"No staged upload {upload_id}.")
 
 
 async def _listed() -> set:

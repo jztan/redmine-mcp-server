@@ -19,6 +19,10 @@ from redminelib.exceptions import (
 from redminelib.resources import Issue
 
 from .._cleanup import _ensure_cleanup_started
+from .._caller import (
+    resolve_staged_upload_owner,
+    resolve_staged_upload_owner_blocking,
+)
 from .._client import _get_redmine_client, logger
 from .._custom_fields import (
     _augment_fields_with_required_custom_fields,
@@ -2065,7 +2069,9 @@ async def create_redmine_issue(
 
     if description_upload_id:
         staged_text, staged_error = _text_from_staged_upload(
-            description_upload_id, "description"
+            description_upload_id,
+            "description",
+            owner=await resolve_staged_upload_owner(),
         )
         if staged_error is not None:
             return staged_error
@@ -2318,7 +2324,7 @@ def _apply_text_edits(
 
 
 def _text_from_staged_upload(
-    upload_id: str, label: str
+    upload_id: str, label: str, owner: Optional[str] = None
 ) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
     """Read a staged upload as the new text for a long field (#314).
 
@@ -2330,9 +2336,14 @@ def _text_from_staged_upload(
     spills it to a file the caller can edit in place, and this is the way
     back.
 
+    ``owner`` is the caller's identity, from ``resolve_staged_upload_owner``
+    in an async tool or ``resolve_staged_upload_owner_blocking`` in an
+    offloaded one. This stays synchronous so it can run in either, which is
+    why it is handed the owner rather than working it out.
+
     Returns ``(text, None)`` or ``(None, {"error": ...})``.
     """
-    content_bytes, _, staged_error = _upload_store.read_staged(upload_id)
+    content_bytes, _, staged_error = _upload_store.read_staged(upload_id, owner=owner)
     if staged_error is not None:
         return None, staged_error
     try:
@@ -2732,7 +2743,9 @@ async def update_redmine_issue(
 
     if description_upload_id:
         staged_text, staged_error = _text_from_staged_upload(
-            description_upload_id, "description"
+            description_upload_id,
+            "description",
+            owner=await resolve_staged_upload_owner(),
         )
         if staged_error is not None:
             return staged_error
@@ -3568,7 +3581,10 @@ def _edit_issue_note_action(
 
     from_upload = bool(notes_upload_id)
     if from_upload:
-        staged, staged_error = _text_from_staged_upload(notes_upload_id, "notes")
+        # Already in a worker thread, so the blocking form of the lookup.
+        staged, staged_error = _text_from_staged_upload(
+            notes_upload_id, "notes", owner=resolve_staged_upload_owner_blocking()
+        )
         if staged_error is not None:
             return staged_error
         notes = staged

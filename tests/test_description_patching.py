@@ -288,10 +288,10 @@ class TestStagedUploadAsTheSource:
         monkeypatch.setenv("ATTACHMENTS_DIR", str(path))
         return path
 
-    def _stage(self, text):
+    def _stage(self, text, owner=None):
         from redmine_mcp_server import _upload_store
 
-        issued = _upload_store.create_ticket(filename="description.html")
+        issued = _upload_store.create_ticket(filename="description.html", owner=owner)
         record, reason = _upload_store.redeem_ticket(
             issued["upload_id"], issued["ticket"]
         )
@@ -369,6 +369,32 @@ class TestStagedUploadAsTheSource:
 
             sent = mock_redmine.issue.update.call_args
             assert sent.kwargs["description"] == "<p>die neue Fassung</p>"
+
+    @pytest.mark.asyncio
+    async def test_someone_else_s_upload_reads_as_unknown(
+        self, attachments_dir, monkeypatch
+    ):
+        from unittest.mock import Mock, patch
+
+        from redmine_mcp_server import _client
+        from redmine_mcp_server.tools.issues import update_redmine_issue
+
+        monkeypatch.delenv("REDMINE_MCP_READ_ONLY", raising=False)
+        upload_id = self._stage(b"<p>fremd</p>", owner="redmine-user:5")
+        token = Mock()
+        token.claims = {"redmine_user_id": 6}
+
+        with (
+            patch.object(_client, "REDMINE_AUTH_MODE", "api-key-login"),
+            patch("redmine_mcp_server._caller.get_access_token", return_value=token),
+            patch("redmine_mcp_server._client.redmine") as mock_redmine,
+        ):
+            result = await update_redmine_issue(
+                issue_id=7, fields={}, description_upload_id=upload_id
+            )
+
+            assert result["error"].startswith(f"No staged upload {upload_id}.")
+            mock_redmine.issue.update.assert_not_called()
 
 
 @pytest.mark.unit

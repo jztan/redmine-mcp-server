@@ -5,6 +5,7 @@ from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 from pydantic import Field
 from redminelib.exceptions import ValidationError
 
+from .._caller import resolve_staged_upload_owner
 from .._client import _get_redmine_client
 from .._decorators import ActionMode, action_dispatch
 from .._errors import _handle_redmine_error
@@ -234,7 +235,9 @@ async def _create_wiki_page_action(
 
     from_upload = bool(text_upload_id)
     if from_upload:
-        text, staged_error = _text_from_staged_upload(text_upload_id, "text")
+        text, staged_error = _text_from_staged_upload(
+            text_upload_id, "text", owner=await resolve_staged_upload_owner()
+        )
         if staged_error is not None:
             return staged_error
     if text is None:
@@ -311,7 +314,9 @@ async def _update_wiki_page_action(
         }
 
     if from_upload:
-        text, staged_error = _text_from_staged_upload(text_upload_id, "text")
+        text, staged_error = _text_from_staged_upload(
+            text_upload_id, "text", owner=await resolve_staged_upload_owner()
+        )
         if staged_error is not None:
             return staged_error
 
