@@ -12,7 +12,7 @@ import json
 import logging
 import os
 import re
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, NoReturn, Optional, Set, Union
 
 from redminelib.exceptions import ForbiddenError
 
@@ -276,7 +276,9 @@ def _augment_validation_error_with_field_hint(
             'directly in `fields`, e.g. fields={"Department": '
             '"Engineering"}, on either create_redmine_issue or '
             "update_redmine_issue (the tool resolves the name to a "
-            "custom_fields id; ambiguous names raise). The explicit "
+            "custom_fields id; ambiguous names raise), or by id as "
+            'fields={"cf_N": "Engineering"}, which also reaches a field '
+            "whose name is ambiguous. The explicit "
             'id form -- extra_fields={"custom_fields": '
             '[{"id": N, "value": "..."}]} with N from '
             "list_project_issue_custom_fields -- also works on either "
@@ -564,6 +566,10 @@ _PASSTHROUGH_ISSUE_ATTRIBUTES = frozenset(
 # How close a snake_case key must be to a custom field name to be treated as
 # a misspelling of it rather than a plugin attribute.
 _NAME_TYPO_CUTOFF = 0.85
+# A custom field named by id, in the spelling Redmine uses for one in a query
+# filter and this server uses in ``unapplied_fields``. No issue attribute of
+# Redmine or of a plugin has this shape, so it is never a passthrough key.
+_CF_ID_KEY = re.compile(r"\Acf_([0-9]+)\Z")
 
 
 def _unverified_issue_fields(payload: Dict[str, Any]) -> List[str]:
@@ -614,6 +620,27 @@ def _reject_unmatched_name(
     )
 
 
+def _reject_unknown_field_id(
+    candidate: str, field_id: int, by_id: Dict[int, Dict[str, Any]]
+) -> NoReturn:
+    """Raise ``ValueError`` for a ``cf_<id>`` key the project does not enable.
+
+    Redmine sets only the fields available on the issue, so a value for any
+    other id is dropped without an error -- the same silent write a
+    misspelled name used to produce. Listing the enabled fields with their
+    ids gives the caller the one it meant.
+    """
+    known = ", ".join(
+        f"'{entry['name']}' (cf_{entry_id})"
+        for entry_id, entry in sorted(by_id.items(), key=lambda item: item[1]["name"])
+    )
+    raise ValueError(
+        f"Unknown custom field '{candidate}': no issue custom field with id "
+        f"{field_id} is enabled on this project. Custom fields on this "
+        f"project: {known or 'none'}. Nothing was written."
+    )
+
+
 def _resolve_named_custom_fields(
     payload: Dict[str, Any], project_custom_fields: List[Any]
 ) -> Dict[str, Any]:
@@ -631,11 +658,14 @@ def _resolve_named_custom_fields(
     in ``_STANDARD_ISSUE_UPDATE_FIELDS``) that match a known custom
     field get popped, validated against ``possible_values`` if any,
     and merged into the ``custom_fields`` list using the field's
-    numeric id. Caller-provided ``custom_fields`` entries are
-    preserved alongside name-based mappings.
+    numeric id. A ``cf_<id>`` key names the field by id instead and is
+    resolved the same way, which also reaches a field whose name is
+    ambiguous. Caller-provided ``custom_fields`` entries are preserved
+    alongside these mappings.
 
     Raises ``ValueError`` on ambiguous names (two custom fields share
-    a normalized name) or invalid values (not in ``possible_values``).
+    a normalized name), on a ``cf_<id>`` the project does not enable,
+    or on invalid values (not in ``possible_values``).
     """
     if not payload:
         return payload
@@ -661,6 +691,7 @@ def _resolve_named_custom_fields(
         return payload
 
     by_normalized_name: Dict[str, Dict[str, Any]] = {}
+    by_id: Dict[int, Dict[str, Any]] = {}
     ambiguous_names: Set[str] = set()
 
     for custom_field in project_custom_fields:
@@ -668,6 +699,17 @@ def _resolve_named_custom_fields(
         field_name = str(getattr(custom_field, "name", "") or "")
         if field_id is None or not field_name:
             continue
+        entry = {
+            "id": field_id,
+            "name": field_name,
+            "possible_values": _extract_possible_values(custom_field),
+        }
+        # Keyed before the name bookkeeping: an ambiguous name is dropped
+        # from the name map, but its id still names exactly one field.
+        try:
+            by_id[int(field_id)] = entry
+        except (TypeError, ValueError):
+            pass
         normalized = _normalize_field_label(field_name)
         if not normalized:
             continue
@@ -675,27 +717,31 @@ def _resolve_named_custom_fields(
         if existing and existing.get("id") != field_id:
             ambiguous_names.add(normalized)
             continue
-        by_normalized_name[normalized] = {
-            "id": field_id,
-            "name": field_name,
-            "possible_values": _extract_possible_values(custom_field),
-        }
+        by_normalized_name[normalized] = entry
 
     for normalized in ambiguous_names:
         by_normalized_name.pop(normalized, None)
 
     for candidate in named_candidates:
-        normalized_candidate = _normalize_field_label(candidate)
-        if normalized_candidate in ambiguous_names:
-            raise ValueError(
-                f"Ambiguous custom field name '{candidate}'. "
-                "Use fields.custom_fields with explicit field IDs."
-            )
+        id_key = _CF_ID_KEY.match(candidate)
+        if id_key:
+            field_id = int(id_key.group(1))
+            match = by_id.get(field_id)
+            if match is None:
+                _reject_unknown_field_id(candidate, field_id, by_id)
+        else:
+            normalized_candidate = _normalize_field_label(candidate)
+            if normalized_candidate in ambiguous_names:
+                raise ValueError(
+                    f"Ambiguous custom field name '{candidate}'. Key the "
+                    "field by id as cf_<id> instead, or use "
+                    "fields.custom_fields with explicit field IDs."
+                )
 
-        match = by_normalized_name.get(normalized_candidate)
-        if match is None:
-            _reject_unmatched_name(candidate, by_normalized_name)
-            continue
+            match = by_normalized_name.get(normalized_candidate)
+            if match is None:
+                _reject_unmatched_name(candidate, by_normalized_name)
+                continue
 
         value = payload.pop(candidate)
         possible_values = match["possible_values"]
