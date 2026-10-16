@@ -84,6 +84,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   until it passes the caller
   ([#404](https://github.com/jztan/redmine-mcp-server/issues/404)).
 
+### Contributors
+- @mliebischer, proposed and added `REDMINE_MCP_TRANSPORT=stdio`, so clients
+  that start MCP servers themselves can run this one without an HTTP bridge
+  ([#400](https://github.com/jztan/redmine-mcp-server/issues/400),
+  [#409](https://github.com/jztan/redmine-mcp-server/pull/409))
+
 ## [2.18.1] - 2026-10-06
 ### Security
 - A file sent to `POST /uploads/{upload_id}` is now staged under a name the
