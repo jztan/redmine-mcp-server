@@ -223,6 +223,32 @@ def get_extension_modules() -> list[str]:
     return [name for name in raw.replace(",", " ").split() if name]
 
 
+TRANSPORTS = ("http", "stdio")
+
+
+def get_transport() -> str:
+    """How ``main()`` serves MCP: ``http`` (the default) or ``stdio``.
+
+    ``REDMINE_MCP_TRANSPORT=stdio`` lets a client start the server as its own
+    subprocess and talk to it over stdin/stdout, the one transport that
+    Claude Desktop, Codex CLI and Kiro configure without a bridge. Any other
+    value refuses to start rather than falling back to HTTP, so a typo does
+    not leave the client waiting on a server it never reaches.
+    """
+    value = os.getenv("REDMINE_MCP_TRANSPORT", "").strip().lower() or "http"
+    if value not in TRANSPORTS:
+        raise RuntimeError(
+            f"REDMINE_MCP_TRANSPORT must be one of {', '.join(TRANSPORTS)}, "
+            f"got '{value}'."
+        )
+    return value
+
+
+def _is_stdio_transport() -> bool:
+    """True when the server runs over stdio and so has no URL of its own."""
+    return os.getenv("REDMINE_MCP_TRANSPORT", "").strip().lower() == "stdio"
+
+
 def _get_int_env(var_name: str, default: int) -> int:
     """Parse an integer environment variable, falling back to default."""
     try:

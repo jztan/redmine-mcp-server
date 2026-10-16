@@ -145,6 +145,7 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `HEALTH_INTROSPECTION_TTL_SECONDS` | No | `30` | TTL (seconds) for the `/health` Doorkeeper introspection probe cache. Set to `0` to disable caching. |
 | `SERVER_HOST` | No | `0.0.0.0` | Host/IP the MCP server binds to |
 | `SERVER_PORT` | No | `8000` | Port the MCP server listens on |
+| `REDMINE_MCP_TRANSPORT` | No | `http` | `http` serves MCP at `/mcp`. `stdio` serves it over stdin/stdout to a client that starts the server itself, with no port and no bridge; `legacy` mode only. Any other value refuses to start ([details](#stdio-transport)) |
 | `PUBLIC_HOST` | No | `localhost` | Hostname used when generating download URLs |
 | `PUBLIC_PORT` | No | `8000` | Public port used for download URLs |
 | `PUBLIC_SCHEME` | No | derived | Scheme for download URLs (`http` or `https`). When unset, `https` is derived from `PUBLIC_PORT=443`, otherwise `http`. Set explicitly for TLS on a nonstandard port. Default ports (80/443) are omitted from generated URLs. |
@@ -383,7 +384,7 @@ Use `.vscode/mcp.json` (workspace file) or the user profile `mcp.json`. The work
 
 ## MCP Client Configuration
 
-The server exposes an HTTP endpoint at `http://127.0.0.1:8000/mcp`. Register it with your preferred MCP-compatible agent using the instructions below.
+The server exposes an HTTP endpoint at `http://127.0.0.1:8000/mcp`. Register it with your preferred MCP-compatible agent using the instructions below. A client that starts MCP servers itself can run this one over stdio instead, with no running server and no bridge: see [stdio transport](#stdio-transport).
 
 > The examples below assume `legacy` or `oauth` mode. In `legacy-per-user` mode each client must also send an `X-Redmine-API-Key` header; see [legacy-per-user mode](#authentication) above for header-aware configs.
 
@@ -605,6 +606,42 @@ For clients that require a command-based approach with HTTP bridge:
 ```
 
 </details>
+
+### stdio transport
+
+With `REDMINE_MCP_TRANSPORT=stdio` the client starts the server as its own process and talks to it over stdin/stdout. Nothing listens on a port, and the HTTP bridges above are not needed. This works in `legacy` mode only, since the other modes authenticate each HTTP request.
+
+Claude Code:
+
+```bash
+claude mcp add redmine \
+  -e REDMINE_URL=https://your-redmine-server.com \
+  -e REDMINE_API_KEY=your_api_key \
+  -e REDMINE_MCP_TRANSPORT=stdio \
+  -e ATTACHMENTS_DIR=/absolute/path/to/redmine-attachments \
+  -- uvx redmine-mcp-server
+```
+
+Claude Desktop, Codex CLI, Kiro and other command-based clients:
+
+```json
+{
+  "mcpServers": {
+    "redmine": {
+      "command": "uvx",
+      "args": ["redmine-mcp-server"],
+      "env": {
+        "REDMINE_URL": "https://your-redmine-server.com",
+        "REDMINE_API_KEY": "your_api_key",
+        "REDMINE_MCP_TRANSPORT": "stdio",
+        "ATTACHMENTS_DIR": "/absolute/path/to/redmine-attachments"
+      }
+    }
+  }
+}
+```
+
+Without an HTTP server there are no URLs to hand out, so `get_redmine_attachment` returns a local `file_path` and `create_upload_ticket` declines; attach local files with `file_path` instead (allowed folders: `ATTACHMENTS_DIR` plus `REDMINE_MCP_UPLOAD_FILE_ROOTS`). Set `ATTACHMENTS_DIR` to an absolute path: the default `./attachments` is relative to the folder the client starts the server in, which is often the project you have open.
 
 ### Testing Your Setup
 

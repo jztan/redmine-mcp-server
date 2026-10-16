@@ -28,6 +28,7 @@ from .._env import (
     _get_int_env,
     _get_upload_file_roots,
     _is_read_only_mode,
+    _is_stdio_transport,
 )
 from .._errors import _READ_ONLY_ERROR, _handle_redmine_error
 from .._offload import in_thread, offloaded
@@ -432,10 +433,16 @@ def _public_base_url() -> Optional[str]:
     not reachable as a URL). ``None`` means stdio-style deployment: there is
     no URL to hand anyone, so callers fall back to a local file path.
 
+    Under ``REDMINE_MCP_TRANSPORT=stdio`` the answer is always ``None``, even
+    with ``PUBLIC_HOST`` set: no HTTP server is listening, so a URL built
+    from it would lead nowhere.
+
     Scheme: explicit ``PUBLIC_SCHEME`` wins; otherwise port 443 implies a
     TLS-terminating proxy upstream (#252). Default ports are omitted so the
     URL survives that proxy.
     """
+    if _is_stdio_transport():
+        return None
     public_host_env = os.environ.get("PUBLIC_HOST")
     server_host_env = os.environ.get("SERVER_HOST")
     if public_host_env is not None:
@@ -482,8 +489,8 @@ async def get_redmine_attachment(
     explicit ``PUBLIC_HOST=localhost`` also selects this mode so Docker
     port-forwarded deployments produce a URL the host can reach.
 
-    **stdio mode** (neither variable set, or only ``SERVER_HOST`` set to
-    a loopback bind address):
+    **stdio mode** (``REDMINE_MCP_TRANSPORT=stdio``, neither variable set,
+    or only ``SERVER_HOST`` set to a loopback bind address):
     Returns a dict with ``file_path`` (absolute), ``uri_type: "file"``,
     filename, content_type, size, expires_at, and attachment_id.
     The path can be passed directly to Claude Code's ``Read`` tool or pdf-mcp.
@@ -794,8 +801,9 @@ async def create_upload_ticket(
     Returns:
         ``{upload_url, upload_id, ticket, filename, expires_at, max_bytes}``,
         or ``{"error": ...}`` when this server has no address a caller could
-        POST to -- a stdio-style deployment with neither ``PUBLIC_HOST`` nor a
-        routable ``SERVER_HOST``. There, a file the server can already read is
+        POST to -- ``REDMINE_MCP_TRANSPORT=stdio``, or a stdio-style
+        deployment with neither ``PUBLIC_HOST`` nor a routable
+        ``SERVER_HOST``. There, a file the server can already read is
         reachable through ``file_path`` instead.
 
     Args:
@@ -809,13 +817,17 @@ async def create_upload_ticket(
 
     base = _public_base_url()
     if base is None:
+        reason = (
+            "This server runs over stdio and has no HTTP address"
+            if _is_stdio_transport()
+            else "This server has no publicly reachable address configured "
+            "(PUBLIC_HOST, or a SERVER_HOST that is not a bind address)"
+        )
         return {
             "error": (
-                "This server has no publicly reachable address configured "
-                "(PUBLIC_HOST, or a SERVER_HOST that is not a bind address), "
-                "so there is no upload_url to hand out. Attach the file with "
-                "file_path if the server can read it, or content_base64 if it "
-                "is small."
+                f"{reason}, so there is no upload_url to hand out. Attach the "
+                "file with file_path if the server can read it, or "
+                "content_base64 if it is small."
             )
         }
 
