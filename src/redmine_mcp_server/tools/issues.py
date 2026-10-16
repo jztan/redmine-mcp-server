@@ -1941,10 +1941,16 @@ async def create_redmine_issue(
       additional_tags tags on the new issue. Requires the
       ``create_issue_tags``/``edit_issue_tags`` permission; silently ignored
       when the feature is disabled (default).
-    - A snake_case ``fields`` key that is neither a standard issue key nor a
-      custom field name is sent as a top-level attribute, which Redmine
-      ignores without an error if it does not know it. Such keys are listed
-      in ``unverified_fields``, omitted when there are none.
+    - A custom field goes in ``fields`` by name (``{"Department": "Sales"}``)
+      or by id as ``cf_<id>`` (``{"cf_2": "Sales"}``), the ids being those
+      ``list_project_issue_custom_fields`` returns. Either form is checked
+      against the project's fields first, and nothing is written when it
+      fails: an id the project does not enable is refused, and so is a name
+      that matches no field and has spaces or capitals or is within a typo
+      of a field name. The refusal names the project's fields.
+    - Any other snake_case ``fields`` key is sent as a top-level attribute,
+      which Redmine ignores without an error if it does not know it. Such
+      keys are listed in ``unverified_fields``, omitted when there are none.
 
     Args:
         project_id: Project the issue belongs to (numeric ID).
@@ -1963,7 +1969,8 @@ async def create_redmine_issue(
             through the conversation. Mutually exclusive with
             ``description``.
         fields: Standard and custom fields, as an object or a JSON object
-            string. Attachments do not go here -- see ``uploads``.
+            string. A custom field is keyed by its name or by ``cf_<id>``.
+            Attachments do not go here -- see ``uploads``.
         extra_fields: Further fields, merged into ``fields``. Object or JSON
             object string.
         uploads: Files to attach to the new issue. Maximum 10 items, 50 MiB
@@ -2612,9 +2619,13 @@ async def update_redmine_issue(
     or ``edit_issue_tags`` (existing tags only) permission. When
     ``REDMINE_TAGS_ENABLED=false`` (default), ``tag_list`` is silently ignored.
 
-    Non-standard keys in ``fields`` are treated as candidate custom-field names.
-    When a matching project custom field is found, it is translated into
-    ``custom_fields`` entries for Redmine update payloads.
+    A custom field goes in ``fields`` by name (``{"Department": "Sales"}``)
+    or by id as ``cf_<id>`` (``{"cf_2": "Sales"}``); both are translated into
+    the ``custom_fields`` entries Redmine expects. Either form is checked
+    against the project's fields first, and nothing is written when it
+    fails: an id the project does not enable is refused, and so is a name
+    that matches no field and has spaces or capitals or is within a typo of
+    a field name. The refusal names the project's fields.
 
     Redmine discards some writes without an error -- a status the workflow
     does not allow, a field the workflow makes read-only, a custom field the
@@ -2628,15 +2639,15 @@ async def update_redmine_issue(
     custom field values are checked, never notes, uploads, watchers or plugin
     fields. An unknown ``status_name`` is refused before anything is written.
 
-    A snake_case key that is neither a standard issue key nor a custom field
-    name is sent as a top-level attribute, which Redmine ignores without an
-    error if it does not know it. Such keys are listed in
+    Any other snake_case key is sent as a top-level attribute, which Redmine
+    ignores without an error if it does not know it. Such keys are listed in
     ``unverified_fields``, omitted when there are none.
 
     Args:
         issue_id: The issue to update.
-        fields: The fields to change, including ``notes`` for a comment.
-            Attachments do not go here -- see ``uploads``.
+        fields: The fields to change, including ``notes`` for a comment. A
+            custom field is keyed by its name or by ``cf_<id>``. Attachments
+            do not go here -- see ``uploads``.
         uploads: Files to attach to the issue. Maximum 10 items, 50 MiB
             each. Every item carries exactly one content source:
 

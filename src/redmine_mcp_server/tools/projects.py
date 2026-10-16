@@ -505,9 +505,9 @@ async def list_project_issue_custom_fields(
     ``trackers`` come back ``null``, meaning "not readable on this token" --
     ``null`` is not ``false`` and not an empty list. In particular
     ``is_required: null`` does not mean a field is optional, so a create or
-    update can still reject on a field listed here. Use the ids with
-    ``extra_fields={"custom_fields": [{"id": N, "value": ...}]}``, or pass the
-    field by name in ``fields``.
+    update can still reject on a field listed here. To set a field, key it in
+    ``fields`` by name or as ``cf_<id>`` with an id from here, or pass
+    ``extra_fields={"custom_fields": [{"id": N, "value": ...}]}``.
 
     Args:
         project_id: Project identifier (ID number or string identifier).
@@ -561,14 +561,15 @@ async def list_project_issue_custom_fields(
     1. **Name-keyed shortcut (preferred):** pass the rejected field by
        name directly, e.g.
        ``fields={"Department": "Engineering"}``, on either
-       ``create_redmine_issue`` or ``update_redmine_issue``. Both tools
-       resolve the name to a ``custom_fields`` id; ambiguous names
-       raise.
+       ``create_redmine_issue`` or ``update_redmine_issue``, or by id as
+       ``fields={"cf_N": "Engineering"}`` with ``N`` from this tool. Both
+       tools resolve either to a ``custom_fields`` id; ambiguous names
+       raise, and the ``cf_N`` form still reaches such a field.
     2. **Explicit id form:** pass
        ``extra_fields={"custom_fields": [{"id": N, "value": "..."}]}``
        using the numeric ID from this tool. Works on either path; use
-       when the name lookup is ambiguous or the value type is awkward
-       (multi-value fields, complex serializations).
+       when the value type is awkward (multi-value fields, complex
+       serializations).
     3. **Autofill:** set
        ``REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true`` to have the
        server retry once with values from each field's ``default_value``

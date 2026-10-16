@@ -27,6 +27,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   how to see which fields a tracker carries: read one of its issues in the
   project with `get_redmine_issue`.
 ### Fixed
+- `create_redmine_issue` and `update_redmine_issue` accept a custom field in
+  `fields` by id, as `cf_<id>`, beside the existing name form. That is how
+  Redmine spells a custom field in a query filter and how `unapplied_fields`
+  already names one, so callers wrote it into `fields` -- where, being
+  snake_case, it passed through as a plugin attribute, Redmine ignored it, the
+  issue landed with the field blank, and the only trace was the key in
+  `unverified_fields`. The key is now resolved against the project's issue
+  custom fields the way a name is, and an id the project does not enable is
+  refused before anything is written, with the enabled fields and their ids
+  named. The id form also reaches a field whose name is ambiguous
+  ([#407](https://github.com/jztan/redmine-mcp-server/issues/407)).
 - An upload to the `upload_url` from `create_upload_ticket` failed with a
   plain `404 Not Found` in `oauth`, `oauth-proxy` and `api-key-login` modes
   when `REDMINE_MCP_BASE_URL` has a path. The URL points at
