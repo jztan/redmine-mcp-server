@@ -41,8 +41,8 @@ def _page(text=PAGE, version=3):
     return page
 
 
-def _stage(content: bytes) -> str:
-    issued = _upload_store.create_ticket(filename="page.textile")
+def _stage(content: bytes, owner: str | None = None) -> str:
+    issued = _upload_store.create_ticket(filename="page.textile", owner=owner)
     record, reason = _upload_store.redeem_ticket(issued["upload_id"], issued["ticket"])
     assert reason is None
     _upload_store.staged_path(record).write_bytes(content)
@@ -185,3 +185,57 @@ class TestOneSourceAtATime:
 
         assert "whole page" in result["text"]
         assert "text_length" not in result
+
+
+class TestSomeoneElsesTextUpload:
+    @staticmethod
+    def _signed_in_as(user_id):
+        from contextlib import ExitStack
+
+        from redmine_mcp_server import _client
+
+        token = Mock()
+        token.claims = {"redmine_user_id": user_id}
+        stack = ExitStack()
+        stack.enter_context(patch.object(_client, "REDMINE_AUTH_MODE", "api-key-login"))
+        stack.enter_context(
+            patch("redmine_mcp_server._caller.get_access_token", return_value=token)
+        )
+        return stack
+
+    @pytest.mark.asyncio
+    async def test_update_reads_it_as_unknown(self, mock_redmine, attachments_dir):
+        upload_id = _stage(PAGE.encode("utf-8"), owner="redmine-user:5")
+
+        with self._signed_in_as(6):
+            result = await _update(text_upload_id=upload_id)
+
+        assert result["error"].startswith(f"No staged upload {upload_id}.")
+        mock_redmine.wiki_page.update.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_create_reads_it_as_unknown(self, mock_redmine, attachments_dir):
+        upload_id = _stage(PAGE.encode("utf-8"), owner="redmine-user:5")
+
+        with self._signed_in_as(6):
+            result = await manage_redmine_wiki_page(
+                action="create",
+                project_id="proj",
+                wiki_page_title="Page",
+                text_upload_id=upload_id,
+            )
+
+        assert result["error"].startswith(f"No staged upload {upload_id}.")
+        mock_redmine.wiki_page.create.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_the_owner_s_own_is_taken(self, mock_redmine, attachments_dir):
+        mock_redmine.wiki_page.get.return_value = _page()
+        upload_id = _stage(PAGE.encode("utf-8"), owner="redmine-user:5")
+
+        with self._signed_in_as(5):
+            result = await _update(text_upload_id=upload_id, expected_version=3)
+
+        assert "error" not in result
+        _, kwargs = mock_redmine.wiki_page.update.call_args
+        assert kwargs["text"] == PAGE

@@ -26,6 +26,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   under the base URL's path. The route is now also served at the root, as
   `/files/{id}` already was
   ([#393](https://github.com/jztan/redmine-mcp-server/issues/393)).
+### Security
+- A file staged with `create_upload_ticket` can now be read back only by the
+  caller who created the ticket. Before, any authenticated caller who knew
+  the `upload_id` could attach it, or read it as the text of a
+  `description_upload_id`, `notes_upload_id` or `text_upload_id`, and the id
+  is the path of the `upload_url`, so it sits in every proxy access log the
+  upload passed through. Anyone else now gets the same "No staged upload"
+  error an id that was never issued gets, ahead of the messages that would
+  say the slot is pending or expired. The same file could also be read with
+  `file_path`, since `ATTACHMENTS_DIR` is an upload root; a staged upload's
+  files and records there now answer `file_path` as a missing file does,
+  while downloaded attachments still attach by path. The caller is the
+  Redmine user bound to the session in `api-key-login`, the introspection
+  `sub` in `oauth` and `oauth-proxy`, and a SHA-256 digest of the
+  `X-Redmine-API-Key` in `legacy-per-user`; `legacy` mode, with one identity
+  for everyone, is unchanged. In the other modes, a ticket whose caller
+  cannot be identified is refused with an error that says what to do,
+  rather than created unbound. Redmine's Doorkeeper sends no `sub` by
+  default, so the OAuth modes then ask with one `GET /users/current.json`
+  per ticket and per staged read; [OAuth setup](docs/oauth-setup.md) has the
+  short Doorkeeper change that avoids it. `POST /uploads/{upload_id}` stays
+  authorised by the ticket alone, and the answer of `create_upload_ticket`
+  is unchanged. `extensions.text_from_staged_upload` and `read_staged` take
+  the caller as `owner=`, and `resolve_staged_upload_owner` is exported to
+  work it out. An extension that keeps calling either reader without
+  `owner=` now gets "No staged upload" for every slot outside `legacy` mode,
+  until it passes the caller
+  ([#404](https://github.com/jztan/redmine-mcp-server/issues/404)).
 
 ## [2.18.1] - 2026-10-06
 ### Security

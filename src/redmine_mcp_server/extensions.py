@@ -89,7 +89,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Dict, NoReturn
 
-from . import _client, _upload_store
+from . import _caller, _client, _upload_store
 from ._annotations import TOOL_KINDS, ToolKind
 from ._decorators import ActionMode, action_dispatch
 from ._env import (
@@ -126,6 +126,8 @@ __all__ = [
     "read_staged",
     "redmine_url",
     "register_extension",
+    "resolve_staged_upload_owner",
+    "staged_upload_owner",
     "text_from_staged_upload",
     "wrap_insecure_content",
 ]
@@ -144,8 +146,21 @@ is_true_env = _is_true_env
 # The raw reader behind every built-in ``upload_id``: the bytes and the
 # filename the ticket was created with, for a tool that attaches the file
 # rather than reading it as text. A binding like the ones above, since
-# ``_upload_store`` imports nothing from the rest of the package.
+# ``_upload_store`` imports nothing from the rest of the package. Pass it
+# ``owner=`` from ``resolve_staged_upload_owner()``: a slot is readable only
+# by the caller that created its ticket, and without an owner a bound slot
+# answers as an unknown id.
 read_staged = _upload_store.read_staged
+
+# Who the caller is, for the ``owner`` both staged-upload readers take.
+# ``resolve_staged_upload_owner`` is a coroutine that may ask Redmine once,
+# in the OAuth modes when the token carries no ``sub``, so await it in the
+# tool's async body before anything moves to a worker thread.
+# ``staged_upload_owner`` is the synchronous part, the answer available
+# without asking Redmine, for code that only needs to know whether there is
+# one.
+resolve_staged_upload_owner = _caller.resolve_staged_upload_owner
+staged_upload_owner = _caller.staged_upload_owner
 
 
 def redmine_url() -> str | None:
@@ -161,7 +176,7 @@ def redmine_url() -> str | None:
 
 
 def text_from_staged_upload(
-    upload_id: str, label: str
+    upload_id: str, label: str, owner: str | None = None
 ) -> tuple[str | None, Dict[str, Any] | None]:
     """Read a staged upload as the whole new text of a field.
 
@@ -179,6 +194,11 @@ def text_from_staged_upload(
     the same from an extension's tool as from a built-in one. The file is
     left in place either way.
 
+    ``owner`` is the caller's identity from :func:`resolve_staged_upload_owner`.
+    A slot is bound to the caller that created its ticket, and a bound slot
+    read without its owner answers like an unknown id, so a tool that leaves
+    it out can read only slots created where callers are not told apart.
+
     A wrapper rather than a binding, unlike the aliases above, because the
     reader lives in ``tools.issues``, and importing that at module level
     would make importing this module import the whole tool tree -- the
@@ -188,7 +208,7 @@ def text_from_staged_upload(
     """
     from .tools.issues import _text_from_staged_upload
 
-    return _text_from_staged_upload(upload_id, label)
+    return _text_from_staged_upload(upload_id, label, owner=owner)
 
 
 @dataclass(frozen=True, kw_only=True)

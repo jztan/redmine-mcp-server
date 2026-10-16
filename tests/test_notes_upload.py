@@ -33,8 +33,8 @@ def mock_redmine():
         yield mock
 
 
-def _stage(text: bytes) -> str:
-    issued = _upload_store.create_ticket(filename="note.html")
+def _stage(text: bytes, owner: str | None = None) -> str:
+    issued = _upload_store.create_ticket(filename="note.html", owner=owner)
     record, reason = _upload_store.redeem_ticket(issued["upload_id"], issued["ticket"])
     assert reason is None
     _upload_store.staged_path(record).write_bytes(text)
@@ -159,3 +159,53 @@ class TestTheTwoSources:
 
         assert result["success"] is True
         assert mock_redmine.issue_journal.update.call_args.kwargs["notes"] == ""
+
+
+@pytest.mark.unit
+class TestSomeoneElsesNote:
+    """The note action runs in a worker thread, so it resolves the caller
+    with the blocking lookup; this is the path that exercises it."""
+
+    @staticmethod
+    def _as_oauth_user(mock_redmine, user_id):
+        from contextlib import ExitStack
+        from unittest.mock import Mock
+
+        from redmine_mcp_server import _client
+
+        token = Mock()
+        token.subject = None
+        mock_redmine.user.get.return_value.id = user_id
+        stack = ExitStack()
+        stack.enter_context(patch.object(_client, "REDMINE_AUTH_MODE", "oauth-proxy"))
+        stack.enter_context(
+            patch("redmine_mcp_server._caller.get_access_token", return_value=token)
+        )
+        return stack
+
+    @pytest.mark.asyncio
+    async def test_it_reads_as_unknown_and_nothing_is_written(
+        self, attachments_dir, mock_redmine
+    ):
+        upload_id = _stage(b"<p>fremd</p>", owner="redmine-user:5")
+
+        with self._as_oauth_user(mock_redmine, 6):
+            result = await manage_issue_note(
+                action="edit", journal_id=514482, notes_upload_id=upload_id
+            )
+
+        assert result["error"].startswith(f"No staged upload {upload_id}.")
+        mock_redmine.issue_journal.update.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_the_owner_s_own_reaches_redmine(self, attachments_dir, mock_redmine):
+        upload_id = _stage(NOTE.encode("utf-8"), owner="redmine-user:5")
+
+        with self._as_oauth_user(mock_redmine, 5):
+            await manage_issue_note(
+                action="edit", journal_id=514482, notes_upload_id=upload_id
+            )
+
+        mock_redmine.user.get.assert_called_once_with("current")
+        sent = mock_redmine.issue_journal.update.call_args
+        assert sent.kwargs["notes"] == NOTE
