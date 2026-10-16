@@ -511,10 +511,16 @@ async def list_project_issue_custom_fields(
 
     Args:
         project_id: Project identifier (ID number or string identifier).
-        tracker_id: Optional tracker ID to filter custom fields by
-            applicability. Usable only when the response describes every
-            field's tracker bindings, which a stock Redmine does not send; it
-            returns an error rather than an unfiltered list when it cannot.
+        tracker_id: Leave this out. Redmine's project endpoint sends each
+            field's id and name only, even to an administrator, so unless a
+            plugin adds ``trackers`` to every field there is nothing to
+            filter on and the call answers
+            ``code: "TRACKER_BINDINGS_UNREADABLE"`` rather than an unfiltered
+            list. To see which of the project's fields a tracker carries,
+            read one of its issues in this project with ``get_redmine_issue``
+            (``list_redmine_issues`` with ``tracker_id`` finds one): its
+            ``custom_fields`` are those fields, less any the caller may not
+            see.
 
     Returns:
         A list of dicts with ``id``, ``name``, ``field_format``,
@@ -633,10 +639,14 @@ async def list_project_issue_custom_fields(
                         "code": "TRACKER_BINDINGS_UNREADABLE",
                         "hint": (
                             "Omit tracker_id to list every issue custom field "
-                            "enabled for the project. On a stock Redmine this "
-                            "is expected: include=issue_custom_fields renders "
-                            "id and name only, and bindings appear solely on "
-                            "GET /custom_fields.json, which is admin-only."
+                            "enabled for the project. To see which of them a "
+                            "tracker carries, read one of its issues in this "
+                            "project with get_redmine_issue (list_redmine_issues "
+                            "with tracker_id finds one) and use its "
+                            "custom_fields. Retrying as another caller does not "
+                            "help: Redmine sends tracker bindings only on "
+                            "GET /custom_fields.json, which is admin-only and "
+                            "which this tool does not read."
                         ),
                     }
 

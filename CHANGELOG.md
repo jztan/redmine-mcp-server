@@ -18,6 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   than read. Before, an extension had to import the private reader from
   `tools.issues`, a name that can move in any release
   ([#391](https://github.com/jztan/redmine-mcp-server/issues/391)).
+### Changed
+- `list_project_issue_custom_fields` now tells the caller to leave
+  `tracker_id` out, instead of naming a condition the caller cannot check.
+  Redmine's project endpoint sends each field's id and name only, even to an
+  administrator, so the filter answers `TRACKER_BINDINGS_UNREADABLE` unless a
+  plugin adds the bindings. The parameter text and the error's hint also say
+  how to see which fields a tracker carries: read one of its issues in the
+  project with `get_redmine_issue`.
 ### Fixed
 - An upload to the `upload_url` from `create_upload_ticket` failed with a
   plain `404 Not Found` in `oauth`, `oauth-proxy` and `api-key-login` modes
