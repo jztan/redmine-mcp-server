@@ -547,7 +547,7 @@ List the ids and names of the issue custom fields enabled for a project.
 
 **Parameters:**
 - `project_id` (integer or string, required): Project ID (numeric) or identifier (string)
-- `tracker_id` (integer, optional): Restrict output to fields applicable to the given tracker ID. Requires readable tracker bindings, which stock Redmine does not provide -- see below
+- `tracker_id` (integer, optional): Leave it out. Redmine's project endpoint sends each field's id and name only, even to an administrator, so unless a plugin adds `trackers` to every field there is nothing to filter on and the call answers `TRACKER_BINDINGS_UNREADABLE` rather than an unfiltered list -- see below. To see which of the project's fields a tracker carries, read one of its issues in this project with `get_redmine_issue` (`list_redmine_issues` with `tracker_id` finds one): its `custom_fields` are those fields, less any the caller may not see
 
 **Returns:** List of custom field metadata dictionaries. `[]` means the project enables no issue custom fields.
 
@@ -580,7 +580,7 @@ The keys are kept rather than dropped so the response shape is stable across dep
 list_project_issue_custom_fields(project_id="pipeline", tracker_id=5)
 ```
 
-Against a stock Redmine this returns an `error` with `code: "TRACKER_BINDINGS_UNREADABLE"` and a `hint`, because tracker bindings are part of the admin-only definition and the filter cannot be applied. It previously returned every field in the project, which a caller had no way to distinguish from a filtered list. Omit `tracker_id` to list every field enabled for the project.
+Against a stock Redmine this returns an `error` with `code: "TRACKER_BINDINGS_UNREADABLE"` and a `hint`, even for an administrator: the include carries no tracker bindings (see above), so the filter cannot be applied. It previously returned every field in the project, which a caller had no way to distinguish from a filtered list. Omit `tracker_id` to list every field enabled for the project.
 
 The `error` describes what this particular response carried rather than asserting what Redmine always does, since bindings *are* readable on a payload that includes them; the standing Redmine explanation is in the `hint`.
 
