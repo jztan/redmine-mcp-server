@@ -89,6 +89,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that start MCP servers themselves can run this one without an HTTP bridge
   ([#400](https://github.com/jztan/redmine-mcp-server/issues/400),
   [#409](https://github.com/jztan/redmine-mcp-server/pull/409))
+- @mmahmed, reported and fixed the upload route that answered 404 under a
+  `REDMINE_MCP_BASE_URL` path, staged uploads readable by any caller who knew
+  the `upload_id`, and `cf_<id>` keys in `fields` that Redmine dropped;
+  proposed and added the staged-upload readers in `extensions`; and clarified
+  the `tracker_id` guidance on `list_project_issue_custom_fields`
+  ([#391](https://github.com/jztan/redmine-mcp-server/issues/391),
+  [#392](https://github.com/jztan/redmine-mcp-server/pull/392),
+  [#393](https://github.com/jztan/redmine-mcp-server/issues/393),
+  [#394](https://github.com/jztan/redmine-mcp-server/pull/394),
+  [#404](https://github.com/jztan/redmine-mcp-server/issues/404),
+  [#405](https://github.com/jztan/redmine-mcp-server/pull/405),
+  [#406](https://github.com/jztan/redmine-mcp-server/pull/406),
+  [#407](https://github.com/jztan/redmine-mcp-server/issues/407),
+  [#408](https://github.com/jztan/redmine-mcp-server/pull/408))
 
 ## [2.18.1] - 2026-10-06
 ### Security
