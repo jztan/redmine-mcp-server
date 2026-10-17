@@ -29,6 +29,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tools.issues`, a name that can move in any release
   ([#391](https://github.com/jztan/redmine-mcp-server/issues/391)).
 ### Changed
+- `list_redmine_issues` now says what a call with no filter returns: the open
+  issues of every project the caller can see, 25 per call, each with its full
+  description. It used to name `project_id` as a filter and say nothing about
+  leaving it out, so a bare call made as a first probe read unrelated
+  projects' issues before finding the caller's own. Its Performance note, and
+  the same note on `search_redmine_issues`, no longer claim the default limit
+  keeps a response under 2000 tokens: descriptions alone can exceed that many
+  times over.
 - `list_project_issue_custom_fields` now tells the caller to leave
   `tracker_id` out, instead of naming a condition the caller cannot check.
   Redmine's project endpoint sends each field's id and name only, even to an

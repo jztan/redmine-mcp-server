@@ -1076,8 +1076,10 @@ get_redmine_issue(
 
 List Redmine issues with flexible filtering and pagination support. A general-purpose tool for listing issues from Redmine. Supports filtering by project, status, assignee, tracker, priority, and any other Redmine issue filter.
 
+A call with no filter returns the open issues of every project the caller can see, 25 per call, each with its full description. Scope a read with `project_id` or another filter, and pass `fields` when descriptions are not needed.
+
 **Parameters:**
-- `project_id` (integer or string, optional): Filter by project (numeric ID or string identifier)
+- `project_id` (integer or string, optional): Filter by project (numeric ID or string identifier). Omitted, the read spans every project the caller can see
 - `status_id` (integer, optional): Filter by status ID
 - `tracker_id` (integer, optional): Filter by tracker ID
 - `assigned_to_id` (integer or string, optional): Filter by assignee. Use a numeric user ID or the special value `'me'` to retrieve issues assigned to the currently authenticated user. Note that `'me'` resolves to the owner of the configured `REDMINE_API_KEY`, which may be a shared or robot account rather than the human operator. If results come back unexpectedly empty, call [`get_mcp_server_info`](#get_mcp_server_info) to confirm who `'me'` maps to.

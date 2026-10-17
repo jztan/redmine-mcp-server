@@ -1379,8 +1379,14 @@ async def list_redmine_issues(
     other Redmine issue filter. Use this to list all issues in a project,
     find unassigned issues, or apply any combination of filters.
 
+    A call with no filter returns the open issues of every project the caller
+    can see, 25 per call, each with its full description. Scope a read with
+    ``project_id`` or another filter, and pass ``fields`` when descriptions
+    are not needed.
+
     Args:
-        project_id: Filter by project (ID or string identifier).
+        project_id: Filter by project (ID or string identifier). Omitted,
+            the read spans every project the caller can see.
         status_id: Filter by status. Accepts a numeric status ID, or one
             of the Redmine sentinel strings: ``"open"`` (all open
             statuses, the API default when no filter is given),
@@ -1487,7 +1493,6 @@ async def list_redmine_issues(
 
     Performance:
         - Memory efficient: Uses server-side pagination
-        - Token efficient: Default limit keeps response under 2000 tokens
         - Further reduce tokens: Use fields parameter for minimal data transfer
         - Time efficient: Typically <500ms for limit=25
     """
@@ -1776,7 +1781,6 @@ def search_redmine_issues(
 
     Performance:
         - Memory efficient: Uses server-side pagination
-        - Token efficient: Default limit keeps response under 2000 tokens
         - Further reduce tokens: Use fields parameter for minimal data transfer
     """
 
