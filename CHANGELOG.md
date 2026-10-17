@@ -101,7 +101,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `REDMINE_MCP_BASE_URL` path, staged uploads readable by any caller who knew
   the `upload_id`, and `cf_<id>` keys in `fields` that Redmine dropped;
   proposed and added the staged-upload readers in `extensions`; and clarified
-  the `tracker_id` guidance on `list_project_issue_custom_fields`
+  the `tracker_id` guidance on `list_project_issue_custom_fields` and what
+  `list_redmine_issues` returns with no filter
   ([#391](https://github.com/jztan/redmine-mcp-server/issues/391),
   [#392](https://github.com/jztan/redmine-mcp-server/pull/392),
   [#393](https://github.com/jztan/redmine-mcp-server/issues/393),
@@ -110,7 +111,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [#405](https://github.com/jztan/redmine-mcp-server/pull/405),
   [#406](https://github.com/jztan/redmine-mcp-server/pull/406),
   [#407](https://github.com/jztan/redmine-mcp-server/issues/407),
-  [#408](https://github.com/jztan/redmine-mcp-server/pull/408))
+  [#408](https://github.com/jztan/redmine-mcp-server/pull/408),
+  [#410](https://github.com/jztan/redmine-mcp-server/pull/410))
 
 ## [2.18.1] - 2026-10-06
 ### Security
