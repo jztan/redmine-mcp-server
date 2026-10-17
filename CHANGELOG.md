@@ -48,7 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `create_redmine_issue` and `update_redmine_issue` accept a custom field in
   `fields` by id, as `cf_<id>`, beside the existing name form. That is how
   Redmine spells a custom field in a query filter and how `unapplied_fields`
-  already names one, so callers wrote it into `fields` -- where, being
+  already names one, so callers wrote it into `fields`, where, being
   snake_case, it passed through as a plugin attribute, Redmine ignored it, the
   issue landed with the field blank, and the only trace was the key in
   `unverified_fields`. The key is now resolved against the project's issue
@@ -64,11 +64,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `/files/{id}` already was
   ([#393](https://github.com/jztan/redmine-mcp-server/issues/393)).
 ### Security
-- Raised the security floor for the transitive `mcp` dependency to `>=2.2.0`
-  via `[tool.uv]` `constraint-dependencies`, clearing CVE-2026-59951 from the
-  dependency audit (the lock now resolves `mcp` 2.3.0). The advisory covers
-  stateful Streamable HTTP sessions; this server runs `stateless_http=True`,
-  so it was not exposed
+- The lock now resolves `mcp` 2.3.0, through an `mcp>=2.2.0` floor in
+  `[tool.uv]` `constraint-dependencies`, clearing CVE-2026-59951 from the
+  dependency audit. The advisory covers stateful Streamable HTTP sessions;
+  this server runs `stateless_http=True`, so it was not exposed. The floor
+  applies to the lock only: fresh installs already get `mcp` 2.2.0 or later,
+  and an existing environment can update with `pip install -U mcp`
   ([#411](https://github.com/jztan/redmine-mcp-server/issues/411)).
 - A file staged with `create_upload_ticket` can now be read back only by the
   caller who created the ticket. Before, any authenticated caller who knew
