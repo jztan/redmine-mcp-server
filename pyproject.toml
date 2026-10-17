@@ -77,7 +77,8 @@ dev = [
 # Security floors for transitive dependencies (not imported directly). Drop each
 # entry once an upstream dependency raises its own floor past these versions.
 #   click < 8.3.3  -> PYSEC-2026-2132 (via uvicorn / rich-click stack)
-constraint-dependencies = ["click>=8.3.3"]
+#   mcp   < 2.2.0  -> CVE-2026-59951 (via fastmcp-slim)
+constraint-dependencies = ["click>=8.3.3", "mcp>=2.2.0"]
 
 [build-system]
 requires = ["hatchling"]
