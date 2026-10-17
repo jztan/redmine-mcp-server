@@ -64,6 +64,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `/files/{id}` already was
   ([#393](https://github.com/jztan/redmine-mcp-server/issues/393)).
 ### Security
+- Raised the security floor for the transitive `mcp` dependency to `>=2.2.0`
+  via `[tool.uv]` `constraint-dependencies`, clearing CVE-2026-59951 from the
+  dependency audit (the lock now resolves `mcp` 2.3.0). The advisory covers
+  stateful Streamable HTTP sessions; this server runs `stateless_http=True`,
+  so it was not exposed
+  ([#411](https://github.com/jztan/redmine-mcp-server/issues/411)).
 - A file staged with `create_upload_ticket` can now be read back only by the
   caller who created the ticket. Before, any authenticated caller who knew
   the `upload_id` could attach it, or read it as the text of a
