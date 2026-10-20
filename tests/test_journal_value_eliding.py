@@ -100,9 +100,7 @@ class TestEliding:
     def test_include_values_returns_the_text(self, monkeypatch):
         monkeypatch.delenv("REDMINE_MCP_JOURNAL_VALUE_MAX_CHARS", raising=False)
 
-        (detail,) = _journal_details_to_list(
-            _description_change(), include_values=True
-        )
+        (detail,) = _journal_details_to_list(_description_change(), include_values=True)
 
         assert "elided" not in detail
         assert "a" * 30_000 in str(detail["old_value"])

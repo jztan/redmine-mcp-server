@@ -794,7 +794,6 @@ class TestCustomFieldSelection:
         assert [cf["id"] for cf in result["custom_fields"]] == [42, 43, 44]
 
 
-
 def _api_contact_with_includes() -> dict:
     """A contact as ``contacts/show.api.rsb`` renders it under
     ``include=notes,contacts,deals,issues`` (redmine_contacts 4.4.5 PRO)."""
@@ -927,7 +926,6 @@ class TestGetIncludes:
                 action="get", contact_id=55, include="contacts"
             )
         assert result["contacts"] == [{"id": 56, "name": "A"}]
-
 
 
 class TestIsCompanyFilter:
