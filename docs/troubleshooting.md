@@ -1053,3 +1053,42 @@ Setup, security model and session rules are in the [api-key-login guide](api-key
 **Cause:** each token refresh checks the user's key with Redmine, and a 401 ends the session. A gateway or single-sign-on proxy in front of Redmine that answers 401 for its own reasons makes every check fail, so every session ends within an hour. A 403 or an unreachable Redmine does not end sessions.
 
 **Solution:** make sure `REDMINE_URL` reaches Redmine's API directly, or that the proxy passes `X-Redmine-API-Key` requests through.
+
+## trusted-header
+
+Setup and security requirements are in the [trusted-header guide](trusted-header-auth.md). The entries below cover what operators and users run into.
+
+### The server refuses to start
+
+**Symptoms:** startup fails with one of:
+- `REDMINE_AUTH_MODE=trusted-header requires REDMINE_TRUSTED_HEADER_TRUST_PROXY=true. ...`
+- `REDMINE_TRUSTED_HEADER_MATCH must be 'login' or 'mail', ...`
+- `REDMINE_AUTH_MODE=trusted-header requires REDMINE_URL.` or `... requires REDMINE_API_KEY, ...`
+- `... requires REDMINE_API_KEY to belong to a Redmine administrator, and Redmine did not confirm that it does. ...`
+- `... could not reach Redmine to check REDMINE_API_KEY (...)`
+
+**Solutions:** set the missing variable, use the API key of a Redmine administrator, and make sure the server can reach `REDMINE_URL` when it starts. The server does not start while Redmine is down; with a container restart policy, it comes up once Redmine answers.
+
+### Every tool call fails with "missing X-Forwarded-User request header"
+
+**Cause:** the request did not come through the proxy, or the proxy names the user in a different header.
+
+**Solution:** set `REDMINE_TRUSTED_HEADER_NAME` to the header your proxy sets, and make sure clients reach the server only through the proxy.
+
+### "that login does not exist in Redmine or the account is locked"
+
+**Cause:** Redmine refused to switch to the user the header names (HTTP 412): no account has that login, or the account is locked. A proxy that sends email addresses makes every login unknown.
+
+**Solution:** check the login under Administration → Users in Redmine, or set `REDMINE_TRUSTED_HEADER_MATCH=mail` if the header carries email addresses.
+
+### "no active Redmine user has the email ..."
+
+**Cause:** in `mail` mode, no active user has that address as their primary email. Additional email addresses do not count, and locked users are not matched.
+
+**Solution:** make the address the user's primary email in Redmine, or unlock the account.
+
+### Tools fail with "... requires REDMINE_API_KEY to belong to a Redmine administrator ..."
+
+**Cause:** the account behind `REDMINE_API_KEY` lost its administrator role while the server was running. Redmine would ignore the switch header for it, so the server refuses every request.
+
+**Solution:** make the account an administrator again, or configure the key of another administrator and restart the server.

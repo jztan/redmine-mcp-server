@@ -7,6 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `trusted-header` auth mode, for servers behind an authenticating proxy that
+  already knows the user. The proxy names the user in a request header
+  (`REDMINE_TRUSTED_HEADER_NAME`, default `X-Forwarded-User`), and every
+  request runs as that Redmine user through one administrator API key and
+  `X-Redmine-Switch-User`, with that user's own permissions.
+  `REDMINE_TRUSTED_HEADER_MATCH=mail` names the user by email address instead
+  of login. Needs no OAuth on Redmine and no API key from users; see
+  [docs/trusted-header-auth.md](docs/trusted-header-auth.md)
+  ([#399](https://github.com/jztan/redmine-mcp-server/issues/399)).
 
 ## [2.19.0] - 2026-10-17
 ### Added

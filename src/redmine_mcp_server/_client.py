@@ -422,6 +422,22 @@ def _get_redmine_client() -> Redmine:
             )
         return _new_client(key=key)
 
+    # trusted-header: an authenticating proxy names the caller's Redmine
+    # login in a request header, and every call switches to that user through
+    # the administrator key, once Redmine confirms the key is still an
+    # administrator's. Like api-key-login, decided by the mode alone, before
+    # the bearer branch below.
+    if g["REDMINE_AUTH_MODE"] == "trusted-header":
+        from ._trusted_header import check_admin_key, resolve_trusted_login
+
+        try:
+            request = get_http_request()
+        except RuntimeError:
+            request = None
+        login = resolve_trusted_login(request)  # raises PerUserAuthError
+        check_admin_key(request)  # once per HTTP request
+        return _new_client(key=g["REDMINE_API_KEY"], impersonate=login)
+
     # OAuth mode: per-request bearer token from FastMCP's native auth.
     # get_access_token() returns None outside an authenticated request
     # (e.g., legacy mode, or background tasks).
