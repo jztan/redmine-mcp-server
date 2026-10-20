@@ -96,6 +96,84 @@ class TestMainFunction:
 
 
 @pytest.mark.unit
+class TestStdioTransport:
+    """``REDMINE_MCP_TRANSPORT`` picks between uvicorn and stdio."""
+
+    @patch("redmine_mcp_server.main.uvicorn")
+    @patch("redmine_mcp_server.main.mcp")
+    def test_stdio_runs_mcp_over_stdio_without_banner(
+        self, mock_mcp, mock_uvicorn, monkeypatch
+    ):
+        from redmine_mcp_server.main import main
+
+        monkeypatch.setenv("REDMINE_MCP_TRANSPORT", "stdio")
+        main()
+
+        mock_mcp.run.assert_called_once_with(transport="stdio", show_banner=False)
+        mock_uvicorn.run.assert_not_called()
+
+    @patch("redmine_mcp_server.main.uvicorn")
+    @patch("redmine_mcp_server.main.mcp")
+    def test_value_is_case_and_space_insensitive(
+        self, mock_mcp, mock_uvicorn, monkeypatch
+    ):
+        from redmine_mcp_server.main import main
+
+        monkeypatch.setenv("REDMINE_MCP_TRANSPORT", " STDIO ")
+        main()
+
+        mock_mcp.run.assert_called_once()
+        mock_uvicorn.run.assert_not_called()
+
+    @pytest.mark.parametrize("value", ["http", "", None])
+    @patch("redmine_mcp_server.main.uvicorn")
+    @patch("redmine_mcp_server.main.mcp")
+    def test_http_or_unset_keeps_uvicorn(
+        self, mock_mcp, mock_uvicorn, monkeypatch, value
+    ):
+        from redmine_mcp_server.main import main
+
+        if value is None:
+            monkeypatch.delenv("REDMINE_MCP_TRANSPORT", raising=False)
+        else:
+            monkeypatch.setenv("REDMINE_MCP_TRANSPORT", value)
+        main()
+
+        mock_uvicorn.run.assert_called_once()
+        mock_mcp.run.assert_not_called()
+
+    @patch("redmine_mcp_server.main.uvicorn")
+    @patch("redmine_mcp_server.main.mcp")
+    def test_unknown_value_refuses_to_start(self, mock_mcp, mock_uvicorn, monkeypatch):
+        from redmine_mcp_server.main import main
+
+        monkeypatch.setenv("REDMINE_MCP_TRANSPORT", "sse")
+        with pytest.raises(RuntimeError, match="REDMINE_MCP_TRANSPORT"):
+            main()
+
+        mock_uvicorn.run.assert_not_called()
+        mock_mcp.run.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "auth_mode", ["oauth", "oauth-proxy", "api-key-login", "legacy-per-user"]
+    )
+    @patch("redmine_mcp_server.main.uvicorn")
+    @patch("redmine_mcp_server.main.mcp")
+    def test_stdio_refuses_modes_that_authenticate_requests(
+        self, mock_mcp, mock_uvicorn, monkeypatch, auth_mode
+    ):
+        from redmine_mcp_server import main as main_module
+
+        monkeypatch.setenv("REDMINE_MCP_TRANSPORT", "stdio")
+        monkeypatch.setattr(main_module, "REDMINE_AUTH_MODE", auth_mode)
+        with pytest.raises(RuntimeError, match="REDMINE_AUTH_MODE=legacy"):
+            main_module.main()
+
+        mock_mcp.run.assert_not_called()
+        mock_uvicorn.run.assert_not_called()
+
+
+@pytest.mark.unit
 class TestAuthWiring:
     """FastMCP construction with native auth in OAuth mode.
 
@@ -168,6 +246,7 @@ def test_main_applies_plugin_visibility_from_flags():
         "deals",
         "products",
         "dmsf",
+        "helpdesk",
     }
 
     with patch.dict(os.environ, {"REDMINE_DEALS_ENABLED": "false"}):

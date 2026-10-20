@@ -93,11 +93,13 @@ Tools live under `src/redmine_mcp_server/tools/`, one file per Redmine resource;
 | `tools/crm_queries.py` | RedmineUP CRM saved queries (1 tool, gated on either CRM flag) |
 | `tools/deals.py` | RedmineUP CRM deals, deal statuses, deal categories, deal product lines (4 tools, gated) |
 | `tools/documents.py` | DMSF plugin documents (1 tool with list/get/create/update actions, gated) |
+| `tools/helpdesk.py` | RedmineUP Helpdesk plugin email replies (1 tool, gated) |
 | `tools/meta.py` | Server introspection: `get_mcp_server_info` (1 tool, always available) |
 | `apps/triage_board.py` | Interactive Kanban triage board MCP App (2 tools) |
 | `apps/project_dashboard.py` | Interactive project dashboard MCP App (2 tools) |
+| `apps/project_timeline.py` | Interactive project timeline (Gantt) MCP App (2 tools) |
 
-Total: **51 core MCP tools** always registered, **13 plugin-gated** tools registered with a family tag and listed only when their `REDMINE_*_ENABLED` flag is set (64 with every plugin on), **plus 1 admin-gated** (`cleanup_attachment_files`, enabled by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`) for a maximum of 65.
+Total: **53 core MCP tools** always registered, **15 plugin-gated** tools registered with a family tag and listed only when their `REDMINE_*_ENABLED` flag is set (68 with every plugin on), **plus 1 admin-gated** (`cleanup_attachment_files`, enabled by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`) for a maximum of 69.
 
 Each `tools/<resource>.py` also owns its resource-specific serializers (`_X_to_dict` helpers).
 
@@ -111,11 +113,11 @@ Cross-cutting utilities live as flat private modules:
 | `_errors.py` | `_handle_redmine_error`, `_scrub_error_message`, `_READ_ONLY_ERROR` |
 | `_validation.py` | Input validators (`_is_positive_int`, `_is_valid_project_id`, `_validate_hours`) |
 | `_serialization.py` | `wrap_insecure_content`, `_safe_isoformat`, `_iter_capped`, `_named_ref`, `_coerce_json_safe`, `_normalize_csv_list` |
-| `_env.py` | Environment accessors: read-only / plugin flags (`_is_read_only_mode`, `_is_*_enabled`), secret resolution with Docker/Kubernetes `*_FILE` support (`get_secret`, `get_required`, `get_required_secret`), `require_introspection_credentials`, `get_allowed_client_redirect_uris` (oauth-proxy redirect-URI allowlist), `get_health_introspection_ttl_seconds`, `get_extension_modules` (parses `REDMINE_MCP_EXTENSIONS`) |
+| `_env.py` | Environment accessors: read-only / plugin flags (`_is_read_only_mode`, `_is_*_enabled`), secret resolution with Docker/Kubernetes `*_FILE` support (`get_secret`, `get_required`, `get_required_secret`), `require_introspection_credentials`, `get_allowed_client_redirect_uris` (oauth-proxy redirect-URI allowlist), `get_health_introspection_ttl_seconds`, `get_oauth_proxy_access_token_expiry_seconds` (oauth-proxy client token lifetime), `get_extension_modules` (parses `REDMINE_MCP_EXTENSIONS`), `get_transport` (parses `REDMINE_MCP_TRANSPORT`) |
 | `_custom_fields.py` | Custom-field parsing, autofill, and update coercion |
 | `_ssrf.py` | SSRF protection for `upload_file`'s `source_url` |
 | `_cleanup.py` | Background cleanup task |
-| `_http_routes.py` | Starlette routes (`/health` with a Doorkeeper introspection probe in `oauth` / `oauth-proxy` modes, a reachability probe in `legacy-per-user` / `api-key-login` modes, and a Redmine credential probe in legacy mode, `/files/{id}`, `/cleanup/status`) |
+| `_http_routes.py` | Starlette routes (`/health` with a Doorkeeper introspection probe in `oauth` / `oauth-proxy` modes, a reachability probe in `legacy-per-user` / `api-key-login` modes, and a Redmine credential probe in legacy mode, `/files/{id}`, `/uploads/{id}`, `/cleanup/status`) |
 | `_decorators.py` | `@action_dispatch` decorator + `ActionMode` enum |
 | `_offload.py` | `@offloaded` decorator and `in_thread()`: run blocking python-redmine work in a worker thread instead of on the event loop |
 | `_auth.py` | `RedmineAuthProvider` (a `RemoteAuthProvider` subclass) and its `build_remote_auth()` factory: composes `IntrospectionTokenVerifier` (RFC 7662) and adds the RFC 8414 AS-metadata mirror plus the RFC 7009 `/revoke` route. Used by `oauth` mode. |
@@ -667,7 +669,7 @@ redmine-mcp-server/
 ├── src/redmine_mcp_server/
 │   ├── main.py              # Entry point; build_authenticated_app() mounts the MCP app + discovery routes (oauth / oauth-proxy / api-key-login)
 │   ├── server.py            # Owns the shared `mcp = FastMCP(...)` instance; _select_auth_provider() picks the auth provider
-│   ├── tools/               # 17 per-resource tool modules (51 core + 13 plugin-gated + 1 admin-gated)
+│   ├── tools/               # 18 per-resource tool modules (53 core + 15 plugin-gated + 1 admin-gated)
 │   ├── apps/                # Interactive MCP Apps: triage board + project dashboard (4 tools)
 │   ├── _auth.py             # RedmineAuthProvider (introspection + AS-metadata + revoke), oauth mode
 │   ├── _oauth_proxy.py      # OAuthProxy factory (DCR + authorize/token/revoke proxy), oauth-proxy mode
@@ -682,7 +684,7 @@ redmine-mcp-server/
 │   ├── _custom_fields.py    # Custom-field parsing/coercion
 │   ├── _ssrf.py             # SSRF protection for upload_file source_url
 │   ├── _cleanup.py          # Background attachment cleanup task
-│   ├── _http_routes.py      # Starlette routes (/health w/ introspection + legacy redmine probe, /files, /cleanup/status)
+│   ├── _http_routes.py      # Starlette routes (/health w/ introspection + legacy redmine probe, /files, /uploads, /cleanup/status)
 │   ├── _decorators.py       # `@action_dispatch` decorator + `ActionMode` enum
 │   ├── _offload.py          # `@offloaded` / `in_thread()`: keep blocking calls off the event loop
 │   ├── _tool_error_middleware.py  # FastMCP middleware that normalizes tool validation errors
@@ -704,7 +706,7 @@ redmine-mcp-server/
 
 ### Core Components
 
-- **`main.py`**: Entry point. In an authenticated mode (`oauth`, `oauth-proxy` or `api-key-login`), `build_authenticated_app()` mounts the FastMCP app under the `REDMINE_MCP_BASE_URL` path prefix and adds the provider's `get_well_known_routes()` (discovery) plus `/health`, `/files`, `/cleanup/status`; in legacy mode it returns `mcp.http_app(stateless_http=True)`. Tool registration is triggered via `from . import tools`. No Starlette middleware is added; auth lives inside FastMCP via the `auth=` constructor parameter.
+- **`main.py`**: Entry point. In an authenticated mode (`oauth`, `oauth-proxy` or `api-key-login`), `build_authenticated_app()` mounts the FastMCP app under the `REDMINE_MCP_BASE_URL` path prefix and adds the provider's `get_well_known_routes()` (discovery) plus `/health`, `/files`, `/uploads`, `/cleanup/status`; in legacy mode it returns `mcp.http_app(stateless_http=True)`. Tool registration is triggered via `from . import tools`. No Starlette middleware is added; auth lives inside FastMCP via the `auth=` constructor parameter.
 - **`server.py`**: Owns the shared `mcp = FastMCP("redmine_mcp_tools", auth=...)` instance imported by every tool module. `_select_auth_provider(auth_mode)` returns `build_remote_auth()` (a `RedmineAuthProvider`) for `oauth`, `build_oauth_proxy()` (a FastMCP `OAuthProxy`) for `oauth-proxy`, `build_api_key_login()` (an `ApiKeyLoginProvider`) for `api-key-login`, and `None` for legacy.
 - **`_auth.py`** (`oauth` mode): `build_remote_auth()` returns a `RedmineAuthProvider`, a `RemoteAuthProvider` subclass that composes `IntrospectionTokenVerifier` (RFC 7662 against Doorkeeper's `/oauth/introspect`) and additionally serves the RFC 8414 AS-metadata mirror and the RFC 7009 `/revoke` route. Reads `REDMINE_INTROSPECT_CLIENT_ID` / `_SECRET` via `_env.require_introspection_credentials()` (fail-fast on startup).
 - **`_oauth_proxy.py`** (`oauth-proxy` mode): `build_oauth_proxy()` returns a FastMCP `OAuthProxy` that makes the MCP server the OAuth authorization server for clients (DCR + `/authorize` / `/token` / `/register`) and proxies upstream to Redmine/Doorkeeper, validating tokens with the same `IntrospectionTokenVerifier`. Keeps consent external (`require_authorization_consent="external"`), requires `REDMINE_MCP_JWT_SIGNING_KEY`, and restricts client redirect URIs to loopback by default (`get_allowed_client_redirect_uris()`).

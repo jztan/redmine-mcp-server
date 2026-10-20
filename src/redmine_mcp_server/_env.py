@@ -88,6 +88,24 @@ def _is_dmsf_enabled() -> bool:
     return _is_true_env("REDMINE_DMSF_ENABLED", "false")
 
 
+def _is_helpdesk_enabled() -> bool:
+    """Check if RedmineUP Helpdesk plugin support is enabled."""
+    return _is_true_env("REDMINE_HELPDESK_ENABLED", "false")
+
+
+def _is_helpdesk_tickets_enabled() -> bool:
+    """Check if RedmineUP Helpdesk *ticket* support is enabled (#378).
+
+    Separate from :func:`_is_helpdesk_enabled`, which gates only
+    ``send_helpdesk_email_reply``. Turning this on also advertises the
+    Helpdesk ticket OAuth scopes, and a Redmine OAuth application that does
+    not grant an advertised scope fails consent for the whole list, so it
+    has to be an opt-in of its own rather than a change under the older
+    flag.
+    """
+    return _is_true_env("REDMINE_HELPDESK_TICKETS_ENABLED", "false")
+
+
 # The built-in half of ``get_mcp_server_info``'s ``plugin_flags``: flag name
 # -> the accessor whose answer that key carries, in the order the response
 # lists them. Two things read it. The tool builds those keys from here
@@ -109,6 +127,8 @@ SERVER_INFO_PLUGIN_FLAGS: dict[str, Callable[[], bool]] = {
     "crm": _is_crm_enabled,
     "deals": _is_deals_enabled,
     "dmsf": _is_dmsf_enabled,
+    "helpdesk": _is_helpdesk_enabled,
+    "helpdesk_tickets": _is_helpdesk_tickets_enabled,
     "tags": _is_tags_enabled,
 }
 
@@ -201,6 +221,32 @@ def get_extension_modules() -> list[str]:
     """
     raw = os.getenv("REDMINE_MCP_EXTENSIONS", "")
     return [name for name in raw.replace(",", " ").split() if name]
+
+
+TRANSPORTS = ("http", "stdio")
+
+
+def get_transport() -> str:
+    """How ``main()`` serves MCP: ``http`` (the default) or ``stdio``.
+
+    ``REDMINE_MCP_TRANSPORT=stdio`` lets a client start the server as its own
+    subprocess and talk to it over stdin/stdout, the one transport that
+    Claude Desktop, Codex CLI and Kiro configure without a bridge. Any other
+    value refuses to start rather than falling back to HTTP, so a typo does
+    not leave the client waiting on a server it never reaches.
+    """
+    value = os.getenv("REDMINE_MCP_TRANSPORT", "").strip().lower() or "http"
+    if value not in TRANSPORTS:
+        raise RuntimeError(
+            f"REDMINE_MCP_TRANSPORT must be one of {', '.join(TRANSPORTS)}, "
+            f"got '{value}'."
+        )
+    return value
+
+
+def _is_stdio_transport() -> bool:
+    """True when the server runs over stdio and so has no URL of its own."""
+    return os.getenv("REDMINE_MCP_TRANSPORT", "").strip().lower() == "stdio"
 
 
 def _get_int_env(var_name: str, default: int) -> int:
@@ -343,6 +389,43 @@ def require_introspection_credentials() -> tuple[str, str]:
 def get_health_introspection_ttl_seconds() -> int:
     """How long /health caches the Doorkeeper introspection probe result."""
     return _get_int_env("HEALTH_INTROSPECTION_TTL_SECONDS", 30)
+
+
+def get_oauth_proxy_access_token_expiry_seconds() -> int | None:
+    """Lifetime of the access token OAuthProxy issues to MCP clients.
+
+    ``REDMINE_MCP_ACCESS_TOKEN_EXPIRY_SECONDS``, passed to FastMCP's
+    ``OAuthProxy`` as ``fastmcp_access_token_expiry_seconds``. Unset, blank or
+    ``0`` returns ``None``, which keeps FastMCP's default of mirroring
+    Doorkeeper's ``expires_in`` (2 hours on stock Redmine).
+
+    A longer lifetime cuts how often clients call ``/token`` to refresh. That
+    matters because OAuthProxy rotates the refresh token on every refresh and
+    rejects the old one, so several processes sharing one client's stored
+    credentials (parallel sessions of the same CLI) race each other, and each
+    loser is forced back through the browser login. The FastMCP token is only
+    a reference: the upstream Redmine token is still validated on every
+    request and refreshed server-side when it expires, so revoking the grant
+    in Redmine still takes effect immediately.
+
+    A value that is not a non-negative integer raises at startup rather than
+    silently falling back, since the fallback would bring the re-auth churn
+    back without any sign of why.
+    """
+    raw = os.getenv("REDMINE_MCP_ACCESS_TOKEN_EXPIRY_SECONDS")
+    if raw is None or not raw.strip():
+        return None
+    try:
+        seconds = int(raw.strip())
+        if seconds < 0:
+            raise ValueError(raw)
+    except ValueError:
+        raise RuntimeError(
+            "REDMINE_MCP_ACCESS_TOKEN_EXPIRY_SECONDS must be a non-negative "
+            f"integer number of seconds, got {raw!r}. Unset it or use 0 to "
+            "mirror Redmine's expires_in."
+        ) from None
+    return seconds or None
 
 
 def get_allowed_client_redirect_uris() -> list[str] | None:

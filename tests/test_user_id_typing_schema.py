@@ -72,7 +72,9 @@ async def test_invalid_string_rejected_at_boundary(tool_name, param):
     """Verify the runtime boundary actually rejects garbage strings
     with the INVALID_ARGUMENTS envelope from #108."""
     async with Client(_server.mcp) as client:
-        result = await client.call_tool(tool_name, {param: "notmeortheid"})
+        result = await client.call_tool(
+            tool_name, {param: "notmeortheid"}, raise_on_error=False
+        )
 
     payload = result.structured_content
     if payload and "result" in payload:

@@ -165,6 +165,42 @@ class TestServeAttachmentEndpoint:
         assert "expired" in response.text.lower()
 
     @pytest.mark.asyncio
+    async def test_serve_attachment_expired_never_deletes_outside_its_dir(
+        self, app, temp_attachments_dir, tmp_path, caplog
+    ):
+        """An expired record's ``file_path`` is only followed inside its slot.
+
+        The expiry branch deletes the file the record names. A record that
+        names a file elsewhere must not turn a GET into a delete of it; the
+        record and its directory still go, and the answer is still 404.
+        """
+        outside = tmp_path / "outside.txt"
+        outside.write_bytes(b"not this server's to delete")
+        file_id = str(uuid.uuid4())
+        uuid_dir = temp_attachments_dir / file_id
+        uuid_dir.mkdir()
+
+        metadata = {
+            "file_path": str(outside),
+            "original_filename": "outside.txt",
+            "content_type": "text/plain",
+            "expires_at": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+        }
+        (uuid_dir / "metadata.json").write_text(json.dumps(metadata))
+
+        with patch.dict(os.environ, {"ATTACHMENTS_DIR": str(temp_attachments_dir)}):
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://test"
+            ) as client:
+                response = await client.get(f"/files/{file_id}")
+
+        assert response.status_code == 404
+        assert "File expired" in response.text
+        assert outside.read_bytes() == b"not this server's to delete"
+        assert not uuid_dir.exists()
+        assert "attachment_cleanup_refused" in caplog.text
+
+    @pytest.mark.asyncio
     async def test_serve_attachment_success(self, app, valid_file_setup):
         """Test successful file serving."""
         with patch.dict(

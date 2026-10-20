@@ -81,6 +81,7 @@ class TestListProjectIssueCustomFields:
         custom_field = create_mock_custom_field()
         project = Mock()
         project.issue_custom_fields = [custom_field]
+        project.raw.return_value = {"issue_custom_fields": project.issue_custom_fields}
         mock_redmine.project.get.return_value = project
 
         result = await list_project_issue_custom_fields(project_id=41)
@@ -122,6 +123,7 @@ class TestListProjectIssueCustomFields:
 
         project = Mock()
         project.issue_custom_fields = [for_bug, for_feature, unbound]
+        project.raw.return_value = {"issue_custom_fields": project.issue_custom_fields}
         mock_redmine.project.get.return_value = project
 
         result = await list_project_issue_custom_fields(project_id=41, tracker_id=5)
@@ -140,6 +142,7 @@ class TestListProjectIssueCustomFields:
         field = create_mock_custom_field(field_id=10, trackers=[tracker_bug])
         project = Mock()
         project.issue_custom_fields = [field]
+        project.raw.return_value = {"issue_custom_fields": project.issue_custom_fields}
         mock_redmine.project.get.return_value = project
 
         result = await list_project_issue_custom_fields(

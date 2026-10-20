@@ -10,14 +10,21 @@ These tests mock the bug-reproducing scenario: /search.json returns
 sparse issues (id + description only), /issues.json returns full records.
 """
 
+import logging
 import os
 import sys
 import pytest
 from unittest.mock import Mock, patch
 
+from redminelib import Redmine
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from redmine_mcp_server.tools.issues import search_redmine_issues  # noqa: E402
+from redmine_mcp_server.tools.issues import (  # noqa: E402
+    _search_result_issue_id,
+    _search_title_subject,
+    search_redmine_issues,
+)
 
 
 def _sparse_search_issue(issue_id, description="snippet"):
@@ -263,3 +270,172 @@ class TestSearchHydration:
         )
         assert len(first_call_ids) == 100
         assert len(second_call_ids) == 50
+
+    @pytest.mark.asyncio
+    async def test_short_hydration_logs_a_warning(self, mock_redmine, caplog):
+        """A hydration that comes back short is logged, not only one that raises."""
+        mock_redmine.issue.search.return_value = [
+            _sparse_search_issue(1),
+            _sparse_search_issue(2),
+        ]
+        mock_redmine.issue.filter.return_value = [_full_issue(1)]
+
+        with caplog.at_level(logging.WARNING):
+            await search_redmine_issues("bug")
+
+        assert "Hydration returned 1 of 2 search results" in caplog.text
+
+
+# Easy Redmine offsets the ids /search.json returns per entity type (issues by
+# 300000000) and keeps the real id in `url`. Its title is the plain subject.
+EASY_SEARCH_ROW = {
+    "id": 300024224,
+    "title": "S2-51 Close or defer the open ADRs",
+    "type": "issue",
+    "url": "https://redmine.example.test/issues/24224",
+    "description": "match snippet",
+    "datetime": "2026-09-01T10:00:00Z",
+}
+
+
+def _client(search_rows, issues):
+    """A real python-redmine client answering /search.json and /issues.json.
+
+    A real resource matters here: its `url` attribute is a property built
+    from the (offset) id, not the `url` Redmine sent.
+    """
+    client = Redmine("https://redmine.example.test", key="unused")
+    client.requests_made = []
+
+    def _request(method, url, headers=None, params=None, data=None):
+        client.requests_made.append((url, dict(params or {})))
+        if url.endswith("/search.json"):
+            # python-redmine pops `type` off each row, so hand it copies.
+            rows = [dict(row) for row in search_rows]
+            return {"results": rows, "total_count": len(rows), "offset": 0}
+        if url.endswith("/issues.json"):
+            return {"issues": issues, "total_count": len(issues), "offset": 0}
+        raise AssertionError(f"unexpected request to {url}")
+
+    client.engine.request = _request
+    return client
+
+
+def _issues_json_calls(client):
+    return [params for url, params in client.requests_made if "/issues" in url]
+
+
+class TestSearchOffsetIds:
+    @pytest.mark.asyncio
+    async def test_easy_offset_id_with_no_hydration_match(self, caplog):
+        """Easy answers the offset ids with zero issues and no error."""
+        client = _client([EASY_SEARCH_ROW], issues=[])
+
+        with patch("redmine_mcp_server._client.redmine", client):
+            with caplog.at_level(logging.WARNING):
+                result = await search_redmine_issues("ADR")
+
+        assert result[0]["id"] == 24224
+        assert result[0]["subject"] == "S2-51 Close or defer the open ADRs"
+        assert result[0]["status"] is None
+        assert [c["issue_id"] for c in _issues_json_calls(client)] == ["24224"]
+        assert "Hydration returned 0 of 1 search results" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_easy_offset_id_hydrates_by_real_id(self):
+        full = {
+            "id": 24224,
+            "subject": "S2-51 Close or defer the open ADRs",
+            "status": {"id": 2, "name": "In Progress"},
+            "project": {"id": 1, "name": "Test Project"},
+        }
+        client = _client([EASY_SEARCH_ROW], issues=[full])
+
+        with patch("redmine_mcp_server._client.redmine", client):
+            result = await search_redmine_issues("ADR")
+
+        assert result[0]["id"] == 24224
+        assert result[0]["status"] == {"id": 2, "name": "In Progress"}
+
+    @pytest.mark.asyncio
+    async def test_id_and_description_return_the_real_id(self):
+        """fields=['id', 'description'] skips hydration but not the id fix."""
+        client = _client([EASY_SEARCH_ROW], issues=[])
+
+        with patch("redmine_mcp_server._client.redmine", client):
+            result = await search_redmine_issues("ADR", fields=["id", "description"])
+
+        assert result[0]["id"] == 24224
+        assert "match snippet" in result[0]["description"]
+        assert _issues_json_calls(client) == []
+
+    @pytest.mark.asyncio
+    async def test_stock_title_prefix_is_stripped_when_not_hydrated(self):
+        row = dict(
+            EASY_SEARCH_ROW,
+            id=42,
+            title="Bug #42 (In Progress): Login fails",
+            url="https://redmine.example.test/issues/42",
+        )
+        client = _client([row], issues=[])
+
+        with patch("redmine_mcp_server._client.redmine", client):
+            result = await search_redmine_issues("login")
+
+        assert result[0]["id"] == 42
+        assert result[0]["subject"] == "Login fails"
+
+
+class TestSearchResultIssueId:
+    @staticmethod
+    def _row(**attrs):
+        client = Redmine("https://redmine.example.test", key="unused")
+        return client.issue.to_resource(dict(EASY_SEARCH_ROW, **attrs))
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://redmine.example.test/issues/24224",
+            "https://redmine.example.test/redmine/issues/24224",
+            "https://redmine.example.test/issues/24224#change-7",
+            "https://redmine.example.test/issues/24224?tab=history",
+        ],
+    )
+    def test_id_is_read_from_url(self, url):
+        assert _search_result_issue_id(self._row(url=url)) == 24224
+
+    @pytest.mark.parametrize(
+        "url",
+        [None, "https://redmine.example.test/projects/demo", "not a url"],
+    )
+    def test_unreadable_url_falls_back_to_id(self, url):
+        assert _search_result_issue_id(self._row(url=url)) == 300024224
+
+    def test_mock_row_without_url_falls_back_to_id(self):
+        assert _search_result_issue_id(_sparse_search_issue(7)) == 7
+
+
+class TestSearchTitleSubject:
+    @pytest.mark.parametrize(
+        "title, expected",
+        [
+            ("Bug #42 (New): Login fails", "Login fails"),
+            ("Change request #42 (In review): Login fails", "Login fails"),
+            ("Bug #42 (Waiting (customer)): Login fails", "Login fails"),
+            ("Bug #42 (New): Fix (a): b", "Fix (a): b"),
+        ],
+    )
+    def test_stock_prefix_is_stripped(self, title, expected):
+        assert _search_title_subject(title, 42) == expected
+
+    @pytest.mark.parametrize(
+        "title",
+        [
+            "S2-51 Close or defer the open ADRs",
+            "Bug #421 (New): Login fails",
+            "Bug #7 (New): Login fails",
+            "Follow-up to #42: Login fails",
+        ],
+    )
+    def test_title_without_the_rows_own_prefix_is_kept(self, title):
+        assert _search_title_subject(title, 42) == title

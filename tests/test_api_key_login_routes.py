@@ -464,7 +464,8 @@ def test_a_403_stays_an_ordinary_permission_error():
 
     with patch.object(_client, "REDMINE_AUTH_MODE", "api-key-login"):
         payload = _errors._handle_redmine_error(ForbiddenError(), "listing issues")
-    assert "code" not in payload
+    # A 403 has its own code; only AUTH_FAILED revokes the binding.
+    assert payload["code"] == "FORBIDDEN"
     assert "Access denied" in payload["error"]
 
 

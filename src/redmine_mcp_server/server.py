@@ -22,7 +22,10 @@ from fastmcp import FastMCP
 
 from ._annotations import annotations_for
 from ._env import _is_scope_enforcement_enabled
-from ._tool_error_middleware import CleanValidationErrorMiddleware
+from ._tool_error_middleware import (
+    CleanValidationErrorMiddleware,
+    ToolErrorFlagMiddleware,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +134,9 @@ def _register_middlewares(mcp_instance, auth_provider) -> None:
     Extracted so tests can exercise the registration logic on a fresh
     FastMCP instance without reloading this module.
     """
+    # First, so it is the outermost layer and sees the envelope from every
+    # tool and every middleware registered after it.
+    mcp_instance.add_middleware(ToolErrorFlagMiddleware())
     mcp_instance.add_middleware(CleanValidationErrorMiddleware())
     if auth_provider is None:
         # Legacy modes carry no OAuth scopes; nothing to enforce.

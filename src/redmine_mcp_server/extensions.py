@@ -86,9 +86,10 @@ private module layout, is what it depends on.
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import NoReturn
+from types import MappingProxyType
+from typing import Any, Dict, NoReturn
 
-from . import _client
+from . import _caller, _client, _upload_store
 from ._annotations import TOOL_KINDS, ToolKind
 from ._decorators import ActionMode, action_dispatch
 from ._env import (
@@ -102,7 +103,7 @@ from ._extension_registry import REGISTERED_EXTENSIONS
 from ._offload import in_thread, offloaded
 from ._plugin_visibility import PLUGIN_FLAGS, plugin_tag
 from ._serialization import wrap_insecure_content
-from ._validation import _is_positive_int
+from ._validation import _is_positive_int, _reject_non_scalar_filter_values
 from .oauth_scopes import TOOL_SCOPES, ToolScopeEntry
 from .server import mcp
 
@@ -122,8 +123,12 @@ __all__ = [
     "mcp",
     "offloaded",
     "plugin_tag",
+    "read_staged",
     "redmine_url",
     "register_extension",
+    "resolve_staged_upload_owner",
+    "staged_upload_owner",
+    "text_from_staged_upload",
     "wrap_insecure_content",
 ]
 
@@ -138,6 +143,25 @@ is_positive_int = _is_positive_int
 is_read_only_mode = _is_read_only_mode
 is_true_env = _is_true_env
 
+# The raw reader behind every built-in ``upload_id``: the bytes and the
+# filename the ticket was created with, for a tool that attaches the file
+# rather than reading it as text. A binding like the ones above, since
+# ``_upload_store`` imports nothing from the rest of the package. Pass it
+# ``owner=`` from ``resolve_staged_upload_owner()``: a slot is readable only
+# by the caller that created its ticket, and without an owner a bound slot
+# answers as an unknown id.
+read_staged = _upload_store.read_staged
+
+# Who the caller is, for the ``owner`` both staged-upload readers take.
+# ``resolve_staged_upload_owner`` is a coroutine that may ask Redmine once,
+# in the OAuth modes when the token carries no ``sub``, so await it in the
+# tool's async body before anything moves to a worker thread.
+# ``staged_upload_owner`` is the synchronous part, the answer available
+# without asking Redmine, for code that only needs to know whether there is
+# one.
+resolve_staged_upload_owner = _caller.resolve_staged_upload_owner
+staged_upload_owner = _caller.staged_upload_owner
+
 
 def redmine_url() -> str | None:
     """The configured Redmine base URL, read at call time.
@@ -149,6 +173,42 @@ def redmine_url() -> str | None:
     built-in plugin tool reads it through the module for the same reason.
     """
     return _client.REDMINE_URL
+
+
+def text_from_staged_upload(
+    upload_id: str, label: str, owner: str | None = None
+) -> tuple[str | None, Dict[str, Any] | None]:
+    """Read a staged upload as the whole new text of a field.
+
+    What every built-in ``*_upload_id`` parameter reads through, so an
+    extension tool that takes one behaves the same way: the caller writes
+    the text to a file, sends it with ``create_upload_ticket``'s route, and
+    names the ``upload_id`` instead of writing the text into an argument.
+
+    Returns ``(text, None)``, the file decoded as UTF-8, or
+    ``(None, {"error": ...})``. ``label`` names the field in the one error
+    this function writes itself, for bytes that are not valid UTF-8 ("The
+    file staged for notes is not valid UTF-8 ..."). Every other error -- an
+    id that is not a UUID, an unknown upload, a slot that never received a
+    file, an expired one -- is :func:`read_staged`'s, unchanged, so it reads
+    the same from an extension's tool as from a built-in one. The file is
+    left in place either way.
+
+    ``owner`` is the caller's identity from :func:`resolve_staged_upload_owner`.
+    A slot is bound to the caller that created its ticket, and a bound slot
+    read without its owner answers like an unknown id, so a tool that leaves
+    it out can read only slots created where callers are not told apart.
+
+    A wrapper rather than a binding, unlike the aliases above, because the
+    reader lives in ``tools.issues``, and importing that at module level
+    would make importing this module import the whole tool tree -- the
+    reason :func:`_check_issue_seams` imports it locally too. Resolving the
+    name per call also means a test that patches the private reader patches
+    this one with it.
+    """
+    from .tools.issues import _text_from_staged_upload
+
+    return _text_from_staged_upload(upload_id, label, owner=owner)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -202,6 +262,37 @@ class ExtensionSpec:
             advertise a scope per letter.
         advertised_write_scopes: The same, and additionally suppressed in
             read-only mode.
+        issue_update_keys: Issue attributes ``update_redmine_issue`` may
+            write while the family is enabled, in addition to Redmine's
+            own. A key it does not know is taken for a custom field
+            *label*, and the labels are matched with the non-alphanumerics
+            stripped, so an attribute named ``easy_sprint_id`` collides
+            with a custom field called "Easy Sprint ID" and the value
+            lands in the wrong place. Names here are passed through
+            untouched instead, and never reach label matching. Both write
+            paths share that step, so a registered name is passed through
+            on ``create_redmine_issue`` as well as on an update.
+        issue_query_filters: Filter name -> the query parameters that have
+            to ride along for the server to honour it, usually ``{}``.
+            ``list_redmine_issues`` refuses a filter name it does not know,
+            because Redmine drops an unregistered filter and answers 200
+            with the collection unnarrowed -- which a caller cannot tell
+            apart from a filter that matched everything. Registering here
+            widens that list while the family is enabled, without opening
+            it. The parameters are merged into the request only when that
+            filter is part of the call, and never over a value the caller
+            set, so a request that names none of them is unchanged.
+        issue_payload_skip_keys: Top-level issue keys to leave out of
+            ``unmapped_fields`` while the family is enabled. For the keys a
+            distribution adds for its own renderer rather than for a
+            reader: Easy Redmine's ``css_classes`` is a CSS class list for
+            its issue grid, present on every issue, and it answers nothing
+            the issue's own fields do not answer better. The size cap that
+            catches a plugin's long text does not reach it -- it is about a
+            fifth of the cap -- and a cap low enough would drop real data
+            instead. This repository cannot know which of a fork's keys are
+            presentation, so the fork says so here. A name that is not in
+            the payload is simply never matched.
     """
 
     family: str
@@ -210,6 +301,9 @@ class ExtensionSpec:
     tool_scopes: Mapping[str, ToolScopeEntry]
     advertised_read_scopes: Sequence[str] = ()
     advertised_write_scopes: Sequence[str] = ()
+    issue_update_keys: Sequence[str] = ()
+    issue_query_filters: Mapping[str, Mapping[str, object]] = MappingProxyType({})
+    issue_payload_skip_keys: Sequence[str] = ()
 
 
 def _reject(where: str, problem: str) -> NoReturn:
@@ -257,6 +351,94 @@ def _check_scope_sequence(where: str, field: str, value: object) -> None:
                 where,
                 f"has an entry in {field} that is not a non-empty str: "
                 f"{scope!r}. Each one is the name of a Redmine permission.",
+            )
+
+
+def _check_issue_update_keys(where: str, value: object) -> None:
+    """Issue attributes to pass through: an ordered sequence of names."""
+    if isinstance(value, str):
+        _reject(
+            where,
+            f"passes a bare str as issue_update_keys: {value!r}. A str is a "
+            "sequence of its own characters, so this would declare one "
+            f"single-letter attribute per letter. Pass a one-tuple: ({value!r},).",
+        )
+    if not isinstance(value, Sequence):
+        _reject(
+            where,
+            f"maps issue_update_keys to {value!r}, which is not a sequence.",
+        )
+    for key in value:
+        if not isinstance(key, str) or not key:
+            _reject(
+                where,
+                f"has an entry in issue_update_keys that is not a non-empty "
+                f"str: {key!r}. Each one is the name of an issue attribute as "
+                "the Redmine API spells it.",
+            )
+
+
+def _check_issue_payload_skip_keys(where: str, value: object) -> None:
+    """Payload keys to hide: an ordered sequence of names, like the above."""
+    if isinstance(value, str):
+        _reject(
+            where,
+            f"passes a bare str as issue_payload_skip_keys: {value!r}. A str "
+            "is a sequence of its own characters, so this would hide one "
+            f"single-letter key per letter. Pass a one-tuple: ({value!r},).",
+        )
+    if not isinstance(value, Sequence):
+        _reject(
+            where,
+            f"maps issue_payload_skip_keys to {value!r}, which is not a " "sequence.",
+        )
+    for key in value:
+        if not isinstance(key, str) or not key:
+            _reject(
+                where,
+                f"has an entry in issue_payload_skip_keys that is not a "
+                f"non-empty str: {key!r}. Each one is a top-level key of the "
+                "issue payload as the server spells it.",
+            )
+
+
+def _check_issue_query_filters(where: str, value: object) -> None:
+    """Filter names mapped to the query parameters that ride with them."""
+    if not isinstance(value, Mapping):
+        _reject(
+            where,
+            f"maps issue_query_filters to {value!r}, which is not a mapping. "
+            "It is filter name -> the parameters that have to accompany it, "
+            "so a filter needing none maps to an empty dict.",
+        )
+    for name, params in value.items():
+        if not isinstance(name, str) or not name:
+            _reject(
+                where,
+                f"has a key in issue_query_filters that is not a non-empty "
+                f"str: {name!r}. The key is the filter name a caller passes "
+                "to list_redmine_issues.",
+            )
+        if not isinstance(params, Mapping):
+            _reject(
+                where,
+                f"maps issue_query_filters[{name!r}] to {params!r}, which is "
+                "not a mapping. Pass {} when the filter needs no companion "
+                "parameters.",
+            )
+        for key in params:
+            if not isinstance(key, str) or not key:
+                _reject(
+                    where,
+                    f"has a parameter name in issue_query_filters[{name!r}] "
+                    f"that is not a non-empty str: {key!r}.",
+                )
+        problem = _reject_non_scalar_filter_values(dict(params))
+        if problem:
+            _reject(
+                where,
+                f"has a value in issue_query_filters[{name!r}] that cannot go "
+                f"on the wire as a query parameter. {problem}",
             )
 
 
@@ -328,6 +510,188 @@ def _validate_spec(spec: ExtensionSpec) -> None:
     for field in ("advertised_read_scopes", "advertised_write_scopes"):
         _check_scope_sequence(where, field, getattr(spec, field))
 
+    _check_issue_update_keys(where, spec.issue_update_keys)
+    _check_issue_query_filters(where, spec.issue_query_filters)
+    _check_issue_payload_skip_keys(where, spec.issue_payload_skip_keys)
+
+
+def _check_issue_seams(spec: ExtensionSpec) -> None:
+    """Refuse an issue attribute, filter or hidden key already spoken for.
+
+    The two tables this widens are read per call rather than merged into a
+    module constant, so a duplicate would not overwrite anything -- it would
+    simply be silent, and silence is what both seams exist to remove. A name
+    Redmine already defines usually means the built-in support caught up with
+    the extension, which is worth being told about rather than carrying
+    forever.
+
+    The imports are local: ``tools.issues`` reaches the whole tool tree, and
+    an extension module importing this one during ``main``'s import loop must
+    not drag that in a second time through a different path. By then
+    ``main.py`` has imported ``tools`` already, so both modules are in
+    ``sys.modules`` and the lookup is free.
+    """
+    from ._custom_fields import _STANDARD_ISSUE_UPDATE_FIELDS
+    from ._validation import _RESERVED_QUERY_KEYS, _is_custom_field_filter
+    from .tools.issues import (
+        _ISSUE_PAYLOAD_SKIP_KEYS,
+        _ISSUE_QUERY_ASSOCIATIONS,
+        _ISSUE_QUERY_FILTER_NAMES,
+        _ISSUE_REQUEST_PARAM_KEYS,
+    )
+
+    where = f"Extension family '{spec.family}'"
+    update_keys = set(spec.issue_update_keys)
+    filters = dict(spec.issue_query_filters)
+    skip_keys = set(spec.issue_payload_skip_keys)
+    # Names a companion parameter may not take: a filter narrows the query,
+    # and one sent unasked is a filter the caller did not write.
+    filter_names = set(_ISSUE_QUERY_FILTER_NAMES) | set(filters)
+    # And the other direction: a name an already registered family sends as a
+    # companion cannot become a filter, or that family would start narrowing
+    # whatever the new filter's callers ask for.
+    companion_of: Dict[str, str] = {}
+    for registered in REGISTERED_EXTENSIONS:
+        filter_names |= set(registered.issue_query_filters)
+        for sent in registered.issue_query_filters.values():
+            for key in sent:
+                companion_of.setdefault(key, registered.family)
+
+    clash = sorted(name for name in filters if name in companion_of)
+    if clash:
+        named = ", ".join(f"{name} (family '{companion_of[name]}')" for name in clash)
+        _reject(
+            where,
+            f"declares issue_query_filters that another family already sends "
+            f"as a companion parameter: {named}. Whoever used the filter "
+            "would get that family's value merged in as well.",
+        )
+
+    taken = sorted(update_keys & _STANDARD_ISSUE_UPDATE_FIELDS)
+    if taken:
+        _reject(
+            where,
+            f"declares issue_update_keys Redmine itself defines: "
+            f"{', '.join(taken)}. They are passed through already, so drop "
+            "them from the spec rather than declaring them twice.",
+        )
+
+    taken = sorted(name for name in filters if name in _ISSUE_QUERY_FILTER_NAMES)
+    if taken:
+        _reject(
+            where,
+            f"declares issue_query_filters Redmine itself registers: "
+            f"{', '.join(taken)}. list_redmine_issues accepts them already.",
+        )
+
+    # The whole skip set, not just the mapped fields: `journals`, `watchers`
+    # and the rest of the includes and relations never reach
+    # `unmapped_fields` either, so naming one is the same do-nothing entry.
+    pointless = sorted(skip_keys & _ISSUE_PAYLOAD_SKIP_KEYS)
+    if pointless:
+        _reject(
+            where,
+            f"declares issue_payload_skip_keys unmapped_fields never carries: "
+            f"{', '.join(pointless)}. The serializer emits them as fields of "
+            "its own, or they are an include or a relation it handles, so the "
+            "entry would do nothing. Drop it, or -- if the intent was to hide "
+            "a standard field from the response -- that is the caller's "
+            "`fields` argument and not an extension's to decide.",
+        )
+
+    # A key a family declares as writable is one a caller reads back: it
+    # writes `acme_sprint_id`, then looks for what came of it. Hiding it
+    # makes the attribute write-only, so the two cannot name the same key --
+    # within one spec or across two, whichever registers first.
+    own_clash = sorted(skip_keys & update_keys)
+    if own_clash:
+        _reject(
+            where,
+            f"declares issue_payload_skip_keys it also declares as "
+            f"issue_update_keys: {', '.join(own_clash)}. A caller writes an "
+            "attribute and reads it back through unmapped_fields; hiding it "
+            "makes it write-only.",
+        )
+
+    for other in REGISTERED_EXTENSIONS:
+        clash = sorted(update_keys & set(other.issue_update_keys))
+        if clash:
+            _reject(
+                where,
+                f"declares issue_update_keys already claimed by family "
+                f"'{other.family}': {', '.join(clash)}. An attribute has one "
+                "meaning on the wire, so two families cannot own it.",
+            )
+        clash = sorted(set(filters) & set(other.issue_query_filters))
+        if clash:
+            _reject(
+                where,
+                f"declares issue_query_filters already claimed by family "
+                f"'{other.family}': {', '.join(clash)}. Whichever registered "
+                "last would decide the parameters sent with it.",
+            )
+        clash = sorted(skip_keys & set(other.issue_update_keys))
+        if clash:
+            _reject(
+                where,
+                f"declares issue_payload_skip_keys that family "
+                f"'{other.family}' writes as issue_update_keys: "
+                f"{', '.join(clash)}. That family's callers write the "
+                "attribute and read it back through unmapped_fields; hiding "
+                "it here would make it write-only for them.",
+            )
+        clash = sorted(update_keys & set(other.issue_payload_skip_keys))
+        if clash:
+            _reject(
+                where,
+                f"declares issue_update_keys that family '{other.family}' "
+                f"hides as issue_payload_skip_keys: {', '.join(clash)}. The "
+                "same conflict the other way round, caught whichever of the "
+                "two registers first.",
+            )
+
+    for name, params in filters.items():
+        reserved = sorted(set(params) & _RESERVED_QUERY_KEYS)
+        if reserved:
+            _reject(
+                where,
+                f"has issue_query_filters[{name!r}] setting {', '.join(reserved)}. "
+                "Redmine reads those as the query's own filter definition and "
+                "discards every filter built from the rest of the request.",
+            )
+        owned = sorted(set(params) & _ISSUE_REQUEST_PARAM_KEYS)
+        if owned:
+            _reject(
+                where,
+                f"has issue_query_filters[{name!r}] setting "
+                f"{', '.join(owned)}, which list_redmine_issues owns: they "
+                "carry the caller's paging, sorting and includes.",
+            )
+        custom_field = sorted(
+            key
+            for key in params
+            if _is_custom_field_filter(key, _ISSUE_QUERY_ASSOCIATIONS)
+        )
+        if custom_field:
+            _reject(
+                where,
+                f"has issue_query_filters[{name!r}] setting "
+                f"{', '.join(custom_field)}, a custom field filter spelling "
+                "list_redmine_issues accepts. Those are registered per custom "
+                "field rather than by name, so they narrow a query as much as "
+                "any other filter does.",
+            )
+        as_filter = sorted(set(params) & filter_names)
+        if as_filter:
+            _reject(
+                where,
+                f"has issue_query_filters[{name!r}] setting "
+                f"{', '.join(as_filter)}, which is itself a filter name. A "
+                "companion parameter rides along unasked, so this would "
+                "narrow every call that uses the filter -- silently, since "
+                "the caller never wrote it.",
+            )
+
 
 def register_extension(spec: ExtensionSpec) -> None:
     """Merge one extension's entries into the server's tables.
@@ -393,6 +757,8 @@ def register_extension(spec: ExtensionSpec) -> None:
                 f"in {table_name}: {', '.join(taken)}. A tool name is global "
                 "on the MCP surface, so pick names of your own."
             )
+
+    _check_issue_seams(spec)
 
     PLUGIN_FLAGS[spec.family] = spec.enabled
     TOOL_KINDS.update(kinds)

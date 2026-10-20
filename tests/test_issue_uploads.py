@@ -27,6 +27,7 @@ def _issue_with_attachment(issue_id=42, journal_id=7):
     journal = MagicMock()
     journal.id = journal_id
     issue.journals = [journal]
+    issue.raw.return_value = {"attachments": [att], "journals": [journal]}
     return issue
 
 

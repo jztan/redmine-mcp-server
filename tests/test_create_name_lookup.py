@@ -64,14 +64,12 @@ class TestResolveNamedCustomFieldsHelper:
             {"id": 2, "value": "Engineering"},
         ]
 
-    def test_unknown_name_passes_through(self):
-        # When a name-keyed field doesn't match any project custom
-        # field definition, leave it on the payload. Redmine will
-        # reject it with its own validation error, which is the
-        # right surface for "this field doesn't exist."
+    def test_unknown_name_is_refused(self):
+        # Redmine does not reject an unknown top-level key, it ignores it,
+        # so passing the name on made a write that changed nothing (#370).
         payload = {"NonExistent": "value"}
-        out = _resolve_named_custom_fields(payload, [_cf(2, "Department")])
-        assert out["NonExistent"] == "value"
+        with pytest.raises(ValueError, match="Unknown custom field 'NonExistent'"):
+            _resolve_named_custom_fields(payload, [_cf(2, "Department")])
 
     def test_ambiguous_name_raises(self):
         # Two custom fields share the normalized name -> the caller
@@ -105,7 +103,10 @@ class TestCreateWrapperFetchesProjectCustomFields:
         client_factory.assert_not_called()
 
     def test_wrapper_fetches_project_and_resolves(self):
-        project_obj = SimpleNamespace(issue_custom_fields=[_cf(2, "Department")])
+        fields = [_cf(2, "Department")]
+        project_obj = SimpleNamespace(
+            issue_custom_fields=fields, raw=lambda: {"issue_custom_fields": fields}
+        )
         with patch(
             "redmine_mcp_server._custom_fields._get_redmine_client"
         ) as client_factory:
@@ -124,8 +125,9 @@ class TestCreateRedmineIssueEndToEnd:
     @patch("redmine_mcp_server._client.redmine")
     async def test_creates_with_name_keyed_custom_field(self, mock_redmine):
         # Project lookup returns the custom field definition.
+        fields = [_cf(2, "Department")]
         mock_redmine.project.get.return_value = SimpleNamespace(
-            issue_custom_fields=[_cf(2, "Department")]
+            issue_custom_fields=fields, raw=lambda: {"issue_custom_fields": fields}
         )
         # The create itself returns a minimal issue stub.
         mock_redmine.issue.create.return_value = SimpleNamespace(

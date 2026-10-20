@@ -3,6 +3,7 @@ Main entry point for the MCP Redmine server.
 
 This module uses FastMCP's native HTTP transport for MCP protocol communication.
 The server runs with built-in HTTP endpoints and handles MCP requests natively.
+With ``REDMINE_MCP_TRANSPORT=stdio`` it serves MCP over stdin/stdout instead.
 
 Endpoints:
     - /mcp: Handles MCP requests via streamable HTTP transport.
@@ -42,7 +43,7 @@ from ._mount import (  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-from ._env import get_extension_modules  # noqa: E402
+from ._env import get_extension_modules, get_transport  # noqa: E402
 from ._plugin_visibility import apply_plugin_visibility, plugin_tag  # noqa: E402
 from ._tool_allow_list import (  # noqa: E402
     _TOOL_KEY_PREFIX,
@@ -336,6 +337,11 @@ def build_authenticated_app(mcp_instance, auth_provider):
                 methods=["GET"],
             ),
             Route(
+                "/uploads/{upload_id}",
+                _http_routes.receive_upload,
+                methods=["POST"],
+            ),
+            Route(
                 "/cleanup/status",
                 _http_routes.cleanup_status,
                 methods=["GET"],
@@ -398,11 +404,32 @@ if REDMINE_AUTH_MODE == "api-key-login":
     log_api_key_login_store_path(REDMINE_AUTH_MODE)
 
 
+def run_stdio():
+    """Serve MCP over stdin/stdout to the client that started this process.
+
+    Only ``legacy`` mode fits. The other modes tell callers apart by a token
+    or header on each HTTP request, and a stdio server has a single caller
+    and no requests to read either from. stdout carries the protocol, so the
+    FastMCP banner stays off; logging already goes to stderr.
+    """
+    if REDMINE_AUTH_MODE != "legacy":
+        raise RuntimeError(
+            "REDMINE_MCP_TRANSPORT=stdio needs REDMINE_AUTH_MODE=legacy, got "
+            f"'{REDMINE_AUTH_MODE}'. The other modes authenticate each HTTP "
+            "request and cannot run over stdio."
+        )
+    mcp.run(transport="stdio", show_banner=False)
+
+
 def main():
     """Main entry point for the console script."""
     # Note: .env is already loaded during _client import
     # Note: version/auth mode are logged at module level
     # (works for both direct and uvicorn invocation)
+
+    if get_transport() == "stdio":
+        run_stdio()
+        return
 
     host = os.getenv("SERVER_HOST", "127.0.0.1")
     port = int(os.getenv("SERVER_PORT", "8000"))

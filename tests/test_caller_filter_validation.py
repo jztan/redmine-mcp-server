@@ -258,7 +258,7 @@ async def test_include_may_still_be_a_list_in_issue_filters(engine):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "filters", [{"cf_42": "value"}, {"author.cf_42": "v"}, {"is_company": "1"}]
+    "filters", [{"cf_42": "value"}, {"author.cf_42": "v"}, {"has_deals": "1"}]
 )
 async def test_registered_contact_filters_still_reach_redmine(engine, crm, filters):
     result = await manage_contact(action="list", filters=filters)

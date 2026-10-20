@@ -1,8 +1,29 @@
 """File management utilities for attachment downloads."""
 
 import json
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
+
+logger = logging.getLogger("redmine_mcp_server")
+
+
+def contained_file_path(file_path: str, uuid_dir: Path) -> Optional[Path]:
+    """A record's ``file_path``, resolved, if it is inside the record's own dir.
+
+    Both the download path and the upload path write ``file_path`` under a
+    name the server picks, so a record this server wrote always passes. The
+    check is for the one that did not: the expiry paths delete whatever the
+    record names, and a record naming a file elsewhere must not turn an
+    expiry into a delete of it. Returns ``None`` for such a path.
+    """
+    resolved = Path(file_path).resolve()
+    try:
+        resolved.relative_to(uuid_dir.resolve())
+    except ValueError:
+        return None
+    return resolved
 
 
 class AttachmentFileManager:
@@ -41,9 +62,16 @@ class AttachmentFileManager:
                         expires_at_str.replace("Z", "+00:00")
                     )
                     if now > expires_at:
-                        # Remove data file
-                        file_path = Path(metadata["file_path"])
-                        if file_path.exists():
+                        # Remove data file, but only from this record's own
+                        # directory; the record and directory go either way
+                        file_path = contained_file_path(metadata["file_path"], uuid_dir)
+                        if file_path is None:
+                            logger.warning(
+                                "attachment_cleanup_refused file_id=%s "
+                                "reason=file_path_outside_uuid_dir",
+                                uuid_dir.name,
+                            )
+                        elif file_path.exists():
                             cleaned_size += file_path.stat().st_size
                             file_path.unlink()
 

@@ -12,6 +12,9 @@ from .._errors import _handle_redmine_error
 from .._offload import offloaded
 from .._serialization import (
     _REDMINE_API_PAGE_CAP,
+    _custom_fields_to_list,
+    _named_ref,
+    _normalize_tag_list,
     _safe_isoformat,
     wrap_insecure_content,
 )
@@ -46,6 +49,16 @@ def _product_to_dict(product: Dict[str, Any]) -> Dict[str, Any]:
 
     Display-name fields (``name``, ``description``, ``code``) are wrapped in
     ``<insecure-content>`` boundary tags because they are user-controlled.
+
+    Where the plugin's own key differs from the one this serializer first
+    assumed, both are read, as ``_contact_to_dict`` does for the CRM plugin:
+    the products API renders ``tag_list``, ``created_at`` and ``updated_at``
+    (``products/index.api.rsb`` and ``show.api.rsb``), so reading only
+    ``tags``, ``created_on`` and ``updated_on`` returned them empty for every
+    product. ``author`` and ``custom_fields`` are rendered on both routes and
+    were dropped entirely, though ``custom_fields`` and ``tag_list`` are
+    writable through this tool. ``render_api_custom_values`` omits the key
+    when the product has no custom field values, so ``[]`` means none.
     """
     if not isinstance(product, dict):
         return {}
@@ -53,6 +66,8 @@ def _product_to_dict(product: Dict[str, Any]) -> Dict[str, Any]:
     project = raw_project if isinstance(raw_project, dict) else {}
     raw_category = product.get("category")
     category = raw_category if isinstance(raw_category, dict) else {}
+    raw_author = product.get("author")
+    author = raw_author if isinstance(raw_author, dict) else {}
     return {
         "id": product.get("id"),
         "name": product.get("name", ""),
@@ -77,9 +92,15 @@ def _product_to_dict(product: Dict[str, Any]) -> Dict[str, Any]:
             if category
             else None
         ),
-        "tags": product.get("tags") or [],
-        "created_on": _safe_isoformat(product.get("created_on")),
-        "updated_on": _safe_isoformat(product.get("updated_on")),
+        "author": _named_ref(author) if author else None,
+        "tags": _normalize_tag_list(product.get("tag_list") or product.get("tags")),
+        "custom_fields": _custom_fields_to_list(product),
+        "created_on": _safe_isoformat(
+            product.get("created_at") or product.get("created_on")
+        ),
+        "updated_on": _safe_isoformat(
+            product.get("updated_at") or product.get("updated_on")
+        ),
     }
 
 

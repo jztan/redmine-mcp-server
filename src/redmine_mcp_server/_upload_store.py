@@ -14,6 +14,28 @@ back, and nothing long passes through it.
 Staged files live under ``ATTACHMENTS_DIR`` in the same UUID directories with
 the same ``metadata.json`` shape the download path writes, so
 ``AttachmentFileManager`` expires and sweeps them without knowing they exist.
+
+The bytes are stored as ``upload_<upload_id>``, a name the server picks, and
+never under the caller's filename. They share a directory with the slot's own
+record, so a caller-chosen name could address that record: an upload called
+``metadata.json`` would land on it, and for the moment between the bytes
+arriving and ``mark_ready`` rewriting it, the caller's body would be the
+record -- ``file_path`` included. The caller's name is kept only as the name
+the attachment gets in Redmine.
+
+A slot also records who reserved it, and only that caller can read it back.
+The ``upload_id`` is the path of the ``upload_url``, so it ends up in proxy
+access logs and shell history, and without the binding anyone signed in to
+this server who saw one could attach that file under their own name. The
+POST stays ticket-only on purpose: the bytes are often sent by a different
+process than the one that asked for the ticket, and the ticket already
+limits that request to one upload of a bounded size. The owner is a string
+the caller works out (see ``_caller``) and passes in; this module imports
+nothing from the rest of the package and compares what it is given. Deciding
+when a missing owner is acceptable is the caller's job too:
+``create_upload_ticket`` refuses a ticket it cannot bind in any mode that
+tells callers apart, so an unbound slot comes only from ``legacy`` mode or
+from before slots were bound.
 """
 
 import hashlib
@@ -108,14 +130,14 @@ def _is_expired(record: Dict[str, Any]) -> bool:
 
 
 def _safe_filename(filename: Optional[str], upload_id: str) -> str:
-    """Reduce a caller's filename to something safe to use as a path segment.
+    """Reduce a caller's filename to the name the attachment gets in Redmine.
 
-    A basename is not enough on its own: ``os.path.basename("..")`` is ``".."``
-    and ``os.path.basename(".")`` is ``"."``, and both name a directory rather
-    than a file. ``".."`` would resolve the staged path to the *parent* of
-    ``ATTACHMENTS_DIR``, putting the temporary file outside the tree the
-    cleanup manager sweeps; ``"."`` would land it at the top of the upload's
-    own directory. Both fall back to the generated name instead.
+    This is a display name only; it never becomes a path on this server (see
+    ``_staged_target``). It is still cut down to a basename, so a caller that
+    sends ``../../etc/passwd`` hears back the ``passwd`` that Redmine will
+    show. ``""``, ``"."`` and ``".."`` leave no usable name -- the last two
+    survive ``os.path.basename`` unchanged -- and fall back to the generated
+    one.
     """
     candidate = os.path.basename((filename or "").strip())
     if candidate in ("", ".", ".."):
@@ -123,27 +145,35 @@ def _safe_filename(filename: Optional[str], upload_id: str) -> str:
     return candidate
 
 
-def _staged_target(upload_id: str, name: str) -> Path:
-    """Where the staged bytes go, verified to stay inside the upload's own dir.
+def _staged_target(upload_id: str) -> Path:
+    """Where the staged bytes go: a name the server picks, never the caller's.
 
-    ``_safe_filename`` already refuses the two names that escape, so this is
-    belt and braces -- but the path is built from caller input and ends up in
-    an ``open()``, which is not the place to rely on one check.
+    The bytes share the upload's directory with ``metadata.json``, and
+    ``_write_record`` and ``receive_upload`` each write a ``.tmp`` sibling
+    first. ``upload_<uuid>`` has no dot in it, so neither it nor its
+    ``upload_<uuid>.tmp`` can be the record or the record's temp file,
+    whatever the caller called its file.
+
+    There is no containment check because there is nothing to contain:
+    nothing of the caller's is in this path, and its only variable segment
+    is the uuid4 ``create_ticket`` has just minted.
     """
-    uuid_dir = (_attachments_dir() / upload_id).resolve()
-    target = (uuid_dir / name).resolve()
-    if target.parent != uuid_dir:
-        target = uuid_dir / f"upload_{upload_id}"
-    return target
+    return (_attachments_dir() / upload_id).resolve() / f"upload_{upload_id}"
 
 
 def create_ticket(
     filename: Optional[str] = None,
     content_type: Optional[str] = None,
+    owner: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Reserve an upload slot and return the ticket that redeems it.
 
-    The ticket is returned once and never stored in the clear.
+    The ticket is returned once and never stored in the clear. ``owner`` is
+    the identity of the caller reserving the slot, recorded so that
+    ``read_staged`` hands the file back to that caller alone. ``None`` leaves
+    the slot unbound, which is right only where every caller shares one
+    identity anyway; ``create_upload_ticket`` does not pass it anywhere
+    else. The owner stays in the record and is not part of the answer.
     """
     upload_id = str(uuid.uuid4())
     ticket = secrets.token_urlsafe(_TICKET_BYTES)
@@ -161,11 +191,12 @@ def create_ticket(
             "original_filename": name,
             # AttachmentFileManager expects this key; the file is not there
             # yet, and its cleanup guards on existence.
-            "file_path": str(_staged_target(upload_id, name)),
+            "file_path": str(_staged_target(upload_id)),
             "content_type": content_type or "application/octet-stream",
             "size": 0,
             "created_at": now.isoformat(),
             "expires_at": expires_at.isoformat(),
+            "owner": owner,
         },
     )
 
@@ -211,7 +242,17 @@ def redeem_ticket(
 
 
 def staged_path(record: Dict[str, Any]) -> Path:
-    return Path(record["file_path"])
+    """Where a slot's bytes are, computed from its id rather than read back.
+
+    The record's ``file_path`` is only there for ``AttachmentFileManager``.
+    Records are written by this server alone now, but a slot reserved before
+    the staged name stopped being the caller's can still be pending, for one
+    ticket lifetime, with a caller-named ``file_path`` -- ``metadata.json``
+    among them. A path that is computed cannot be forged; one that is read
+    back is only as good as the file it was read from. The id is parsed as a
+    UUID first, so it cannot carry a separator into the path either.
+    """
+    return _staged_target(str(uuid.UUID(record["file_id"])))
 
 
 def mark_ready(upload_id: str, record: Dict[str, Any], size: int, sha256: str) -> None:
@@ -226,6 +267,9 @@ def mark_ready(upload_id: str, record: Dict[str, Any], size: int, sha256: str) -
     record["state"] = _STATE_READY
     record["size"] = size
     record["sha256"] = sha256
+    # Point the cleanup manager at where the bytes really are, for a slot
+    # reserved while the record still carried the caller's name.
+    record["file_path"] = str(staged_path(record))
     _write_record(upload_id, record)
 
 
@@ -241,14 +285,42 @@ def discard(upload_id: str) -> None:
         pass
 
 
+def _owned_by(record: Dict[str, Any], owner: Optional[str]) -> bool:
+    """Whether ``owner`` may read a slot.
+
+    A slot with no owner is open to whoever names it: it was reserved where
+    there is only one identity, or before slots were bound at all. A bound
+    slot needs the same owner back, and an unidentified caller (``None``) is
+    not the same as anyone. Compared as bytes, because ``compare_digest``
+    refuses a ``str`` with anything outside ASCII in it, and an OAuth
+    ``sub`` is whatever the authorization server chose to emit.
+    """
+    expected = record.get("owner")
+    if not expected:
+        return True
+    if not owner:
+        return False
+    return hmac.compare_digest(
+        str(expected).encode("utf-8"), str(owner).encode("utf-8")
+    )
+
+
 def read_staged(
     upload_id: str,
+    owner: Optional[str] = None,
 ) -> Tuple[bytes, Optional[str], Optional[Dict[str, str]]]:
     """Read a staged upload for attaching.
 
     Returns ``(content_bytes, filename, None)`` or ``(b"", None, {"error": ...})``.
     The file is left in place; the cleanup manager expires it on the TTL, so a
     retry after a failed Redmine call does not need a fresh upload.
+
+    ``owner`` is the identity of the caller asking, worked out the same way
+    it was when the ticket was created. A slot bound to someone else answers
+    exactly as an unknown id does, and it does so before the state and expiry
+    checks, whose messages would otherwise tell a stranger that the id is
+    real. The default of ``None`` fails closed: a caller that forgets to pass
+    its identity can still read an unbound slot, but never a bound one.
     """
     try:
         uuid.UUID(upload_id)
@@ -256,7 +328,7 @@ def read_staged(
         return b"", None, {"error": f"upload_id is not a valid id: {upload_id}"}
 
     record = _read_record(upload_id)
-    if record is None or record.get("kind") != "upload":
+    if record is None or record.get("kind") != "upload" or not _owned_by(record, owner):
         return (
             b"",
             None,

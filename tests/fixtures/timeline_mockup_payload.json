@@ -1,0 +1,33 @@
+{
+  "project": {"id": "web", "name": "WEB"},
+  "window": {"start": "2026-07-01", "end": "2026-09-30", "today": "2026-07-16", "auto": true, "label": "Q3 2026"},
+  "groups": [
+    {
+      "key": "version:25", "title": "v2.5",
+      "description": "<insecure-content-0a1b2c3d4e5f6a7b>\nApps preview\n</insecure-content-0a1b2c3d4e5f6a7b>",
+      "rows": [
+        {"type": "issue", "id": 399, "subject": "OAuth token rotation", "status": "In Progress", "assigned_to": "S. Nair", "start": "2026-07-03", "end": "2026-07-23", "kind": "bar", "state": "in_progress", "done_ratio": 40, "overdue": false, "end_source": "due", "clipped_start": false, "clipped_end": false},
+        {"type": "issue", "id": 410, "subject": "Issue-board MCP App", "status": "New", "assigned_to": "K. Tan", "start": "2026-07-14", "end": "2026-08-10", "kind": "bar", "state": "planned", "done_ratio": 0, "overdue": false, "end_source": "due", "clipped_start": false, "clipped_end": false},
+        {"type": "milestone", "version_id": 25, "label": "v2.5 release", "date": "2026-08-09", "closed": false, "in_window": true}
+      ]
+    },
+    {
+      "key": "version:30", "title": "v3.0",
+      "description": "<insecure-content-1b2c3d4e5f6a7b8c>\n2026-07-28 spec\n</insecure-content-1b2c3d4e5f6a7b8c>",
+      "rows": [
+        {"type": "issue", "id": 430, "subject": "Stateless transport", "status": "New", "assigned_to": null, "start": "2026-08-07", "end": "2026-08-31", "kind": "bar", "state": "planned", "done_ratio": 0, "overdue": false, "end_source": "due", "clipped_start": false, "clipped_end": false},
+        {"type": "issue", "id": 431, "subject": "Auth SEP hardening", "status": "New", "assigned_to": null, "start": "2026-08-14", "end": "2026-09-05", "kind": "bar", "state": "planned", "done_ratio": 0, "overdue": false, "end_source": "due", "clipped_start": false, "clipped_end": false},
+        {"type": "milestone", "version_id": 30, "label": "v3.0 release", "date": "2026-09-08", "closed": false, "in_window": true}
+      ]
+    },
+    {
+      "key": "done", "title": "Done", "description": null,
+      "rows": [
+        {"type": "issue", "id": 377, "subject": "joserfc CVE bump", "status": "Closed", "assigned_to": "K. Tan", "start": "2026-07-01", "end": "2026-07-09", "kind": "bar", "state": "done", "done_ratio": 100, "overdue": false, "end_source": "due", "clipped_start": false, "clipped_end": false},
+        {"type": "milestone", "version_id": 24, "label": "v2.4 release", "date": "2026-07-10", "closed": true, "in_window": true}
+      ]
+    }
+  ],
+  "unscheduled": 0, "truncated": false, "partial": false,
+  "generated_at": "2026-07-16T08:00:00+00:00", "read_only": false
+}

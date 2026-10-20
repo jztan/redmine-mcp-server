@@ -7,14 +7,18 @@ Two subsystems:
     payloads expected by the Redmine API
 """
 
+import difflib
 import json
 import logging
 import os
 import re
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, NoReturn, Optional, Set, Union
+
+from redminelib.exceptions import ForbiddenError
 
 from ._client import _get_redmine_client
 from ._env import _is_true_env
+from ._extension_registry import extension_issue_update_keys
 
 logger = logging.getLogger("redmine_mcp_server")
 
@@ -272,7 +276,9 @@ def _augment_validation_error_with_field_hint(
             'directly in `fields`, e.g. fields={"Department": '
             '"Engineering"}, on either create_redmine_issue or '
             "update_redmine_issue (the tool resolves the name to a "
-            "custom_fields id; ambiguous names raise). The explicit "
+            "custom_fields id; ambiguous names raise), or by id as "
+            'fields={"cf_N": "Engineering"}, which also reaches a field '
+            "whose name is ambiguous. The explicit "
             'id form -- extra_fields={"custom_fields": '
             '[{"id": N, "value": "..."}]} with N from '
             "list_project_issue_custom_fields -- also works on either "
@@ -450,17 +456,71 @@ def _upsert_custom_field_entry(
     entries.append({"id": field_id, "value": value})
 
 
+_NAME_LOOKUP_ALTERNATIVE = (
+    "Nothing was written. Pass the field by id instead: "
+    'fields={"custom_fields": [{"id": N, "value": ...}]}. The ids also '
+    "appear under custom_fields on an issue read with get_redmine_issue."
+)
+
+
+def _issue_custom_fields_for_name_lookup(project_id: Union[int, str]) -> List[Any]:
+    """Read the issue custom fields a project enables, to resolve names.
+
+    Raises ``ValueError`` rather than returning ``[]`` when they cannot be
+    read, since ``[]`` would send every name on as a key Redmine ignores:
+
+    - ``projects#show`` refuses the read. It needs ``view_project``, an
+      argument-conditional permission the scope map leaves to Redmine (see
+      ``TOOL_SCOPES``); reported here because nothing has been written yet.
+    - The response leaves ``issue_custom_fields`` out, as Redmine 6.1.4 and
+      7.0.1 do without ``view_issues`` on the project. Checked on the payload,
+      as in ``_included_list``: the attribute would re-fetch the project.
+    """
+    try:
+        project = _get_redmine_client().project.get(
+            project_id, include="issue_custom_fields"
+        )
+    except ForbiddenError:
+        raise ValueError(
+            "Could not resolve the custom field names in fields: reading the "
+            f"issue custom fields of project {project_id} was denied. That "
+            "read needs the View project permission (OAuth scope "
+            f"view_project). {_NAME_LOOKUP_ALTERNATIVE}"
+        ) from None
+    payload = project.raw()
+    if not isinstance(payload, dict) or not isinstance(
+        payload.get("issue_custom_fields"), list
+    ):
+        raise ValueError(
+            "Could not resolve the custom field names in fields: Redmine's "
+            f"response for project {project_id} did not include "
+            "issue_custom_fields. Redmine 6.1.4 and 7.0.1 leave it out for a "
+            "caller without the View issues permission (OAuth scope "
+            f"view_issues) on the project. {_NAME_LOOKUP_ALTERNATIVE}"
+        )
+    return list(project.issue_custom_fields)
+
+
 def _resolve_project_issue_custom_fields(issue_id: int) -> List[Any]:
-    """Load project custom-field definitions for a given issue."""
-    issue = _get_redmine_client().issue.get(issue_id)
+    """Load project custom-field definitions for a given issue.
+
+    Raises ``ValueError`` when they cannot be read; see
+    ``_issue_custom_fields_for_name_lookup``.
+    """
+    try:
+        issue = _get_redmine_client().issue.get(issue_id)
+    except ForbiddenError:
+        raise ValueError(
+            "Could not resolve the custom field names in fields: reading "
+            f"issue {issue_id} to find its project was denied. That read "
+            "needs the View issues permission (OAuth scope view_issues). "
+            f"{_NAME_LOOKUP_ALTERNATIVE}"
+        ) from None
     project = getattr(issue, "project", None)
     project_id = getattr(project, "id", None)
     if project_id is None:
         return []
-    project_obj = _get_redmine_client().project.get(
-        project_id, include="issue_custom_fields"
-    )
-    return list(getattr(project_obj, "issue_custom_fields", None) or [])
+    return _issue_custom_fields_for_name_lookup(project_id)
 
 
 def _project_issue_custom_fields_by_project_id(
@@ -471,18 +531,114 @@ def _project_issue_custom_fields_by_project_id(
     Mirrors ``_resolve_project_issue_custom_fields`` but skips the
     issue-id-to-project-id lookup hop that the update path needs.
     Used by the create path where ``project_id`` is already known.
+    Raises ``ValueError`` when they cannot be read.
     """
     if project_id is None:
         return []
-    project_obj = _get_redmine_client().project.get(
-        project_id, include="issue_custom_fields"
-    )
-    return list(getattr(project_obj, "issue_custom_fields", None) or [])
+    return _issue_custom_fields_for_name_lookup(project_id)
 
 
 def _is_standard_issue_update_key(field_name: str) -> bool:
-    """Return True when a field name should be passed through unchanged."""
-    return field_name in _STANDARD_ISSUE_UPDATE_FIELDS
+    """Return True when a field name should be passed through unchanged.
+
+    A registered extension's issue attributes count as standard while its
+    family is enabled. They have to: the alternative is the label matching
+    below, which strips every non-alphanumeric before comparing, so the
+    attribute ``easy_sprint_id`` and a custom field named "Easy Sprint ID"
+    normalize to the same string and the value would be written to whichever
+    the lookup found.
+    """
+    if field_name in _STANDARD_ISSUE_UPDATE_FIELDS:
+        return True
+    return field_name in extension_issue_update_keys()
+
+
+# An attribute Redmine or a plugin accepts on an issue is always a snake_case
+# identifier (``project_id``, ``agile_data_attributes``). A key of any other
+# shape can only have been meant as a custom field name.
+_ATTRIBUTE_SHAPED_KEY = re.compile(r"\A[a-z][a-z0-9_]*\Z")
+# Redmine core attributes that are not in _STANDARD_ISSUE_UPDATE_FIELDS but
+# reach the name lookup (``Issue`` ``safe_attributes`` at 6.1.1). Never
+# refused, however close they are to a custom field name.
+_PASSTHROUGH_ISSUE_ATTRIBUTES = frozenset(
+    {"project_id", "lock_version", "custom_field_values"}
+)
+# How close a snake_case key must be to a custom field name to be treated as
+# a misspelling of it rather than a plugin attribute.
+_NAME_TYPO_CUTOFF = 0.85
+# A custom field named by id, in the spelling Redmine uses for one in a query
+# filter and this server uses in ``unapplied_fields``. No issue attribute of
+# Redmine or of a plugin has this shape, so it is never a passthrough key.
+_CF_ID_KEY = re.compile(r"\Acf_([0-9]+)\Z")
+
+
+def _unverified_issue_fields(payload: Dict[str, Any]) -> List[str]:
+    """Keys in a resolved issue payload that go to Redmine unchecked (#380).
+
+    ``_reject_unmatched_name`` lets a snake_case key through so plugin
+    attributes keep working, and Redmine ignores a key it does not know
+    without an error. Neither ``unapplied_fields`` nor the response can show
+    whether such a key landed, so the caller is told which ones were sent on
+    trust. Call it after name resolution, when matched custom field names are
+    gone from the payload and refused keys have raised.
+    """
+    return sorted(
+        key
+        for key in payload
+        if not _is_standard_issue_update_key(key)
+        and key not in _PASSTHROUGH_ISSUE_ATTRIBUTES
+    )
+
+
+def _reject_unmatched_name(
+    candidate: str, by_normalized_name: Dict[str, Dict[str, Any]]
+) -> None:
+    """Raise ``ValueError`` for a key that was meant as a custom field name.
+
+    An unmatched key used to be passed on as a top-level issue attribute,
+    which Redmine ignores, so a misspelled name was a write that reported
+    success and changed nothing (#370). Refusing every unmatched key would
+    break plugin attributes that do work this way -- RedmineUP Agile accepts
+    ``agile_data_attributes`` on create -- so only two shapes are refused: a
+    key that cannot be an attribute at all (spaces, capitals), and a
+    snake_case key that is a near miss for one of the project's field names.
+    """
+    if candidate in _PASSTHROUGH_ISSUE_ATTRIBUTES:
+        return
+    normalized = _normalize_field_label(candidate)
+    close = difflib.get_close_matches(
+        normalized, list(by_normalized_name), n=1, cutoff=_NAME_TYPO_CUTOFF
+    )
+    if _ATTRIBUTE_SHAPED_KEY.match(candidate) and not close:
+        return
+    names = sorted(entry["name"] for entry in by_normalized_name.values())
+    hint = f" Did you mean '{by_normalized_name[close[0]]['name']}'?" if close else ""
+    known = ", ".join(f"'{name}'" for name in names) if names else "none"
+    raise ValueError(
+        f"Unknown custom field '{candidate}'.{hint} Custom fields on this "
+        f"project: {known}. Nothing was written."
+    )
+
+
+def _reject_unknown_field_id(
+    candidate: str, field_id: int, by_id: Dict[int, Dict[str, Any]]
+) -> NoReturn:
+    """Raise ``ValueError`` for a ``cf_<id>`` key the project does not enable.
+
+    Redmine sets only the fields available on the issue, so a value for any
+    other id is dropped without an error -- the same silent write a
+    misspelled name used to produce. Listing the enabled fields with their
+    ids gives the caller the one it meant.
+    """
+    known = ", ".join(
+        f"'{entry['name']}' (cf_{entry_id})"
+        for entry_id, entry in sorted(by_id.items(), key=lambda item: item[1]["name"])
+    )
+    raise ValueError(
+        f"Unknown custom field '{candidate}': no issue custom field with id "
+        f"{field_id} is enabled on this project. Custom fields on this "
+        f"project: {known or 'none'}. Nothing was written."
+    )
 
 
 def _resolve_named_custom_fields(
@@ -502,11 +658,14 @@ def _resolve_named_custom_fields(
     in ``_STANDARD_ISSUE_UPDATE_FIELDS``) that match a known custom
     field get popped, validated against ``possible_values`` if any,
     and merged into the ``custom_fields`` list using the field's
-    numeric id. Caller-provided ``custom_fields`` entries are
-    preserved alongside name-based mappings.
+    numeric id. A ``cf_<id>`` key names the field by id instead and is
+    resolved the same way, which also reaches a field whose name is
+    ambiguous. Caller-provided ``custom_fields`` entries are preserved
+    alongside these mappings.
 
     Raises ``ValueError`` on ambiguous names (two custom fields share
-    a normalized name) or invalid values (not in ``possible_values``).
+    a normalized name), on a ``cf_<id>`` the project does not enable,
+    or on invalid values (not in ``possible_values``).
     """
     if not payload:
         return payload
@@ -532,6 +691,7 @@ def _resolve_named_custom_fields(
         return payload
 
     by_normalized_name: Dict[str, Dict[str, Any]] = {}
+    by_id: Dict[int, Dict[str, Any]] = {}
     ambiguous_names: Set[str] = set()
 
     for custom_field in project_custom_fields:
@@ -539,6 +699,17 @@ def _resolve_named_custom_fields(
         field_name = str(getattr(custom_field, "name", "") or "")
         if field_id is None or not field_name:
             continue
+        entry = {
+            "id": field_id,
+            "name": field_name,
+            "possible_values": _extract_possible_values(custom_field),
+        }
+        # Keyed before the name bookkeeping: an ambiguous name is dropped
+        # from the name map, but its id still names exactly one field.
+        try:
+            by_id[int(field_id)] = entry
+        except (TypeError, ValueError):
+            pass
         normalized = _normalize_field_label(field_name)
         if not normalized:
             continue
@@ -546,26 +717,31 @@ def _resolve_named_custom_fields(
         if existing and existing.get("id") != field_id:
             ambiguous_names.add(normalized)
             continue
-        by_normalized_name[normalized] = {
-            "id": field_id,
-            "name": field_name,
-            "possible_values": _extract_possible_values(custom_field),
-        }
+        by_normalized_name[normalized] = entry
 
     for normalized in ambiguous_names:
         by_normalized_name.pop(normalized, None)
 
     for candidate in named_candidates:
-        normalized_candidate = _normalize_field_label(candidate)
-        if normalized_candidate in ambiguous_names:
-            raise ValueError(
-                f"Ambiguous custom field name '{candidate}'. "
-                "Use fields.custom_fields with explicit field IDs."
-            )
+        id_key = _CF_ID_KEY.match(candidate)
+        if id_key:
+            field_id = int(id_key.group(1))
+            match = by_id.get(field_id)
+            if match is None:
+                _reject_unknown_field_id(candidate, field_id, by_id)
+        else:
+            normalized_candidate = _normalize_field_label(candidate)
+            if normalized_candidate in ambiguous_names:
+                raise ValueError(
+                    f"Ambiguous custom field name '{candidate}'. Key the "
+                    "field by id as cf_<id> instead, or use "
+                    "fields.custom_fields with explicit field IDs."
+                )
 
-        match = by_normalized_name.get(normalized_candidate)
-        if match is None:
-            continue
+            match = by_normalized_name.get(normalized_candidate)
+            if match is None:
+                _reject_unmatched_name(candidate, by_normalized_name)
+                continue
 
         value = payload.pop(candidate)
         possible_values = match["possible_values"]
