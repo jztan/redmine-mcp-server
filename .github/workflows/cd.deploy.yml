@@ -159,18 +159,49 @@ jobs:
           mv -f "$secret_tmp" "$secret_dir/redmine_introspect_client_secret"
           echo "REDMINE_INTROSPECT_SECRET_PATH=$secret_dir/redmine_introspect_client_secret" >> "$GITHUB_ENV"
 
-      - name: Pull and deploy verified image
+      - name: Pull verified image
         shell: bash
         run: |
           set -euo pipefail
           docker compose -f docker-compose.production.yml config --quiet
           docker compose -f docker-compose.production.yml pull
+
+      - name: Initialize attachment volume permissions
+        shell: bash
+        run: |
+          set -euo pipefail
+          volume_name=redmine-mcp-production-attachments
+          docker volume create "$volume_name" >/dev/null
+          docker run --rm \
+            --user 0:0 \
+            --network none \
+            --read-only \
+            --cap-drop ALL \
+            --cap-add CHOWN \
+            --cap-add DAC_OVERRIDE \
+            --cap-add FOWNER \
+            --volume "$volume_name:/app/attachments" \
+            --entrypoint /bin/sh \
+            "$IMAGE_REF" \
+            -c 'mkdir -p /app/attachments && chown -R 1000:1000 /app/attachments && chmod 0750 /app/attachments'
+
+      - name: Deploy verified image
+        shell: bash
+        run: |
+          set -euo pipefail
           docker compose -f docker-compose.production.yml up -d \
             --force-recreate --wait --wait-timeout 120 --remove-orphans
 
       - name: Verify local health endpoint
         shell: bash
         run: docker compose -f docker-compose.production.yml exec -T redmine-mcp-server python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=15)"
+
+      - name: Verify attachment storage
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -f docker-compose.production.yml exec -T redmine-mcp-server \
+            python -c "from pathlib import Path; p=Path('/app/attachments/.deploy-write-test'); p.write_bytes(b'ok'); p.unlink()"
 
       - name: Cleanup unused Docker resources
         uses: ./.github/actions/docker-cleanup
