@@ -1,5 +1,5 @@
 # Multi-stage Docker build for the Redmine MCP Server
-FROM python:3.13-slim@sha256:8d9d0b8bcf6506481eae4907c18f5e3e7902e629f5f6d684f9e7c32e85e3ddf0 AS builder
+FROM python:3.13-slim@sha256:70729b46c69b4f1e97c4822c1af3df53a1476cf5ddc6c087c0c10bc3a5678c2f AS builder
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -17,9 +17,9 @@ COPY pyproject.toml uv.lock ./
 COPY src/ ./src/
 COPY README.md ./
 
-# Install dependencies and the project in a virtual environment
-RUN uv venv /opt/venv && \
-    uv pip install . --python=/opt/venv/bin/python && \
+# Install the locked production dependencies and project in a virtual environment
+RUN UV_PROJECT_ENVIRONMENT=/opt/venv \
+    uv sync --locked --no-dev --no-editable && \
     rm -rf \
         /usr/local/lib/python3.13/site-packages/pip* \
         /usr/local/lib/python3.13/site-packages/setuptools* \
@@ -27,7 +27,7 @@ RUN uv venv /opt/venv && \
         /usr/local/bin/pip*
 
 # Production stage
-FROM python:3.13-slim@sha256:8d9d0b8bcf6506481eae4907c18f5e3e7902e629f5f6d684f9e7c32e85e3ddf0 AS runtime
+FROM python:3.13-slim@sha256:70729b46c69b4f1e97c4822c1af3df53a1476cf5ddc6c087c0c10bc3a5678c2f AS runtime
 
 ARG VCS_REF=unknown
 LABEL org.opencontainers.image.revision="$VCS_REF"
