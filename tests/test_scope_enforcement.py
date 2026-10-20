@@ -35,7 +35,7 @@ class TestScopeEnforcementFlag:
 
 class TestToolScopesMap:
     @pytest.mark.asyncio
-    async def test_every_registered_tool_is_mapped(self):
+    async def test_every_registered_tool_is_mapped(self, all_plugin_tools_visible):
         """Anti-drift guard: a new @mcp.tool() must get a TOOL_SCOPES entry."""
         from redmine_mcp_server.server import mcp
         import redmine_mcp_server.tools  # noqa: F401  triggers registration
@@ -53,20 +53,81 @@ class TestToolScopesMap:
         stale = mapped - registered - conditional
         assert not stale, f"stale TOOL_SCOPES entries: {stale}"
 
-    def test_every_enforced_scope_is_advertised(self):
-        """Enforcement must never demand a scope the consent screen can't grant."""
-        enforced: set = set()
-        for entry in TOOL_SCOPES.values():
-            if isinstance(entry, dict):
-                for req in entry.values():
-                    enforced |= req
-            else:
-                enforced |= entry
-        # Baseline advertisement: read-only off, plugin flags off.
+    # The env flags that make each plugin family visible. "crm-shared" tools
+    # are visible under either CRM flag, so the stricter one is checked.
+    _FAMILY_FLAGS = {
+        "checklists": ("REDMINE_CHECKLISTS_ENABLED",),
+        "crm": ("REDMINE_CRM_ENABLED",),
+        "deals": ("REDMINE_DEALS_ENABLED",),
+        "products": ("REDMINE_PRODUCTS_ENABLED",),
+        "dmsf": ("REDMINE_DMSF_ENABLED",),
+        "helpdesk": ("REDMINE_HELPDESK_ENABLED",),
+        "helpdesk_tickets": ("REDMINE_HELPDESK_TICKETS_ENABLED",),
+        "crm-shared": ("REDMINE_CRM_ENABLED",),
+        "deal-products": ("REDMINE_DEALS_ENABLED", "REDMINE_PRODUCTS_ENABLED"),
+    }
+
+    @staticmethod
+    def _required(entry) -> set:
+        if isinstance(entry, dict):
+            return set().union(*entry.values()) if entry else set()
+        return set(entry)
+
+    @staticmethod
+    async def _plugin_families() -> dict:
+        from redmine_mcp_server.server import mcp
+        import redmine_mcp_server.tools  # noqa: F401  triggers registration
+        import redmine_mcp_server.apps  # noqa: F401  triggers registration
+
+        families = {}
+        for tool in await mcp.list_tools():
+            for tag in tool.tags or ():
+                if tag.startswith("plugin:"):
+                    families[tool.name] = tag[len("plugin:") :]
+        return families
+
+    @pytest.mark.asyncio
+    async def test_core_tool_scopes_are_advertised_with_plugin_flags_off(
+        self, all_plugin_tools_visible, monkeypatch
+    ):
+        """Enforcement must never demand a scope the consent screen can't grant.
+
+        A core tool is always listed, so its scopes must be advertised with
+        every plugin flag off: a scope only a plugin flag advertises would
+        hide the core tool under OAuth on every deployment without that flag.
+        """
+        for flags in self._FAMILY_FLAGS.values():
+            for flag in flags:
+                monkeypatch.setenv(flag, "false")
+        for flag in ("REDMINE_AGILE_ENABLED", "REDMINE_TAGS_ENABLED"):
+            monkeypatch.setenv(flag, "false")
+        monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "false")
+        plugin_tools = await self._plugin_families()
         advertised = set(advertised_scopes())
-        assert (
-            enforced <= advertised
-        ), f"enforced but not advertised: {enforced - advertised}"
+        for name, entry in TOOL_SCOPES.items():
+            if name in plugin_tools:
+                continue
+            missing = self._required(entry) - advertised
+            assert not missing, f"{name} enforces unadvertised {missing}"
+
+    @pytest.mark.asyncio
+    async def test_plugin_tool_scopes_are_advertised_under_their_own_flag(
+        self, all_plugin_tools_visible, monkeypatch
+    ):
+        """A plugin tool is listed only under its flag, so that flag alone
+        must advertise every scope the tool enforces."""
+        plugin_tools = await self._plugin_families()
+        assert plugin_tools, "no plugin-tagged tools found"
+        all_flags = {f for flags in self._FAMILY_FLAGS.values() for f in flags}
+        for name, family in plugin_tools.items():
+            assert family in self._FAMILY_FLAGS, f"unmapped family {family}"
+            for flag in all_flags | {"REDMINE_AGILE_ENABLED", "REDMINE_TAGS_ENABLED"}:
+                monkeypatch.setenv(flag, "false")
+            for flag in self._FAMILY_FLAGS[family]:
+                monkeypatch.setenv(flag, "true")
+            monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "false")
+            missing = self._required(TOOL_SCOPES[name]) - set(advertised_scopes())
+            assert not missing, f"{name} ({family}) enforces unadvertised {missing}"
 
     def test_wiki_write_scopes_advertised(self):
         advertised = set(advertised_scopes())
@@ -172,7 +233,9 @@ class TestCallToolGating:
         # The exact #185 repro: view+notes token must not edit.
         scoped_token(["view_issues", "add_issue_notes"])
         async with Client(_make_server()) as client:
-            result = await client.call_tool("update_redmine_issue", {"issue_id": 1})
+            result = await client.call_tool(
+                "update_redmine_issue", {"issue_id": 1}, raise_on_error=False
+            )
         payload = json.loads(result.content[0].text)
         assert payload["code"] == "INSUFFICIENT_SCOPE"
         assert "edit_issues" in payload["error"]
@@ -190,7 +253,9 @@ class TestCallToolGating:
         # Pre-#130 tokens introspect with scope: "" and must be denied.
         scoped_token([])
         async with Client(_make_server()) as client:
-            result = await client.call_tool("update_redmine_issue", {"issue_id": 1})
+            result = await client.call_tool(
+                "update_redmine_issue", {"issue_id": 1}, raise_on_error=False
+            )
         payload = json.loads(result.content[0].text)
         assert payload["code"] == "INSUFFICIENT_SCOPE"
 
@@ -205,7 +270,7 @@ class TestCallToolGating:
     async def test_unmapped_tool_denied(self, scoped_token):
         scoped_token(["view_issues", "edit_issues"])
         async with Client(_make_server()) as client:
-            result = await client.call_tool("not_in_map_tool", {})
+            result = await client.call_tool("not_in_map_tool", {}, raise_on_error=False)
         payload = json.loads(result.content[0].text)
         assert payload["code"] == "INSUFFICIENT_SCOPE"
         assert "not_in_map_tool" in payload["error"]
@@ -218,7 +283,9 @@ class TestCallToolGating:
                 "manage_document", {"action": "list", "project_id": "p"}
             )
             denied = await client.call_tool(
-                "manage_document", {"action": "create", "project_id": "p"}
+                "manage_document",
+                {"action": "create", "project_id": "p"},
+                raise_on_error=False,
             )
         assert ok.structured_content == {"action": "list"}
         payload = json.loads(denied.content[0].text)
@@ -273,6 +340,7 @@ class TestNotesOnlyCarveOut:
             result = await client.call_tool(
                 "update_redmine_issue",
                 {"issue_id": 1, "fields": {"notes": "hi"}},
+                raise_on_error=False,
             )
         payload = json.loads(result.content[0].text)
         assert payload["code"] == "INSUFFICIENT_SCOPE"
@@ -285,6 +353,7 @@ class TestNotesOnlyCarveOut:
             result = await client.call_tool(
                 "update_redmine_issue",
                 {"issue_id": 1, "fields": {"subject": "x", "notes": "hi"}},
+                raise_on_error=False,
             )
         payload = json.loads(result.content[0].text)
         assert payload["code"] == "INSUFFICIENT_SCOPE"
@@ -301,6 +370,7 @@ class TestNotesOnlyCarveOut:
                     "fields": {"notes": "hi"},
                     "uploads": [{"path": "f"}],
                 },
+                raise_on_error=False,
             )
         payload = json.loads(result.content[0].text)
         assert payload["code"] == "INSUFFICIENT_SCOPE"
@@ -314,6 +384,7 @@ class TestNotesOnlyCarveOut:
             result = await client.call_tool(
                 "update_redmine_issue",
                 {"issue_id": 1, "fields": {"notes": "hi"}},
+                raise_on_error=False,
             )
         payload = json.loads(result.content[0].text)
         assert payload["code"] == "INSUFFICIENT_SCOPE"

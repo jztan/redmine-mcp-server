@@ -935,7 +935,7 @@ Native OAuth authentication validates Bearer tokens via Doorkeeper's `/oauth/int
 
 1. **Introspection env vars not set.** The server fails fast at startup if `REDMINE_INTROSPECT_CLIENT_ID` or `REDMINE_INTROSPECT_CLIENT_SECRET` is missing in OAuth mode — re-check startup logs.
 2. **Introspection client not authorized.** Per RFC 7662 §2.1, a client may introspect tokens only when it is either the token's issuer, holds the `introspection` scope, or matches an `allow_token_introspection` block. Stock Redmine ships with `allow_token_introspection false`. See `docs/oauth-setup.md` Step 2b for the in-place edit of `30-redmine.rb` that grants introspection rights to confidential clients.
-3. **Doorkeeper introspection disabled in Redmine's default config.** Redmine ships `allow_token_introspection false`, which makes the `/oauth/introspect` route return 404. Verify with the curl test in `docs/oauth-setup.md` Step 2c.
+3. **Doorkeeper introspection disabled in Redmine's default config.** Redmine ships `allow_token_introspection false`, which makes the `/oauth/introspect` route return 404. Verify with the curl test in `docs/oauth-setup.md` Step 2d.
 4. **A standalone `Doorkeeper.configure` initializer silently wiped Redmine's config.** Symptom: Administration → Applications also returns 403 with the log line *"Access to admin panel is forbidden due to Doorkeeper.configure.admin_authenticator being unconfigured"*. Fix: remove any standalone `Doorkeeper.configure` block from `config/initializers/`; apply the introspection change in-place in `30-redmine.rb` instead. See `docs/oauth-setup.md` Step 2b for the why (Doorkeeper's `configure` rebuilds the entire config wholesale).
 5. **Token expired.** Check the bearer's `exp` against current time; mint a fresh one if needed.
 
@@ -951,6 +951,16 @@ Likely causes, in order:
 - TLS verification failing (check `REDMINE_SSL_VERIFY` / `REDMINE_SSL_CERT`).
 
 The probe result is cached for `HEALTH_INTROSPECTION_TTL_SECONDS` (default 30 seconds). Wait that long after fixing the underlying issue before re-checking `/health`.
+
+### Symptom: clients have to log in again every few hours (oauth-proxy)
+
+Look for this warning in the server log:
+
+```
+Refresh token not found for client=... (token_hash=...); it was already rotated, expired, or revoked. Rejecting with invalid_grant, which forces the client to re-authenticate.
+```
+
+OAuthProxy rotates the refresh token on every refresh and rejects the old one. If the same `token_hash` shows up repeatedly for one `client`, several processes are sharing that client's stored credentials (parallel CLI sessions, a desktop app plus a terminal): one refreshed, and the others are still holding the rotated token. Set `REDMINE_MCP_ACCESS_TOKEN_EXPIRY_SECONDS` (for example `604800`) so clients rarely need to refresh; see "Client token lifetime" in `docs/oauth-setup.md`.
 
 ### Symptom: clients see 401 where they used to see 503
 

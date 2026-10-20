@@ -8,6 +8,579 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.19.0] - 2026-10-17
+### Added
+- `REDMINE_MCP_TRANSPORT=stdio` runs the server over stdin/stdout, so a
+  client that starts MCP servers itself (Claude Code, Claude Desktop, Codex
+  CLI, Kiro) can launch it directly, with no server to keep running and no
+  HTTP bridge. `legacy` mode only; the other modes authenticate each HTTP
+  request and refuse to start over stdio, as does any value other than
+  `http` or `stdio`. Under stdio, `get_redmine_attachment` always returns a
+  local `file_path` and `create_upload_ticket` declines, even with
+  `PUBLIC_HOST` set, because no HTTP server is there to serve the URL.
+  The default stays `http`
+  ([#400](https://github.com/jztan/redmine-mcp-server/issues/400)).
+- `redmine_mcp_server.extensions` exports `text_from_staged_upload` and
+  `read_staged`, so an extension tool can take an `upload_id` from
+  `create_upload_ticket` the way the built-in ones do. `text_from_staged_upload`
+  is what `description_upload_id`, `notes_upload_id` and `text_upload_id`
+  already read through: the file becomes the new text of a field, and bytes
+  that are not UTF-8 are refused with the field named. `read_staged` returns
+  the raw bytes and the uploaded filename, for a file that is attached rather
+  than read. Before, an extension had to import the private reader from
+  `tools.issues`, a name that can move in any release
+  ([#391](https://github.com/jztan/redmine-mcp-server/issues/391)).
+### Changed
+- `list_redmine_issues` now says what a call with no filter returns: the open
+  issues of every project the caller can see, 25 per call, each with its full
+  description. It used to name `project_id` as a filter and say nothing about
+  leaving it out, so a bare call made as a first probe read unrelated
+  projects' issues before finding the caller's own. Its Performance note, and
+  the same note on `search_redmine_issues`, no longer claim the default limit
+  keeps a response under 2000 tokens: descriptions alone can exceed that many
+  times over.
+- `list_project_issue_custom_fields` now tells the caller to leave
+  `tracker_id` out, instead of naming a condition the caller cannot check.
+  Redmine's project endpoint sends each field's id and name only, even to an
+  administrator, so the filter answers `TRACKER_BINDINGS_UNREADABLE` unless a
+  plugin adds the bindings. The parameter text and the error's hint also say
+  how to see which fields a tracker carries: read one of its issues in the
+  project with `get_redmine_issue`.
+### Fixed
+- `create_redmine_issue` and `update_redmine_issue` accept a custom field in
+  `fields` by id, as `cf_<id>`, beside the existing name form. That is how
+  Redmine spells a custom field in a query filter and how `unapplied_fields`
+  already names one, so callers wrote it into `fields`, where, being
+  snake_case, it passed through as a plugin attribute, Redmine ignored it, the
+  issue landed with the field blank, and the only trace was the key in
+  `unverified_fields`. The key is now resolved against the project's issue
+  custom fields the way a name is, and an id the project does not enable is
+  refused before anything is written, with the enabled fields and their ids
+  named. The id form also reaches a field whose name is ambiguous
+  ([#407](https://github.com/jztan/redmine-mcp-server/issues/407)).
+- An upload to the `upload_url` from `create_upload_ticket` failed with a
+  plain `404 Not Found` in `oauth`, `oauth-proxy` and `api-key-login` modes
+  when `REDMINE_MCP_BASE_URL` has a path. The URL points at
+  `/uploads/{id}` on the server's root, but those modes serve the route only
+  under the base URL's path. The route is now also served at the root, as
+  `/files/{id}` already was
+  ([#393](https://github.com/jztan/redmine-mcp-server/issues/393)).
+### Security
+- The lock now resolves `mcp` 2.3.0, through an `mcp>=2.2.0` floor in
+  `[tool.uv]` `constraint-dependencies`, clearing CVE-2026-59951 from the
+  dependency audit. The advisory covers stateful Streamable HTTP sessions;
+  this server runs `stateless_http=True`, so it was not exposed. The floor
+  applies to the lock only: fresh installs already get `mcp` 2.2.0 or later,
+  and an existing environment can update with `pip install -U mcp`
+  ([#411](https://github.com/jztan/redmine-mcp-server/issues/411)).
+- A file staged with `create_upload_ticket` can now be read back only by the
+  caller who created the ticket. Before, any authenticated caller who knew
+  the `upload_id` could attach it, or read it as the text of a
+  `description_upload_id`, `notes_upload_id` or `text_upload_id`, and the id
+  is the path of the `upload_url`, so it sits in every proxy access log the
+  upload passed through. Anyone else now gets the same "No staged upload"
+  error an id that was never issued gets, ahead of the messages that would
+  say the slot is pending or expired. The same file could also be read with
+  `file_path`, since `ATTACHMENTS_DIR` is an upload root; a staged upload's
+  files and records there now answer `file_path` as a missing file does,
+  while downloaded attachments still attach by path. The caller is the
+  Redmine user bound to the session in `api-key-login`, the introspection
+  `sub` in `oauth` and `oauth-proxy`, and a SHA-256 digest of the
+  `X-Redmine-API-Key` in `legacy-per-user`; `legacy` mode, with one identity
+  for everyone, is unchanged. In the other modes, a ticket whose caller
+  cannot be identified is refused with an error that says what to do,
+  rather than created unbound. Redmine's Doorkeeper sends no `sub` by
+  default, so the OAuth modes then ask with one `GET /users/current.json`
+  per ticket and per staged read; [OAuth setup](docs/oauth-setup.md) has the
+  short Doorkeeper change that avoids it. `POST /uploads/{upload_id}` stays
+  authorised by the ticket alone, and the answer of `create_upload_ticket`
+  is unchanged. `extensions.text_from_staged_upload` and `read_staged` take
+  the caller as `owner=`, and `resolve_staged_upload_owner` is exported to
+  work it out. An extension that keeps calling either reader without
+  `owner=` now gets "No staged upload" for every slot outside `legacy` mode,
+  until it passes the caller
+  ([#404](https://github.com/jztan/redmine-mcp-server/issues/404)).
+
+### Contributors
+- @mliebischer, proposed and added `REDMINE_MCP_TRANSPORT=stdio`, so clients
+  that start MCP servers themselves can run this one without an HTTP bridge
+  ([#400](https://github.com/jztan/redmine-mcp-server/issues/400),
+  [#409](https://github.com/jztan/redmine-mcp-server/pull/409))
+- @mmahmed, reported and fixed the upload route that answered 404 under a
+  `REDMINE_MCP_BASE_URL` path, staged uploads readable by any caller who knew
+  the `upload_id`, and `cf_<id>` keys in `fields` that Redmine dropped;
+  proposed and added the staged-upload readers in `extensions`; and clarified
+  the `tracker_id` guidance on `list_project_issue_custom_fields` and what
+  `list_redmine_issues` returns with no filter
+  ([#391](https://github.com/jztan/redmine-mcp-server/issues/391),
+  [#392](https://github.com/jztan/redmine-mcp-server/pull/392),
+  [#393](https://github.com/jztan/redmine-mcp-server/issues/393),
+  [#394](https://github.com/jztan/redmine-mcp-server/pull/394),
+  [#404](https://github.com/jztan/redmine-mcp-server/issues/404),
+  [#405](https://github.com/jztan/redmine-mcp-server/pull/405),
+  [#406](https://github.com/jztan/redmine-mcp-server/pull/406),
+  [#407](https://github.com/jztan/redmine-mcp-server/issues/407),
+  [#408](https://github.com/jztan/redmine-mcp-server/pull/408),
+  [#410](https://github.com/jztan/redmine-mcp-server/pull/410))
+
+## [2.18.1] - 2026-10-06
+### Security
+- A file sent to `POST /uploads/{upload_id}` is now staged under a name the
+  server picks, `upload_<upload_id>`, instead of the `filename` given to
+  `create_upload_ticket`. The staged file shares its directory with the
+  slot's `metadata.json`, so a ticket for `metadata.json` staged the upload
+  onto that record: the attached file came back as the record, and for the
+  moment between the bytes landing and the record being rewritten, a body
+  shaped like a ready record could point an `*_upload_id` consumer at any
+  file the server process can read. The caller's `filename` is still what
+  the attachment is called in Redmine. `get_redmine_attachment` likewise
+  saves a download as `attachment_<file_id>`, plus the attachment's
+  extension when it is a plain one, instead of under the attachment's
+  name, which is chosen by whoever attached the file in Redmine and so
+  needs no MCP access: an attachment called `metadata.json` was overwritten
+  by the download's record and served back in its place, and one called
+  `metadata.json.tmp` was lost. The attachment's name is still the
+  `filename` returned and the name `GET /files/{file_id}` offers the
+  download under. The two places that delete an expired record's
+  `file_path`, the expiry branch of `GET /files/{file_id}` and the cleanup
+  manager's sweep, now refuse one outside the record's own directory, so a
+  record naming a file elsewhere cannot turn either into a delete of it
+  (GHSA-j95c-gm2m-rpgm).
+
+### Contributors
+- @mmahmed, reported and fixed the staged upload and downloaded attachment
+  names that could land on their own `metadata.json` record, and the expiry
+  deletes that followed a record's `file_path` outside its directory
+  ([GHSA-j95c-gm2m-rpgm](https://github.com/jztan/redmine-mcp-server/security/advisories/GHSA-j95c-gm2m-rpgm))
+
+## [2.18.0] - 2026-10-03
+### Added
+- `manage_helpdesk_ticket` reads a RedmineUP Helpdesk ticket and moves it to
+  another existing contact, behind a new flag, `REDMINE_HELPDESK_TICKETS_ENABLED`.
+  `get` returns the Helpdesk data `get_redmine_issue` leaves out: the ticket's
+  contact, where replies go, the source and the response-time metrics.
+  `set_contact` takes a `contact_id` or an email and refuses rather than let
+  the plugin create a contact, turn a plain issue into a ticket, or assign a
+  contact from another project or without an email address. The flag is
+  separate from `REDMINE_HELPDESK_ENABLED` because under OAuth it advertises
+  four more scopes (`view_helpdesk_tickets`, `view_contacts`,
+  `view_private_contacts`, `edit_helpdesk_tickets`), which the Redmine OAuth
+  application must grant first
+  ([#378](https://github.com/jztan/redmine-mcp-server/issues/378)).
+- `REDMINE_MCP_ACCESS_TOKEN_EXPIRY_SECONDS` sets the lifetime of the access
+  token `oauth-proxy` issues to clients, passed to FastMCP's `OAuthProxy` as
+  `fastmcp_access_token_expiry_seconds`. It used to mirror Redmine's
+  `expires_in` (2 hours), so clients refreshed every 2 hours, and because the
+  proxy rotates the refresh token on each refresh, processes sharing one
+  client's credentials raced and the losers were forced to log in again. The
+  upstream Redmine token is still validated per request and refreshed
+  server-side, so revoking the grant in Redmine still takes effect at once.
+  Unset or `0` keeps the old behaviour; a negative or non-integer value
+  fails at startup
+  ([#382](https://github.com/jztan/redmine-mcp-server/issues/382)).
+- Interactive `project-timeline` MCP App: the new `show_project_timeline` tool
+  renders a project's schedule as a timeline in clients that support the MCP
+  Apps extension. Issue bars run from start to due date, grouped by target
+  version, with a milestone diamond on each version's due date, a Today line,
+  and a Done section for work closed in the window. Clicking a bar or
+  milestone opens its details in a floating popover. An issue with no due date
+  ends at its version's due date, a closed one on the day it closed, and
+  issues with no dates at all are counted as unscheduled. `start_date` and
+  `end_date` set the window (at most 366 days; without them it fits the data,
+  within about 3 months of today), and `filters` takes the same Redmine
+  filters as `list_redmine_issues`. A Refresh action re-fetches through the
+  app-callable `get_project_timeline_data` tool. Read-only
+  ([#350](https://github.com/jztan/redmine-mcp-server/issues/350)).
+- `manage_contact(action="list")` takes two new parameters:
+  - `custom_field_ids` returns only the named custom fields in each contact's
+    `custom_fields`. The choice was all of them or none: a lookup needing two
+    of them paid for every field the instance defines, on every row. The
+    elision contract is unchanged: named fields are requested fields, so
+    `custom_fields` holds just those with no `custom_fields_count`, and `[]`
+    still means the contact carries none of them
+    ([#352](https://github.com/jztan/redmine-mcp-server/issues/352)).
+  - `is_company`: `true` returns only companies, `false` only people. The
+    plugin's filter was documented as broken, but it reads a value as true
+    only in the database adapter's own spelling of true, which varies by
+    adapter and Rails version, so no fixed literal such as the documented
+    `"1"` means true on every database. The tool sends `0` and `!0`, which
+    mean false and not-false on every adapter. `is_company` is now refused
+    inside `filters`, like the other named parameters; `create` is unchanged
+    ([#366](https://github.com/jztan/redmine-mcp-server/issues/366)).
+
+### Changed
+- A failed tool call now comes back as an error result: `isError: true`, with
+  the `{"error", "code", ...}` envelope unchanged in `content` and
+  `structuredContent`. It used to arrive with `isError: false`, so a client
+  that checks only the MCP flag read a refused write as done and a failed read
+  as an empty result. Every envelope now carries a `code`: each branch of the
+  Redmine error handler has its own (`CONNECTION_FAILED`, `SSL_ERROR`,
+  `TIMEOUT`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, `VALIDATION_FAILED`,
+  `SERVER_ERROR`, `PROTOCOL_MISMATCH`, `VERSION_MISMATCH`, `READ_ONLY`,
+  `UNKNOWN_ERROR`), existing codes are kept, and a tool error without one gets
+  `UNKNOWN_ERROR`. Clients that check `"error" in result` keep working;
+  clients such as the FastMCP `Client` that raise on `isError` now raise for
+  these calls. The codes are listed in
+  [Tool Reference - Error Results](docs/tool-reference.md#error-results)
+  ([#381](https://github.com/jztan/redmine-mcp-server/issues/381)).
+
+### Fixed
+- `create_redmine_issue` and `update_redmine_issue` no longer report plain
+  success for a `fields` key Redmine ignores:
+  - A key meant as a custom field name that matches none is refused instead
+    of being passed on as a top-level attribute, so a misspelled name no
+    longer reports success for a write that changed nothing. The error
+    suggests the closest field name and lists the project's fields, and
+    nothing is written. A key with spaces or capitals, or a snake_case key
+    within a typo of a field name, is refused. Behavior change: a key like
+    `"Budget Code"` that matches no field now returns an error where it used
+    to be dropped silently
+    ([#370](https://github.com/jztan/redmine-mcp-server/issues/370)).
+  - Any other snake_case key is still sent, so plugin attributes such as
+    RedmineUP Agile's `agile_data_attributes` keep working, but Redmine drops
+    one it does not know without an error: `customer_id`, tried as a way to
+    set a Helpdesk ticket's contact, changed nothing and said nothing. The
+    response now lists such keys in `unverified_fields`, omitted when there
+    are none
+    ([#380](https://github.com/jztan/redmine-mcp-server/issues/380)).
+- `send_helpdesk_email_reply` returned `customer: null` on Helpdesk 4.3,
+  which renamed the response's `customer` key to `contact`. The email was
+  sent either way. The tool now reads `contact` and falls back to
+  `customer`, so the result carries the customer on Helpdesk 4.2 and 4.3
+  alike
+  ([#384](https://github.com/jztan/redmine-mcp-server/issues/384)).
+- `manage_contact(action="get")` returns the `include` arrays it asks for.
+  The CRM plugin renders `notes`, `contacts`, `deals` and `issues` on
+  request, but the serializer dropped all four, so every include came back as
+  the bare contact. Each now appears under its own key when the plugin sent
+  it
+  ([#354](https://github.com/jztan/redmine-mcp-server/issues/354)).
+- `list_project_members` and `manage_project_member(action="update")` dropped
+  Redmine's `inherited` flag from each role, so a role that comes from a group
+  or from the parent project read exactly like one held directly. The flag is
+  now kept where Redmine sends it and left out where it does not, as
+  `get_current_user(include_memberships=True)` already did
+  ([#356](https://github.com/jztan/redmine-mcp-server/issues/356)).
+- `list_project_issue_custom_fields` no longer answers `[]` when Redmine's
+  response leaves out the `issue_custom_fields` array. `issue_custom_fields` is
+  in python-redmine's `Project._includes`, so reading the attribute re-fetched
+  the whole project and then fell back to `[]`, which a caller cannot tell from
+  a project with no fields. The tool now checks the payload first and returns an
+  error with `code: "ISSUE_CUSTOM_FIELDS_UNREADABLE"`. Redmine 6.1.4 and 7.0.1
+  leave the array out for a caller without `view_issues` on the project, the
+  case [#233](https://github.com/jztan/redmine-mcp-server/pull/233) left for
+  when that shipped; earlier releases always send it when asked
+  ([#364](https://github.com/jztan/redmine-mcp-server/issues/364)).
+- `create_redmine_issue` and `update_redmine_issue` report when they cannot read
+  the custom fields needed to resolve a name in `fields`, instead of losing the
+  value or misreporting the failure. Resolving a name reads
+  `GET /projects/{id}.json?include=issue_custom_fields`, which needs
+  `view_project`, and neither tool's scope entry requires it because only a
+  name-keyed payload makes the read. When that read was denied, the 403 escaped
+  `create_redmine_issue` unhandled and came back from `update_redmine_issue` as
+  "Access denied" for the update itself. When the response left
+  `issue_custom_fields` out, python-redmine re-fetched the project, answered
+  `[]`, and the name was sent on as a top-level key Redmine ignores, so the
+  write succeeded without the value. Redmine 6.1.4 and 7.0.1 leave the array out
+  for a caller without `view_issues` on the project; earlier releases always
+  send it. Both cases now return an error that names the read, the permission it
+  needs and the `custom_fields` id form, and nothing is written. A lookup error
+  on update, such as an ambiguous name, is also returned as itself rather than
+  as an unexpected error in the update
+  ([#362](https://github.com/jztan/redmine-mcp-server/issues/362)).
+- `manage_product` and `manage_document` read several fields under key names
+  their plugins do not send, the pattern
+  [#227](https://github.com/jztan/redmine-mcp-server/pull/227) fixed for
+  contacts. A product's `tags`, `created_on` and `updated_on` are now read
+  from the `tag_list`, `created_at` and `updated_at` the Products plugin
+  renders, and its `author` and `custom_fields` are returned. A document's
+  `folder_id` is read from DMSF's `dmsf_folder_id`, and `get` returns the
+  `custom_fields` of its latest revision (`null` on a `list` row, whose
+  endpoint renders none). `get` also took the oldest revision as the latest,
+  because DMSF lists revisions newest first, so `version`, `description`,
+  `size` and the timestamps were stale; it now takes the highest revision id
+  ([#358](https://github.com/jztan/redmine-mcp-server/issues/358)).
+- `get_redmine_issue(include_children=True)` on a leaf issue, and
+  `include_watchers=True` for a caller without `view_issue_watchers`, no longer
+  send a second request for the whole issue. Redmine leaves both keys out in
+  those cases (`render_api_issue_children` returns early on `issue.leaf?`, and
+  the watchers block is gated on the permission), and python-redmine re-fetches
+  any `_includes` name missing from the payload, only to get the same answer.
+  `journals`, `attachments`, `watchers` and `children` are now read only when
+  the payload carries them, completing for issues what
+  [#223](https://github.com/jztan/redmine-mcp-server/pull/223) did for
+  `relations`. Results are unchanged
+  ([#360](https://github.com/jztan/redmine-mcp-server/issues/360)).
+- `update_redmine_issue` reported a write Redmine had discarded as a success.
+  Redmine drops some fields without a validation error and saves the rest
+  (a status the workflow does not allow, a field the workflow makes read-only,
+  a custom field the user may not edit), so the tool returned the unchanged
+  issue with nothing saying so. The response now carries `unapplied_fields`,
+  listing each submitted field the updated issue does not reflect (custom
+  fields as `cf_<id>`), and omits it when there is none, like
+  `unmapped_fields`. It comes from comparing the request with the issue the
+  tool already re-fetches, so it costs no extra request, and only fields whose
+  stored form is predictable are checked. A `status_name` that matches no
+  status was dropped the same way and the rest written; it is now refused
+  before anything is sent
+  ([#368](https://github.com/jztan/redmine-mcp-server/issues/368)).
+
+### Security
+- Raise the `pyjwt[crypto]` floor to `>=2.15.0,<3` (locked at 2.15.1). The
+  locked 2.13.0 matched 13 advisories, including algorithm confusion between
+  symmetric and asymmetric keys, unvalidated JWKS redirects, lenient Base64URL
+  signature decoding and a ReDoS in `is_pem_format`, and failed the dependency
+  audit. `pyjwt` is reached through `mcp[crypto]`; nothing in this server
+  imports it directly. Verified that 2.15.1 is published by Trusted Publishing
+  from `jpadilla/pyjwt`, with a signed release commit by maintainer Jose Padilla
+  ([#388](https://github.com/jztan/redmine-mcp-server/issues/388)).
+
+### Dependencies
+- Bump `fastmcp` and `fastmcp-slim` from 4.0.5 to 4.0.10, `starlette` from
+  1.6.0 to 1.7.0, `uvicorn` from 0.53.0 to 0.54.0 and `flake8` from 7.3.0 to
+  7.4.1, all lockfile-only moves within the existing bounds, combining
+  Dependabot PRs [#373](https://github.com/jztan/redmine-mcp-server/pull/373),
+  [#374](https://github.com/jztan/redmine-mcp-server/pull/374),
+  [#375](https://github.com/jztan/redmine-mcp-server/pull/375) and
+  [#376](https://github.com/jztan/redmine-mcp-server/pull/376)
+  ([#390](https://github.com/jztan/redmine-mcp-server/pull/390)).
+
+### Contributors
+- @mmahmed reported and fixed nine gaps across contacts, project members,
+  custom fields, products, documents and issues: contact lists select which
+  custom fields come back and filter on `is_company`, a contact `get` returns
+  its `include` arrays, member roles keep Redmine's `inherited` flag, an
+  omitted or unreadable `issue_custom_fields` is reported instead of read as
+  `[]`, product and DMSF fields are read under the keys their plugins send,
+  issue includes Redmine leaves out no longer trigger a second request, and
+  `update_redmine_issue` reports the fields Redmine discarded
+  ([#352](https://github.com/jztan/redmine-mcp-server/issues/352),
+  [#353](https://github.com/jztan/redmine-mcp-server/pull/353),
+  [#354](https://github.com/jztan/redmine-mcp-server/issues/354),
+  [#355](https://github.com/jztan/redmine-mcp-server/pull/355),
+  [#356](https://github.com/jztan/redmine-mcp-server/issues/356),
+  [#357](https://github.com/jztan/redmine-mcp-server/pull/357),
+  [#358](https://github.com/jztan/redmine-mcp-server/issues/358),
+  [#359](https://github.com/jztan/redmine-mcp-server/pull/359),
+  [#360](https://github.com/jztan/redmine-mcp-server/issues/360),
+  [#361](https://github.com/jztan/redmine-mcp-server/pull/361),
+  [#362](https://github.com/jztan/redmine-mcp-server/issues/362),
+  [#363](https://github.com/jztan/redmine-mcp-server/pull/363),
+  [#364](https://github.com/jztan/redmine-mcp-server/issues/364),
+  [#365](https://github.com/jztan/redmine-mcp-server/pull/365),
+  [#366](https://github.com/jztan/redmine-mcp-server/issues/366),
+  [#367](https://github.com/jztan/redmine-mcp-server/pull/367),
+  [#368](https://github.com/jztan/redmine-mcp-server/issues/368),
+  [#369](https://github.com/jztan/redmine-mcp-server/pull/369)).
+- @siva01c proposed and implemented marking failed tool calls with
+  `isError: true` and giving every error envelope a `code`
+  ([#381](https://github.com/jztan/redmine-mcp-server/issues/381),
+  [#383](https://github.com/jztan/redmine-mcp-server/pull/383)).
+- @chesterXalan reported that `oauth-proxy` clients sharing one credential
+  store were forced to log in again every couple of hours, traced it to
+  refresh-token rotation, and added
+  `REDMINE_MCP_ACCESS_TOKEN_EXPIRY_SECONDS`
+  ([#382](https://github.com/jztan/redmine-mcp-server/issues/382),
+  [#377](https://github.com/jztan/redmine-mcp-server/pull/377)).
+- @goizper reported that `customer_id` passed to `update_redmine_issue` was
+  dropped without a word, which led to `unverified_fields`, and asked for a
+  way to read a Helpdesk ticket and change its contact, with the plugin
+  behaviour worked out on a live instance
+  ([#378](https://github.com/jztan/redmine-mcp-server/issues/378),
+  [#380](https://github.com/jztan/redmine-mcp-server/issues/380)).
+- RedmineUP, provided evaluation copies of the Helpdesk PRO (4.3.1) and CRM
+  PRO (4.5.0) plugins so `send_helpdesk_email_reply` and
+  `manage_helpdesk_ticket` could be verified against a real Pro instance
+  ([#378](https://github.com/jztan/redmine-mcp-server/issues/378),
+  [#384](https://github.com/jztan/redmine-mcp-server/issues/384)).
+
+## [2.17.0] - 2026-09-26
+### Added
+- A long description, note or wiki page can be changed without the model
+  writing it out. Redmine has no patch endpoint, so an edit meant putting the
+  whole text into the tool argument, which is slow and drops characters at
+  length (the failure [#305](https://github.com/jztan/redmine-mcp-server/issues/305) measured on base64). Two routes replace
+  that. `{find, replace}` edits are applied on the server: `description_edits`
+  on `update_redmine_issue`, `notes_edits` on `manage_issue_note` (with
+  `issue_id`, since Redmine serves no endpoint for a single journal) and
+  `text_edits` on `manage_redmine_wiki_page`. Each `find` must match exactly
+  once or nothing is written, and line endings are normalized for matching and
+  restored on write. Where the text is all new, it comes from a file staged
+  with `create_upload_ticket`: `description_upload_id` on
+  `create_redmine_issue` and `update_redmine_issue`, `notes_upload_id` on
+  `manage_issue_note`, and `text_upload_id` on `manage_redmine_wiki_page`.
+  A concurrent edit is refused instead of overwritten:
+  `description_expected_sha256` and `notes_expected_sha256` take the
+  `description_sha256` and `notes_sha256` that `get_redmine_issue` and
+  `get_private_notes` now return (digests of the raw text, because what a read
+  returns is wrapped in boundary tags), and a wiki page uses Redmine's own
+  `version` through `expected_version`. The ways of setting one text are
+  mutually exclusive. A note or wiki page written through an edit or an upload
+  is reported by length, not echoed back
+  ([#314](https://github.com/jztan/redmine-mcp-server/issues/314), [#316](https://github.com/jztan/redmine-mcp-server/pull/316),
+  [#317](https://github.com/jztan/redmine-mcp-server/issues/317), [#322](https://github.com/jztan/redmine-mcp-server/pull/322), [#323](https://github.com/jztan/redmine-mcp-server/pull/323),
+  [#326](https://github.com/jztan/redmine-mcp-server/issues/326), [#328](https://github.com/jztan/redmine-mcp-server/pull/328),
+  [#325](https://github.com/jztan/redmine-mcp-server/issues/325), [#330](https://github.com/jztan/redmine-mcp-server/pull/330)).
+- `get_redmine_issue` takes `fields`, with the meaning it has on
+  `list_redmine_issues`, so a caller that wants the status does not pay for a
+  long description. It does not reach journals, attachments or custom fields,
+  whose `include_*` switches default to `True`, so a cheap read sets those to
+  `False` as well. `description_sha256` is returned either way. It also takes
+  `journal_order`: with `"desc"` the newest journals come first and
+  `journal_offset` counts from that end, so "the last five comments" is one
+  call, and `journal_pagination` echoes the order
+  ([#318](https://github.com/jztan/redmine-mcp-server/issues/318), [#320](https://github.com/jztan/redmine-mcp-server/pull/320),
+  [#319](https://github.com/jztan/redmine-mcp-server/issues/319), [#321](https://github.com/jztan/redmine-mcp-server/pull/321)).
+- `ExtensionSpec` gains `issue_update_keys` and `issue_query_filters`, so an
+  extension can let the issue tools write and filter on attributes a
+  distribution adds (Easy Redmine's `easy_sprint_id`), on create as well as
+  update. Before, an unknown update key was read as a custom field label and
+  an unregistered filter name was refused. A filter's companion parameters
+  (Easy's `set_filter=1`) are sent only when that filter is in the call, never
+  over a value the caller set, and may not be filter names themselves. A
+  collision with Redmine's own names, another extension or a tool parameter
+  fails startup
+  ([#311](https://github.com/jztan/redmine-mcp-server/issues/311), [#312](https://github.com/jztan/redmine-mcp-server/pull/312)).
+- `ExtensionSpec` gains `issue_payload_skip_keys`, so a distribution can
+  keep its own presentation keys out of `unmapped_fields`. That key passes
+  a fork's top-level issue fields through, filtered by size, and size is
+  the right general filter -- but it cannot reach what is short, useless
+  and on every issue. Easy Redmine's `css_classes` is a CSS class list for
+  its issue grid: across a page of 25 issues it measured 99 to 144
+  characters, about a fifth of `_UNMAPPED_VALUE_MAX_CHARS`, 202 characters
+  on the wire per issue and 5,062 for one default listing. It answers
+  nothing the issue's own fields do not answer better -- `status-11` beside
+  `status`, `overdue` beside `due_date` -- and a cap low enough to catch it
+  would drop a one-paragraph plugin text field instead. The list is the
+  extension's rather than this repository's, which is the difference from
+  the per-plugin name list the cap's comment rightly rejected: the package
+  that owns `css_classes` knows it is presentation, and a server with no
+  extensions behaves exactly as before. Read per call, so the family's flag
+  decides it like the other two issue seams. Registration refuses a name
+  `unmapped_fields` never carries anyway, since that entry would do nothing,
+  and a name any family declares in `issue_update_keys`, whichever of the two
+  registers first: a key a family writes is one its callers read back here,
+  so hiding it would make the attribute write-only
+  ([#331](https://github.com/jztan/redmine-mcp-server/issues/331), [#332](https://github.com/jztan/redmine-mcp-server/pull/332)).
+- `send_helpdesk_email_reply` emails a reply to a RedmineUP Helpdesk ticket's
+  customer, optionally setting the ticket status, the same as "Send Note" in
+  the web UI. A plain `update_redmine_issue` note never reaches the customer.
+  Opt in with `REDMINE_HELPDESK_ENABLED=true`
+  ([#301](https://github.com/jztan/redmine-mcp-server/issues/301), [#342](https://github.com/jztan/redmine-mcp-server/pull/342)).
+
+### Changed
+- Journal field changes no longer repeat a long before/after text. Redmine
+  journals a description edit with the full old and new value, and on one real
+  ticket 827,044 of the 879,251 characters `get_redmine_issue` returned were
+  past descriptions. A value longer than `REDMINE_MCP_JOURNAL_VALUE_MAX_CHARS`
+  (default 500, `0` switches it off) is now reported as `old_value_length` /
+  `new_value_length` with `elided: True`, and the value keys stay present as
+  `None`. `get_redmine_issue` and `get_private_notes` take
+  `include_journal_values=True` to get the text back
+  ([#313](https://github.com/jztan/redmine-mcp-server/issues/313), [#315](https://github.com/jztan/redmine-mcp-server/pull/315)).
+- `manage_contact(action="list")` no longer returns every custom field on
+  every contact. The CRM API renders them all whether or not they carry a
+  value, so a list read that needs one attribute was paying for the whole set
+  on every row; on a 21-field instance that is about 3.3x the response. The
+  values are elided rather than dropped, the way a long journal value is:
+  `custom_fields` is `None` and `custom_fields_count` says how many were
+  withheld, so the key never disappears and `None` ("not requested") stays
+  distinguishable from `[]` ("this contact has none").
+  `include_custom_fields=True` gets them back, and `get` and `create` return
+  them always, so only the collection's default shape moves
+  ([#344](https://github.com/jztan/redmine-mcp-server/issues/344), [#345](https://github.com/jztan/redmine-mcp-server/pull/345)).
+
+### Fixed
+- Journals are sorted by id before `journal_limit` slices them. Redmine
+  reverses them for an API user who has "display comments in reverse
+  chronological order" set, so the same `journal_limit` returned different
+  journals depending on the account behind the key
+  ([#318](https://github.com/jztan/redmine-mcp-server/issues/318), [#320](https://github.com/jztan/redmine-mcp-server/pull/320)).
+- A wiki text update sent no `version`, so an edit someone else made in the
+  meantime was overwritten without an error. `update` now takes
+  `expected_version` and reports an edit conflict when it is stale, and
+  `rename` sends the version it read
+  ([#324](https://github.com/jztan/redmine-mcp-server/issues/324), [#329](https://github.com/jztan/redmine-mcp-server/pull/329)).
+- A `description` passed inside `fields` to `create_redmine_issue` was
+  dropped for the default of the parameter of the same name, and the issue
+  was created empty with nothing in the result saying so.
+  `update_redmine_issue` has no such parameter and takes the description in
+  its `fields`, so the habit carries over easily. It is now refused the way a
+  misplaced `uploads` is
+  ([#333](https://github.com/jztan/redmine-mcp-server/issues/333), [#334](https://github.com/jztan/redmine-mcp-server/pull/334)).
+- `search_redmine_issues` returned every hit on Easy Redmine with an empty
+  subject and an id that 404s on `get_redmine_issue`. Easy offsets the ids in
+  `/search.json` (issues by 300000000) and keeps the real one only in `url`,
+  so hydration asked `/issues.json` for ids that do not exist. The id is now
+  read from `url`, falling back to `id`. A row that is not hydrated, on any
+  Redmine, takes its `subject` from the search title (with the stock
+  `Tracker #id (Status): ` prefix stripped) instead of coming back empty, and
+  a hydration that returns fewer issues than asked for is logged
+  ([#346](https://github.com/jztan/redmine-mcp-server/issues/346), [#348](https://github.com/jztan/redmine-mcp-server/pull/348)).
+- OAuth: advertise `copy_issues` and require `view_issues`, `copy_issues`, and
+  `add_issues` for `copy_issue`, matching Redmine's `allowed_to?(:copy_issues)`
+  gate on the source project before `copy_from` (previously only `add_issues`
+  was enforced, so tokens could pass MCP and still receive 403 from Redmine)
+  ([#349](https://github.com/jztan/redmine-mcp-server/issues/349)).
+  **OAuth deployments: before starting the upgraded server, grant Copy issues
+  on the Redmine OAuth Application and have users re-consent**, or new
+  authorizations fail with `invalid_scope` when the server advertises the
+  default scope set. Alternatively set `REDMINE_MCP_SCOPES` to a list that
+  omits `copy_issues` until the application is ready.
+
+### Contributors
+- @andilem reported, with measurements from a production ticket, that journal
+  details echo every past description
+  ([#313](https://github.com/jztan/redmine-mcp-server/issues/313)), that editing
+  a long description or note forces the model to retype it
+  ([#314](https://github.com/jztan/redmine-mcp-server/issues/314),
+  [#317](https://github.com/jztan/redmine-mcp-server/issues/317)), that
+  `create_redmine_issue` could not take a staged description
+  ([#326](https://github.com/jztan/redmine-mcp-server/issues/326)), that
+  `journal_limit` returns the oldest journals
+  ([#318](https://github.com/jztan/redmine-mcp-server/issues/318)) and that
+  `get_redmine_issue` had no field selection
+  ([#319](https://github.com/jztan/redmine-mcp-server/issues/319)), and
+  implemented all of them
+  ([#315](https://github.com/jztan/redmine-mcp-server/pull/315),
+  [#316](https://github.com/jztan/redmine-mcp-server/pull/316),
+  [#320](https://github.com/jztan/redmine-mcp-server/pull/320),
+  [#321](https://github.com/jztan/redmine-mcp-server/pull/321),
+  [#322](https://github.com/jztan/redmine-mcp-server/pull/322),
+  [#323](https://github.com/jztan/redmine-mcp-server/pull/323),
+  [#328](https://github.com/jztan/redmine-mcp-server/pull/328)). They also added
+  the issue extension seams
+  ([#312](https://github.com/jztan/redmine-mcp-server/pull/312)) and reported the
+  two wiki gaps: a text update that sends no version
+  ([#324](https://github.com/jztan/redmine-mcp-server/issues/324)) and a page
+  that could only be replaced whole
+  ([#325](https://github.com/jztan/redmine-mcp-server/issues/325)). They
+  reported and fixed the `description` that `create_redmine_issue` dropped
+  from `fields`
+  ([#333](https://github.com/jztan/redmine-mcp-server/issues/333),
+  [#334](https://github.com/jztan/redmine-mcp-server/pull/334)), and measured
+  and hid Easy Redmine's `css_classes` through the new
+  `issue_payload_skip_keys` seam
+  ([#331](https://github.com/jztan/redmine-mcp-server/issues/331),
+  [#332](https://github.com/jztan/redmine-mcp-server/pull/332)).
+- @goizper requested Helpdesk email replies and captured the endpoint's real
+  request and response shapes from a Helpdesk 4.2.9 install
+  ([#301](https://github.com/jztan/redmine-mcp-server/issues/301))
+- @mmahmed reported that a contact list read had no way to ask for fewer
+  custom fields, measured the cost against the CRM plugin's own serializer,
+  and implemented the `include_custom_fields` flag
+  ([#344](https://github.com/jztan/redmine-mcp-server/issues/344),
+  [#345](https://github.com/jztan/redmine-mcp-server/pull/345)).
+- @gino8080 traced the empty search results on Easy Redmine to its offset
+  search ids and fixed hydration and the unhydrated fallback
+  ([#346](https://github.com/jztan/redmine-mcp-server/issues/346),
+  [#348](https://github.com/jztan/redmine-mcp-server/pull/348)).
+- @stevehollis-orderflow reported and fixed `copy_issue` passing the OAuth
+  scope check without `copy_issues`, which Redmine requires on the source
+  project before it copies
+  ([#349](https://github.com/jztan/redmine-mcp-server/issues/349),
+  [#347](https://github.com/jztan/redmine-mcp-server/pull/347)).
+
 ## [2.16.0] - 2026-09-19
 ### Added
 - `manage_redmine_project` creates, edits, closes and reopens projects, taking
@@ -1860,6 +2433,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive authentication support (username/password and API key)
 - Docker containerization support
 
+[2.19.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.19.0
+[2.18.1]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.18.1
+[2.18.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.18.0
+[2.17.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.17.0
 [2.16.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.16.0
 [2.15.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.15.0
 [2.14.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.14.0

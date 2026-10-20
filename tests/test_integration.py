@@ -2530,3 +2530,77 @@ class TestUnmappedFieldsIntegration:
 if __name__ == "__main__":
     # Run integration tests
     pytest.main([__file__, "-v", "-m", "integration", "--tb=short"])
+
+
+class TestProjectTimelineIntegration:
+    """project-timeline payload against a live Redmine (both sandboxes)."""
+
+    @pytest.mark.skipif(not REDMINE_URL, reason="REDMINE_URL not configured")
+    @pytest.mark.integration
+    @pytest.mark.asyncio
+    async def test_timeline_payload_matches_live_versions_and_issue(self):
+        import asyncio
+
+        from redmine_mcp_server.apps.project_timeline import (
+            _build_timeline_payload,
+        )
+        from redmine_mcp_server.tools.projects import list_redmine_versions
+
+        redmine = _get_redmine_or_none()
+        if redmine is None:
+            pytest.skip("Redmine client not initialized")
+        issue_id = int(os.getenv("TIMELINE_TEST_ISSUE_ID", "307"))
+        version_id = int(os.getenv("TIMELINE_TEST_VERSION_ID", "1"))
+
+        def snapshot():
+            issue = redmine.issue.get(issue_id)
+            fv = getattr(issue, "fixed_version", None)
+            return {
+                "fixed_version_id": fv.id if fv is not None else "",
+                "start_date": getattr(issue, "start_date", None) or "",
+                "due_date": getattr(issue, "due_date", None) or "",
+            }
+
+        original = await asyncio.to_thread(snapshot)
+        try:
+            await asyncio.to_thread(
+                redmine.issue.update,
+                issue_id,
+                fixed_version_id=version_id,
+                start_date="2026-05-10",
+                due_date="2026-05-25",
+                **_integration_test_custom_fields(),
+            )
+            payload = await _build_timeline_payload(
+                "testing-project1", start_date="2026-05-01", end_date="2026-06-30"
+            )
+            assert "error" not in payload, payload
+            versions = await list_redmine_versions(project_id="testing-project1")
+            by_id = {v["id"]: v for v in versions}
+
+            group = next(
+                g for g in payload["groups"] if g["key"] == f"version:{version_id}"
+            )
+            row = next(r for r in group["rows"] if r.get("id") == issue_id)
+            assert (row["start"], row["end"], row["end_source"]) == (
+                "2026-05-10",
+                "2026-05-25",
+                "due",
+            )
+            milestone = group["rows"][-1]
+            assert milestone["type"] == "milestone"
+            assert milestone["date"] == by_id[version_id]["due_date"]
+            assert milestone["in_window"] is True
+            # Every milestone in the payload matches a live version.
+            for g in payload["groups"]:
+                for r in g["rows"]:
+                    if r["type"] == "milestone":
+                        assert r["date"] == by_id[r["version_id"]]["due_date"]
+        finally:
+            await asyncio.to_thread(
+                redmine.issue.update,
+                issue_id,
+                **original,
+                **_integration_test_custom_fields(),
+            )
+            assert await asyncio.to_thread(snapshot) == original

@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="light dark" />
 
 <title>redmine-mcp-server · Your AI doesn't just read tickets. It works them.</title>
-<meta name="description" content="Self-hosted MCP server that gives AI agents 51 tools to work a Redmine instance, 64 with RedmineUP and DMSF plugins,: issues, wikis, time tracking, Gantt, files, plus a Kanban board and project dashboard rendered in the chat. Tested on Redmine 6.1 and 7.0. MIT licensed." />
+<meta name="description" content="Self-hosted MCP server that gives AI agents 53 tools to work a Redmine instance, 68 with RedmineUP and DMSF plugins: issues, wikis, time tracking, Gantt, files, plus a Kanban board, project dashboard, and timeline rendered in the chat. Tested on Redmine 6.1 and 7.0. MIT licensed." />
 
 <link rel="canonical" href="https://redmine-mcp-server.jztan.com/" />
 
@@ -20,9 +20,9 @@
 <!-- Open Graph (LinkedIn, Facebook, Slack) -->
 <meta property="og:type" content="website" />
 <meta property="og:title" content="redmine-mcp-server · Your AI shouldn't just read tickets. It should work them." />
-<meta property="og:description" content="Watch an AI agent triage a Redmine sprint in your browser, then drag cards on a live Kanban board it renders in the chat. Real MCP tool calls, no install required." />
+<meta property="og:description" content="Watch an AI agent triage a Redmine sprint in your browser: reassign, comment on, and close issues through real MCP tool calls. Enterprise auth with OAuth2, an OAuth proxy, or per-user API keys, plus live apps in the chat. No install required." />
 <meta property="og:url" content="https://redmine-mcp-server.jztan.com/" />
-<meta property="og:image" content="https://redmine-mcp-server.jztan.com/og-image.png?v=2" />
+<meta property="og:image" content="https://redmine-mcp-server.jztan.com/og-image.png?v=3" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
 <meta property="og:site_name" content="redmine-mcp-server" />
@@ -30,8 +30,8 @@
 <!-- Twitter / X card -->
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="redmine-mcp-server · Your AI should work the backlog, not just read it" />
-<meta name="twitter:description" content="Watch an AI agent triage a Redmine sprint in your browser. Now with a live Kanban board rendered in the chat. No install." />
-<meta name="twitter:image" content="https://redmine-mcp-server.jztan.com/og-image.png?v=2" />
+<meta name="twitter:description" content="Watch an AI agent triage a Redmine sprint in your browser using real MCP tool calls. Enterprise auth, plus live apps in the chat. No install." />
+<meta name="twitter:image" content="https://redmine-mcp-server.jztan.com/og-image.png?v=3" />
 
 <!-- Structured data: SoftwareApplication -->
 <script type="application/ld+json">
@@ -39,7 +39,7 @@
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
   "name": "redmine-mcp-server",
-  "description": "Production-ready MCP server that lets AI agents manage Redmine issues, projects, wikis, time tracking, Gantt data, and files, including an interactive Kanban board and project dashboard rendered in the chat via MCP Apps. Runs self-hosted with a read-only safety mode and per-tool OAuth scope enforcement. Tested against Redmine 6.1 and 7.0. Works with Claude Code, Claude Desktop, Cursor, VS Code, Codex, and Kiro.",
+  "description": "Production-ready MCP server that lets AI agents manage Redmine issues, projects, wikis, time tracking, Gantt data, and files, including an interactive Kanban board, project dashboard, and timeline rendered in the chat via MCP Apps. Runs self-hosted with a read-only safety mode and per-tool OAuth scope enforcement. Tested against Redmine 6.1 and 7.0. Works with Claude Code, Claude Desktop, Cursor, VS Code, Codex, and Kiro.",
   "applicationCategory": "DeveloperApplication",
   "operatingSystem": "Linux, macOS, Windows",
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
@@ -69,7 +69,7 @@
       "name": "Can the agent write to my Redmine, or only read it?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "It writes. Creating and updating issues, adding notes, logging time, editing wiki pages, and managing members, versions, categories, and relations are all tool calls. If you would rather it did not, set REDMINE_MCP_READ_ONLY=true and every write branch is blocked while reads keep working. Deleting an issue always requires explicit confirmation flags and shows a cascade-impact preview first, in either mode."
+        "text": "It writes. Creating and updating issues, adding notes, logging time, editing wiki pages, and managing members, versions, categories, and relations are all tool calls. If you would rather it did not, set REDMINE_MCP_READ_ONLY=true and every write branch is blocked while reads keep working. Deleting an issue is refused unless confirm_delete=true is passed, and the refusal carries a cascade-impact preview; an issue with subtasks needs a second flag. In read-only mode deletion is blocked outright."
       }
     },
     {
@@ -77,7 +77,7 @@
       "name": "Does my Redmine data leave my network?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Not through this server. It runs on your own infrastructure and talks to exactly two things: your Redmine and your MCP client. There is no hosted service, no telemetry, and no third party in the path. What your AI client then sends to its model provider is between you and that client, the same as for any other tool it runs."
+        "text": "Not through this server. It runs on your own infrastructure and talks to your Redmine and your MCP client, plus any URL an agent explicitly asks it to upload a file from (SSRF-checked). There is no hosted service, no telemetry, and no third party in the path. What your AI client then sends to its model provider is between you and that client, the same as for any other tool it runs."
       }
     },
     {
@@ -85,7 +85,7 @@
       "name": "Which AI clients does it work with?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Any client that speaks MCP. Claude Code, Claude Desktop, VS Code with Copilot, Codex CLI, and Kiro have step-by-step guides in the README, and Cursor and other clients use the generic HTTP configuration. The server exposes streamable HTTP at /mcp. Clients that only speak stdio connect through a bridge, which the setup guides cover."
+        "text": "Any client that speaks MCP. Claude Code, Claude Desktop, VS Code with Copilot, Cursor, Codex CLI, and Kiro have step-by-step guides in the README, and other clients use the generic HTTP configuration. The server exposes streamable HTTP at /mcp. Clients that only speak stdio connect through a bridge, which the setup guides cover."
       }
     },
     {
@@ -101,7 +101,7 @@
       "name": "Do I need to install Redmine plugins?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "No. All 51 core tools work against a stock Redmine with no plugins at all. Thirteen more are plugin-gated (64 in total) and need both the plugin installed and a matching environment variable: checklists, products, the RedmineUP CRM (contacts, deals, notes, tags, saved queries, deal categories, and product lines), and DMSF documents. Plugin tools are not even listed to the agent until their flag is set. RedmineUP Agile and AlphaNodes Additional Tags add fields to tools you already have rather than new tools, so sprint, story point, and tag support appears automatically when those plugins are present."
+        "text": "No. All 53 core tools work against a stock Redmine with no plugins at all. Fifteen more are plugin-gated (68 in total) and need both the plugin installed and a matching environment variable: checklists, products, the RedmineUP CRM (contacts, deals, notes, tags, saved queries, deal categories, and product lines), DMSF documents, and Helpdesk email replies and ticket contacts. Plugin tools are not even listed to the agent until their flag is set. RedmineUP Agile and AlphaNodes Additional Tags add fields to tools you already have rather than new tools, turned on with REDMINE_AGILE_ENABLED and REDMINE_TAGS_ENABLED."
       }
     },
     {
@@ -332,67 +332,101 @@
     /* Pin the form controls to light too, or the row checkboxes render as dark
        squares inside the otherwise-light mockup when the page is in dark mode. */
     color-scheme: light;
-    --rm-link: #2a5685; --rm-text: #333; --rm-border: #d6d6d6;
-    font-family: Verdana, "Lucida Grande", Tahoma, Geneva, sans-serif;
-    font-size: 12px; line-height: 1.4; color: var(--rm-text); background: #fff;
+    --rm-link: #116699; --rm-text: #333; --rm-border: #d7d7d7;
+    font-family: "Noto Sans", -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px; line-height: 1.4; color: var(--rm-text); background: #fff;
     border-bottom: 1px solid var(--border);
   }
+  .rm-app a { color: var(--rm-link); text-decoration: none; }
   .rm-topmenu {
-    background: #2c3e50; color: #b9c4d0; font-size: 11px;
-    display: flex; justify-content: space-between; align-items: center; padding: 4px 12px;
+    background: #3e5b76; color: #fff; font-size: 11.2px; font-weight: bold;
+    display: flex; justify-content: space-between; align-items: center; padding: 2px 10px;
   }
-  .rm-topmenu a { color: #cdd6e0; text-decoration: none; margin-right: 14px; }
-  .rm-topmenu a:hover { text-decoration: underline; }
-  .rm-topmenu b { color: #fff; font-weight: normal; }
-  .rm-header { background: linear-gradient(180deg, #6f9bc4 0%, #5a83ac 100%); color: #fff; padding: 9px 12px 0; }
-  .rm-crumb { font-size: 11px; color: #e3edf6; }
-  .rm-crumb a { color: #fff; text-decoration: none; }
-  .rm-proj { font-size: 19px; font-weight: bold; margin: 3px 0 8px; }
+  .rm-topmenu a { color: #fff; margin-right: 8px; }
+  .rm-topmenu .rm-right a { margin: 0 0 0 10px; }
+  .rm-topmenu .rm-right span { font-weight: normal; }
+  .rm-header { background: linear-gradient(#628db6 30%, #356d92); color: #f8f8f8; padding: 8px 10px 0; }
+  .rm-headrow { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+  .rm-proj { font-size: 23px; font-weight: 400; margin: 2px 0 10px; }
+  .rm-search { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+  .rm-search .rm-input { width: 130px; height: 22px; background: #fff; border: 1px solid #ccc; border-radius: 3px; }
+  .rm-search .rm-select { width: 150px; }
   .rm-menu { display: flex; gap: 2px; flex-wrap: wrap; }
-  .rm-menu a { font-size: 12px; color: #eaf1f8; text-decoration: none; padding: 5px 10px; border-radius: 3px 3px 0 0; }
-  .rm-menu a:hover { background: rgba(255,255,255,0.16); }
-  .rm-menu a.active { background: #fff; color: #2a5685; font-weight: bold; }
-  .rm-content { padding: 12px 14px 16px; }
-  .rm-h2 { font-size: 16px; color: #555; font-weight: bold; margin: 0 0 9px; }
-  .rm-filters {
-    border: 1px solid var(--rm-border); background: #fbfbfb; border-radius: 3px;
-    padding: 6px 9px; font-size: 11px; color: #555; margin-bottom: 10px;
-    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  .rm-menu a { font-size: 13px; color: #fff; padding: 4px 10px; border-radius: 3px 3px 0 0; }
+  .rm-menu a:hover, .rm-menu a.rm-newobj { background: #759fcf; }
+  .rm-menu a.active { background: #fff; color: #555; font-weight: bold; }
+  /* Read-only look-alike controls: keep the real checked style, block input. */
+  .rm-app input[type="checkbox"] { pointer-events: none; }
+  .rm-ico { width: 14px; height: 14px; vertical-align: -2px; margin-right: 3px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .rm-content { padding: 10px 14px 16px; }
+  .rm-titlebar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .rm-h2 { font-size: 20px; color: #555; font-weight: bold; margin: 0; }
+  .rm-contextual { font-size: 13px; display: flex; gap: 10px; align-items: center; }
+  .rm-select {
+    display: inline-flex; align-items: center; justify-content: space-between; gap: 8px;
+    min-width: 110px; height: 22px; padding: 0 6px; box-sizing: border-box;
+    background: #fff; border: 1px solid #ccc; border-radius: 3px; color: #333; font-size: 13px;
   }
-  .rm-filters .lbl { color: #888; }
-  .rm-filters .chipf { background: #eef3f8; border: 1px solid #d2e0ee; border-radius: 3px; padding: 1px 6px; color: #2a5685; }
-  .rm-apply { margin-left: auto; color: #2f9e2f; font-weight: bold; }
-  .rm-apply::before { content: "\2713\00a0"; }
+  .rm-select::after { content: "\2304"; color: #888; font-size: 11px; }
+  .rm-select.wide { min-width: 180px; }
+  .rm-filters, .rm-options {
+    border: 0; border-top: 1px solid #ccc; margin: 0 0 6px; padding: 4px 0 6px 16px;
+  }
+  .rm-filters legend, .rm-options legend { font-size: 12.6px; color: #333; padding: 0 4px; margin-left: -12px; }
+  /* The filter box is shown collapsed (Redmine's fieldset toggle) at every
+     width, so the issues and the agent stay in view. */
+  .rm-filterbox { display: none; }
+  .rm-filters { padding-bottom: 0; }
+  .rm-filterrows { display: grid; grid-template-columns: minmax(130px, 200px) auto auto; gap: 6px 12px; align-items: center; font-size: 13px; }
+  .rm-filterrows label { display: flex; align-items: center; gap: 6px; }
+  .rm-addfilter { display: flex; align-items: center; gap: 6px; font-size: 13px; align-self: flex-start; }
+  .rm-options { padding-bottom: 0; }
+  .rm-buttons { display: flex; gap: 14px; font-size: 12.6px; margin: 6px 0 12px; }
+  /* Redmine's own mobile layout (responsive.css, max-width: 899px): the top
+     menu, tabs, project title and search give way to one 64px bar holding the
+     project jump box and a menu button; the contextual links become buttons
+     above the heading. */
+  .rm-mbar { display: none; }
+  @media (max-width: 899px) {
+    .rm-topmenu, .rm-menu, .rm-headrow { display: none; }
+    .rm-header { padding: 0; background: #628db6; }
+    .rm-mbar {
+      display: flex; align-items: center; height: 64px; color: #f8f8f8;
+      font-size: 22px; font-weight: bold;
+    }
+    .rm-mjump { font-size: 18px; margin: 0 12px 0 10px; opacity: 0.9; }
+    .rm-burger {
+      margin-left: auto; width: 60px; height: 64px; line-height: 64px; text-align: center;
+      border-left: 1px solid #ddd; font-size: 30px; font-weight: normal;
+    }
+    .rm-titlebar { flex-direction: column-reverse; align-items: flex-start; gap: 12px; }
+    .rm-contextual a, .rm-buttons a {
+      border: 1px solid #ccc; border-radius: 3px; padding: 6px 10px; font-weight: bold;
+    }
+  }
+  @media (max-width: 640px) {
+    .rm-buttons { flex-wrap: wrap; gap: 8px; }
+  }
   /* Wrap the table so it scrolls horizontally on narrow screens instead of
      being clipped by the card (this is how Redmine itself behaves on mobile). */
   .rm-tablewrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  table.rm-list { width: 100%; min-width: 560px; border-collapse: collapse; font-size: 12px; }
+  table.rm-list { width: 100%; min-width: 600px; border-collapse: collapse; font-size: 13px; border: 1px solid #e4e4e4; }
   table.rm-list th {
-    background: #eee; border: 1px solid var(--rm-border); color: #444; font-weight: bold;
-    text-align: left; padding: 3px 7px; white-space: nowrap;
+    background: #eee; border: 1px solid #d7d7d7; color: #333; font-weight: bold;
+    text-align: center; padding: 4px; white-space: nowrap;
   }
-  table.rm-list th .sortarrow { color: #888; font-size: 9px; }
-  table.rm-list td { border: 1px solid var(--rm-border); padding: 3px 7px; vertical-align: middle; white-space: nowrap; }
-  table.rm-list tr:nth-child(even) td { background: #f6f7f8; }
-  table.rm-list tr.prio-urgent td { background: #fbe9e6; }
-  table.rm-list tr.prio-urgent:nth-child(even) td { background: #f7e2df; }
-  table.rm-list tr { transition: background 0.4s ease; }
+  table.rm-list th a { color: var(--rm-link); }
+  table.rm-list th .sortarrow { color: var(--rm-link); font-size: 10px; margin-right: 2px; }
+  table.rm-list td { border-top: 1px solid #e4e4e4; padding: 3px 6px; vertical-align: middle; text-align: center; white-space: nowrap; }
+  table.rm-list tbody tr:nth-child(odd) td { background: #fff; }
+  table.rm-list tbody tr:nth-child(even) td { background: #f6f7f8; }
+  table.rm-list tr { transition: opacity 0.6s ease, background 0.4s ease; }
   table.rm-list tr.flash td { background: #fcf2cf !important; }
+  table.rm-list tr.leaving { opacity: 0; }
   table.rm-list input[type="checkbox"] { margin: 0; vertical-align: middle; }
-  .rm-id { color: var(--rm-link); text-decoration: none; }
-  .rm-id:hover { color: #c61a1a; }
-  td.rm-subject { width: 99%; max-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  td.rm-subject a { color: var(--rm-link); text-decoration: none; }
-  td.rm-subject a:hover { color: #c61a1a; text-decoration: underline; }
-  tr.closed td { color: #999; }
-  tr.closed td.rm-subject a { color: #999; text-decoration: line-through; }
-  td.rm-prio { font-weight: bold; }
-  td.rm-prio.urgent { color: #cc3300; }
-  td.rm-prio.high { color: #cc6600; }
-  td.rm-prio.normal { color: #555; font-weight: normal; }
-  td.rm-prio.low { color: #888; font-weight: normal; }
-  td.rm-due.overdue { color: #cc3300; font-weight: bold; }
-  .rm-none { color: #999; font-style: italic; }
+  td.rm-subject { text-align: left !important; width: 99%; max-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  td.rm-due.overdue { color: #cc2222; }
+  td.rm-actions { color: var(--rm-link); }
 
   /* ── Agent CLI, styled after Claude Code ──
      The Redmine table above mutates as the agent's MCP tool calls land here. */
@@ -414,7 +448,7 @@
   .cc-welcome b { color: var(--cli-text); font-weight: 500; }
   .cc-welcome .sub { display: block; margin-top: 3px; font-size: 11.5px; color: #6f6a64; }
   .cli-prompt { color: var(--cli-text); }
-  .cli-prompt::before { content: "> "; color: var(--cli-dim); }
+  .cli-prompt::before { content: "❯ "; color: var(--cli-dim); }
   .cli-hint { color: var(--cli-dim); margin-top: 10px; }
   .blink, .cc-cursor { animation: blink 1.1s step-end infinite; }
   @keyframes blink { 50% { opacity: 0; } }
@@ -423,16 +457,22 @@
   .turn { opacity: 0; transform: translateY(5px); transition: all 0.35s ease; margin-top: 14px; }
   .turn.on { opacity: 1; transform: none; }
   .cc-msg { display: flex; gap: 8px; }
-  .cc-bullet { color: var(--cli-accent); flex-shrink: 0; }
+  .cc-bullet { color: var(--cli-text); flex-shrink: 0; }
+  .tc-line .cc-bullet { color: var(--cli-dim); }
+  .toolcall.done .tc-line .cc-bullet { color: #7faa6e; }
   .agent-text { color: var(--cli-text); }
   .toolcall { margin-top: 12px; }
   .tc-line { display: flex; gap: 8px; align-items: baseline; }
   .tc-call { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
   .tc-name { color: var(--cli-text); }
   .tc-args { color: var(--cli-dim); }
-  .tc-result { color: var(--cli-dim); padding-left: 18px; margin-top: 2px; cursor: pointer; }
+  .tc-result { color: var(--cli-dim); padding-left: 18px; margin-top: 2px; cursor: pointer; display: grid; grid-template-columns: auto 1fr; }
+  .tc-result::before { grid-row: span 2; }
+  .tc-result > span { grid-column: 2; min-width: 0; }
+  /* The tool's text output (compact JSON), clipped as Claude Code clips long output. */
+  .tc-out { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-all; }
   .tc-result::before { content: "\23bf  "; color: #57534d; }
-  .tc-expand { color: #6f6a64; }
+  .tc-expand { display: block; color: #6f6a64; }
   .tc-result:hover .tc-expand { color: var(--cli-text); }
   .hidden-tc { display: none; }
   .tc-pending { color: var(--cli-dim); animation: ccpulse 1.1s ease-in-out infinite; }
@@ -466,10 +506,9 @@
   .cc-input { flex-shrink: 0; padding: 4px 14px 12px; }
   .cc-input-box { border: 1px solid #4a443d; border-radius: 8px; padding: 8px 12px;
                   color: var(--cli-dim); font-family: var(--font-mono); font-size: 12.5px; }
-  .cc-input-box::before { content: "> "; color: #6f6a64; }
+  .cc-input-box::before { content: "❯ "; color: #6f6a64; }
   .cc-input-hint { margin-top: 5px; font-family: var(--font-mono); font-size: 10.5px;
                    color: #6f6a64; display: flex; justify-content: space-between; }
-  .cc-input-hint .ok { color: #7faa6e; }
 
   /* ledger / scoreboard */
   .scoreboard { display: flex; gap: 40px; padding: 16px 24px; border-top: 1px solid var(--border); background: var(--bg-elev); flex-wrap: wrap; }
@@ -511,7 +550,8 @@
   }
   .feature-panel.alt { background: linear-gradient(135deg, var(--panel-grad-b) 0%, var(--panel-grad-a) 100%); }
   .feature-panel img { max-width: 100%; height: auto; border-radius: 12px; box-shadow: 0 18px 50px rgba(24,32,64,0.28); }
-  .feature-panel.alt img { max-width: 78%; }
+  .feature-panel.alt img,
+  .feature-panel.narrow img { max-width: 78%; }
   .app-name { font-family: var(--font-display); font-size: clamp(24px, 2.6vw, 32px); font-weight: 500;
     letter-spacing: -0.02em; line-height: 1.15; margin: 0; }
   .app-desc { color: var(--text-secondary); font-size: 16px; margin: 0; line-height: 1.6; }
@@ -523,7 +563,8 @@
     .feature-row, .feature-row.reverse { flex-direction: column; gap: 28px; margin-top: 56px; }
     .feature-text { text-align: center; }
     .feature-panel { width: 100%; padding: 24px; }
-    .feature-panel.alt img { max-width: 100%; }
+    .feature-panel.alt img,
+    .feature-panel.narrow img { max-width: 100%; }
   }
 
   /* ── Capabilities ───────────────────────────────────────── */
@@ -757,7 +798,8 @@
     .rm-list th:nth-child(1), .rm-list td:nth-child(1),   /* checkbox */
     .rm-list th:nth-child(3), .rm-list td:nth-child(3),   /* Tracker */
     .rm-list th:nth-child(5), .rm-list td:nth-child(5),   /* Priority */
-    .rm-list th:nth-child(8), .rm-list td:nth-child(8) {  /* Due date */
+    .rm-list th:nth-child(8), .rm-list td:nth-child(8),   /* Due date */
+    .rm-list th:nth-child(9), .rm-list td:nth-child(9) {  /* Actions (⋯) */
       display: none;
     }
     table.rm-list td, table.rm-list th { white-space: normal; }
@@ -786,7 +828,7 @@
 <section class="hero">
   <div class="inner">
     <p class="hero-title">Your AI shouldn't just read tickets. It should work them.</p>
-    <p class="hero-sub"><code>redmine-mcp-server</code> gives AI agents 51 tools to triage, update, comment on, and close Redmine issues, the way a project manager would.</p>
+    <p class="hero-sub"><code>redmine-mcp-server</code> gives AI agents 53 tools to triage, update, comment on, and close Redmine issues, the way a project manager would.</p>
     <div class="hero-ctas">
       <div class="install-pill">
         <span class="dollar">$</span>
@@ -814,7 +856,7 @@
       <div class="stage-head">
         <div class="proj-meta">
           <div class="proj-name">An AI agent on a live Redmine</div>
-          <div class="proj-sub">scripted walkthrough, no real Redmine connected · the agent edits the Issues page below with MCP tool calls</div>
+          <div class="proj-sub">scripted walkthrough, no real Redmine connected · the agent edits the Issues page below by calling the server's 53 MCP tools, registered in Claude Code as <code>redmine</code></div>
         </div>
         <div class="stage-controls">
           <button class="btn btn-sm" id="playBtn">▶ Run the agent</button>
@@ -827,31 +869,50 @@
         <div class="rm-app" aria-label="Embedded Redmine issues page (mockup)">
           <div class="rm-topmenu">
             <span><a href="#">Home</a><a href="#">My page</a><a href="#">Projects</a><a href="#">Help</a></span>
-            <span>Logged in as <b>alex.rivera</b></span>
+            <span class="rm-right"><span>Logged in as</span> <a href="#" style="margin-left:4px">alex.rivera</a><a href="#">My account</a><a href="#">Sign out</a></span>
           </div>
           <div class="rm-header">
-            <div class="rm-crumb"><a href="#">Home</a> » <a href="#">Projects</a> » Cartly</div>
-            <div class="rm-proj">Cartly</div>
+            <div class="rm-mbar"><span class="rm-mjump">&#8964;</span>Cartly<span class="rm-burger">&#8801;</span></div>
+            <div class="rm-headrow">
+              <div class="rm-proj">Cartly</div>
+              <div class="rm-search">Search: <span class="rm-input"></span><span class="rm-select">Cartly</span></div>
+            </div>
             <div class="rm-menu">
-              <a href="#">Overview</a><a href="#">Activity</a><a href="#">Roadmap</a><a href="#" class="active">Issues</a><a href="#">Gantt</a><a href="#">Wiki</a><a href="#">Settings</a>
+              <a href="#" class="rm-newobj" title="New object">+</a><a href="#">Overview</a><a href="#">Activity</a><a href="#">Roadmap</a><a href="#" class="active">Issues</a><a href="#">Spent time</a><a href="#">Gantt</a><a href="#">Wiki</a><a href="#">Settings</a>
             </div>
           </div>
           <div class="rm-content">
-            <div class="rm-h2">Issues</div>
-            <div class="rm-filters">
-              <span class="lbl">Filters:</span>
-              <span class="chipf">Status: open</span>
-              <span class="chipf">Due date: &le; 2026-06-20</span>
-              <span class="chipf">Sprint 14</span>
-              <span class="rm-apply">Apply</span>
+            <div class="rm-titlebar">
+              <div class="rm-h2">Issues</div>
+              <div class="rm-contextual"><a href="#">&#8853; New issue</a><a href="#" title="Actions">&#8943;</a></div>
+            </div>
+            <fieldset class="rm-filters">
+              <legend>&#8250; Filters</legend>
+              <div class="rm-filterbox">
+                <div class="rm-filterrows">
+                  <label><input type="checkbox" checked tabindex="-1"> Status</label>
+                  <span class="rm-select">open</span><span class="rm-empty"></span>
+                  <label><input type="checkbox" checked tabindex="-1"> Target version</label>
+                  <span class="rm-select">is</span><span class="rm-select">Sprint 14</span>
+                </div>
+                <div class="rm-addfilter">Add filter <span class="rm-select wide"></span></div>
+              </div>
+            </fieldset>
+            <fieldset class="rm-options"><legend>&#8250; Options</legend></fieldset>
+            <div class="rm-buttons">
+              <a href="#"><svg class="rm-ico" viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg>Apply</a>
+              <a href="#"><svg class="rm-ico" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>Clear</a>
+              <a href="#"><svg class="rm-ico" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4"/><rect x="8" y="13" width="8" height="5"/></svg>Save custom query</a>
             </div>
             <div class="rm-tablewrap">
               <table class="rm-list">
                 <thead><tr>
-                  <th style="width:16px"></th>
-                  <th>#&nbsp;<span class="sortarrow">▾</span></th>
-                  <th>Tracker</th><th>Status</th><th>Priority</th>
-                  <th>Subject</th><th>Assignee</th><th>Due&nbsp;date</th>
+                  <th style="width:16px"><input type="checkbox" tabindex="-1" title="Check all / Uncheck all"></th>
+                  <th><a href="#">#</a></th>
+                  <th><a href="#">Tracker</a></th><th><a href="#">Status</a></th>
+                  <th><span class="sortarrow">&#8964;</span><a href="#">Priority</a></th>
+                  <th><a href="#">Subject</a></th><th><a href="#">Assignee</a></th><th><a href="#">Due date</a></th>
+                  <th></th>
                 </tr></thead>
                 <tbody id="issueRows"></tbody>
               </table>
@@ -864,12 +925,12 @@
             <span class="cli-title">claude — ~/work/cartly-app</span>
           </div>
           <div class="cli-body" id="feed">
-            <div class="cc-welcome"><span class="cc-star">✻</span> Welcome to <b>Claude Code</b><span class="sub">redmine-mcp-server connected over MCP · 51 tools available</span></div>
+            <div class="cc-welcome"><span class="cc-star">✻</span> <b>Claude Code</b> v2.1.284<span class="sub">Opus 5.5 · ~/work/cartly-app</span></div>
             <div class="cli-hint" id="feedPlaceholder">▸ press <b style="color:#d6d3cd">Run the agent</b> to start</div>
           </div>
           <div class="cc-input">
             <div class="cc-input-box"><span id="cliInput"></span><span class="cc-cursor">▏</span></div>
-            <div class="cc-input-hint"><span>? for shortcuts</span><span class="ok">● redmine-mcp-server (MCP)</span></div>
+            <div class="cc-input-hint"><span>? for shortcuts</span></div>
           </div>
         </div>
       </div>
@@ -884,7 +945,7 @@
 
     <div class="callout">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-      <span>This is a scripted walkthrough against canned data. The JSON in each tool call matches the real server's response shape field-for-field — including the <code>&lt;insecure-content&gt;</code> boundary tags that wrap untrusted user text. Nothing here connects to a live Redmine.</span>
+      <span>This is a scripted walkthrough against canned data. The JSON in each tool call matches the real server's response shape field-for-field, including the <code>&lt;insecure-content&gt;</code> boundary tags that wrap untrusted user text. Nothing here connects to a live Redmine.</span>
     </div>
   </div>
 </section>
@@ -893,7 +954,7 @@
 <section class="receipt hidden" id="receipt">
   <div class="receipt-inner">
     <h2 id="receiptHead">The agent worked the backlog.</h2>
-    <p>That's the point. With redmine-mcp-server, an agent doesn't just summarize your tickets — it moves them.</p>
+    <p>That's the point. With redmine-mcp-server, an agent doesn't just summarize your tickets. It moves them.</p>
     <div class="receipt-row">
       <span><b id="rCalls">6</b>tool calls</span>
       <span><b id="rIssues">2</b>issues touched</span>
@@ -945,8 +1006,25 @@
       </div>
     </div>
 
+    <div class="feature-row">
+      <div class="feature-text">
+        <h3 class="app-name">A project timeline.</h3>
+        <p class="app-desc">
+          <code>show_project_timeline</code> lays out a project's schedule as a Gantt
+          view: issue bars from their start and due dates, grouped by target version,
+          with a milestone on each release date and a Today line. Overdue work is
+          outlined in red, and clicking a bar or milestone shows its details. It is
+          read-only.
+        </p>
+      </div>
+      <div class="feature-panel narrow">
+        <img src="project-timeline.png" width="742" height="780"
+             alt="Interactive project timeline rendered in the chat by show_project_timeline, with issue bars grouped by version, milestone diamonds, a Today line, and a details popover open on one issue" loading="lazy" />
+      </div>
+    </div>
+
     <p class="board-note">
-      Both need an MCP client that renders MCP Apps. Tried them? Leave feedback in
+      All three need an MCP client that renders MCP Apps. Tried them? Leave feedback in
       <a href="https://github.com/jztan/redmine-mcp-server/discussions/168">the discussion</a>.
     </p>
   </div>
@@ -955,13 +1033,13 @@
 <section class="caps">
   <div class="inner">
     <h2 class="caps-title">Far more than triage.</h2>
-    <p class="caps-sub">The demo shows one workflow. The other 51 core tools, 64 with plugins, cover the rest of Redmine.</p>
+    <p class="caps-sub">The demo shows one workflow. The server's 53 core tools, 68 with plugins, cover the rest of Redmine.</p>
     <div class="caps-grid">
 
       <div class="cap-card">
         <svg class="cap-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
         <p class="cap-head">Search <b>all of Redmine</b> at once</p>
-        <p class="cap-desc">One <code>search_entire_redmine</code> call spans issues, wiki pages, projects, and news.</p>
+        <p class="cap-desc">One <code>search_entire_redmine</code> call spans issues, wiki pages, and news.</p>
       </div>
 
       <div class="cap-card">
@@ -973,7 +1051,7 @@
       <div class="cap-card">
         <svg class="cap-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         <p class="cap-head">Log and import <b>time</b></p>
-        <p class="cap-desc">Record time entries or bulk-import a week of them with <code>manage_time_entry</code>.</p>
+        <p class="cap-desc">Record time entries with <code>manage_time_entry</code>, or bulk-import a week of them with <code>import_time_entries</code>.</p>
       </div>
 
       <div class="cap-card">
@@ -1031,7 +1109,7 @@
           <tr>
             <th>Getting it right</th>
             <td data-col="A generic HTTP tool">The model composes URLs, query filters, and JSON bodies from memory, and finds out it was wrong from a 422.</td>
-            <td class="ours" data-col="redmine-mcp-server">51 typed tools with validated parameters. Enumeration tools hand back the valid tracker, status, priority, and role IDs before a write is attempted.</td>
+            <td class="ours" data-col="redmine-mcp-server">53 typed tools with validated parameters. Enumeration tools hand back the valid tracker, status, priority, and role IDs before a write is attempted.</td>
           </tr>
           <tr>
             <th>Context cost</th>
@@ -1041,7 +1119,7 @@
           <tr>
             <th>Guardrails</th>
             <td data-col="A generic HTTP tool">Whatever the credential can do, the model can do, with no way to scope it down or preview the damage.</td>
-            <td class="ours" data-col="redmine-mcp-server">Read-only mode, per-tool OAuth scope enforcement, and a required confirmation with cascade preview before an issue is deleted.</td>
+            <td class="ours" data-col="redmine-mcp-server">Read-only mode, per-tool OAuth scope enforcement, and a required confirmation flag, with a cascade-impact preview on refusal, before an issue is deleted.</td>
           </tr>
           <tr>
             <th>Untrusted text</th>
@@ -1051,7 +1129,7 @@
           <tr>
             <th>What you see</th>
             <td data-col="A generic HTTP tool">JSON, pasted into the chat.</td>
-            <td class="ours" data-col="redmine-mcp-server">An interactive Kanban board and project dashboard rendered in the conversation, writing back through the same tools.</td>
+            <td class="ours" data-col="redmine-mcp-server">An interactive Kanban board, project dashboard, and timeline rendered in the conversation, writing back through the same tools.</td>
           </tr>
         </tbody>
       </table>
@@ -1085,7 +1163,7 @@
       </div>
       <div class="trust-item">
         <p class="trust-head">Destructive actions ask first</p>
-        <p class="trust-desc"><code>delete_redmine_issue</code> requires explicit confirmation flags and shows a cascade-impact preview before anything irreversible happens.</p>
+        <p class="trust-desc"><code>delete_redmine_issue</code> refuses without an explicit confirmation flag and returns a cascade-impact preview with the refusal; subtasks need a second flag.</p>
       </div>
       <div class="trust-item">
         <p class="trust-head">Hardened network edges</p>
@@ -1173,14 +1251,14 @@ redmine-mcp-server</pre>
       <summary>Can the agent write to my Redmine, or only read it?</summary>
       <div class="qa-body">
         <p>It writes. Creating and updating issues, adding notes, logging time, editing wiki pages, and managing members, versions, categories, and relations are all tool calls.</p>
-        <p>If you would rather it did not, set <code>REDMINE_MCP_READ_ONLY=true</code> and every write branch is blocked while reads keep working. Deleting an issue always requires explicit confirmation flags and shows a cascade-impact preview first, in either mode.</p>
+        <p>If you would rather it did not, set <code>REDMINE_MCP_READ_ONLY=true</code> and every write branch is blocked while reads keep working. Deleting an issue is refused unless <code>confirm_delete=true</code> is passed, and the refusal carries a cascade-impact preview; an issue with subtasks needs a second flag. In read-only mode deletion is blocked outright.</p>
       </div>
     </details>
 
     <details class="qa">
       <summary>Does my Redmine data leave my network?</summary>
       <div class="qa-body">
-        <p>Not through this server. It runs on your own infrastructure and talks to exactly two things: your Redmine and your MCP client. There is no hosted service, no telemetry, and no third party in the path.</p>
+        <p>Not through this server. It runs on your own infrastructure and talks to your Redmine and your MCP client, plus any URL an agent explicitly asks it to upload a file from (SSRF-checked). There is no hosted service, no telemetry, and no third party in the path.</p>
         <p>What your AI client then sends to its model provider is between you and that client, the same as for any other tool it runs.</p>
       </div>
     </details>
@@ -1188,7 +1266,7 @@ redmine-mcp-server</pre>
     <details class="qa">
       <summary>Which AI clients does it work with?</summary>
       <div class="qa-body">
-        <p>Any client that speaks MCP. Claude Code, Claude Desktop, VS Code with Copilot, Codex CLI, and Kiro have step-by-step guides in the README, and Cursor and other clients use the generic HTTP configuration.</p>
+        <p>Any client that speaks MCP. Claude Code, Claude Desktop, VS Code with Copilot, Cursor, Codex CLI, and Kiro have step-by-step guides in the README, and other clients use the generic HTTP configuration.</p>
         <p>The server exposes streamable HTTP at <code>/mcp</code>. Clients that only speak stdio connect through a bridge, which the setup guides cover.</p>
       </div>
     </details>
@@ -1204,8 +1282,8 @@ redmine-mcp-server</pre>
     <details class="qa">
       <summary>Do I need to install Redmine plugins?</summary>
       <div class="qa-body">
-        <p>No. All 51 core tools work against a stock Redmine with no plugins at all.</p>
-        <p>Thirteen more are plugin-gated (64 in total) and need both the plugin installed and a matching environment variable: checklists, products, the RedmineUP CRM (contacts, deals, notes, tags, saved queries, deal categories, and product lines), and DMSF documents. Plugin tools are not even listed to the agent until their flag is set. RedmineUP Agile and AlphaNodes Additional Tags add fields to tools you already have rather than new tools, so sprint, story point, and tag support appears automatically when those plugins are present.</p>
+        <p>No. All 53 core tools work against a stock Redmine with no plugins at all.</p>
+        <p>Fifteen more are plugin-gated (68 in total) and need both the plugin installed and a matching environment variable: checklists, products, the RedmineUP CRM (contacts, deals, notes, tags, saved queries, deal categories, and product lines), DMSF documents, and Helpdesk email replies and ticket contacts. Plugin tools are not even listed to the agent until their flag is set. RedmineUP Agile and AlphaNodes Additional Tags add fields to tools you already have rather than new tools, turned on with <code>REDMINE_AGILE_ENABLED</code> and <code>REDMINE_TAGS_ENABLED</code>.</p>
       </div>
     </details>
 
@@ -1222,9 +1300,9 @@ redmine-mcp-server</pre>
   <div class="inner">
   <h2 class="install-title">Take it further.</h2>
   <p class="other-tools">
-    The demo shows 4 of the server's 51 core tools. The full set spans
+    The demo shows 4 of the server's 53 core tools. The full set spans
     <code>list_redmine_issues</code>, <code>get_redmine_issue</code>, <code>update_redmine_issue</code>,
-    <code>show_triage_board</code>, <code>show_project_dashboard</code>, <code>manage_time_entry</code>,
+    <code>show_triage_board</code>, <code>show_project_dashboard</code>, <code>show_project_timeline</code>, <code>manage_time_entry</code>,
     <code>manage_redmine_wiki_page</code>, <code>manage_project_member</code>, <code>search_entire_redmine</code>,
     <code>get_gantt_chart</code>, <code>upload_file</code>, <code>get_redmine_attachment</code>,
     and more, covering issues, projects, wikis, time tracking, versions, Gantt data, files, and CRM.
@@ -1249,11 +1327,11 @@ redmine-mcp-server</pre>
     </p>
     <h2>What it does</h2>
     <p>
-      Redmine has a capable REST API, but wiring an agent to it directly means handing the model raw HTTP access, which is slow, error-prone, and unsafe. redmine-mcp-server exposes 51 purpose-built tools instead. An agent can list and filter issues, read a ticket with its full history, update status and assignee, add notes, log time, manage wiki pages, pull Gantt timelines, upload and download attachments, and run global search, each as a single typed tool call with predictable, serialized JSON. It can also render interactive apps directly in the chat through the MCP Apps extension: <code>show_triage_board</code> draws a project's issues as drag-and-drop status columns that write back to Redmine, and <code>show_project_dashboard</code> renders a live, read-only project snapshot with click-through drill-ins to matching issue lists.
+      Redmine has a capable REST API, but wiring an agent to it directly means handing the model raw HTTP access, which is slow, error-prone, and unsafe. redmine-mcp-server exposes 53 purpose-built tools instead. An agent can list and filter issues, read a ticket with its full history, update status and assignee, add notes, log time, manage wiki pages, pull Gantt timelines, upload and download attachments, and run global search, each as a single typed tool call with predictable, serialized JSON. It can also render interactive apps directly in the chat through the MCP Apps extension: <code>show_triage_board</code> draws a project's issues as drag-and-drop status columns that write back to Redmine, <code>show_project_dashboard</code> renders a live, read-only project snapshot with click-through drill-ins to matching issue lists, and <code>show_project_timeline</code> lays out the schedule as a read-only Gantt view grouped by version.
     </p>
     <h2>How it stays safe</h2>
     <p>
-      The server runs on your own infrastructure and talks only to your Redmine and your MCP client. A read-only mode (<code>REDMINE_MCP_READ_ONLY=true</code>) blocks every write while you evaluate. In OAuth mode, each tool call is checked against the Redmine permission scopes the tool actually uses, per action for the <code>manage_*</code> tools, with unmapped tools denied by default and <code>tools/list</code> filtered to the token's scopes. User-controlled text is wrapped in boundary tags before it reaches the model, URL-based uploads are SSRF-checked, and issue deletion requires explicit confirmation with a cascade-impact preview.
+      The server runs on your own infrastructure and talks to your Redmine and your MCP client, plus any URL an agent explicitly asks it to upload a file from. A read-only mode (<code>REDMINE_MCP_READ_ONLY=true</code>) blocks every write while you evaluate. In OAuth mode, each tool call is checked against the Redmine permission scopes the tool actually uses, per action for the <code>manage_*</code> tools, with unmapped tools denied by default and <code>tools/list</code> filtered to the token's scopes. User-controlled text is wrapped in boundary tags before it reaches the model, URL-based uploads are SSRF-checked, and issue deletion is refused without an explicit confirmation flag, with a cascade-impact preview in the refusal.
     </p>
     <h2>What the demo shows</h2>
     <p>
@@ -1287,7 +1365,7 @@ redmine-mcp-server</pre>
 
 <footer>
   <p>redmine-mcp-server is open source · MIT licensed · built by <a href="https://blog.jztan.com/?utm_source=redmine-mcp-demo&utm_medium=referral&utm_campaign=demo-launch&utm_content=footer-byline">jztan</a></p>
-  <p style="margin-top:4px;font-size:11px;color:var(--text-tertiary)"><a href="https://pypi.org/project/redmine-mcp-server/" style="color:inherit;text-decoration:none;">redmine-mcp-server __VERSION__</a> · demo v0.2.1</p>
+  <p style="margin-top:4px;font-size:11px;color:var(--text-tertiary)"><a href="https://pypi.org/project/redmine-mcp-server/" style="color:inherit;text-decoration:none;">redmine-mcp-server __VERSION__</a> · demo v0.2.2</p>
 </footer>
 
 <div class="toast" id="toast">Copied</div>
@@ -1297,7 +1375,7 @@ redmine-mcp-server</pre>
   function track(name, params) { try { gtag("event", name, params || {}); } catch (e) {} }
   const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  // Fixed "today" for the fixture — deterministic, no Date.now().
+  // Fixed "today" for the fixture: deterministic, no Date.now().
   const TODAY = "2026-06-20";
   const PROJECT = { id: 42, name: "Cartly" };
   const ME = { id: 6, name: "Alex Rivera" };       // the human the agent acts for
@@ -1307,23 +1385,45 @@ redmine-mcp-server</pre>
 
   const STATUS = { NEW: {id:1,name:"New"}, INPROG: {id:2,name:"In Progress"}, RESOLVED:{id:3,name:"Resolved"}, CLOSED: {id:5,name:"Closed"} };
   const PRIO = { LOW:{id:1,name:"Low"}, NORMAL:{id:2,name:"Normal"}, HIGH:{id:3,name:"High"}, URGENT:{id:4,name:"Urgent"} };
+  const TRACKER = { BUG: {id:1,name:"Bug"}, FEATURE: {id:2,name:"Feature"} };
+  const SPRINT = { id: 31, name: "Sprint 14" };
 
-  // ── Fixture issues (the project's open issues, as shown on the
-  //    Redmine Issues page). Displayed newest-id first. ──────────
+  // sha256 of each raw text, as the server computes description_sha256 and
+  // notes_sha256 (of the text before wrap_insecure_content adds its tags).
+  // tests/test_demo_page.py recomputes these, so edit text and digest together.
+  const DIGESTS = {
+    "See ticket for full repro steps.":
+      "154653a5d6c7898f10a55d602e80a400b96861d689f42cef766506d7869c6cea",
+    "Push notifications stop arriving after ~30 min on Android 14 (Pixel 8). FCM token looks valid. Repro: background the app, wait, send a test push. Nothing lands. Works on Android 13.":
+      "999fd8ebc7836b077e8b27f3756f2817c943e1d9761caabe04e77bc93342ad80",
+    "The checkout E2E suite fails intermittently on CI (~1 run in 8), blocking the release pipeline.":
+      "90be906eafecc667deab4e017c45013131a101becb8151680e5deb0adbe36e2f",
+    "Seeing this in crash-free sessions too, likely the foreground-service change in 14. Attached a logcat from a repro.":
+      "e30e0cd6b0ce5c4b3460353d3ae58aaff9f511725d2397b9d37ab35957f3462f",
+    "Fix merged in r4471 (added an explicit wait on the cart spinner). 200 green runs since, safe to close once someone confirms.":
+      "b7249a24576c32f60e0039773bf504f5a3c4fc45500ad6bf6e01e9ec48a2dbaa",
+  };
+  const DEFAULT_DESCRIPTION = "See ticket for full repro steps.";
+
+  // ── Fixture issues: Sprint 14's open issues, as the Redmine Issues page
+  //    below shows them (Status: open, Target version: Sprint 14). ──────
   function initialIssues() {
+    const base = { author: ME, fixed_version: SPRINT, start_date: "2026-06-08" };
     return [
-      { id:4835, subject:"Dark mode contrast audit", tracker:"Task",
-        status:STATUS.NEW, priority:PRIO.LOW, assigned_to:null, author:ME, due_date:"2026-07-01" },
-      { id:4830, subject:"Add biometric login", tracker:"Feature",
-        status:STATUS.NEW, priority:PRIO.NORMAL, assigned_to:DEV, author:ME, due_date:"2026-06-27" },
-      { id:4821, subject:"Push notifications silently dropped on Android 14", tracker:"Bug",
-        status:STATUS.NEW, priority:PRIO.HIGH, assigned_to:null, author:ME, due_date:"2026-06-12" },
-      { id:4812, subject:"Fix flaky checkout E2E test", tracker:"Bug",
-        status:STATUS.INPROG, priority:PRIO.NORMAL, assigned_to:SAM, author:ME, due_date:"2026-06-18" },
-      { id:4807, subject:"Checkout crashes when coupon field is empty", tracker:"Bug",
-        status:STATUS.INPROG, priority:PRIO.URGENT, assigned_to:MAYA, author:ME, due_date:"2026-06-24" },
-      { id:4799, subject:"Migrate analytics SDK to v5", tracker:"Feature",
-        status:STATUS.INPROG, priority:PRIO.NORMAL, assigned_to:SAM, author:ME, due_date:"2026-06-24" },
+      { ...base, id:4835, subject:"Dark mode contrast audit", tracker:TRACKER.FEATURE,
+        status:STATUS.NEW, priority:PRIO.LOW, assigned_to:null, due_date:"2026-07-01", done_ratio:0 },
+      { ...base, id:4830, subject:"Add biometric login", tracker:TRACKER.FEATURE,
+        status:STATUS.NEW, priority:PRIO.NORMAL, assigned_to:DEV, due_date:"2026-06-27", done_ratio:0 },
+      { ...base, id:4821, subject:"Push notifications silently dropped on Android 14", tracker:TRACKER.BUG,
+        description:"Push notifications stop arriving after ~30 min on Android 14 (Pixel 8). FCM token looks valid. Repro: background the app, wait, send a test push. Nothing lands. Works on Android 13.",
+        status:STATUS.NEW, priority:PRIO.HIGH, assigned_to:null, due_date:"2026-06-12", done_ratio:0 },
+      { ...base, id:4812, subject:"Fix flaky checkout E2E test", tracker:TRACKER.BUG,
+        description:"The checkout E2E suite fails intermittently on CI (~1 run in 8), blocking the release pipeline.",
+        status:STATUS.INPROG, priority:PRIO.NORMAL, assigned_to:SAM, due_date:"2026-06-18", done_ratio:80 },
+      { ...base, id:4807, subject:"Checkout crashes when coupon field is empty", tracker:TRACKER.BUG,
+        status:STATUS.INPROG, priority:PRIO.URGENT, assigned_to:MAYA, due_date:"2026-06-24", done_ratio:30 },
+      { ...base, id:4799, subject:"Migrate analytics SDK to v5", tracker:TRACKER.FEATURE,
+        status:STATUS.INPROG, priority:PRIO.NORMAL, assigned_to:SAM, due_date:"2026-06-24", done_ratio:50 },
     ];
   }
   let board = initialIssues();
@@ -1336,71 +1436,86 @@ redmine-mcp-server</pre>
     const b = (0xa1b2c3d4e5f60000 + (_boundary++)).toString(16).slice(-16);
     return `<insecure-content-${b}>\n${text}\n</insecure-content-${b}>`;
   }
+  const ref = (o) => (o ? { id: o.id, name: o.name } : null);
+  // Mirrors _issue_to_dict: same keys, same order, same value formats.
+  // Redmine timestamps come back naive (no Z) through _safe_isoformat.
   function issueDict(i, fields) {
     const full = {
       id: i.id,
       subject: i.subject,
-      description: wrap(i.description || "See ticket for full repro steps."),
-      project: { id: PROJECT.id, name: PROJECT.name },
-      status: { id: i.status.id, name: i.status.name },
-      priority: { id: i.priority.id, name: i.priority.name },
-      author: { id: i.author.id, name: i.author.name },
-      assigned_to: i.assigned_to ? { id: i.assigned_to.id, name: i.assigned_to.name } : null,
-      created_on: "2026-06-02T09:14:23Z",
-      updated_on: TODAY + "T16:40:05Z",
+      description: wrap(i.description || DEFAULT_DESCRIPTION),
+      project: ref(PROJECT),
+      status: ref(i.status),
+      priority: ref(i.priority),
+      tracker: ref(i.tracker),
+      author: ref(i.author),
+      assigned_to: ref(i.assigned_to),
+      category: null,
+      fixed_version: ref(i.fixed_version),
+      parent: null,
+      start_date: i.start_date,
+      due_date: i.due_date,
+      done_ratio: i.done_ratio,
+      estimated_hours: null,
+      spent_hours: 0.0,
+      total_estimated_hours: null,
+      total_spent_hours: 0.0,
+      is_private: false,
+      closed_on: i.status.id === STATUS.CLOSED.id ? i.updated_on : null,
+      created_on: "2026-06-02T09:14:23",
+      // A write stamps updated_on (and closed_on, on a close) at save time.
+      updated_on: i.updated_on || TODAY + "T16:40:05",
     };
     if (!fields) return full;
     const out = {};
     fields.forEach(f => { if (f in full) out[f] = full[f]; });
     return out;
   }
+  // What get_redmine_issue returns: the issue, custom_fields, the digest of
+  // the raw description, then journals and attachments.
+  function issueDetail(i, journals, attachments) {
+    const d = issueDict(i);
+    d.custom_fields = [];
+    d.description_sha256 = DIGESTS[i.description || DEFAULT_DESCRIPTION];
+    d.journals = journals;
+    d.attachments = attachments;
+    return d;
+  }
+  function journal(id, user, createdOn, text) {
+    return { id, user: ref(user), notes: wrap(text), notes_sha256: DIGESTS[text],
+             created_on: createdOn, private_notes: false, details: [] };
+  }
 
   // ── The scripted scenario ─────────────────────────────────
   // Each step: narration, tool, args (request), result builder, apply (board mutation)
   const SCRIPT = [
     {
-      section: "discover — overdue, open issues in Sprint 14",
-      say: "I'll start by pulling the overdue, open tickets, highest priority first.",
-      summary: "2 issues · #4821 (High), #4812 (Normal)",
+      section: "discover: overdue, open issues in Sprint 14",
+      say: "I'll start by pulling the overdue, open tickets in Sprint 14, highest priority first.",
       tool: "list_redmine_issues",
-      args: { project_id: 42, status_id: "open", due_date: "<=2026-06-20", sort: "priority:desc",
+      args: { project_id: 42, status_id: "open", fixed_version_id: 31,
+              filters: { due_date: "<=2026-06-19" }, sort: "priority:desc",
               fields: ["id","subject","status","priority","assigned_to","due_date"] },
-      result: () => [
-        { id:4821, subject:"Push notifications silently dropped on Android 14",
-          status:{id:1,name:"New"}, priority:{id:3,name:"High"},
-          assigned_to:null, due_date:"2026-06-12" },
-        { id:4812, subject:"Fix flaky checkout E2E test",
-          status:{id:2,name:"In Progress"}, priority:{id:2,name:"Normal"},
-          assigned_to:{id:4,name:"Sam Ruiz"}, due_date:"2026-06-18" },
-      ],
+      result: () => [4821, 4812].map(id => issueDict(byId(id),
+              ["id","subject","status","priority","assigned_to","due_date"])),
       apply: () => { flash([4821, 4812]); },
     },
     {
       section: "analyze & triage #4821",
-      say: "#4821 is the top one — High, overdue since Jun 12, still unassigned. Reading it.",
-      summary: "High · unassigned · 1 attachment (logcat) · journal from Sam",
+      say: "#4821 is the top one: High, overdue since Jun 12, still unassigned. Reading it.",
       tool: "get_redmine_issue",
-      args: { issue_id: 4821, include_journals: true, include_attachments: true },
-      result: () => {
-        const d = issueDict(byId(4821));
-        d.description = wrap("Push notifications stop arriving after ~30 min on Android 14 (Pixel 8). FCM token looks valid. Repro: background the app, wait, send a test push — nothing lands. Works on Android 13.");
-        d.journals = [
-          { id: 90211, user: {id:4,name:"Sam Ruiz"}, created_on: "2026-06-13T11:02:40Z",
-            notes: wrap("Seeing this in crash-free sessions too — likely the foreground-service change in 14. Attached a logcat from a repro.") },
-        ];
-        d.attachments = [
-          { id: 7012, filename: "logcat-push-drop.txt", filesize: 48213, content_type: "text/plain",
+      args: { issue_id: 4821 },
+      result: () => issueDetail(byId(4821),
+        [ journal(90211, SAM, "2026-06-13T11:02:40",
+            "Seeing this in crash-free sessions too, likely the foreground-service change in 14. Attached a logcat from a repro.") ],
+        [ { id: 7012, filename: "logcat-push-drop.txt", filesize: 48213, content_type: "text/plain",
             description: wrap("logcat captured during a Pixel 8 repro session"),
             content_url: "https://redmine.cartly.io/attachments/download/7012/logcat-push-drop.txt",
-            author: { id: 4, name: "Sam Ruiz" }, created_on: "2026-06-13T11:05:12Z" },
-        ];
-        return d;
-      },
+            author: ref(SAM), created_on: "2026-06-13T11:05:12" } ]),
       apply: () => { flash([4821]); },
     },
     {
       say: "Sam attached a logcat from a repro. Let me pull it down and see what's actually failing.",
-      summary: "downloaded logcat-push-drop.txt · 48 KB · text/plain",
       tool: "get_redmine_attachment",
       args: { attachment_id: 7012 },
       result: () => ({
@@ -1409,83 +1524,86 @@ redmine-mcp-server</pre>
         filename: "logcat-push-drop.txt",
         content_type: "text/plain",
         size: 48213,
-        expires_at: TODAY + "T17:41:00Z",
+        expires_at: TODAY + "T17:41:00.482913+00:00",
         attachment_id: 7012,
       }),
       apply: () => { flash([4821]); },
     },
     {
       // reasoning-only turn (no tool call): the agent analyzes the downloaded log
-      say: "Reading the logcat: the FCM foreground service is killed about 30 minutes in, right after Android 14's stricter foreground-service timeout fires. That lines up with Sam's note — this is the regression, and it sits in the notifications module.",
+      say: "Reading the logcat: the FCM foreground service is killed about 30 minutes in, right after Android 14's stricter foreground-service timeout fires. That lines up with Sam's note. This is the regression, and it sits in the notifications module.",
       apply: () => { flash([4821]); },
     },
     {
       say: "Confirmed. Assigning Maya, who owns notifications, and moving it to In Progress.",
-      summary: "#4821 → In Progress · assigned Maya Chen",
       tool: "update_redmine_issue",
       args: { issue_id: 4821, fields: { status_id: 2, assigned_to_id: 8 } },
-      result: () => { const i = byId(4821); i.status = STATUS.INPROG; i.assigned_to = MAYA;
+      result: () => { const i = byId(4821); i.status = STATUS.INPROG; i.assigned_to = MAYA; i.updated_on = TODAY + "T16:47:32";
                       const d = issueDict(i); d.custom_fields = []; return d; },
       apply: () => { render(); flash([4821]); touch([4821]); },
     },
     {
       say: "Leaving a triage summary on the ticket so whoever picks it up has the context.",
-      summary: "comment added to #4821",
       tool: "update_redmine_issue",
       args: { issue_id: 4821, fields: { notes: "Triaged: logcat (attachment #7012) shows the FCM foreground service killed ~30 min in, right after Android 14's foreground-service timeout. Root cause confirmed. Reassigned to Maya (notifications). Needs to land in the 4.2 release." } },
-      result: () => { const i = byId(4821);
+      result: () => { const i = byId(4821); i.updated_on = TODAY + "T16:48:05";
         const d = issueDict(i); d.custom_fields = []; return d; },
       apply: () => { render(); flash([4821]); addComment(); },
     },
     {
       section: "verify & close #4812",
       say: "Next, the other overdue ticket, #4812. Before touching it, reading why a test fix is still open.",
-      summary: "In Progress · journal: Sam → fix merged in r4471, green since",
       tool: "get_redmine_issue",
-      args: { issue_id: 4812, include_journals: true },
-      result: () => {
-        const d = issueDict(byId(4812));
-        d.description = wrap("The checkout E2E suite fails intermittently on CI (~1 run in 8), blocking the release pipeline.");
-        d.journals = [
-          { id: 90255, user: {id:4,name:"Sam Ruiz"}, created_on: "2026-06-17T09:48:10Z",
-            notes: wrap("Fix merged in r4471 (added an explicit wait on the cart spinner). 200 green runs since — safe to close once someone confirms.") },
-        ];
-        d.attachments = [];
-        return d;
-      },
+      args: { issue_id: 4812 },
+      result: () => issueDetail(byId(4812),
+        [ journal(90255, SAM, "2026-06-17T09:48:10",
+            "Fix merged in r4471 (added an explicit wait on the cart spinner). 200 green runs since, safe to close once someone confirms.") ],
+        []),
       apply: () => { flash([4812]); },
     },
     {
-      say: "Sam's last note says the fix merged and has been green since — it just was never closed. Closing it with a reason.",
-      summary: "#4812 → Closed · comment added",
+      say: "Sam's last note says the fix merged and has been green since. It was just never closed, so I'm closing it with a reason.",
       tool: "update_redmine_issue",
       args: { issue_id: 4812, fields: { status_id: 5, notes: "Closing: fix merged in r4471 and stable on CI per Sam's 2026-06-17 note. No further action needed." } },
-      result: () => { const i = byId(4812); i.status = STATUS.CLOSED;
+      result: () => { const i = byId(4812); i.status = STATUS.CLOSED; i.updated_on = TODAY + "T16:52:11";
                       const d = issueDict(i); d.custom_fields = []; return d; },
-      apply: () => { render(); flash([4812]); touch([4812]); addComment(); markClosed(); },
+      apply: () => { render(); touch([4812]); addComment(); markClosed(); dropIssue(4812); },
     },
   ];
 
   // ── Redmine issue-table rendering ─────────────────────────
-  function overdue(i) { return i.due_date < TODAY && i.status.id !== 5; }
+  function overdue(i) { return i.due_date < TODAY && i.status.id !== STATUS.CLOSED.id; }
+  // Redmine's en locale default date format.
+  function usDate(iso) { const [y, m, d] = iso.split("-"); return `${m}/${d}/${y}`; }
   function rowHtml(i) {
-    const closed = i.status.id === 5;
-    const prio = i.priority.name.toLowerCase();
-    const assignee = i.assigned_to ? escapeHtml(i.assigned_to.name) : '<span class="rm-none">(none)</span>';
-    const cls = [closed ? "closed" : "", prio === "urgent" ? "prio-urgent" : ""].filter(Boolean).join(" ");
-    return `<tr class="${cls}" data-id="${i.id}">
-      <td><input type="checkbox" disabled></td>
-      <td><a class="rm-id" href="#">${i.id}</a></td>
-      <td>${i.tracker}</td>
+    const assignee = i.assigned_to ? `<a href="#">${escapeHtml(i.assigned_to.name)}</a>` : "";
+    return `<tr data-id="${i.id}">
+      <td><input type="checkbox" tabindex="-1"></td>
+      <td><a href="#">${i.id}</a></td>
+      <td>${i.tracker.name}</td>
       <td>${i.status.name}</td>
-      <td class="rm-prio ${prio}">${i.priority.name}</td>
+      <td>${i.priority.name}</td>
       <td class="rm-subject"><a href="#" title="${escapeHtml(i.subject)}">${escapeHtml(i.subject)}</a></td>
       <td>${assignee}</td>
-      <td class="rm-due ${overdue(i) ? "overdue" : ""}">${i.due_date}</td>
+      <td class="rm-due ${overdue(i) ? "overdue" : ""}">${usDate(i.due_date)}</td>
+      <td class="rm-actions" title="Actions">&#8943;</td>
     </tr>`;
   }
+  function byPriorityThenId(a, b) { return b.priority.id - a.priority.id || b.id - a.id; }
   function render() {
-    $("issueRows").innerHTML = board.map(rowHtml).join("");
+    $("issueRows").innerHTML = [...board].sort(byPriorityThenId).map(rowHtml).join("");
+  }
+  // The page filters on open issues, so a closed issue leaves the list the
+  // next time Redmine renders it. Fade it out, then drop it from the board.
+  // Cleared by reset(): a Replay during the fade must not drop the issue
+  // from the fresh board.
+  let dropTimer = null;
+  function dropIssue(id) {
+    const gone = () => { board = board.filter(i => i.id !== id); render(); };
+    const row = document.querySelector(`tr[data-id="${id}"]`);
+    if (REDUCED_MOTION || !row) { gone(); return; }
+    row.classList.add("leaving");
+    dropTimer = setTimeout(gone, 650);
   }
 
   function flash(ids) {
@@ -1513,8 +1631,8 @@ redmine-mcp-server</pre>
   // ── Driver ────────────────────────────────────────────────
   const PROMPT_TEXT = "triage the overdue issues in Sprint 14";
   const WELCOME_HTML =
-    '<div class="cc-welcome"><span class="cc-star">✻</span> Welcome to <b>Claude Code</b>' +
-    '<span class="sub">redmine-mcp-server connected over MCP · 51 tools available</span></div>';
+    '<div class="cc-welcome"><span class="cc-star">✻</span> <b>Claude Code</b> v2.1.284' +
+    '<span class="sub">Opus 5.5 · ~/work/cartly-app</span></div>';
   const HINT_HTML = '<div class="cli-hint" id="feedPlaceholder">▸ press <b style="color:#d6d3cd">Run the agent</b> to start</div>';
 
   // `interacted` gates completion tracking: the reduced-motion path renders the
@@ -1522,6 +1640,7 @@ redmine-mcp-server</pre>
   let idx = 0, playing = false, animating = false, promptShown = false, interacted = false;
   function reset() {
     playing = false; animating = false; idx = 0; promptShown = false;
+    clearTimeout(dropTimer); dropTimer = null;
     board = initialIssues(); _boundary = 0; render();
     $("feed").innerHTML = WELCOME_HTML + HINT_HTML;
     $("cliInput").textContent = "";
@@ -1576,7 +1695,7 @@ redmine-mcp-server</pre>
   async function playStep(step, animated) {
     const ph = $("feedPlaceholder"); if (ph) ph.remove();
 
-    // Reasoning-only turn (no tool call) — e.g. the agent analyzing a file.
+    // Reasoning-only turn (no tool call), e.g. the agent analyzing a file.
     if (!step.tool) {
       const turn = document.createElement("div");
       turn.className = "turn on";
@@ -1595,7 +1714,7 @@ redmine-mcp-server</pre>
     }
 
     const result = step.result();
-    const argsPreview = Object.entries(step.args).filter(([k]) => k !== "fields")
+    const argsPreview = Object.entries(step.args)
       .map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(", ");
     const tid = "tc" + idx;
     const turn = document.createElement("div");
@@ -1603,8 +1722,8 @@ redmine-mcp-server</pre>
     turn.innerHTML = `
       <div class="cc-msg"><span class="cc-bullet">⏺</span><span class="agent-text"></span></div>
       <div class="toolcall hidden-tc">
-        <div class="tc-line"><span class="cc-bullet">⏺</span><span class="tc-call"><span class="tc-name">${step.tool}</span><span class="tc-args">(${escapeHtml(argsPreview)})</span></span></div>
-        <div class="tc-result"><span class="tc-pending">running…</span></div>
+        <div class="tc-line"><span class="cc-bullet">⏺</span><span class="tc-call"><span class="tc-name">redmine - ${step.tool} (MCP)</span><span class="tc-args">(${escapeHtml(argsPreview)})</span></span></div>
+        <div class="tc-result"><span class="tc-pending">Running…</span></div>
         <div class="json-wrap" id="${tid}">
           <div class="json-label">request</div>
           <pre class="json-box">${syntaxHighlight(JSON.stringify(step.args, null, 2))}</pre>
@@ -1627,14 +1746,13 @@ redmine-mcp-server</pre>
       tcEl.classList.remove("hidden-tc");
     }
     // the tool returns: fill the result line and apply its effect to the board
-    resEl.innerHTML = `${escapeHtml(step.summary || "ok")} <span class="tc-expand">(ctrl+o to expand)</span>`;
+    // Claude Code shows the tool's own text output (the server's compact
+    // JSON), clipped, not a summary.
+    resEl.innerHTML = `<span class="tc-out">${escapeHtml(JSON.stringify(result))}</span><span class="tc-expand">(ctrl+o to expand)</span>`;
+    tcEl.classList.add("done");
     bumpCalls();
     step.apply();
-    const expandLabel = resEl.querySelector(".tc-expand");
-    resEl.addEventListener("click", () => {
-      const open = $(tid).classList.toggle("open");
-      expandLabel.textContent = open ? "(ctrl+o to collapse)" : "(ctrl+o to expand)";
-    });
+    resEl.addEventListener("click", () => { $(tid).classList.toggle("open"); });
     if (REDUCED_MOTION) $(tid).classList.add("open");
     scrollFeed();
     idx++;

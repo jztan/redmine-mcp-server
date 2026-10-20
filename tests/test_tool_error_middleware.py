@@ -8,6 +8,7 @@ from fastmcp import Client, FastMCP
 
 from redmine_mcp_server._tool_error_middleware import (
     CleanValidationErrorMiddleware,
+    ToolErrorFlagMiddleware,
 )
 
 
@@ -42,7 +43,9 @@ class TestCleanValidationErrorMiddleware:
     @pytest.mark.asyncio
     async def test_type_mismatch_returns_clean_envelope(self, server):
         async with Client(server) as client:
-            result = await client.call_tool("needs_int", {"x": "open"})
+            result = await client.call_tool(
+                "needs_int", {"x": "open"}, raise_on_error=False
+            )
 
         # Result is now a successful ToolResult carrying the error
         # envelope, not a raised ToolError -- the client side gets a
@@ -68,7 +71,9 @@ class TestCleanValidationErrorMiddleware:
     @pytest.mark.asyncio
     async def test_envelope_also_emitted_as_structured_content(self, server):
         async with Client(server) as client:
-            result = await client.call_tool("needs_int", {"x": "not-an-int"})
+            result = await client.call_tool(
+                "needs_int", {"x": "not-an-int"}, raise_on_error=False
+            )
 
         # Clients that prefer structured_content must see the same
         # envelope, not a half-empty response.
@@ -91,7 +96,9 @@ class TestCleanValidationErrorMiddleware:
         """
         async with Client(server) as client:
             result = await client.call_tool(
-                "union_return", {"status_id": "notavalidsentinel"}
+                "union_return",
+                {"status_id": "notavalidsentinel"},
+                raise_on_error=False,
             )
 
         # The "result is a required property" string MUST NOT appear:
@@ -100,8 +107,10 @@ class TestCleanValidationErrorMiddleware:
         assert "result" not in text or "required property" not in text
         assert "Output validation error" not in text
 
-        payload = result.data
-        assert payload is not None
+        # An error result is not parsed into ``data``; the envelope sits
+        # under ``result`` in the structured content.
+        assert result.is_error
+        payload = result.structured_content["result"]
         assert payload["code"] == "INVALID_ARGUMENTS"
         # The envelope should mention BOTH branches of the union --
         # int and the literal sentinels -- not just the int complaint.
@@ -128,7 +137,7 @@ class TestCleanValidationErrorMiddleware:
         this so the LLM sees the parameter name.
         """
         async with Client(server) as client:
-            result = await client.call_tool("needs_int", {})
+            result = await client.call_tool("needs_int", {}, raise_on_error=False)
 
         payload = result.structured_content
         assert payload["code"] == "INVALID_ARGUMENTS"
@@ -137,3 +146,163 @@ class TestCleanValidationErrorMiddleware:
         # Must NOT echo the whole args dict back to the caller.
         assert "Got {}" not in payload["hint"]
         assert "Got {} " not in payload["hint"]
+
+
+@pytest.fixture
+def flagged_server():
+    mcp = FastMCP("test")
+    mcp.add_middleware(ToolErrorFlagMiddleware())
+    mcp.add_middleware(CleanValidationErrorMiddleware())
+
+    @mcp.tool()
+    async def plain_error() -> Dict[str, Any]:
+        return {"error": "Access denied.", "code": "FORBIDDEN"}
+
+    @mcp.tool()
+    async def plain_error_without_code() -> Dict[str, Any]:
+        return {"error": "Something went wrong."}
+
+    # A Union return type makes FastMCP wrap the payload under "result".
+    @mcp.tool()
+    async def wrapped_error() -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+        return {"error": "Cannot connect to Redmine.", "code": "CONNECTION_FAILED"}
+
+    @mcp.tool()
+    async def wrapped_error_without_code() -> (
+        Union[List[Dict[str, Any]], Dict[str, Any]]
+    ):
+        return {"error": "Something went wrong."}
+
+    @mcp.tool()
+    async def error_with_empty_code() -> Dict[str, Any]:
+        return {"error": "Something went wrong.", "code": ""}
+
+    @mcp.tool()
+    async def null_error() -> Dict[str, Any]:
+        return {"id": 1, "error": None}
+
+    @mcp.tool()
+    async def success() -> Dict[str, Any]:
+        return {"id": 1, "subject": "fine"}
+
+    @mcp.tool()
+    async def wrapped_success() -> Union[List[Dict[str, Any]], Dict[str, Any]]:
+        return [{"id": 1}]
+
+    @mcp.tool()
+    async def needs_int(x: int) -> dict:
+        return {"x": x}
+
+    return mcp
+
+
+class TestToolErrorFlagMiddleware:
+    @pytest.mark.asyncio
+    async def test_unwrapped_error_sets_is_error(self, flagged_server):
+        async with Client(flagged_server) as client:
+            result = await client.call_tool("plain_error", {}, raise_on_error=False)
+
+        assert result.is_error
+        # The envelope reaches the caller unchanged in both places.
+        expected = {"error": "Access denied.", "code": "FORBIDDEN"}
+        assert result.structured_content == expected
+        assert json.loads(result.content[0].text) == expected
+
+    @pytest.mark.asyncio
+    async def test_wrapped_error_sets_is_error(self, flagged_server):
+        async with Client(flagged_server) as client:
+            result = await client.call_tool("wrapped_error", {}, raise_on_error=False)
+
+        assert result.is_error
+        expected = {"error": "Cannot connect to Redmine.", "code": "CONNECTION_FAILED"}
+        assert result.structured_content == {"result": expected}
+        assert json.loads(result.content[0].text) == expected
+
+    @pytest.mark.asyncio
+    async def test_missing_code_becomes_unknown_error(self, flagged_server):
+        async with Client(flagged_server) as client:
+            result = await client.call_tool(
+                "plain_error_without_code", {}, raise_on_error=False
+            )
+
+        assert result.is_error
+        expected = {"error": "Something went wrong.", "code": "UNKNOWN_ERROR"}
+        assert result.structured_content == expected
+        assert json.loads(result.content[0].text) == expected
+
+    @pytest.mark.asyncio
+    async def test_missing_code_in_wrapped_envelope_becomes_unknown_error(
+        self, flagged_server
+    ):
+        async with Client(flagged_server) as client:
+            result = await client.call_tool(
+                "wrapped_error_without_code", {}, raise_on_error=False
+            )
+
+        assert result.is_error
+        expected = {"error": "Something went wrong.", "code": "UNKNOWN_ERROR"}
+        assert result.structured_content == {"result": expected}
+        assert json.loads(result.content[0].text) == expected
+
+    @pytest.mark.asyncio
+    async def test_empty_code_becomes_unknown_error(self, flagged_server):
+        async with Client(flagged_server) as client:
+            result = await client.call_tool(
+                "error_with_empty_code", {}, raise_on_error=False
+            )
+
+        assert result.is_error
+        expected = {"error": "Something went wrong.", "code": "UNKNOWN_ERROR"}
+        assert result.structured_content == expected
+        assert json.loads(result.content[0].text) == expected
+
+    @pytest.mark.asyncio
+    async def test_null_error_is_not_an_error(self, flagged_server):
+        async with Client(flagged_server) as client:
+            result = await client.call_tool("null_error", {})
+
+        assert result.is_error is False
+        assert result.structured_content == {"id": 1, "error": None}
+
+    @pytest.mark.asyncio
+    async def test_success_stays_not_an_error(self, flagged_server):
+        async with Client(flagged_server) as client:
+            result = await client.call_tool("success", {})
+            wrapped = await client.call_tool("wrapped_success", {})
+
+        assert result.is_error is False
+        assert result.structured_content == {"id": 1, "subject": "fine"}
+        assert wrapped.is_error is False
+        assert wrapped.data == [{"id": 1}]
+
+    @pytest.mark.asyncio
+    async def test_argument_validation_error_sets_is_error(self, flagged_server):
+        async with Client(flagged_server) as client:
+            result = await client.call_tool(
+                "needs_int", {"x": "open"}, raise_on_error=False
+            )
+
+        assert result.is_error
+        assert result.structured_content["code"] == "INVALID_ARGUMENTS"
+
+    @pytest.mark.asyncio
+    async def test_build_error_tool_result_sets_is_error(self, server):
+        # Without the flag middleware: build_error_tool_result sets it itself.
+        async with Client(server) as client:
+            result = await client.call_tool(
+                "needs_int", {"x": "open"}, raise_on_error=False
+            )
+
+        assert result.is_error
+
+
+def test_flag_middleware_is_registered_outermost():
+    from redmine_mcp_server.server import _register_middlewares
+
+    instance = FastMCP("test")
+    _register_middlewares(instance, auth_provider=None)
+    names = [type(mw).__name__ for mw in instance.middleware]
+    # FastMCP runs the list in order, so earlier means further out.
+    assert names.index("ToolErrorFlagMiddleware") < names.index(
+        "CleanValidationErrorMiddleware"
+    )

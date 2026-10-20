@@ -19,6 +19,7 @@ from .._serialization import (
     _custom_fields_to_list,
     _enabled_module_names,
     _included_list,
+    _membership_roles_to_list,
     _named_ref,
     _pagination_info,
     _payload_attr,
@@ -224,7 +225,7 @@ def _membership_to_dict(membership: Any) -> Dict[str, Any]:
     user = getattr(membership, "user", None)
     group = getattr(membership, "group", None)
     project = getattr(membership, "project", None)
-    roles = getattr(membership, "roles", None) or []
+    roles = getattr(membership, "roles", None)
 
     result: Dict[str, Any] = {
         "id": getattr(membership, "id", None),
@@ -244,26 +245,8 @@ def _membership_to_dict(membership: Any) -> Dict[str, Any]:
     # Project info
     result["project"] = _named_ref(project)
 
-    # Roles
-    result["roles"] = []
-    try:
-        for role in roles:
-            if isinstance(role, dict):
-                result["roles"].append(
-                    {
-                        "id": role.get("id"),
-                        "name": role.get("name", ""),
-                    }
-                )
-            else:
-                result["roles"].append(
-                    {
-                        "id": getattr(role, "id", None),
-                        "name": getattr(role, "name", ""),
-                    }
-                )
-    except TypeError:
-        pass  # roles not iterable
+    # Roles, with the ``inherited`` flag where Redmine sent it
+    result["roles"] = _membership_roles_to_list(roles)
 
     return result
 
@@ -522,16 +505,22 @@ async def list_project_issue_custom_fields(
     ``trackers`` come back ``null``, meaning "not readable on this token" --
     ``null`` is not ``false`` and not an empty list. In particular
     ``is_required: null`` does not mean a field is optional, so a create or
-    update can still reject on a field listed here. Use the ids with
-    ``extra_fields={"custom_fields": [{"id": N, "value": ...}]}``, or pass the
-    field by name in ``fields``.
+    update can still reject on a field listed here. To set a field, key it in
+    ``fields`` by name or as ``cf_<id>`` with an id from here, or pass
+    ``extra_fields={"custom_fields": [{"id": N, "value": ...}]}``.
 
     Args:
         project_id: Project identifier (ID number or string identifier).
-        tracker_id: Optional tracker ID to filter custom fields by
-            applicability. Usable only when the response describes every
-            field's tracker bindings, which a stock Redmine does not send; it
-            returns an error rather than an unfiltered list when it cannot.
+        tracker_id: Leave this out. Redmine's project endpoint sends each
+            field's id and name only, even to an administrator, so unless a
+            plugin adds ``trackers`` to every field there is nothing to
+            filter on and the call answers
+            ``code: "TRACKER_BINDINGS_UNREADABLE"`` rather than an unfiltered
+            list. To see which of the project's fields a tracker carries,
+            read one of its issues in this project with ``get_redmine_issue``
+            (``list_redmine_issues`` with ``tracker_id`` finds one): its
+            ``custom_fields`` are those fields, less any the caller may not
+            see.
 
     Returns:
         A list of dicts with ``id``, ``name``, ``field_format``,
@@ -539,7 +528,9 @@ async def list_project_issue_custom_fields(
         ``possible_values`` and ``trackers``. On failure, a dict with an
         ``"error"`` key is returned (callers should check
         ``isinstance(result, dict)`` to distinguish failure from an
-        empty list).
+        empty list). ``[]`` means the project has no issue custom fields
+        enabled; when Redmine's response leaves the array out, the result is
+        an error with ``code: "ISSUE_CUSTOM_FIELDS_UNREADABLE"``, never ``[]``.
 
     Why the six keys are unreadable: this tool reads
     ``GET /projects/{id}.json?include=issue_custom_fields``, which Redmine
@@ -570,14 +561,15 @@ async def list_project_issue_custom_fields(
     1. **Name-keyed shortcut (preferred):** pass the rejected field by
        name directly, e.g.
        ``fields={"Department": "Engineering"}``, on either
-       ``create_redmine_issue`` or ``update_redmine_issue``. Both tools
-       resolve the name to a ``custom_fields`` id; ambiguous names
-       raise.
+       ``create_redmine_issue`` or ``update_redmine_issue``, or by id as
+       ``fields={"cf_N": "Engineering"}`` with ``N`` from this tool. Both
+       tools resolve either to a ``custom_fields`` id; ambiguous names
+       raise, and the ``cf_N`` form still reaches such a field.
     2. **Explicit id form:** pass
        ``extra_fields={"custom_fields": [{"id": N, "value": "..."}]}``
        using the numeric ID from this tool. Works on either path; use
-       when the name lookup is ambiguous or the value type is awkward
-       (multi-value fields, complex serializations).
+       when the value type is awkward (multi-value fields, complex
+       serializations).
     3. **Autofill:** set
        ``REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS=true`` to have the
        server retry once with values from each field's ``default_value``
@@ -610,14 +602,33 @@ async def list_project_issue_custom_fields(
             project = _get_redmine_client().project.get(
                 project_id, include="issue_custom_fields"
             )
-            # ResourceSet defines __len__ but not __bool__, so `or []` would
-            # construct every CustomField purely to test truthiness and then
-            # discard them. list() is still needed: __iter__ rebuilds each
-            # resource on every pass, and the sequence is walked more than once.
-            raw_custom_fields = getattr(project, "issue_custom_fields", None)
-            custom_fields = (
-                list(raw_custom_fields) if raw_custom_fields is not None else []
-            )
+            # Check the payload before touching the attribute: for a name in
+            # python-redmine's Project._includes, reading it when Redmine left
+            # it out re-fetches the project and then answers [] -- "no fields"
+            # for a response that said nothing about fields. See _included_list.
+            payload = project.raw()
+            if not isinstance(payload, dict) or not isinstance(
+                payload.get("issue_custom_fields"), list
+            ):
+                return {
+                    "error": (
+                        f"Redmine's response for project {project_id} did not "
+                        "include issue_custom_fields, so which issue custom "
+                        "fields it enables is unknown. This is not an empty "
+                        "list."
+                    ),
+                    "code": "ISSUE_CUSTOM_FIELDS_UNREADABLE",
+                    "hint": (
+                        "Redmine 6.1.4 and 7.0.1 leave this array out when the "
+                        "caller lacks the View issues permission on the "
+                        "project; earlier releases always send it. A custom "
+                        "field whose id is known can still be set with "
+                        'fields={"custom_fields": [{"id": N, "value": ...}]}.'
+                    ),
+                }
+            # list(): ResourceSet.__iter__ rebuilds each resource on every
+            # pass, and the sequence is walked more than once.
+            custom_fields = list(project.issue_custom_fields)
 
             if parsed_tracker_id is not None:
                 reason = _tracker_bindings_unreadable_reason(
@@ -629,10 +640,14 @@ async def list_project_issue_custom_fields(
                         "code": "TRACKER_BINDINGS_UNREADABLE",
                         "hint": (
                             "Omit tracker_id to list every issue custom field "
-                            "enabled for the project. On a stock Redmine this "
-                            "is expected: include=issue_custom_fields renders "
-                            "id and name only, and bindings appear solely on "
-                            "GET /custom_fields.json, which is admin-only."
+                            "enabled for the project. To see which of them a "
+                            "tracker carries, read one of its issues in this "
+                            "project with get_redmine_issue (list_redmine_issues "
+                            "with tracker_id finds one) and use its "
+                            "custom_fields. Retrying as another caller does not "
+                            "help: Redmine sends tracker bindings only on "
+                            "GET /custom_fields.json, which is admin-only and "
+                            "which this tool does not read."
                         ),
                     }
 
@@ -1318,6 +1333,12 @@ def list_project_members(
     Returns all users and groups that are members of the specified project,
     along with their assigned roles.
 
+    A role that comes from a group the user belongs to, or from the parent
+    project when this one inherits members, carries ``inherited: true``;
+    Redmine omits the key for a role held directly, and so does this tool --
+    so test for the key, do not expect ``inherited: false``. A role held both
+    ways appears twice on the same row, once with the key and once without.
+
     Args:
         project_id: Project identifier (ID number or string identifier)
 
@@ -1335,7 +1356,10 @@ def list_project_members(
                 "user": {"id": 5, "name": "John Doe"},
                 "group": null,
                 "project": {"id": 1, "name": "My Project"},
-                "roles": [{"id": 3, "name": "Developer"}]
+                "roles": [
+                    {"id": 3, "name": "Developer"},
+                    {"id": 4, "name": "Manager", "inherited": true}
+                ]
             },
             ...
         ]

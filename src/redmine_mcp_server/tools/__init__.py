@@ -12,6 +12,7 @@ from . import documents  # noqa: F401  -- triggers @mcp.tool() registration
 from . import enumeration  # noqa: F401  -- triggers @mcp.tool() registration
 from . import files  # noqa: F401  -- triggers @mcp.tool() registration
 from . import gantt  # noqa: F401  -- triggers @mcp.tool() registration
+from . import helpdesk  # noqa: F401  -- triggers @mcp.tool() registration
 from . import issues  # noqa: F401  -- triggers @mcp.tool() registration
 from . import meta  # noqa: F401  -- triggers @mcp.tool() registration
 from . import news  # noqa: F401  -- triggers @mcp.tool() registration

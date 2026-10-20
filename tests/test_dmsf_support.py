@@ -901,3 +901,137 @@ class TestManageDocumentUpdate:
 # ---------------------------------------------------------------------------
 
 _ = MagicMock
+
+
+# ---------------------------------------------------------------------------
+# Payload keys: the fields DMSF renders under its own names
+# ---------------------------------------------------------------------------
+
+
+def _show_payload(**overrides) -> dict:
+    """A document in the shape ``dmsf_files/show.api.rsb`` renders.
+
+    The parent folder is ``dmsf_folder_id``, custom field values are rendered
+    per revision, and the revisions come newest first, the order of the
+    ``dmsf_file_revisions`` association in ``dmsf_file.rb``.
+    """
+    node = {
+        "id": 10,
+        "title": "Spec",
+        "name": "spec.pdf",
+        "project_id": 5,
+        "dmsf_folder_id": 12,
+        "dmsf_file_revisions": [
+            {
+                "id": 2,
+                "name": "spec.pdf",
+                "title": "Spec",
+                "version": "0.2",
+                "user_id": 3,
+                "created_at": "2026-05-02T10:00:00Z",
+                "updated_at": "2026-05-02T10:00:00Z",
+                "custom_fields": [{"id": 1, "name": "Owner", "value": "new"}],
+            },
+            {
+                "id": 1,
+                "name": "spec.pdf",
+                "title": "Spec",
+                "version": "0.1",
+                "user_id": 3,
+                "created_at": "2026-05-01T10:00:00Z",
+                "updated_at": "2026-05-01T10:00:00Z",
+                "custom_fields": [{"id": 1, "name": "Owner", "value": "old"}],
+            },
+        ],
+    }
+    node.update(overrides)
+    return node
+
+
+class TestDocumentPayloadKeys:
+    """The serializer reads the keys ``dmsf_files/show.api.rsb`` renders.
+
+    ``folder_id`` read a key DMSF never sends, so it was ``None`` on every
+    ``get``, and ``custom_fields`` was never returned, though the tool writes
+    it as ``custom_field_values``. The latest revision was taken as the last
+    entry, which is the oldest in DMSF's order (#358).
+    """
+
+    def _serialize(self, node):
+        from redmine_mcp_server.tools.documents import _document_to_dict
+
+        return _document_to_dict(node)
+
+    def test_folder_id_read_from_dmsf_folder_id(self):
+        assert self._serialize(_show_payload())["folder_id"] == 12
+
+    def test_document_at_project_root_has_no_folder(self):
+        """DMSF omits ``dmsf_folder_id`` for a file outside any folder."""
+        node = _show_payload()
+        del node["dmsf_folder_id"]
+        assert self._serialize(node)["folder_id"] is None
+
+    def test_legacy_folder_id_key_still_read(self):
+        node = _show_payload()
+        del node["dmsf_folder_id"]
+        node["folder_id"] = 7
+        assert self._serialize(node)["folder_id"] == 7
+
+    def test_custom_fields_come_from_the_latest_revision(self):
+        assert self._serialize(_show_payload())["custom_fields"] == [
+            {"id": 1, "name": "Owner", "value": "new"}
+        ]
+
+    def test_revision_without_custom_fields_is_empty_list(self):
+        """``render_api_custom_values`` omits the key when there are none."""
+        node = _show_payload()
+        for revision in node["dmsf_file_revisions"]:
+            del revision["custom_fields"]
+        assert self._serialize(node)["custom_fields"] == []
+
+    def test_list_node_custom_fields_is_none(self):
+        """``dmsf/show.api.rsb`` renders no custom field values on a node, so a
+        list row cannot say a document has none."""
+        node = {"id": 10, "title": "Spec", "type": "file", "filename": "spec.pdf"}
+        result = self._serialize(node)
+        assert result["custom_fields"] is None
+        assert result["folder_id"] is None
+
+    def test_latest_revision_is_picked_by_id_in_either_order(self):
+        """DMSF renders revisions newest first; the pick must not depend on it."""
+        newest_first = _show_payload()
+        oldest_first = _show_payload()
+        oldest_first["dmsf_file_revisions"].reverse()
+        for node in (newest_first, oldest_first):
+            result = self._serialize(node)
+            assert result["version"] == "0.2"
+            assert result["updated_on"] == "2026-05-02T10:00:00Z"
+            assert result["custom_fields"][0]["value"] == "new"
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_get_returns_folder_and_custom_fields(self, mock_redmine):
+        mock_redmine.engine.request.return_value = {"dmsf_file": _show_payload()}
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(action="get", document_id=10)
+        assert result["folder_id"] == 12
+        assert result["custom_fields"] == [{"id": 1, "name": "Owner", "value": "new"}]
+        assert result["version"] == "0.2"
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_list_rows_leave_custom_fields_unknown(self, mock_redmine):
+        mock_redmine.engine.request.return_value = {
+            "dmsf": {
+                "dmsf_nodes": [
+                    {"id": 10, "title": "Spec", "type": "file", "filename": "a.pdf"},
+                    {"id": 11, "title": "Docs", "type": "folder"},
+                ],
+                "total_count": 2,
+            }
+        }
+        with patch.dict(os.environ, {"REDMINE_DMSF_ENABLED": "true"}):
+            result = await manage_document(action="list", project_id="proj")
+        assert [row["custom_fields"] for row in result] == [None, None]

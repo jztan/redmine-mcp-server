@@ -96,7 +96,9 @@ async def test_filters_overrides_the_named_parameter(sent):
 async def test_named_parameters_still_refuse_garbage(sent):
     """#116 stays intact: widening these types is not the fix for the above."""
     async with Client(_server.mcp) as client:
-        result = await client.call_tool("list_redmine_issues", {"assigned_to_id": "!*"})
+        result = await client.call_tool(
+            "list_redmine_issues", {"assigned_to_id": "!*"}, raise_on_error=False
+        )
 
     payload = result.structured_content
     if payload and "result" in payload:

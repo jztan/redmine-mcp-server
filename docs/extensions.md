@@ -142,6 +142,63 @@ The `plugin:<family>` tag on each tool is what ties it to its family: a tool
 carrying it is listed only while that family's `enabled()` is true, exactly as the
 vendor plugin tools follow their own `REDMINE_*_ENABLED` flag.
 
+## Extending the issue tools
+
+A distribution that adds attributes or filters to the issue itself -- Easy
+Redmine's sprint fields, say -- registers three more entries rather than tools
+of its own. All three apply only while the family's `enabled()` is true, so a
+stock server sends, accepts and returns exactly what it does today.
+
+```python
+register_extension(ExtensionSpec(
+    family="acme",
+    enabled=lambda: is_true_env("REDMINE_ACME_ENABLED"),
+    tool_kinds={...},
+    tool_scopes={...},
+    issue_update_keys=("acme_sprint_id", "acme_story_points"),
+    issue_query_filters={"acme_sprint_id": {"set_filter": 1}},
+    issue_payload_skip_keys=("acme_css_classes",),
+))
+```
+
+**`issue_update_keys`** are attributes `update_redmine_issue` may write. Without
+them the key is taken for a custom field *label*, and labels are matched with
+every non-alphanumeric stripped -- so `acme_sprint_id` and a custom field named
+"Acme Sprint ID" normalize to one string, and the value is written to whichever
+the lookup found. Registered names are passed through untouched and never reach
+label matching; they also spare the write path the project custom-field lookup it
+would otherwise need to rule the name out. `create_redmine_issue` and
+`update_redmine_issue` share that step, so a registered name reaches Redmine on
+both.
+
+**`issue_query_filters`** are filter names `list_redmine_issues` accepts, each
+mapped to the query parameters that have to accompany it -- `{}` when it needs
+none, and something like `{"set_filter": 1}` when the server honours the filter
+only with a companion. The names are registered rather than accepted freely
+because Redmine drops a filter it does not know and answers 200 with the
+collection unnarrowed, which a caller cannot tell apart from a filter that
+matched everything. Parameters are merged into the request only when that filter
+is part of the call, and never over a value the caller set. Filter *values* face
+the same rules as any other filter's.
+
+**`issue_payload_skip_keys`** are top-level keys to leave out of
+`unmapped_fields`. That key passes a distribution's own fields through, filtered
+by size, and size is the right general filter -- but it cannot reach what is
+short, useless and on every issue. Easy Redmine's `css_classes` is a CSS class
+list for its issue grid: measured across a page of 25 issues it ran 99 to 144
+characters, about a fifth of the cap, and it answers nothing the issue's own
+fields do not answer better (`status-11` beside `status`, `overdue` beside
+`due_date`). A cap low enough to catch it would drop a one-paragraph plugin text
+field instead. This repository cannot know which of a fork's keys are
+presentation, so the fork names them here.
+
+Use it for a fork's *own* keys, and only for presentation. Per-user state such
+as `is_favorited` is something a caller can reasonably want; the seam is not a
+way to trim `unmapped_fields` to taste. A name that is not in the payload is
+never matched, so listing one the server stops sending costs nothing -- but a
+name any family declares in `issue_update_keys` is refused at startup, because
+a caller writes that attribute and reads it back here.
+
 ## What is checked at startup
 
 Loading an extension fails closed. Every one of these stops the server rather than
@@ -162,6 +219,30 @@ serving a surface that does not match what the module declared:
   with what it declared.
 - The auth provider is one this server does not recognize while an extension has
   scopes to advertise.
+- An `issue_update_keys` entry that Redmine itself defines, or that another
+  extension already claims.
+- An `issue_query_filters` name that Redmine itself registers, or that another
+  extension already claims.
+- An `issue_payload_skip_keys` entry `unmapped_fields` never carries anyway --
+  a field the serializer emits itself, or one of the includes and relations it
+  handles. The entry would do nothing.
+- An `issue_payload_skip_keys` entry that any family declares in
+  `issue_update_keys`, whichever of the two registers first. A key a family
+  writes is one its callers read back through `unmapped_fields`; hiding it
+  would make the attribute write-only, and from a family that never asked.
+  Two families naming the same *skip* key is not an error: both want it gone,
+  and agreeing is not a conflict.
+- A companion parameter that Redmine reads as the query's own filter definition
+  (`fields`, `f`, `query_id`), or one `list_redmine_issues` owns (`limit`,
+  `offset`, `sort`, `include`).
+- A companion parameter that is itself a filter name -- Redmine's own, the
+  spec's, or another family's, including the `cf_<id>`, `cf_<id>.due_date` and
+  `<association>.cf_<id>` spellings, which are registered per custom field
+  rather than by name. It would ride along unasked and narrow every call that
+  uses the filter, without the caller having written it.
+- A filter name that an already registered family sends as a companion
+  parameter. That is the same collision from the other side: the older family's
+  value would be merged into every call the new filter appears in.
 
 **A per-action scope map is checked against the tool's `action` parameter.** When a
 `tool_scopes` entry is a dict keyed by action, that parameter has to be annotated
@@ -251,6 +332,7 @@ These are the names an extension may import from `redmine_mcp_server.extensions`
 | Defining tools | `mcp`, `plugin_tag`, `offloaded`, `in_thread`, `action_dispatch`, `ActionMode`, `ToolKind` |
 | Reaching Redmine | `get_redmine_client`, `redmine_url`, `handle_redmine_error`, `READ_ONLY_ERROR` |
 | Returning content | `wrap_insecure_content` |
+| Reading a staged upload | `text_from_staged_upload`, `read_staged`, `resolve_staged_upload_owner`, `staged_upload_owner` |
 | Validation and environment | `is_positive_int`, `is_true_env`, `is_read_only_mode`, `is_crm_enabled` |
 
 The module docstring of `src/redmine_mcp_server/extensions.py` is the reference for
@@ -258,3 +340,29 @@ what each of them does. Nothing else in the package is a stable import: the priv
 helpers behind these names are renamed and moved as the server changes, and an
 extension ships separately from this distribution, so it cannot follow such a
 rename. Import from `redmine_mcp_server.extensions` only, and pin the version.
+
+A tool that takes an `upload_id` from
+[`create_upload_ticket`](tool-reference.md#create_upload_ticket) reads it through one
+of the two staged-upload readers. `text_from_staged_upload` is for a long text that
+becomes a field, the way `description_upload_id` and `notes_upload_id` do: it decodes
+the file as UTF-8 and names the field in its error when that fails. `read_staged`
+hands back the bytes and the uploaded filename unchanged, for a file that is attached
+rather than read.
+
+A staged file belongs to the caller who created its ticket, so both readers take that
+caller as `owner=`, and a slot read without its owner answers like an id that was never
+issued. Get it with `await resolve_staged_upload_owner()` in the tool's async body,
+before any work moves to a worker thread: in the OAuth modes it may ask Redmine who the
+caller is, with one `GET /users/current.json`, when the token carries no `sub`.
+`staged_upload_owner()` is the synchronous part of the same answer, what is known
+without that request.
+
+```python
+@mcp.tool(tags={plugin_tag("acme_widgets")})
+async def manage_widget(action: str, body_upload_id: str) -> dict:
+    owner = await resolve_staged_upload_owner()
+    body, error = text_from_staged_upload(body_upload_id, "body", owner=owner)
+    if error is not None:
+        return error
+    ...
+```

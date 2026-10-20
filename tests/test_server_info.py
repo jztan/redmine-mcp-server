@@ -69,6 +69,8 @@ async def test_reflects_plugin_flags(monkeypatch):
         "crm",
         "deals",
         "dmsf",
+        "helpdesk",
+        "helpdesk_tickets",
         "tags",
     }
 

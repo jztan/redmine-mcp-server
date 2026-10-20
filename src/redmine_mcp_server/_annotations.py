@@ -94,6 +94,13 @@ TOOL_KINDS: Dict[str, ToolKind] = {
     "get_checklist": ToolKind.READ,
     "create_checklist_item": ToolKind.WRITE_ADDITIVE,
     "update_checklist_item": ToolKind.WRITE_DESTRUCTIVE_IDEMPOTENT,
+    # --- helpdesk (plugin) ---
+    # Destructive, not additive: the customer email cannot be recalled,
+    # and status_id can change the ticket's status.
+    "send_helpdesk_email_reply": ToolKind.WRITE_DESTRUCTIVE,
+    # get reads; set_contact replaces the contact and repeating it with the
+    # same contact changes nothing more.
+    "manage_helpdesk_ticket": ToolKind.WRITE_DESTRUCTIVE_IDEMPOTENT,
     # --- wiki ---
     "manage_redmine_wiki_page": ToolKind.WRITE_DESTRUCTIVE,
     # --- documents ---
@@ -151,6 +158,8 @@ TOOL_KINDS: Dict[str, ToolKind] = {
     "get_triage_board_data": ToolKind.READ,
     "show_project_dashboard": ToolKind.READ,
     "get_project_dashboard_data": ToolKind.READ,
+    "show_project_timeline": ToolKind.READ,
+    "get_project_timeline_data": ToolKind.READ,
 }
 
 

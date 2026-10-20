@@ -13,6 +13,7 @@ import logging
 import os
 import subprocess
 import sys
+import uuid
 
 import httpx
 import pytest
@@ -849,7 +850,11 @@ class TestAntiDriftWithAnExtensionLoaded:
         assert not set(TOOL_KINDS) - registered - conditional
         assert not set(TOOL_SCOPES) - registered - conditional
 
-    def test_every_enforced_scope_is_advertised(self, widgets):
+    def test_every_enforced_scope_is_advertised(self, widgets, monkeypatch):
+        # Plugin scopes are advertised only under their flag, and the Helpdesk
+        # ticket tool requires scopes of its own, so its flag is on here.
+        monkeypatch.setenv("REDMINE_HELPDESK_TICKETS_ENABLED", "true")
+        monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "false")
         enforced = set()
         for entry in TOOL_SCOPES.values():
             if isinstance(entry, dict):
@@ -961,6 +966,116 @@ class TestReExportedSurface:
         )
         assert spec.advertised_read_scopes == ()
         assert spec.advertised_write_scopes == ()
+
+
+class TestStagedUploadReaders:
+    """The two ways a built-in tool reads an ``upload_id``, for an extension's.
+
+    ``text_from_staged_upload`` is a wrapper rather than a binding, so it is
+    held to the private reader by what it returns for each kind of slot:
+    a ready file, an id nobody issued, a slot that never got its bytes, and
+    bytes that are not text.
+    """
+
+    @pytest.fixture
+    def attachments_dir(self, tmp_path, monkeypatch):
+        path = tmp_path / "attachments"
+        path.mkdir()
+        monkeypatch.setenv("ATTACHMENTS_DIR", str(path))
+        return path
+
+    @staticmethod
+    def _reserve(owner=None):
+        from redmine_mcp_server import _upload_store
+
+        issued = _upload_store.create_ticket(filename="widget-notes.md", owner=owner)
+        record, reason = _upload_store.redeem_ticket(
+            issued["upload_id"], issued["ticket"]
+        )
+        assert reason is None
+        return issued["upload_id"], record
+
+    def _stage(self, content, owner=None):
+        from redmine_mcp_server import _upload_store
+
+        upload_id, record = self._reserve(owner)
+        _upload_store.staged_path(record).write_bytes(content)
+        _upload_store.mark_ready(upload_id, record, len(content), "x")
+        return upload_id
+
+    @staticmethod
+    def _both(upload_id, label):
+        from redmine_mcp_server.tools.issues import _text_from_staged_upload
+
+        public = extensions.text_from_staged_upload(upload_id, label)
+        assert public == _text_from_staged_upload(upload_id, label)
+        return public
+
+    def test_both_readers_are_exported(self):
+        assert "text_from_staged_upload" in extensions.__all__
+        assert "read_staged" in extensions.__all__
+        assert callable(extensions.text_from_staged_upload)
+
+    def test_read_staged_is_the_store_s_own(self):
+        from redmine_mcp_server import _upload_store
+
+        assert extensions.read_staged is _upload_store.read_staged
+
+    def test_a_ready_file_comes_back_as_text(self, attachments_dir):
+        upload_id = self._stage("Widget-Notiz mit Ümläuten.".encode("utf-8"))
+
+        text, error = self._both(upload_id, "notes")
+
+        assert error is None
+        assert text == "Widget-Notiz mit Ümläuten."
+
+    def test_an_unknown_upload_points_at_create_upload_ticket(self, attachments_dir):
+        text, error = self._both(str(uuid.uuid4()), "notes")
+
+        assert text is None
+        assert "create_upload_ticket" in error["error"]
+
+    def test_a_slot_that_never_got_its_file_is_refused(self, attachments_dir):
+        upload_id, _ = self._reserve()
+
+        text, error = self._both(upload_id, "notes")
+
+        assert text is None
+        assert "never received a file" in error["error"]
+
+    def test_bytes_that_are_not_utf8_name_the_field(self, attachments_dir):
+        upload_id = self._stage(bytes([0xFF, 0xFE]) + b" not text")
+
+        text, error = self._both(upload_id, "widget_body")
+
+        assert text is None
+        assert "not valid UTF-8" in error["error"]
+        assert "staged for widget_body" in error["error"]
+
+    def test_the_owner_resolvers_are_exported(self):
+        from redmine_mcp_server import _caller
+
+        assert "resolve_staged_upload_owner" in extensions.__all__
+        assert "staged_upload_owner" in extensions.__all__
+        assert (
+            extensions.resolve_staged_upload_owner
+            is _caller.resolve_staged_upload_owner
+        )
+        assert extensions.staged_upload_owner is _caller.staged_upload_owner
+
+    def test_the_owner_is_passed_through(self, attachments_dir):
+        upload_id = self._stage(b"Widget-Notiz", owner="redmine-user:5")
+
+        mine = extensions.text_from_staged_upload(
+            upload_id, "notes", owner="redmine-user:5"
+        )
+        theirs = extensions.text_from_staged_upload(
+            upload_id, "notes", owner="redmine-user:6"
+        )
+
+        assert mine == ("Widget-Notiz", None)
+        assert theirs[0] is None
+        assert theirs[1]["error"].startswith(f"No staged upload {upload_id}.")
 
 
 async def _listed() -> set:

@@ -25,7 +25,7 @@ A Model Context Protocol (MCP) server that connects AI assistants to Redmine. It
 
 ## Features
 
-- **51 MCP tools on a stock Redmine, 64 with the RedmineUP and DMSF plugins** (plus 1 operator tool gated by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`): Issues, projects, news, time tracking, wiki, Gantt, file operations, membership management, products, contacts and deals (CRM), DMSF documents, and more
+- **53 MCP tools on a stock Redmine, 68 with the RedmineUP and DMSF plugins** (plus 1 operator tool gated by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`): Issues, projects, news, time tracking, wiki, Gantt, file operations, membership management, products, contacts and deals (CRM), DMSF documents, Helpdesk email replies and ticket contacts, and more
 - **Interactive Kanban Board**: `show_triage_board` renders a live, drag-and-drop issue board right in the chat via the MCP Apps extension
 - **Flexible Authentication**: API key, username/password, OAuth2 per-user tokens, or a browser login with each user's own API key on Redmines without OAuth
 - **Prompt Injection Protection**: User-controlled content wrapped in boundary tags for safe LLM consumption
@@ -142,9 +142,11 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `REDMINE_OAUTH_CLIENT_SECRET` | No | – | Optional upstream Redmine OAuth client secret for `oauth-proxy`; defaults to `REDMINE_INTROSPECT_CLIENT_SECRET` |
 | `FASTMCP_HOME` | No | platform default (`/app/data/fastmcp` in Docker) | FastMCP data directory. In `oauth-proxy` mode, encrypted OAuthProxy state is stored below `FASTMCP_HOME/oauth-proxy/`, and in `api-key-login` mode below `FASTMCP_HOME/api-key-login/`. Either must be on a persistent volume to survive a container rebuild |
 | `REDMINE_MCP_ALLOWED_CLIENT_REDIRECT_URIS` | No | loopback only | `oauth-proxy` and `api-key-login` client redirect-URI allowlist (glob patterns, comma/space separated). Unset = `http://localhost:*` and `http://127.0.0.1:*`; `*` = allow any |
+| `REDMINE_MCP_ACCESS_TOKEN_EXPIRY_SECONDS` | No | Redmine's `expires_in` (2h) | `oauth-proxy` only. Lifetime of the access token the proxy issues to clients. Raise it (e.g. `604800`) so clients rarely refresh; the upstream Redmine token is still refreshed server-side. Unset or `0` mirrors Redmine |
 | `HEALTH_INTROSPECTION_TTL_SECONDS` | No | `30` | TTL (seconds) for the `/health` Doorkeeper introspection probe cache. Set to `0` to disable caching. |
 | `SERVER_HOST` | No | `0.0.0.0` | Host/IP the MCP server binds to |
 | `SERVER_PORT` | No | `8000` | Port the MCP server listens on |
+| `REDMINE_MCP_TRANSPORT` | No | `http` | `http` serves MCP at `/mcp`. `stdio` serves it over stdin/stdout to a client that starts the server itself, with no port and no bridge; `legacy` mode only. Any other value refuses to start ([details](#stdio-transport)) |
 | `PUBLIC_HOST` | No | `localhost` | Hostname used when generating download URLs |
 | `PUBLIC_PORT` | No | `8000` | Public port used for download URLs |
 | `PUBLIC_SCHEME` | No | derived | Scheme for download URLs (`http` or `https`). When unset, `https` is derived from `PUBLIC_PORT=443`, otherwise `http`. Set explicitly for TLS on a nonstandard port. Default ports (80/443) are omitted from generated URLs. |
@@ -156,6 +158,7 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `AUTO_CLEANUP_ENABLED` | No | `true` | Toggle automatic cleanup of expired attachments |
 | `CLEANUP_INTERVAL_MINUTES` | No | `10` | Interval for cleanup task (also deletes expired OAuth state in `oauth-proxy` and `api-key-login` modes) |
 | `ATTACHMENT_EXPIRES_MINUTES` | No | `60` | Expiry window for generated download URLs |
+| `REDMINE_MCP_JOURNAL_VALUE_MAX_CHARS` | No | `500` | Above this many characters, a journal field-change reports its before/after text as `old_value_length` / `new_value_length` with `elided: true` instead of in full. Redmine records a description edit with both texts, so a repeatedly edited ticket otherwise returns several copies of its description. `0` disables eliding; `get_redmine_issue` and `get_private_notes` take `include_journal_values=true` per call. |
 | `REDMINE_MCP_EXPOSE_ADMIN_TOOLS` | No | `false` | Expose operator/admin tools on the MCP surface. Currently gates `cleanup_attachment_files`. The background cleanup task runs regardless of this flag. |
 | `REDMINE_SSL_VERIFY` | No | `true` | Enable/disable SSL certificate verification |
 | `REDMINE_SSL_CERT` | No | – | Path to custom CA certificate file |
@@ -175,6 +178,8 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `REDMINE_CRM_EDITION` | No | `light` | Which build of the CRM plugin the Redmine server runs: `light` or `pro`. The two register different contact query filters — the Pro build registers the contact fields, the Light build registers only `tags` — and Redmine ignores an unregistered filter parameter without erroring, answering with the whole collection instead. So `manage_contact` refuses `first_name`, `last_name`, `middle_name`, `company`, `job_title`, `email`, `phone` and `author_id` on `list` unless this is `pro`, rather than returning a silently unfiltered list. The build cannot be detected: Redmine exposes plugin versions only through `admin/plugins`, which is HTML and admin-only. |
 | `REDMINE_DEALS_ENABLED` | No | `false` | Enable RedmineUP CRM **deals** support: `manage_deal` (action=list/get/create/update/delete), `list_deal_statuses`, `manage_deal_category`, `manage_crm_note` (notes on deals), `list_crm_queries` and, together with `REDMINE_PRODUCTS_ENABLED`, `add_deal_product`. Separate from `REDMINE_CRM_ENABLED` because the CRM plugin's Light edition ships no deals and defines none of the deal permissions, so advertising them there would make consent fail. Requires the CRM plugin's **Pro** edition, the `deals` project module enabled on the project, and the `view_deals` permission, plus `add_deals` / `edit_deals` / `delete_deals` for the write actions. |
 | `REDMINE_DMSF_ENABLED` | No | `false` | Enable DMSF document-management plugin support: `manage_document` (action=list/get/create/update). Requires `redmine_dmsf` plugin on the Redmine server. |
+| `REDMINE_HELPDESK_ENABLED` | No | `false` | Enable RedmineUP Helpdesk plugin support: `send_helpdesk_email_reply` (emails a reply to the ticket's customer). Requires the Helpdesk plugin on the Redmine server. |
+| `REDMINE_HELPDESK_TICKETS_ENABLED` | No | `false` | Enable RedmineUP Helpdesk ticket support: `manage_helpdesk_ticket` (action=get/set_contact) reads a ticket's Helpdesk data and moves it to another existing contact. Requires the Helpdesk and CRM plugins. Separate from `REDMINE_HELPDESK_ENABLED` because under OAuth it advertises `view_helpdesk_tickets`, `view_contacts`, `view_private_contacts` and `edit_helpdesk_tickets`, which the Redmine OAuth application must grant before the flag is turned on. |
 | `REDMINE_TAGS_ENABLED` | No | `false` | Enable AlphaNodes additional_tags plugin support: `get_redmine_issue` returns a `tags` array, and `create_redmine_issue`/`update_redmine_issue` accept a `tag_list`. Requires the `additional_tags` plugin and the `view_issue_tags` / `create_issue_tags` / `edit_issue_tags` permissions on the Redmine server. |
 | `REDMINE_AUTOFILL_REQUIRED_CUSTOM_FIELDS` | No | `false` | Enable one retry for issue creation by filling missing required custom fields |
 | `REDMINE_REQUIRED_CUSTOM_FIELD_DEFAULTS` | No | `{}` | JSON object mapping required custom field names to fallback values used when creating issues |
@@ -381,7 +386,7 @@ Use `.vscode/mcp.json` (workspace file) or the user profile `mcp.json`. The work
 
 ## MCP Client Configuration
 
-The server exposes an HTTP endpoint at `http://127.0.0.1:8000/mcp`. Register it with your preferred MCP-compatible agent using the instructions below.
+The server exposes an HTTP endpoint at `http://127.0.0.1:8000/mcp`. Register it with your preferred MCP-compatible agent using the instructions below. A client that starts MCP servers itself can run this one over stdio instead, with no running server and no bridge: see [stdio transport](#stdio-transport).
 
 > The examples below assume `legacy` or `oauth` mode. In `legacy-per-user` mode each client must also send an `X-Redmine-API-Key` header; see [legacy-per-user mode](#authentication) above for header-aware configs.
 
@@ -604,6 +609,42 @@ For clients that require a command-based approach with HTTP bridge:
 
 </details>
 
+### stdio transport
+
+With `REDMINE_MCP_TRANSPORT=stdio` the client starts the server as its own process and talks to it over stdin/stdout. Nothing listens on a port, and the HTTP bridges above are not needed. This works in `legacy` mode only, since the other modes authenticate each HTTP request.
+
+Claude Code:
+
+```bash
+claude mcp add redmine \
+  -e REDMINE_URL=https://your-redmine-server.com \
+  -e REDMINE_API_KEY=your_api_key \
+  -e REDMINE_MCP_TRANSPORT=stdio \
+  -e ATTACHMENTS_DIR=/absolute/path/to/redmine-attachments \
+  -- uvx redmine-mcp-server
+```
+
+Claude Desktop, Codex CLI, Kiro and other command-based clients:
+
+```json
+{
+  "mcpServers": {
+    "redmine": {
+      "command": "uvx",
+      "args": ["redmine-mcp-server"],
+      "env": {
+        "REDMINE_URL": "https://your-redmine-server.com",
+        "REDMINE_API_KEY": "your_api_key",
+        "REDMINE_MCP_TRANSPORT": "stdio",
+        "ATTACHMENTS_DIR": "/absolute/path/to/redmine-attachments"
+      }
+    }
+  }
+}
+```
+
+Without an HTTP server there are no URLs to hand out, so `get_redmine_attachment` returns a local `file_path` and `create_upload_ticket` declines; attach local files with `file_path` instead (allowed folders: `ATTACHMENTS_DIR` plus `REDMINE_MCP_UPLOAD_FILE_ROOTS`). Set `ATTACHMENTS_DIR` to an absolute path: the default `./attachments` is relative to the folder the client starts the server in, which is often the project you have open.
+
 ### Testing Your Setup
 
 ```bash
@@ -614,7 +655,8 @@ curl http://localhost:8000/health
 ## Supported Redmine Plugins
 
 The server works against a stock Redmine instance. Six optional plugins add
-more, shown as seven rows below because CRM's deals carry their own flag. To
+more, shown as eight rows below because CRM's deals and Helpdesk's tickets
+carry their own flags. To
 use one, install it on your Redmine server and set the matching env var.
 Skipping a plugin costs you only that plugin's features.
 
@@ -628,10 +670,12 @@ Plugin tools appear in the client's tool list only when their env var is set; wi
 | [CRM](https://www.redmineup.com/pages/plugins/crm) | RedmineUP | `REDMINE_CRM_ENABLED` | 2 tools: `manage_contact`, `list_contact_tags`; plus the 2 shared CRM tools `manage_crm_note` and `list_crm_queries`, which either CRM flag enables (adds the `*_contacts` and note scopes to OAuth discovery when enabled) |
 | [CRM deals](https://www.redmineup.com/pages/plugins/crm) | RedmineUP (Pro) | `REDMINE_DEALS_ENABLED` | 3 tools: `manage_deal`, `list_deal_statuses`, `manage_deal_category`; plus the 2 shared CRM tools above, and `add_deal_product` when `REDMINE_PRODUCTS_ENABLED` is also set (adds the `*_deals` and note scopes to OAuth discovery when enabled). Same plugin as CRM, but the Light edition has no deals |
 | [DMSF](https://github.com/danmunn/redmine_dmsf) | danmunn (open source) | `REDMINE_DMSF_ENABLED` | 1 tool: `manage_document` |
+| [Helpdesk](https://www.redmineup.com/pages/plugins/helpdesk) | RedmineUP | `REDMINE_HELPDESK_ENABLED` | 1 tool: `send_helpdesk_email_reply` |
+| [Helpdesk tickets](https://www.redmineup.com/pages/plugins/helpdesk) | RedmineUP | `REDMINE_HELPDESK_TICKETS_ENABLED` | 1 tool: `manage_helpdesk_ticket`. Same plugin as Helpdesk, with its own flag because it adds OAuth scopes |
 | [Additional Tags](https://github.com/alphanodes/additional_tags) | AlphaNodes (open source) | `REDMINE_TAGS_ENABLED` | `get_redmine_issue` returns a `tags` array; `create_redmine_issue` / `update_redmine_issue` accept `tag_list` |
 
 Agile and Additional Tags add fields to tools you already have, so they
-register no new tools. The other five bring their own, which appear in
+register no new tools. The other seven bring their own, which appear in
 `tools/list` either way but return a feature-disabled error until you set the
 flag. Tags also needs the `view_issue_tags`, `create_issue_tags`, and
 `edit_issue_tags` permissions on the Redmine server.
@@ -642,18 +686,18 @@ Tools for a Redmine plugin written in house can be added from a separate package
 
 A deployment can expose a subset of these with `REDMINE_MCP_ALLOW_TOOLS`; everything else disappears from `tools/list` and is refused by `call_tool`.
 
-This MCP server provides 51 core tools for interacting with Redmine, plus 13 plugin tools that are listed only when the matching `REDMINE_*_ENABLED` flag is set (64 in total), and 1 operator tool exposed by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true` (maximum of 65). A client connected to a vanilla Redmine sees just the 51 core tools. For full documentation of every tool, see the [Tool Reference](./docs/tool-reference.md).
+This MCP server provides 53 core tools for interacting with Redmine, plus 15 plugin tools that are listed only when the matching `REDMINE_*_ENABLED` flag is set (68 in total), and 1 operator tool exposed by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true` (maximum of 69). A client connected to a vanilla Redmine sees just the 53 core tools. For full documentation of every tool, see the [Tool Reference](./docs/tool-reference.md).
 
-**Core tools (51, always available):** Project Management (10), Issue Operations (13), Time Tracking (4), Discovery / Enumeration (7), Search & Wiki (2), News (4), File Operations (5), Gantt (1), Interactive Apps (4), Meta (1).
+**Core tools (53, always available):** Project Management (10), Issue Operations (13), Time Tracking (4), Discovery / Enumeration (7), Search & Wiki (2), News (4), File Operations (5), Gantt (1), Interactive Apps (6), Meta (1).
 
-**Plugin-gated tools (13, listed only when their flag is set):** Checklists (3), Products (1), Contacts / CRM (2), Deals / CRM (3), shared CRM notes and saved queries (2, either CRM flag), deal product lines (1, deals plus products), Documents / DMSF (1). Each requires the matching Redmine plugin installed **and** its env flag set; with the flag off the tools are not registered on the MCP surface.
+**Plugin-gated tools (15, listed only when their flag is set):** Checklists (3), Products (1), Contacts / CRM (2), Deals / CRM (3), shared CRM notes and saved queries (2, either CRM flag), deal product lines (1, deals plus products), Documents / DMSF (1), Helpdesk (1), Helpdesk tickets (1). Each requires the matching Redmine plugin installed **and** its env flag set; with the flag off the tools are not registered on the MCP surface.
 
 **Operator tools (1, admin-gated):** `cleanup_attachment_files`, registered only when `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`.
 
 <details>
 <summary><strong>Full tool list with descriptions</strong></summary>
 
-### Core tools (51, always available)
+### Core tools (53, always available)
 
 These tools require only a Redmine instance and credentials, with no extra plugins or feature flags.
 
@@ -725,11 +769,13 @@ These tools require only a Redmine instance and credentials, with no extra plugi
   - [`get_triage_board_data`](docs/tool-reference.md#get_triage_board_data) - Board data source backing the board's Refresh action
   - [`show_project_dashboard`](docs/tool-reference.md#show_project_dashboard) - Render a live project snapshot (open/closed, overdue, due this week, open-by-priority, recent activity) as an interactive dashboard, with click-through drill-ins to matching issue lists
   - [`get_project_dashboard_data`](docs/tool-reference.md#get_project_dashboard_data) - App-only data source backing the dashboard's Refresh action
+  - [`show_project_timeline`](docs/tool-reference.md#show_project_timeline) - Render a project's schedule as an interactive timeline: issue bars by version, milestone diamonds, and a Today line
+  - [`get_project_timeline_data`](docs/tool-reference.md#get_project_timeline_data) - App-only data source backing the timeline's Refresh action
 
 - **Meta** (1 tool)
   - [`get_mcp_server_info`](docs/tool-reference.md#get_mcp_server_info) - Report server version, auth mode, read-only state, the authenticated user (`current_user`), and which plugin-gated tool families are enabled. Use to detect deployment lag before relying on a recently-shipped fix, or to confirm who `assigned_to_id="me"` resolves to.
 
-### Plugin-gated tools (13, opt in via env var)
+### Plugin-gated tools (15, opt in via env var)
 
 These tools require a corresponding Redmine plugin installed on the server **and** the matching environment variable set to `true` on the MCP server. They are listed in `tools/list` only when their flag is set; with the flag off they are not registered on the MCP surface (and a direct call still returns a feature-disabled error).
 
@@ -759,6 +805,11 @@ These tools require a corresponding Redmine plugin installed on the server **and
 
 - **Documents (DMSF)** (1 tool): set `REDMINE_DMSF_ENABLED=true`; requires the [`redmine_dmsf` plugin](https://github.com/danmunn/redmine_dmsf)
   - [`manage_document`](docs/tool-reference.md#manage_document) - List, get, create (upload), or update (new revision) DMSF documents
+
+- **Helpdesk** (1 tool): set `REDMINE_HELPDESK_ENABLED=true`; requires the [RedmineUP Helpdesk plugin](https://www.redmineup.com/pages/plugins/helpdesk)
+  - [`send_helpdesk_email_reply`](docs/tool-reference.md#send_helpdesk_email_reply) - Email a reply to a Helpdesk ticket's customer, optionally changing the ticket status
+- **Helpdesk tickets** (1 tool): set `REDMINE_HELPDESK_TICKETS_ENABLED=true`; requires the [RedmineUP Helpdesk plugin](https://www.redmineup.com/pages/plugins/helpdesk) and the RedmineUP CRM plugin
+  - [`manage_helpdesk_ticket`](docs/tool-reference.md#manage_helpdesk_ticket) - Read a ticket's Helpdesk data, or move it to another existing contact
 
 ### Operator tools (1, admin-gated)
 
@@ -827,7 +878,7 @@ Contributions are welcome! Please see our [contributing guide](./docs/contributi
 Thank you to everyone who has helped improve this project through code, reviews, testing, and feature requests:
 
 <!-- contributors:start -->
-[@sebastianelsner](https://github.com/sebastianelsner) · [@mihajlovicjj](https://github.com/mihajlovicjj) · [@timcomport](https://github.com/timcomport) · [@aadnehovda](https://github.com/aadnehovda) · [@Vitexus](https://github.com/Vitexus) · [@Bricklou](https://github.com/Bricklou) · [@martindglaser](https://github.com/martindglaser) · [@LaurensRietveld](https://github.com/LaurensRietveld) · [@pdostal](https://github.com/pdostal) · [@stevehollis-orderflow](https://github.com/stevehollis-orderflow) · [@knasiotis](https://github.com/knasiotis) · [@azelcs](https://github.com/azelcs) · [@fionnb](https://github.com/fionnb) · [@goizper](https://github.com/goizper) · [@mmahmed](https://github.com/mmahmed) · [@andilem](https://github.com/andilem) · [@gino8080](https://github.com/gino8080)
+[@sebastianelsner](https://github.com/sebastianelsner) · [@mihajlovicjj](https://github.com/mihajlovicjj) · [@timcomport](https://github.com/timcomport) · [@aadnehovda](https://github.com/aadnehovda) · [@Vitexus](https://github.com/Vitexus) · [@Bricklou](https://github.com/Bricklou) · [@martindglaser](https://github.com/martindglaser) · [@LaurensRietveld](https://github.com/LaurensRietveld) · [@pdostal](https://github.com/pdostal) · [@stevehollis-orderflow](https://github.com/stevehollis-orderflow) · [@knasiotis](https://github.com/knasiotis) · [@azelcs](https://github.com/azelcs) · [@fionnb](https://github.com/fionnb) · [@goizper](https://github.com/goizper) · [@mmahmed](https://github.com/mmahmed) · [@andilem](https://github.com/andilem) · [@gino8080](https://github.com/gino8080) · [@siva01c](https://github.com/siva01c) · [@chesterXalan](https://github.com/chesterXalan) · [@mliebischer](https://github.com/mliebischer)
 <!-- contributors:end -->
 
 <a href="https://github.com/jztan/redmine-mcp-server/graphs/contributors">
@@ -836,7 +887,7 @@ Thank you to everyone who has helped improve this project through code, reviews,
 
 Per-release contributor credits are listed in the [Changelog](./CHANGELOG.md).
 
-Thanks also to [RedmineUP](https://www.redmineup.com) for providing an evaluation copy of CRM PRO, which let the CRM tools be verified against a real Pro instance.
+Thanks also to [RedmineUP](https://www.redmineup.com) for providing evaluation copies of CRM PRO and Helpdesk PRO, which let the CRM and Helpdesk tools be verified against real Pro instances.
 
 ## License
 
@@ -860,5 +911,6 @@ Background, design notes, and postmortems from building this server:
 
 **Production**
 
+- [MCP File Upload: Why Base64 Tool Arguments Can Corrupt Files](https://blog.jztan.com/mcp-file-upload-base64-corruption/?utm_source=github&utm_medium=referral&utm_campaign=redmine-mcp-server): Why a 3 KB PNG silently lost 32 characters when the model retyped its base64, and the side-channel upload with SHA-256 checks that replaced it
 - [How to Evaluate an MCP Server With an LLM: 17 Bugs Found and Fixed](https://blog.jztan.com/evaluate-mcp-server-with-llm/?utm_source=github&utm_medium=referral&utm_campaign=redmine-mcp-server): Driving the server with an agent surfaced 17 problems the test suite missed, including a `role_ids=[True]` bug that quietly assigned an elevated role
 - [What It Actually Takes to Ship a Production MCP Server for Redmine](https://blog.jztan.com/what-it-actually-takes-to-ship-a-production-mcp-server-for-redmine/?utm_source=github&utm_medium=referral&utm_campaign=redmine-mcp-server): The full journey from prototype to production

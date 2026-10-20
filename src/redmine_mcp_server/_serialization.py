@@ -250,6 +250,22 @@ def _included_list(resource: Any, key: str) -> List[Any]:
     return list(value) if isinstance(value, list) else []
 
 
+def _included_resources(resource: Any, key: str) -> List[Any]:
+    """:func:`_included_list`, for callers that read resources, not dicts.
+
+    The payload decides whether the key is present; only then is the
+    attribute read, which python-redmine encodes from that payload without a
+    request. Read first, the attribute of an ``_includes`` name re-fetches the
+    whole resource with ``include=<key>`` when the key is missing, and Redmine
+    omits some on purpose: an issue's ``children`` when it is a leaf, and
+    ``watchers`` without ``view_issue_watchers``. Not for
+    ``relations``, whose attribute ignores the payload altogether.
+    """
+    if not _included_list(resource, key):
+        return []
+    return list(getattr(resource, key))
+
+
 def _issue_relation_to_dict(relation: Any) -> Dict[str, Any]:
     """Convert an issue relation to a serializable dict.
 
@@ -435,6 +451,47 @@ def _named_ref(obj: Any) -> Optional[Dict[str, Any]]:
     }
 
 
+def _membership_roles_to_list(raw_roles: Any) -> List[Dict[str, Any]]:
+    """Serialize the ``roles`` array of one membership, keeping ``inherited``.
+
+    Redmine renders each role as ``{id, name}`` and merges ``inherited =>
+    true`` onto it when its member role has an ``inherited_from`` -- a role
+    that comes from a group the user belongs to, or from the parent of a
+    subproject that inherits members. ``app/views/members/index.api.rsb``,
+    ``members/show.api.rsb`` and ``users/show.api.rsb`` all carry that line.
+    Redmine omits the key otherwise, so it is mirrored only when present --
+    a hard-coded ``inherited: false`` would be a claim Redmine never made,
+    and it is the one field that tells "holds Manager here" apart from "a
+    group or the parent project does".
+
+    Takes payload dicts (a user's ``include=memberships``) and python-redmine
+    ``Role`` resources (``ProjectMembership.roles``). A resource is read
+    through ``raw()``, python-redmine's accessor for the decoded payload, so
+    a key Redmine did not send reads as absent rather than as a default.
+    """
+    if raw_roles is None or isinstance(raw_roles, (str, bytes, dict)):
+        return []
+    try:
+        items = list(raw_roles)
+    except TypeError:
+        return []
+
+    roles: List[Dict[str, Any]] = []
+    for role in items:
+        entry = _named_ref(role)
+        if entry is None:
+            continue
+        if isinstance(role, dict):
+            payload: Any = role
+        else:
+            raw = getattr(role, "raw", None)
+            payload = raw() if callable(raw) else None
+        if isinstance(payload, dict) and "inherited" in payload:
+            entry["inherited"] = payload["inherited"]
+        roles.append(entry)
+    return roles
+
+
 def _safe_isoformat(val: Any) -> Optional[str]:
     """Return an ISO-8601 string for a date/datetime value.
 
@@ -449,6 +506,27 @@ def _safe_isoformat(val: Any) -> Optional[str]:
     if isinstance(val, str):
         return val
     return val.isoformat()
+
+
+def _deal_note_to_dict(note: Any) -> Dict[str, Any]:
+    """Serialize one CRM note, keyed as the plugin's show.api.rsb renders it.
+
+    ``content`` is free text and is wrapped in ``<insecure-content>``
+    boundary tags, matching how issue ``description`` and journal notes are
+    treated. The plugin only renders the notes array for a caller who may
+    see its parent: ``view_deals`` on a deal, ``view_contacts`` on a contact,
+    whose ``include=notes`` entries have the same keys.
+    """
+    if not isinstance(note, dict):
+        return {}
+    return {
+        "id": note.get("id"),
+        "content": wrap_insecure_content(note.get("content", "")),
+        "type_id": note.get("type_id"),
+        "author": _named_ref(note.get("author")),
+        "created_on": _safe_isoformat(note.get("created_on")),
+        "updated_on": _safe_isoformat(note.get("updated_on")),
+    }
 
 
 def _coerce_json_safe(value: Any) -> Any:

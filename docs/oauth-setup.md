@@ -61,7 +61,19 @@ Restart Redmine after the change.
 >
 > The only safe way to override a single Doorkeeper option in a Redmine deployment is to edit the existing `Doorkeeper.configure` block in `30-redmine.rb` in place. Track the change as a deployment patch (e.g., a Dockerfile `RUN sed -i ...` step) so it survives Redmine upgrades.
 
-### 2c. Verify
+### 2c. Optional: name the user in the introspection response
+
+A file staged with [`create_upload_ticket`](tool-reference.md#create_upload_ticket) is bound to the user who created the ticket, so the server needs to know who that is. Doorkeeper's introspection response says which application a token belongs to but not which user, so by default the server asks Redmine with one `GET /users/current.json` each time a ticket is created and each time a staged file is read back. To spare that request, have Doorkeeper include the user's id as `sub`. In the same `Doorkeeper.configure` block of `config/initializers/30-redmine.rb` you edited in Step 2b, add:
+
+```ruby
+    custom_introspection_response do |token, _context|
+      { sub: token.resource_owner_id.to_s }
+    end
+```
+
+Doorkeeper merges this into the response it already sends. The value has to be the Redmine user id, as above, and not the login: it names the same user the lookup would, so slots created before and after the change still match. Restart Redmine after the change. Nothing on the MCP server needs to be configured; it uses `sub` whenever the response carries one.
+
+### 2d. Verify
 
 ```bash
 curl -X POST $REDMINE_URL/oauth/introspect \
@@ -109,6 +121,10 @@ REDMINE_MCP_JWT_SIGNING_KEY=<stable-random-secret>
 # Unset = loopback only. "*" = allow any. Or list patterns for hosted clients.
 # REDMINE_MCP_ALLOWED_CLIENT_REDIRECT_URIS=https://app.example.com/*
 
+# Optional: lifetime of the access token issued to clients (see note below).
+# Unset or 0 = mirror Redmine's expires_in (2 hours).
+# REDMINE_MCP_ACCESS_TOKEN_EXPIRY_SECONDS=604800
+
 # Optional: use a separate upstream Redmine OAuth app.
 # If unset, REDMINE_INTROSPECT_CLIENT_ID / _SECRET are reused.
 # REDMINE_OAUTH_CLIENT_ID=<UID from Redmine>
@@ -119,6 +135,8 @@ REDMINE_MCP_JWT_SIGNING_KEY=<stable-random-secret>
 Set these in `.env` (local) or `.env.docker` (Docker). Legacy credentials are not needed in OAuth mode.
 
 **Client redirect-URI allowlist:** In `oauth-proxy` mode an MCP client registers its own redirect URI via Dynamic Client Registration. By default the server accepts only loopback targets (`http://localhost:*` and `http://127.0.0.1:*`), which fits local MCP clients (Claude Desktop, Codex CLI, `mcp-remote`) while preventing a registered client from pointing the flow at a remote URL. To support a hosted client with a non-loopback redirect URI, set `REDMINE_MCP_ALLOWED_CLIENT_REDIRECT_URIS` to a comma- or space-separated list of glob patterns (for example `https://app.example.com/*`). Set it to `*` to restore the permissive "accept any redirect URI" behaviour. External consent on Redmine and forwarded PKCE remain in effect regardless of this setting.
+
+**Client token lifetime:** By default the access token OAuthProxy issues to a client lives exactly as long as the Redmine token behind it, which is Doorkeeper's `expires_in` (2 hours on stock Redmine). After that the client has to call `/token` with its refresh token, and OAuthProxy rotates the refresh token on every such call, rejecting the old one. When several processes share one client's stored credentials, for example parallel sessions of the same CLI, the first to refresh wins and every other process is sent back through the browser login. Setting `REDMINE_MCP_ACCESS_TOKEN_EXPIRY_SECONDS` (for example `604800`, 7 days) decouples the two lifetimes, so clients rarely refresh. It does not extend upstream access: the proxy token only points at the stored Redmine token, which is still validated on every request and refreshed server-side when it expires, so revoking the application in Redmine (**My account → Authorized applications**) still cuts the client off immediately. The trade-off is that a leaked proxy access token stays usable for that long while the grant is alive, the same exposure a leaked refresh token already has.
 
 **Upstream OAuth client:** When `REDMINE_OAUTH_CLIENT_ID` / `REDMINE_OAUTH_CLIENT_SECRET` are unset, the introspection client (Step 2) is reused as the upstream authorization client. That client therefore needs more than introspection rights: it must have the **authorization code** grant enabled and `${REDMINE_MCP_BASE_URL}/auth/callback` registered as a redirect URI, otherwise `/authorize` fails upstream. This is already true if the introspection client is the Step 1 user-flow app; if you registered a separate introspection-only app, either enable the authorization code grant and redirect URI on it or set `REDMINE_OAUTH_CLIENT_ID` / `REDMINE_OAUTH_CLIENT_SECRET` to a dedicated upstream app.
 
@@ -224,7 +242,13 @@ Notes:
 - The map gates each tool's base permission. Argument-conditional
   permissions (for example `manage_subtasks` when changing
   `parent_issue_id`, or tag scopes for `tag_list`) are still enforced
-  by Redmine itself.
+  by Redmine itself. One such case is a custom field passed by *name* in
+  `create_redmine_issue` / `update_redmine_issue` `fields`: resolving it
+  reads the project, which needs `view_project`, and Redmine 6.1.4 and
+  7.0.1 include the project's custom fields only with `view_issues` (on
+  update, the issue read needs `view_issues` as well). Without them the
+  tool returns an error naming the scope and writes nothing; the
+  `custom_fields: [{"id": N, ...}]` form needs neither.
 - RedmineUP plugin tools (`manage_product`, `manage_contact`,
   `manage_deal`, checklists) do not require plugin scopes in the map;
   Redmine enforces its own plugin permissions for them. `manage_contact`
@@ -242,6 +266,16 @@ Notes:
   `enforce_configured_scopes`, so on Light a deal scope cannot be held by
   the OAuth application and requesting it fails consent with
   `invalid_scope` -- which would break `manage_contact` too.
+- `manage_helpdesk_ticket` sits behind `REDMINE_HELPDESK_TICKETS_ENABLED`,
+  which advertises `view_helpdesk_tickets`, `view_contacts` and
+  `view_private_contacts`, plus `edit_helpdesk_tickets` unless the server is
+  read-only. Tick them on the Redmine OAuth application before turning the
+  flag on, or narrow `REDMINE_MCP_SCOPES`; otherwise consent fails with
+  `invalid_scope`. `REDMINE_HELPDESK_ENABLED` on its own advertises nothing
+  extra. Unlike the CRM tools, this one does require its scopes (`get`:
+  `view_issues` and `view_helpdesk_tickets`; `set_contact` adds
+  `edit_helpdesk_tickets` and `view_contacts`), since they are only
+  advertised under the flag that also lists the tool.
 - A notes-only `update_redmine_issue` call (fields containing nothing but
   `notes` / `private_notes`, no uploads) requires `add_issue_notes` instead
   of `edit_issues`, mirroring Redmine's own note-adding permission.
@@ -285,7 +319,7 @@ matches what the Application can grant and consent does not fail with
 `REDMINE_MCP_SCOPES` is a subset of the scopes this server already advertises
 (the Redmine permissions its tools actually use), not a mirror of the
 Application's full permission list. Permissions your Application grants but no
-MCP tool uses (for example `view_gantt`, `copy_issues`, `edit_own_time_entries`)
+MCP tool uses (for example `view_gantt`, `edit_own_time_entries`)
 are not in that set and are rejected at boot; leave them out of
 `REDMINE_MCP_SCOPES`. The boot error lists the full set of accepted scopes.
 

@@ -116,6 +116,26 @@ def _reset_legacy_client_cache_between_tests():
     _client._reset_legacy_client_cache()
 
 
+@pytest.fixture(autouse=True)
+def _restore_mcp_transforms():
+    """Undo the visibility transforms a test adds to the shared FastMCP server.
+
+    ``mcp.enable``/``mcp.disable`` append a transform on every call and never
+    drop one, and each lookup walks the whole chain recursively. Production
+    applies plugin visibility once at startup, but the suite applies it (and
+    reloads ``main``, which applies it again) hundreds of times, so without
+    this the chain outgrows Python's recursion limit once enough plugin
+    families exist. Skipped until ``server`` is imported so cold-start import
+    tests still see a fresh interpreter state.
+    """
+    server = sys.modules.get("redmine_mcp_server.server")
+    mcp = getattr(server, "mcp", None)
+    saved = list(mcp._transforms) if mcp is not None else None
+    yield
+    if mcp is not None:
+        mcp._transforms[:] = saved
+
+
 @pytest.fixture
 def all_plugin_tools_visible():
     """Re-enable every plugin family on the shared FastMCP instance.
