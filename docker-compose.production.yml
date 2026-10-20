@@ -13,6 +13,7 @@ services:
     env_file:
       - .env
     environment:
+      ATTACHMENTS_DIR: /app/attachments
       REDMINE_INTROSPECT_CLIENT_SECRET: ""
       REDMINE_INTROSPECT_CLIENT_SECRET_FILE: /run/secrets/redmine_introspect_client_secret
     secrets:

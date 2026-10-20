@@ -480,8 +480,17 @@ A 403, 5xx, timeout, or connection error during the check never produces this me
 
 1. **Check Directory Permissions**
    ```bash
-   # Ensure attachments directory is writable
-   chmod 755 ./attachments
+   # The Docker image runs as appuser (UID/GID 1000)
+   chown -R 1000:1000 ./attachments
+   chmod 0750 ./attachments
+   ```
+
+   For the production named volume, repair ownership from the deployment host:
+   ```bash
+   docker run --rm --user 0:0 \
+     -v redmine-mcp-production-attachments:/app/attachments \
+     --entrypoint /bin/sh "$REDMINE_MCP_IMAGE" \
+     -c 'chown -R 1000:1000 /app/attachments && chmod 0750 /app/attachments'
    ```
 
 2. **Configure Custom Directory**

@@ -13,6 +13,8 @@ services:
       - "${SERVER_PORT:-8000}:8000"
     env_file:
       - .env
+    environment:
+      ATTACHMENTS_DIR: /app/attachments
     volumes:
       - ./logs:/app/logs
       - ./data:/app/data

@@ -70,8 +70,10 @@ WORKDIR /app
 COPY --chown=appuser:appuser src/ ./src/
 COPY --chown=appuser:appuser README.md ./
 
-# Create directories for logs and data
-RUN mkdir -p /app/logs /app/data /app/data/fastmcp && \
+# Create directories for writable persistent data. The attachment volume is
+# mounted over this path in production; creating it in the image lets Docker
+# initialize a new named volume with appuser ownership instead of root.
+RUN mkdir -p /app/attachments /app/logs /app/data /app/data/fastmcp && \
     chown -R appuser:appuser /app
 
 # Switch to non-root user
