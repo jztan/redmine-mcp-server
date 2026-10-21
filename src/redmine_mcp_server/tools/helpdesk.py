@@ -12,6 +12,7 @@ so this uses JSON like every other call the server makes.
 
 import datetime
 import json
+import re
 from typing import Any, Dict, List, Literal, Optional
 
 from redminelib.exceptions import (
@@ -640,15 +641,107 @@ def _create_ticket(validated: Dict[str, Any]) -> Dict[str, Any]:
             if isinstance(e, dict) and str(e.get("address") or "").strip()
         )
 
+    unreadable = {
+        "project_id": project_id,
+        "warning": (
+            "Helpdesk created the ticket, but its response could not be read. "
+            "Find it with list_redmine_issues before creating it again."
+        ),
+    }
     try:
         response = _post_ticket(_ticket_body(validated, address))
+    except JSONDecodeError:
+        return unreadable
+    except ForbiddenError:
+        return {
+            "error": (
+                f"Creating Helpdesk tickets in project {project_id} needs "
+                "edit_helpdesk_tickets and the Helpdesk module enabled on it. "
+                "Nothing was created."
+            )
+        }
+    except ResourceNotFoundError:
+        return {
+            "error": (
+                "Helpdesk answered 404: either Redmine has no /helpdesk_tickets "
+                "endpoint (check that the RedmineUP Helpdesk plugin is installed "
+                f"and enabled) or project {project_id} is not found. "
+                "Nothing was created."
+            )
+        }
+    except ValidationError as e:
+        return _create_validation_error(e, context, resource)
     except Exception as e:
         return _handle_redmine_error(e, context, resource)
 
     ticket = response.get("helpdesk_ticket") if isinstance(response, dict) else None
-    ticket = ticket if isinstance(ticket, dict) else {}
-    result = _ticket_to_dict(ticket.get("id"), ticket)
+    if not isinstance(ticket, dict) or not _is_positive_int(ticket.get("id")):
+        return unreadable
+    issue_id = ticket["id"]
+    attached = (ticket.get("contact") or {}).get("id")
+    if attached != target:
+        return _repoint_created(issue_id, project_id, target, attached)
+    result = _ticket_to_dict(issue_id, ticket)
     result["project_id"] = project_id
+    return result
+
+
+# The controller's ``rescue Exception`` renders "<message> (<backtrace.first>)".
+# Frames can hold parentheses of their own: "in 'block (2 levels) in save'".
+_PLUGIN_BACKTRACE = re.compile(r"\s*\((?:/|[A-Za-z]:\\)\S*\.rb:\d+:in .*\)\s*$")
+
+
+def _create_validation_error(
+    e: ValidationError, context: str, resource: Dict[str, Any]
+) -> Dict[str, Any]:
+    text = str(e)
+    scrubbed = _PLUGIN_BACKTRACE.sub("", text)
+    if scrubbed != text:
+        # An exception, not a validation failure, and it may have been raised
+        # after the issue was saved.
+        return {
+            "error": (
+                "Helpdesk failed with an internal error: "
+                f"{_scrub_error_message(scrubbed)}. The ticket may have been "
+                "created anyway: check with list_redmine_issues before retrying."
+            )
+        }
+    result = _handle_redmine_error(e, context, resource)
+    result["error"] = f"{result['error']} Nothing was created."
+    return result
+
+
+def _repoint_created(
+    issue_id: int, project_id: int, target: int, attached: Any
+) -> Dict[str, Any]:
+    """Move a new ticket back to the checked contact.
+
+    Happens when two contacts share the address sent. The other contact is
+    reported by id only.
+    """
+    try:
+        response = _put_ticket_contact(issue_id, target)
+        ticket = response.get("helpdesk_ticket") if isinstance(response, dict) else None
+        if not isinstance(ticket, dict):
+            ticket = _fetch_ticket(issue_id)
+    except Exception:
+        return {
+            "issue_id": issue_id,
+            "project_id": project_id,
+            "warning": (
+                f"Ticket {issue_id} was created, but Helpdesk attached contact "
+                f"{attached} instead of {target}, and moving it back failed. "
+                f'Fix it with manage_helpdesk_ticket(action="set_contact", '
+                f"issue_id={issue_id}, contact_id={target})."
+            ),
+        }
+    result = _ticket_to_dict(issue_id, ticket)
+    result["project_id"] = project_id
+    result["warning"] = (
+        f"Helpdesk attached contact {attached} instead of {target}; the ticket "
+        f"was moved back to {target}. Contacts {target} and {attached} share "
+        "an email address."
+    )
     return result
 
 

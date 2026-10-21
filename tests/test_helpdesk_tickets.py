@@ -988,3 +988,119 @@ class TestCreate:
         result, calls = await call(mock_redmine, routes, **valid(**kwargs))
         assert expected in result["error"]
         assert not [c for c in calls if c[0] == "post"]
+
+
+OTHER_CONTACT_CREATED = copy.deepcopy(CREATED_808)
+OTHER_CONTACT_CREATED["helpdesk_ticket"]["contact"] = {
+    "id": 999,
+    "name": "Someone Else",
+}
+CREATED_808_REPOINTED = copy.deepcopy(CREATED_808)
+
+
+@patch("redmine_mcp_server._client.redmine")
+class TestCreateFailures:
+    async def test_post_forbidden(self, mock_redmine):
+        result, _ = await call(
+            mock_redmine, create_routes({("post", CREATE): ForbiddenError()}), **valid()
+        )
+        assert "edit_helpdesk_tickets" in result["error"]
+        assert "Nothing was created" in result["error"]
+
+    async def test_post_not_found(self, mock_redmine):
+        result, _ = await call(
+            mock_redmine,
+            create_routes({("post", CREATE): ResourceNotFoundError()}),
+            **valid(),
+        )
+        assert "/helpdesk_tickets" in result["error"]
+        assert "Nothing was created" in result["error"]
+
+    async def test_validation_error_passes_through(self, mock_redmine):
+        result, _ = await call(
+            mock_redmine,
+            create_routes(
+                {("post", CREATE): ValidationError("Department cannot be blank")}
+            ),
+            **valid(),
+        )
+        assert "Department cannot be blank" in result["error"]
+        assert "Nothing was created" in result["error"]
+        assert result["code"] == "VALIDATION_FAILED"
+
+    @pytest.mark.parametrize(
+        "raw, message",
+        [
+            (
+                "Message body can't be blank (/usr/src/redmine/plugins/"
+                "redmine_contacts_helpdesk/app/models/helpdesk_mail_messenger/"
+                "initial_message.rb:60:in "
+                "'HelpdeskMailMessenger::InitialMessage#validate')",
+                "Message body can't be blank",
+            ),
+            (
+                "boom (/usr/src/redmine/app/models/issue.rb:10:in "
+                "'block (2 levels) in save')",
+                "boom",
+            ),
+        ],
+    )
+    async def test_internal_error_is_scrubbed_and_flagged(
+        self, mock_redmine, raw, message
+    ):
+        result, _ = await call(
+            mock_redmine,
+            create_routes({("post", CREATE): ValidationError(raw)}),
+            **valid(),
+        )
+        assert message in result["error"]
+        assert "may have been created" in result["error"]
+        assert "list_redmine_issues" in result["error"]
+        assert "/usr/src" not in result["error"]
+        assert ".rb:" not in result["error"]
+
+    async def test_contact_mismatch_is_repointed(self, mock_redmine):
+        result, calls = await call(
+            mock_redmine,
+            create_routes(
+                {
+                    ("post", CREATE): OTHER_CONTACT_CREATED,
+                    ("put", "/helpdesk_tickets/808.json"): CREATED_808_REPOINTED,
+                }
+            ),
+            **valid(),
+        )
+        assert [json.loads(c[2]["data"]) for c in puts(calls)] == [
+            {"helpdesk_ticket": {"from_address": "374"}}
+        ]
+        assert result["issue_id"] == 808
+        assert result["contact"]["id"] == 374
+        assert "999" in result["warning"]
+        assert "Someone Else" not in json.dumps(result)
+
+    async def test_contact_mismatch_repoint_fails(self, mock_redmine):
+        result, _ = await call(
+            mock_redmine,
+            create_routes(
+                {
+                    ("post", CREATE): OTHER_CONTACT_CREATED,
+                    ("put", "/helpdesk_tickets/808.json"): ServerError(),
+                }
+            ),
+            **valid(),
+        )
+        assert "error" not in result
+        assert result["issue_id"] == 808
+        assert "999" in result["warning"]
+        assert "set_contact" in result["warning"]
+        assert "Someone Else" not in json.dumps(result)
+
+    async def test_unreadable_201(self, mock_redmine):
+        result, _ = await call(
+            mock_redmine,
+            create_routes({("post", CREATE): JSONDecodeError(None)}),
+            **valid(),
+        )
+        assert "error" not in result
+        assert "could not be read" in result["warning"]
+        assert "list_redmine_issues" in result["warning"]
