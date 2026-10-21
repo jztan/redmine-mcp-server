@@ -124,7 +124,7 @@ async def test_plain_issue_is_not_converted():
 async def test_unknown_email_creates_nothing():
     email = "nobody.at.all.378@example.com"
     result = await run(action="set_contact", issue_id=TICKET, email=email)
-    assert "No contact in this issue's project" in result["error"]
+    assert "No contact in the project" in result["error"]
     assert await contact_id_now() == HOME_CONTACT
     assert _probe(f"/contacts.json?search={email}") == 200  # still searchable
     # and still no such contact
@@ -140,7 +140,7 @@ async def test_other_project_contact_is_refused():
     result = await run(
         action="set_contact", issue_id=TICKET, contact_id=OTHER_PROJECT_CONTACT
     )
-    assert "not linked to this issue's project" in result["error"]
+    assert "not linked to the project" in result["error"]
     assert await contact_id_now() == HOME_CONTACT
 
 

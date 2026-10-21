@@ -361,7 +361,7 @@ def _find_contact_id_by_email(project_id: Any, email: str) -> int:
         )
     if not matches:
         raise _Refusal(
-            f"No contact in this issue's project has the email "
+            f"No contact in the project has the email "
             f"'{email.strip()}'. Create it with manage_contact(action=\"create\") "
             "or link an existing one with "
             'manage_contact(action="assign_to_project"), then retry.'
@@ -369,7 +369,7 @@ def _find_contact_id_by_email(project_id: Any, email: str) -> int:
     if len(matches) > 1:
         ids = ", ".join(str(m) for m in matches)
         raise _Refusal(
-            f"Several contacts in this issue's project have the email "
+            f"Several contacts in the project have the email "
             f"'{email.strip()}' (ids {ids}). Pass contact_id to choose one."
         )
     return matches[0]
@@ -398,7 +398,7 @@ def _check_contact(contact_id: int, project_id: Any) -> Dict[str, Any]:
     linked = {p.get("id") for p in contact.get("projects") or [] if isinstance(p, dict)}
     if project_id not in linked:
         raise _Refusal(
-            f"Contact {contact_id} is not linked to this issue's project "
+            f"Contact {contact_id} is not linked to the project "
             f"(id {project_id}). Link it with "
             f'manage_contact(action="assign_to_project", contact_id={contact_id}, '
             f"project_id={project_id}), then retry."
@@ -570,8 +570,86 @@ def _validate_create(args: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+def _fetch_visible_project(project_id: int) -> Dict[str, Any]:
+    try:
+        payload = _api_get(f"/projects/{project_id}.json")
+    except ResourceNotFoundError:
+        raise _Refusal(f"Project {project_id} not found or not visible to you.")
+    except ForbiddenError:
+        raise _Refusal(f"Reading project {project_id} is forbidden.")
+    project = payload.get("project") if isinstance(payload, dict) else None
+    if not isinstance(project, dict):
+        raise _Refusal(f"Project {project_id} not found or not visible to you.")
+    return project
+
+
+def _post_ticket(body: Dict[str, Any]) -> Any:
+    from .. import _client
+
+    client = _get_redmine_client()
+    return client.engine.request(
+        "post",
+        f"{_client.REDMINE_URL}/helpdesk_tickets.json",
+        headers={"Content-Type": "application/json"},
+        data=json.dumps({"helpdesk_ticket": body}),
+    )
+
+
+def _ticket_body(validated: Dict[str, Any], address: str) -> Dict[str, Any]:
+    """The POST body. Only checked values go in, and never ``send_as``.
+
+    The plugin looks the contact up by ``contact.email``, so the address
+    sent is always one of the contact this tool has already checked.
+    """
+    issue: Dict[str, Any] = {
+        "project_id": validated["project_id"],
+        "subject": validated["subject"],
+    }
+    for key in ("description", *_OPTIONAL_ISSUE_INTS, "custom_fields"):
+        if validated.get(key) is not None:
+            issue[key] = validated[key]
+    body: Dict[str, Any] = {"issue": issue, "contact": {"email": address}}
+    for key in ("source", "cc_address", "ticket_date"):
+        if validated.get(key) is not None:
+            body[key] = validated[key]
+    return body
+
+
 def _create_ticket(validated: Dict[str, Any]) -> Dict[str, Any]:
-    raise NotImplementedError
+    project_id = validated["project_id"]
+    email = validated.get("email")
+    context = f"creating a Helpdesk ticket in project {project_id}"
+    resource = {"resource_type": "project", "resource_id": project_id}
+    try:
+        _fetch_visible_project(project_id)
+        target = validated.get("contact_id") or _find_contact_id_by_email(
+            project_id, email
+        )
+        contact = _check_contact(target, project_id)
+    except _Refusal as refusal:
+        return {"error": refusal.message}
+    except Exception as e:
+        return _handle_redmine_error(e, context, resource)
+
+    if email is not None:
+        address = email.strip()
+    else:
+        address = next(
+            str(e["address"]).strip()
+            for e in contact.get("emails") or []
+            if isinstance(e, dict) and str(e.get("address") or "").strip()
+        )
+
+    try:
+        response = _post_ticket(_ticket_body(validated, address))
+    except Exception as e:
+        return _handle_redmine_error(e, context, resource)
+
+    ticket = response.get("helpdesk_ticket") if isinstance(response, dict) else None
+    ticket = ticket if isinstance(ticket, dict) else {}
+    result = _ticket_to_dict(ticket.get("id"), ticket)
+    result["project_id"] = project_id
+    return result
 
 
 @offloaded

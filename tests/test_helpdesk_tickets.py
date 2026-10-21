@@ -388,7 +388,7 @@ class TestSetContactById:
             issue_id=804,
             contact_id=375,
         )
-        assert "not linked to this issue's project" in result["error"]
+        assert "not linked to the project" in result["error"]
         assert 'manage_contact(action="assign_to_project"' in result["error"]
         assert puts(calls) == []
 
@@ -402,7 +402,7 @@ class TestSetContactById:
             issue_id=804,
             contact_id=375,
         )
-        assert "not linked to this issue's project" in result["error"]
+        assert "not linked to the project" in result["error"]
         assert puts(calls) == []
 
     async def test_contact_without_email(self, mock_redmine):
@@ -594,7 +594,7 @@ class TestSetContactByEmail:
             issue_id=804,
             email="bob.probe@example.com",
         )
-        assert "No contact in this issue's project" in result["error"]
+        assert "No contact in the project" in result["error"]
         assert 'manage_contact(action="create")' in result["error"]
         assert puts(calls) == []
 
@@ -795,3 +795,196 @@ class TestCreateArguments:
             result = await manage_helpdesk_ticket(**VALID)
         assert "read-only" in result["error"].lower()
         assert mock_redmine.engine.request.side_effect.calls == []
+
+
+PROJECT_1 = {"project": {"id": 1, "identifier": "testing-project1", "name": "Cartly"}}
+CONTACT_374 = {
+    "contact": {
+        "id": 374,
+        "first_name": "Alice",
+        "last_name": "Probe",
+        "emails": [{"address": "alice.probe@example.com"}],
+        "projects": [{"id": 1, "name": "Cartly"}],
+    }
+}
+# What Helpdesk 4.3.1 answered to a create on the 8082 sandbox (2026-10-22),
+# with the contact swapped for 374.
+CREATED_808 = {
+    "helpdesk_ticket": {
+        "id": 808,
+        "from_address": "alice.probe@example.com",
+        "to_address": "",
+        "cc_address": "cc.395@example.com",
+        "message_id": None,
+        "ticket_date": "2026-10-01",
+        "content": None,
+        "source": "Phone",
+        "is_incoming": True,
+        "reaction_time": "",
+        "first_response_time": "",
+        "resolve_time": "",
+        "last_agent_response_at": "",
+        "last_customer_response_at": "",
+        "contact": {"id": 374, "name": "Alice Probe"},
+        "vote": None,
+        "vote_comment": None,
+    }
+}
+CREATE = "/helpdesk_tickets.json"
+
+
+def create_routes(extra=None):
+    routes = {
+        ("get", "/projects/1.json"): PROJECT_1,
+        ("get", SEARCH): search_page(CONTACT_374["contact"]),
+        ("get", "/contacts/374.json"): CONTACT_374,
+        ("post", CREATE): CREATED_808,
+    }
+    routes.update(extra or {})
+    return routes
+
+
+def posted(calls):
+    bodies = [json.loads(c[2]["data"]) for c in calls if c[0] == "post"]
+    assert len(bodies) == 1, calls
+    return bodies[0]
+
+
+def all_keys(value):
+    if isinstance(value, dict):
+        for key, inner in value.items():
+            yield key
+            yield from all_keys(inner)
+    elif isinstance(value, list):
+        for inner in value:
+            yield from all_keys(inner)
+
+
+@patch("redmine_mcp_server._client.redmine")
+class TestCreate:
+    async def test_happy_path_by_email(self, mock_redmine):
+        result, calls = await call(
+            mock_redmine,
+            create_routes(),
+            **valid(
+                description="It is on fire.",
+                tracker_id=1,
+                priority_id=2,
+                assigned_to_id=5,
+                custom_fields=[{"id": 2, "value": "QA"}],
+                source="phone",
+                cc_address="cc.395@example.com",
+                ticket_date="2026-10-01",
+            ),
+        )
+        assert [(c[0], c[1]) for c in calls] == [
+            ("get", "/projects/1.json"),
+            ("get", SEARCH),
+            ("get", "/contacts/374.json"),
+            ("post", CREATE),
+        ]
+        assert posted(calls) == {
+            "helpdesk_ticket": {
+                "issue": {
+                    "project_id": 1,
+                    "subject": "Printer on fire",
+                    "description": "It is on fire.",
+                    "tracker_id": 1,
+                    "priority_id": 2,
+                    "assigned_to_id": 5,
+                    "custom_fields": [{"id": 2, "value": "QA"}],
+                },
+                "contact": {"email": "alice.probe@example.com"},
+                "source": "phone",
+                "cc_address": "cc.395@example.com",
+                "ticket_date": "2026-10-01",
+            }
+        }
+        assert result["issue_id"] == 808
+        assert result["project_id"] == 1
+        assert result["contact"]["id"] == 374
+        assert unwrap(result["from_address"]) == "alice.probe@example.com"
+        assert "error" not in result and "warning" not in result
+
+    async def test_by_id_posts_the_contacts_first_email(self, mock_redmine):
+        contact = copy.deepcopy(CONTACT_374)
+        contact["contact"]["emails"] = [
+            {"address": ""},
+            {"address": "first@x.io"},
+            {"address": "second@x.io"},
+        ]
+        result, calls = await call(
+            mock_redmine,
+            create_routes({("get", "/contacts/374.json"): contact}),
+            **valid(email=_DROP, contact_id=374),
+        )
+        assert "error" not in result
+        assert posted(calls)["helpdesk_ticket"]["contact"] == {"email": "first@x.io"}
+        assert all(c[1] != SEARCH for c in calls)
+
+    async def test_omitted_optionals_are_not_sent(self, mock_redmine):
+        result, calls = await call(mock_redmine, create_routes(), **valid())
+        body = posted(calls)["helpdesk_ticket"]
+        assert set(body) == {"issue", "contact"}
+        assert body["issue"] == {"project_id": 1, "subject": "Printer on fire"}
+
+    async def test_forbidden_keys_never_sent(self, mock_redmine):
+        result, calls = await call(
+            mock_redmine,
+            create_routes(),
+            **valid(source="email", cc_address="x@y.z", ticket_date="2026-10-01"),
+        )
+        keys = set(all_keys(posted(calls)))
+        assert not keys & {
+            "send_as",
+            "from_address",
+            "is_incoming",
+            "message_id",
+            "to_address",
+        }
+
+    @pytest.mark.parametrize(
+        "extra, kwargs, expected",
+        [
+            (
+                {("get", "/projects/1.json"): ResourceNotFoundError()},
+                {},
+                "Project 1 not found or not visible to you",
+            ),
+            (
+                {("get", "/projects/1.json"): ForbiddenError()},
+                {},
+                "Reading project 1 is forbidden",
+            ),
+            ({}, {"email": _DROP, "contact_id": 378}, None),
+            (
+                {
+                    ("get", "/contacts/374.json"): {
+                        "contact": {**CONTACT_374["contact"], "emails": []}
+                    }
+                },
+                {},
+                "has no email address",
+            ),
+            (
+                {("get", SEARCH): search_page()},
+                {},
+                "No contact in the project has the email",
+            ),
+        ],
+    )
+    async def test_refusals_never_post(self, mock_redmine, extra, kwargs, expected):
+        routes = create_routes(extra)
+        if kwargs.get("contact_id") == 378:
+            # Linked to project 2 only.
+            routes[("get", "/contacts/378.json")] = {
+                "contact": {
+                    "id": 378,
+                    "emails": [{"address": "carol.otherproj@example.com"}],
+                    "projects": [{"id": 2, "name": "Other"}],
+                }
+            }
+            expected = "is not linked to the project"
+        result, calls = await call(mock_redmine, routes, **valid(**kwargs))
+        assert expected in result["error"]
+        assert not [c for c in calls if c[0] == "post"]
