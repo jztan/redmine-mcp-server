@@ -10,8 +10,9 @@ with the same fields (confirmed on Helpdesk 4.2.9 / Redmine 6.1.2 in #301),
 so this uses JSON like every other call the server makes.
 """
 
+import datetime
 import json
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from redminelib.exceptions import (
     ForbiddenError,
@@ -512,21 +513,112 @@ def _set_contact_action(
     return result
 
 
-@action_dispatch({"get": ActionMode.READ, "set_contact": ActionMode.WRITE})
+# The plugin's own names for HelpdeskTicket sources (find_ticket_source).
+_TICKET_SOURCES = ("email", "web", "phone", "twitter", "conversation")
+_OPTIONAL_ISSUE_INTS = ("tracker_id", "priority_id", "assigned_to_id")
+
+
+def _validate_create(args: Dict[str, Any]) -> Optional[str]:
+    """The first problem with ``create``'s arguments, or None."""
+    if args.get("issue_id") is not None:
+        return "create does not take issue_id: Helpdesk assigns the new issue's id."
+    if not _is_positive_int(args.get("project_id")):
+        return "project_id must be a positive integer."
+    subject = args.get("subject")
+    if not isinstance(subject, str) or not subject.strip():
+        return "subject is required and cannot be blank."
+    description = args.get("description")
+    if description is not None and not isinstance(description, str):
+        return "description must be a string."
+    contact_id, email = args.get("contact_id"), args.get("email")
+    if (contact_id is None) == (email is None):
+        return "create needs exactly one of contact_id or email."
+    if contact_id is not None and not _is_positive_int(contact_id):
+        return "contact_id must be a positive integer."
+    if email is not None and (not isinstance(email, str) or not email.strip()):
+        return "email must be a non-blank string."
+    for name in _OPTIONAL_ISSUE_INTS:
+        value = args.get(name)
+        if value is not None and not _is_positive_int(value):
+            return f"{name} must be a positive integer."
+    custom_fields = args.get("custom_fields")
+    if custom_fields is not None and not (
+        isinstance(custom_fields, list)
+        and all(
+            isinstance(f, dict) and _is_positive_int(f.get("id")) and "value" in f
+            for f in custom_fields
+        )
+    ):
+        return "custom_fields must be a list of {id, value} objects."
+    source = args.get("source")
+    if source is not None and source not in _TICKET_SOURCES:
+        return f"source must be one of: {', '.join(_TICKET_SOURCES)}."
+    cc_address = args.get("cc_address")
+    if cc_address is not None and not isinstance(cc_address, str):
+        return "cc_address must be a string."
+    ticket_date = args.get("ticket_date")
+    if ticket_date is not None:
+        # fromisoformat also takes the basic form 20261001; the plugin
+        # documents only YYYY-MM-DD.
+        try:
+            ok = len(ticket_date) == 10
+            datetime.date.fromisoformat(ticket_date)
+        except (TypeError, ValueError):
+            ok = False
+        if not ok:
+            return "ticket_date must be YYYY-MM-DD."
+    return None
+
+
+def _create_ticket(validated: Dict[str, Any]) -> Dict[str, Any]:
+    raise NotImplementedError
+
+
+@offloaded
+def _create_ticket_action(**kwargs: Any) -> Dict[str, Any]:
+    problem = _validate_create(kwargs)
+    if problem:
+        return {"error": problem}
+    return _create_ticket(kwargs)
+
+
+@action_dispatch(
+    {
+        "get": ActionMode.READ,
+        "set_contact": ActionMode.WRITE,
+        "create": ActionMode.WRITE,
+    }
+)
 async def _manage_helpdesk_ticket_dispatch(action: str, **kwargs: Any) -> Any:
-    return {"get": _get_ticket_action, "set_contact": _set_contact_action}
+    return {
+        "get": _get_ticket_action,
+        "set_contact": _set_contact_action,
+        "create": _create_ticket_action,
+    }
 
 
 @mcp.tool(tags={plugin_tag("helpdesk_tickets")})
 async def manage_helpdesk_ticket(
-    action: Literal["get", "set_contact"],
-    issue_id: int,
+    action: Literal["get", "set_contact", "create"],
+    issue_id: Optional[int] = None,
     contact_id: Optional[int] = None,
     email: Optional[str] = None,
+    project_id: Optional[int] = None,
+    subject: Optional[str] = None,
+    description: Optional[str] = None,
+    tracker_id: Optional[int] = None,
+    priority_id: Optional[int] = None,
+    assigned_to_id: Optional[int] = None,
+    custom_fields: Optional[List[Dict[str, Any]]] = None,
+    source: Optional[
+        Literal["email", "web", "phone", "twitter", "conversation"]
+    ] = None,
+    cc_address: Optional[str] = None,
+    ticket_date: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Read a RedmineUP Helpdesk ticket, or change its customer contact.
+    """Read, create, or change the customer contact of a RedmineUP Helpdesk ticket.
 
-    Actions: ``get`` (read-only) and ``set_contact``.
+    Actions: ``get`` (read-only), ``set_contact`` and ``create``.
 
     ``get`` returns the Helpdesk data ``get_redmine_issue`` does not carry:
     the ticket's ``contact`` (``{id, name}``), ``from_address`` (where
@@ -543,19 +635,56 @@ async def manage_helpdesk_ticket(
     keeps no history of the change, so the result's ``previous_contact`` is
     the only record of who it was.
 
+    ``create`` opens a new Helpdesk ticket (an issue with a customer) in
+    ``project_id`` for an existing contact, given either ``contact_id`` or
+    ``email`` (exactly one). The same contact rule as ``set_contact``
+    applies: the contact must already be linked to the project and have an
+    email address; the tool never creates a contact or links one to a
+    project. It never emails the customer. It is not idempotent: calling it
+    again opens a second ticket.
+
     Args:
-        action: ``get`` or ``set_contact``.
-        issue_id: The Helpdesk ticket's issue id.
-        contact_id: ``set_contact``: the contact to assign.
-        email: ``set_contact``: an email address of the contact to assign,
-            matched exactly (case-insensitive) within the issue's project.
+        action: ``get``, ``set_contact`` or ``create``.
+        issue_id: ``get``/``set_contact``: the Helpdesk ticket's issue id.
+            Not accepted by ``create``.
+        contact_id: ``set_contact``/``create``: the contact to assign.
+        email: ``set_contact``/``create``: an email address of the contact
+            to assign, matched exactly (case-insensitive) within the project.
+        project_id: ``create``: the numeric id of the project to open the
+            ticket in.
+        subject: ``create``: the ticket's subject (required).
+        description: ``create``: the ticket's description.
+        tracker_id: ``create``: the tracker; Redmine's default if omitted.
+        priority_id: ``create``: the priority.
+        assigned_to_id: ``create``: the assignee. Helpdesk may replace it
+            with the contact's own assignee when its settings say so.
+        custom_fields: ``create``: custom field values as
+            ``[{"id": 2, "value": "QA"}]``. Required custom fields must be set.
+        source: ``create``: how the request came in; ``web`` if omitted.
+        cc_address: ``create``: addresses to copy on later replies.
+        ticket_date: ``create``: the request date, ``YYYY-MM-DD``; today if
+            omitted.
 
     Returns:
         The ticket as described above (``set_contact`` adds
-        ``previous_contact``), or ``{"error": ...}``.
+        ``previous_contact``, ``create`` adds ``project_id``), or
+        ``{"error": ...}``.
     """
     if not _is_helpdesk_tickets_enabled():
         return dict(_HELPDESK_TICKETS_DISABLED_ERROR)
     return await _manage_helpdesk_ticket_dispatch(
-        action, issue_id=issue_id, contact_id=contact_id, email=email
+        action,
+        issue_id=issue_id,
+        contact_id=contact_id,
+        email=email,
+        project_id=project_id,
+        subject=subject,
+        description=description,
+        tracker_id=tracker_id,
+        priority_id=priority_id,
+        assigned_to_id=assigned_to_id,
+        custom_fields=custom_fields,
+        source=source,
+        cc_address=cc_address,
+        ticket_date=ticket_date,
     )

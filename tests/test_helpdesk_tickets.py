@@ -700,3 +700,98 @@ class TestSetContactArguments:
             )
         assert "read-only" in result["error"].lower()
         assert mock_redmine.engine.request.side_effect.calls == []
+
+
+VALID = dict(
+    action="create",
+    project_id=1,
+    subject="Printer on fire",
+    email="alice.probe@example.com",
+)
+
+
+def valid(**overrides):
+    kwargs = {**VALID, **overrides}
+    return {k: v for k, v in kwargs.items() if v is not _DROP}
+
+
+_DROP = object()
+
+
+@patch("redmine_mcp_server._client.redmine")
+class TestCreateArguments:
+    async def test_create_refuses_issue_id(self, mock_redmine):
+        result, calls = await call(mock_redmine, {}, **valid(issue_id=804))
+        assert "create does not take issue_id" in result["error"]
+        assert calls == []
+
+    @pytest.mark.parametrize("bad", [None, 0, -1, "1", True])
+    async def test_bad_project_id(self, mock_redmine, bad):
+        result, calls = await call(mock_redmine, {}, **valid(project_id=bad))
+        assert "project_id must be a positive integer" in result["error"]
+        assert calls == []
+
+    @pytest.mark.parametrize("bad", [None, "", "   ", 5])
+    async def test_blank_subject(self, mock_redmine, bad):
+        result, calls = await call(mock_redmine, {}, **valid(subject=bad))
+        assert "subject is required" in result["error"]
+        assert calls == []
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [{}, {"contact_id": 374, "email": "a@b.c"}],
+    )
+    async def test_exactly_one_contact(self, mock_redmine, kwargs):
+        result, calls = await call(mock_redmine, {}, **valid(email=_DROP), **kwargs)
+        assert "exactly one of contact_id or email" in result["error"]
+        assert calls == []
+
+    @pytest.mark.parametrize(
+        "name", ["tracker_id", "priority_id", "assigned_to_id", "contact_id"]
+    )
+    async def test_bad_optional_ints(self, mock_redmine, name):
+        overrides = {name: 0}
+        if name == "contact_id":
+            overrides["email"] = _DROP
+        result, calls = await call(mock_redmine, {}, **valid(**overrides))
+        assert f"{name} must be a positive integer" in result["error"]
+        assert calls == []
+
+    @pytest.mark.parametrize(
+        "bad",
+        ["x", [1], [{"value": "a"}], [{"id": 0, "value": "a"}]],
+    )
+    async def test_bad_custom_fields(self, mock_redmine, bad):
+        result, calls = await call(mock_redmine, {}, **valid(custom_fields=bad))
+        assert "custom_fields must be a list of {id, value} objects" in result["error"]
+        assert calls == []
+
+    async def test_bad_source(self, mock_redmine):
+        result, calls = await call(mock_redmine, {}, **valid(source="fax"))
+        assert "email, web, phone, twitter, conversation" in result["error"]
+        assert calls == []
+
+    @pytest.mark.parametrize(
+        "bad", ["2026-13-01", "01/10/2026", "2026-10-01 10:00", "20261001"]
+    )
+    async def test_bad_ticket_date(self, mock_redmine, bad):
+        result, calls = await call(mock_redmine, {}, **valid(ticket_date=bad))
+        assert "ticket_date must be YYYY-MM-DD" in result["error"]
+        assert calls == []
+
+    async def test_bad_cc_address(self, mock_redmine):
+        result, calls = await call(mock_redmine, {}, **valid(cc_address=5))
+        assert "cc_address must be a string" in result["error"]
+        assert calls == []
+
+    async def test_description_must_be_string(self, mock_redmine):
+        result, calls = await call(mock_redmine, {}, **valid(description=5))
+        assert "description must be a string" in result["error"]
+        assert calls == []
+
+    async def test_read_only_mode(self, mock_redmine):
+        mock_redmine.engine.request.side_effect = router({})
+        with patch.dict(os.environ, {**ON, "REDMINE_MCP_READ_ONLY": "true"}):
+            result = await manage_helpdesk_ticket(**VALID)
+        assert "read-only" in result["error"].lower()
+        assert mock_redmine.engine.request.side_effect.calls == []
