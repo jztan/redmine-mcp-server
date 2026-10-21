@@ -89,8 +89,8 @@ class TestAnnotationsTable:
             counts[kind] += 1
         assert counts[ToolKind.READ] == 38
         assert counts[ToolKind.WRITE_ADDITIVE] == 7
-        assert counts[ToolKind.WRITE_DESTRUCTIVE] == 18
-        assert counts[ToolKind.WRITE_DESTRUCTIVE_IDEMPOTENT] == 6
+        assert counts[ToolKind.WRITE_DESTRUCTIVE] == 19
+        assert counts[ToolKind.WRITE_DESTRUCTIVE_IDEMPOTENT] == 5
 
 
 async def _registered_tools():

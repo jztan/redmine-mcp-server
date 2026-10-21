@@ -7,6 +7,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `manage_helpdesk_ticket(action="create")` opens a RedmineUP Helpdesk ticket
+  for an existing contact in one call, instead of `create_redmine_issue`
+  followed by `set_contact`. The contact must already be linked to the
+  project and have an email address; the tool never creates or links a
+  contact and never emails the customer. Takes the issue's subject,
+  description, tracker, priority, assignee and custom fields, plus the
+  ticket's `source`, `cc_address` and `ticket_date`. Under OAuth it needs
+  `add_issues`, `view_contacts` and `edit_helpdesk_tickets`. Because
+  `create` is not idempotent, the tool's annotation drops `idempotentHint`
+  ([#395](https://github.com/jztan/redmine-mcp-server/issues/395)).
+
+### Contributors
+- @goizper requested the create action and documented the endpoint from the
+  plugin source ([#395](https://github.com/jztan/redmine-mcp-server/issues/395))
 
 ## [2.19.0] - 2026-10-17
 ### Added

@@ -271,7 +271,7 @@ instead of executing (write actions only — read actions within the same tool s
 - `manage_deal_category`: `create`, `update`, `delete` blocked; `list` allowed (also requires `REDMINE_DEALS_ENABLED=true`)
 - `manage_crm_note`: `create`, `update`, `delete` blocked; `get` allowed (also requires `REDMINE_CRM_ENABLED=true` or `REDMINE_DEALS_ENABLED=true`)
 - `manage_document` — `create`, `update` blocked; `list`, `get` allowed (also requires `REDMINE_DMSF_ENABLED=true`)
-- `manage_helpdesk_ticket`: `set_contact` blocked; `get` allowed (also requires `REDMINE_HELPDESK_TICKETS_ENABLED=true`)
+- `manage_helpdesk_ticket`: `set_contact`, `create` blocked; `get` allowed (also requires `REDMINE_HELPDESK_TICKETS_ENABLED=true`)
 
 All read tools (`get_redmine_issue`, `list_redmine_issues`, `list_redmine_projects`, etc.) continue to work normally. The admin-gated `cleanup_attachment_files` tool (when registered via `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`) is also unaffected — it performs local filesystem cleanup, not Redmine mutations.
 
@@ -3513,32 +3513,50 @@ send_helpdesk_email_reply(
 
 ### `manage_helpdesk_ticket`
 
-Read a Helpdesk ticket's own data, or move the ticket to another existing contact. `get_redmine_issue` does not return the Helpdesk fields, and `update_redmine_issue` cannot change the ticket's customer (a `customer_id` key is reported in `unverified_fields` and changes nothing).
+Read a Helpdesk ticket's own data, open a new ticket for an existing contact, or move a ticket to another existing contact. `get_redmine_issue` does not return the Helpdesk fields, and `update_redmine_issue` cannot change the ticket's customer (a `customer_id` key is reported in `unverified_fields` and changes nothing).
 
-Requires `REDMINE_HELPDESK_TICKETS_ENABLED=true` and the Helpdesk and CRM plugins. `set_contact` is a **write operation** and is blocked in read-only mode; `get` is not.
+Requires `REDMINE_HELPDESK_TICKETS_ENABLED=true` and the Helpdesk and CRM plugins. `set_contact` and `create` are **write operations** and are blocked in read-only mode; `get` is not.
 
 **Parameters:**
-- `action` (string, required): `get` or `set_contact`
-- `issue_id` (integer, required): the ticket's issue id
-- `contact_id` (integer): `set_contact` only; the contact to assign
-- `email` (string): `set_contact` only; an email address of the contact to assign, matched exactly and case-insensitively among the issue's project's contacts. Give exactly one of `contact_id` and `email`.
+- `action` (string, required): `get`, `set_contact` or `create`
+- `issue_id` (integer): `get` and `set_contact`, required; the ticket's issue id. `create` refuses it.
+- `contact_id` (integer): `set_contact` and `create`; the contact to assign
+- `email` (string): `set_contact` and `create`; an email address of the contact to assign, matched exactly and case-insensitively among the project's contacts. Give exactly one of `contact_id` and `email`.
+- `project_id` (integer): `create`, required; the numeric id of the project to open the ticket in
+- `subject` (string): `create`, required
+- `description` (string): `create`
+- `tracker_id`, `priority_id`, `assigned_to_id` (integer): `create`. Helpdesk may replace `assigned_to_id` with the contact's own assignee when its "assign contact user" setting is on.
+- `custom_fields` (list): `create`; values as `[{"id": 2, "value": "QA"}]`. A project's required custom fields must be set, or Helpdesk refuses the ticket.
+- `source` (string): `create`; one of `email`, `web`, `phone`, `twitter`, `conversation`. Helpdesk uses `web` when omitted.
+- `cc_address` (string): `create`; addresses to copy on later replies
+- `ticket_date` (string): `create`; the request date as `YYYY-MM-DD`, today when omitted
 
-**Returns:** `{issue_id, contact, from_address, to_address, cc_address, message_id, source, is_incoming, ticket_date, reaction_time, first_response_time, resolve_time, last_agent_response_at, last_customer_response_at, vote, vote_comment, content}`, where `contact` is `{id, name}`. `set_contact` adds `previous_contact` (`{id, name}`). If the change went through but the updated ticket cannot be read back, the result carries a `warning`, `contact` holds only the new id, and `previous_contact` is still reported. `contact.name`, `previous_contact.name`, `content`, `vote_comment` and the address and `message_id` fields are wrapped in `<insecure-content>` tags: the plugin copies the addresses and message id from inbound email headers. On failure, `{"error": ...}` naming the step that failed and what to do about it.
+**Returns:** `{issue_id, contact, from_address, to_address, cc_address, message_id, source, is_incoming, ticket_date, reaction_time, first_response_time, resolve_time, last_agent_response_at, last_customer_response_at, vote, vote_comment, content}`, where `contact` is `{id, name}`. `set_contact` adds `previous_contact` (`{id, name}`); `create` adds `project_id`, and `issue_id` is the new ticket's issue id. If the change went through but the updated ticket cannot be read back, the result carries a `warning`, `contact` holds only the new id, and `previous_contact` is still reported. `contact.name`, `previous_contact.name`, `content`, `vote_comment` and the address and `message_id` fields are wrapped in `<insecure-content>` tags: the plugin copies the addresses and message id from inbound email headers. On failure, `{"error": ...}` naming the step that failed and what to do about it.
 
 **Example:**
 ```python
 manage_helpdesk_ticket(action="get", issue_id=804)
 manage_helpdesk_ticket(action="set_contact", issue_id=804, email="bob@example.com")
+manage_helpdesk_ticket(
+    action="create",
+    project_id=1,
+    subject="Printer on fire",
+    description="The office printer is smoking.",
+    email="bob@example.com",
+    source="phone",
+)
 ```
 
 **Notes:**
-- Both actions read `GET /issues/<id>.json` first. The plugin's own ticket lookup does not check issue visibility, so this keeps a caller from reading a private issue's description through the ticket.
+- `get` and `set_contact` read `GET /issues/<id>.json` first. The plugin's own ticket lookup does not check issue visibility, so this keeps a caller from reading a private issue's description through the ticket.
 - `set_contact` never creates a contact and never converts a plain issue into a ticket, both of which the plugin's `PUT /helpdesk_tickets/<id>.json` does on its own. It refuses an issue that is not a ticket, and a contact that is unknown, not visible, not linked to the issue's project, or without an email address. The project rule matches the web UI's default; a deployment with the CRM setting `cross_project_contacts` on can link the contact with `manage_contact(action="assign_to_project")` first.
-- An `email` lookup searches the issue's project's contacts, up to 500 of them; a broader match is refused with a request for `contact_id`.
+- `create` calls `POST /helpdesk_tickets.json` for a contact that is already linked to the project and has an email address, the same rule as `set_contact`. It never creates a contact, never links one to a project, and never emails the customer: the plugin's `send_as` option is not offered. Create a missing contact first with `manage_contact(action="create")`.
+- `create` is not idempotent: calling it again opens a second ticket. If Helpdesk fails with an internal error, the error says the ticket may have been created anyway; check with `list_redmine_issues` before retrying. If the plugin attaches a different contact that shares the email address, the tool moves the ticket back to the checked contact and adds a `warning`.
+- An `email` lookup searches the project's contacts, up to 500 of them; a broader match is refused with a request for `contact_id`.
 - After the change, replies go to the contact's **primary** email, even when it was found by a secondary one.
 - Redmine keeps no journal entry for a contact change, so `previous_contact` is the only record of the old value.
 - If someone removes the ticket's Helpdesk record in the moment between the tool's check and its write, the write recreates the record. With the Helpdesk settings "assign contact user" and "create private tickets" both on, that also makes the issue private.
-- OAuth scopes: `get` needs `view_issues` and `view_helpdesk_tickets`; `set_contact` also needs `edit_helpdesk_tickets` and `view_contacts`. The flag advertises `view_helpdesk_tickets`, `view_contacts`, `view_private_contacts` and `edit_helpdesk_tickets` (the last unless read-only).
+- OAuth scopes: `get` needs `view_issues` and `view_helpdesk_tickets`; `set_contact` also needs `edit_helpdesk_tickets` and `view_contacts`; `create` needs `add_issues`, `view_contacts` and `edit_helpdesk_tickets`. The flag advertises `view_helpdesk_tickets`, `view_contacts`, `view_private_contacts` and `edit_helpdesk_tickets` (the last unless read-only).
 
 **Acknowledgement:** RedmineUP provided evaluation copies of the Helpdesk PRO (4.3.1) and CRM PRO (4.5.0) plugins for verifying `send_helpdesk_email_reply` and `manage_helpdesk_ticket` against a real Pro instance on Redmine 6.1.1.
 

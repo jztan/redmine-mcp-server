@@ -1104,3 +1104,22 @@ class TestCreateFailures:
         assert "error" not in result
         assert "could not be read" in result["warning"]
         assert "list_redmine_issues" in result["warning"]
+
+
+class TestCreateMetadata:
+    def test_tool_kind_is_destructive_not_idempotent(self):
+        from redmine_mcp_server._annotations import TOOL_KINDS, ToolKind
+
+        assert TOOL_KINDS["manage_helpdesk_ticket"] is ToolKind.WRITE_DESTRUCTIVE
+
+    def test_create_scopes(self):
+        from redmine_mcp_server.oauth_scopes import TOOL_SCOPES
+
+        assert TOOL_SCOPES["manage_helpdesk_ticket"]["create"] == frozenset(
+            {"add_issues", "view_contacts", "edit_helpdesk_tickets"}
+        )
+
+    def test_create_is_a_write_action(self):
+        from redmine_mcp_server._decorators import ACTION_SPECS, ActionMode
+
+        assert ACTION_SPECS["manage_helpdesk_ticket"]["create"] is ActionMode.WRITE
