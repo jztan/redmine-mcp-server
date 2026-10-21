@@ -9,6 +9,7 @@ answers. Run against the 8082 sandbox:
 Every refusal is followed by a read showing the ticket unchanged.
 """
 
+import json
 import os
 import sys
 from unittest.mock import patch
@@ -24,6 +25,7 @@ from redmine_mcp_server._client import (  # noqa: E402
     REDMINE_URL,
     REDMINE_USERNAME,
 )
+from redmine_mcp_server._client import _get_redmine_client  # noqa: E402
 from redmine_mcp_server.tools.helpdesk import manage_helpdesk_ticket  # noqa: E402
 
 TICKET = int(os.environ.get("REDMINE_TEST_HELPDESK_TICKET", "804"))
@@ -36,6 +38,14 @@ OTHER_EMAIL = os.environ.get(
 PLAIN_ISSUE = int(os.environ.get("REDMINE_TEST_PLAIN_ISSUE", "307"))
 OTHER_PROJECT_CONTACT = int(os.environ.get("REDMINE_TEST_OTHER_PROJECT_CONTACT", "0"))
 NO_EMAIL_CONTACT = int(os.environ.get("REDMINE_TEST_NO_EMAIL_CONTACT", "0"))
+PROJECT = int(os.environ.get("REDMINE_TEST_HELPDESK_PROJECT", "1"))
+# The sandbox's project 1 requires these two custom fields on every issue.
+CUSTOM_FIELDS = json.loads(
+    os.environ.get(
+        "REDMINE_TEST_HELPDESK_CUSTOM_FIELDS",
+        '[{"id": 1, "value": "Medium"}, {"id": 2, "value": "QA"}]',
+    )
+)
 FLAGS = {"REDMINE_HELPDESK_TICKETS_ENABLED": "true", "REDMINE_MCP_READ_ONLY": "false"}
 
 
@@ -151,3 +161,73 @@ async def test_no_email_contact_is_refused():
     )
     assert "has no email address" in result["error"]
     assert await contact_id_now() == HOME_CONTACT
+
+
+@pytest.fixture
+def created_tickets():
+    ids = []
+    yield ids
+    for issue_id in ids:
+        _get_redmine_client().issue.delete(issue_id)
+
+
+async def create(created_tickets, **kwargs):
+    result = await run(
+        action="create",
+        project_id=PROJECT,
+        subject="manage_helpdesk_ticket create (#395) live check",
+        **kwargs,
+    )
+    if isinstance(result.get("issue_id"), int):
+        created_tickets.append(result["issue_id"])
+    return result
+
+
+def contact_projects(contact_id):
+    kwargs = {"timeout": 10, "auth": (REDMINE_USERNAME, REDMINE_PASSWORD or "")}
+    contact = requests.get(
+        f"{REDMINE_URL}/contacts/{contact_id}.json", **kwargs
+    ).json()["contact"]
+    return sorted(p["id"] for p in contact.get("projects") or [])
+
+
+async def test_create_by_email(created_tickets):
+    result = await create(
+        created_tickets,
+        email=HOME_EMAIL,
+        custom_fields=CUSTOM_FIELDS,
+        source="phone",
+        ticket_date="2026-10-01",
+    )
+    assert "error" not in result and "warning" not in result, result
+    assert result["contact"]["id"] == HOME_CONTACT
+    assert result["source"] == "Phone"
+    assert result["ticket_date"] == "2026-10-01"
+    again = await run(action="get", issue_id=result["issue_id"])
+    assert again["contact"]["id"] == HOME_CONTACT
+
+
+async def test_create_by_id(created_tickets):
+    result = await create(
+        created_tickets, contact_id=OTHER_CONTACT, custom_fields=CUSTOM_FIELDS
+    )
+    assert "error" not in result, result
+    assert result["contact"]["id"] == OTHER_CONTACT
+
+
+@pytest.mark.skipif(OTHER_PROJECT_CONTACT == 0, reason="seed the other-project contact")
+async def test_create_refuses_other_project_contact(created_tickets):
+    before = contact_projects(OTHER_PROJECT_CONTACT)
+    result = await create(
+        created_tickets,
+        contact_id=OTHER_PROJECT_CONTACT,
+        custom_fields=CUSTOM_FIELDS,
+    )
+    assert "not linked to the project" in result["error"]
+    assert contact_projects(OTHER_PROJECT_CONTACT) == before
+
+
+async def test_create_missing_required_field(created_tickets):
+    result = await create(created_tickets, email=HOME_EMAIL)
+    assert "cannot be blank" in result["error"], result
+    assert "Nothing was created" in result["error"]
