@@ -599,8 +599,7 @@ def _post_ticket(body: Dict[str, Any]) -> Any:
 def _ticket_body(validated: Dict[str, Any], address: str) -> Dict[str, Any]:
     """The POST body. Only checked values go in, and never ``send_as``.
 
-    The plugin looks the contact up by ``contact.email``, so the address
-    sent is always one of the contact this tool has already checked.
+    ``address`` is always an email of the contact this tool has checked.
     """
     issue: Dict[str, Any] = {
         "project_id": validated["project_id"],
@@ -687,8 +686,9 @@ def _create_ticket(validated: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # The controller's ``rescue Exception`` renders "<message> (<backtrace.first>)".
-# Frames can hold parentheses of their own: "in 'block (2 levels) in save'".
-_PLUGIN_BACKTRACE = re.compile(r"\s*\((?:/|[A-Za-z]:\\)\S*\.rb:\d+:in .*\)\s*$")
+# The frame can be any file (a .rb, an .rsb template, <internal:kernel>,
+# (eval)) and can hold parentheses of its own ("in 'block (2 levels) in x'").
+_PLUGIN_BACKTRACE = re.compile(r"\s*\((?:[^()]|\([^()]*\))*:\d+:in .*\)\s*$")
 
 
 def _create_validation_error(
@@ -716,8 +716,7 @@ def _repoint_created(
 ) -> Dict[str, Any]:
     """Move a new ticket back to the checked contact.
 
-    Happens when two contacts share the address sent. The other contact is
-    reported by id only.
+    The other contact is reported by id only.
     """
     try:
         response = _put_ticket_contact(issue_id, target)
@@ -739,8 +738,7 @@ def _repoint_created(
     result["project_id"] = project_id
     result["warning"] = (
         f"Helpdesk attached contact {attached} instead of {target}; the ticket "
-        f"was moved back to {target}. Contacts {target} and {attached} share "
-        "an email address."
+        f"was moved back to {target}."
     )
     return result
 
@@ -810,8 +808,8 @@ async def manage_helpdesk_ticket(
     ``project_id`` for an existing contact, given either ``contact_id`` or
     ``email`` (exactly one). The same contact rule as ``set_contact``
     applies: the contact must already be linked to the project and have an
-    email address; the tool never creates a contact or links one to a
-    project. It never emails the customer. It is not idempotent: calling it
+    email address; the tool never creates a contact. It never emails the
+    customer. It is not idempotent: calling it
     again opens a second ticket.
 
     Args:

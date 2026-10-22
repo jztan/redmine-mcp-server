@@ -183,14 +183,6 @@ async def create(created_tickets, **kwargs):
     return result
 
 
-def contact_projects(contact_id):
-    kwargs = {"timeout": 10, "auth": (REDMINE_USERNAME, REDMINE_PASSWORD or "")}
-    contact = requests.get(
-        f"{REDMINE_URL}/contacts/{contact_id}.json", **kwargs
-    ).json()["contact"]
-    return sorted(p["id"] for p in contact.get("projects") or [])
-
-
 async def test_create_by_email(created_tickets):
     result = await create(
         created_tickets,
@@ -217,14 +209,12 @@ async def test_create_by_id(created_tickets):
 
 @pytest.mark.skipif(OTHER_PROJECT_CONTACT == 0, reason="seed the other-project contact")
 async def test_create_refuses_other_project_contact(created_tickets):
-    before = contact_projects(OTHER_PROJECT_CONTACT)
     result = await create(
         created_tickets,
         contact_id=OTHER_PROJECT_CONTACT,
         custom_fields=CUSTOM_FIELDS,
     )
     assert "not linked to the project" in result["error"]
-    assert contact_projects(OTHER_PROJECT_CONTACT) == before
 
 
 async def test_create_missing_required_field(created_tickets):

@@ -1043,6 +1043,17 @@ class TestCreateFailures:
                 "'block (2 levels) in save')",
                 "boom",
             ),
+            (
+                "undefined method 'name' for nil (/usr/src/redmine/plugins/"
+                "redmine_contacts_helpdesk/app/views/helpdesk_tickets/"
+                "create.api.rsb:2:in 'block in _render')",
+                "undefined method 'name' for nil",
+            ),
+            (
+                "stack level too deep (<internal:kernel>:91:in 'tap')",
+                "stack level too deep",
+            ),
+            ("boom ((eval):1:in 'run')", "boom"),
         ],
     )
     async def test_internal_error_is_scrubbed_and_flagged(
@@ -1076,6 +1087,7 @@ class TestCreateFailures:
         assert result["issue_id"] == 808
         assert result["contact"]["id"] == 374
         assert "999" in result["warning"]
+        assert "share" not in result["warning"]
         assert "Someone Else" not in json.dumps(result)
 
     async def test_contact_mismatch_repoint_fails(self, mock_redmine):
@@ -1093,6 +1105,7 @@ class TestCreateFailures:
         assert result["issue_id"] == 808
         assert "999" in result["warning"]
         assert "set_contact" in result["warning"]
+        assert "share" not in result["warning"]
         assert "Someone Else" not in json.dumps(result)
 
     async def test_unreadable_201(self, mock_redmine):

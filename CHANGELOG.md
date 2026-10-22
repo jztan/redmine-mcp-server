@@ -11,8 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `manage_helpdesk_ticket(action="create")` opens a RedmineUP Helpdesk ticket
   for an existing contact in one call, instead of `create_redmine_issue`
   followed by `set_contact`. The contact must already be linked to the
-  project and have an email address; the tool never creates or links a
-  contact and never emails the customer. Takes the issue's subject,
+  project and have an email address; the tool never creates a contact
+  and never emails the customer. Takes the issue's subject,
   description, tracker, priority, assignee and custom fields, plus the
   ticket's `source`, `cc_address` and `ticket_date`. Under OAuth it needs
   `add_issues`, `view_contacts` and `edit_helpdesk_tickets`. Because
