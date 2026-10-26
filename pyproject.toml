@@ -33,7 +33,7 @@ classifiers = [
 dependencies = [
     "python-dotenv>=1.0.0,<2",
     "httpx>=0.27.0,<1",
-    "fastmcp>=4.0.1,<5",
+    "fastmcp>=4.1.2,<5",
     "python-redmine>=2.5.0,<3",
     "requests>=2.31.0,<3",
     "starlette>=1.3.1,<2",
@@ -78,7 +78,14 @@ dev = [
 # entry once an upstream dependency raises its own floor past these versions.
 #   click < 8.3.3  -> PYSEC-2026-2132 (via uvicorn / rich-click stack)
 #   mcp   < 2.2.0  -> CVE-2026-59951 (via fastmcp-slim)
-constraint-dependencies = ["click>=8.3.3", "mcp>=2.2.0"]
+#   certifi < 2026.10.19 -> PYSEC-2026-4320 (via httpx / requests)
+#   opentelemetry-api < 1.45.1 -> CVE-2026-114603 (via fastmcp)
+constraint-dependencies = [
+    "click>=8.3.3",
+    "mcp>=2.2.0",
+    "certifi>=2026.10.19",
+    "opentelemetry-api>=1.45.1",
+]
 
 [tool.black]
 # CI and the production image run Python 3.13. Pin Black's grammar target so
