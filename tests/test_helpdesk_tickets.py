@@ -137,6 +137,40 @@ class TestGet:
         assert result["is_incoming"] is True
         assert result["ticket_date"] == "2026-09-30"
 
+    @pytest.mark.parametrize(
+        "plugin_fields, expected",
+        [
+            ({"last_customer_response_at": "2026-09-01"}, "2026-09-01"),
+            ({"last_contact_response_at": "2026-10-01"}, "2026-10-01"),
+            ({"last_contact_response_at": ""}, ""),
+            (
+                {
+                    "last_contact_response_at": "2026-10-01",
+                    "last_customer_response_at": "2026-09-01",
+                },
+                "2026-10-01",
+            ),
+        ],
+        ids=["before-4.4", "4.4", "4.4-no-response-yet", "both-names"],
+    )
+    async def test_contact_response_date_keeps_its_output_key(
+        self, mock_redmine, plugin_fields, expected
+    ):
+        ticket = copy.deepcopy(TICKET_804)
+        del ticket["helpdesk_ticket"]["last_customer_response_at"]
+        ticket["helpdesk_ticket"].update(plugin_fields)
+        result, _ = await call(
+            mock_redmine,
+            {
+                ("get", "/issues/804.json"): ISSUE_804,
+                ("get", "/helpdesk_tickets/804.json"): ticket,
+            },
+            action="get",
+            issue_id=804,
+        )
+        assert result["last_customer_response_at"] == expected
+        assert "last_contact_response_at" not in result
+
     async def test_customer_controlled_fields_are_wrapped(self, mock_redmine):
         ticket = copy.deepcopy(TICKET_804)
         ticket["helpdesk_ticket"].update(
