@@ -48,8 +48,9 @@ _HELPDESK_DISABLED_ERROR = {
     )
 }
 
-# What Helpdesk 4.2.9 says, in a 422, for an issue with no customer attached.
-_NO_CUSTOMER_MARKER = "relate to customer"
+# What Helpdesk says, in a 422, for an issue with no customer attached: 4.2.9
+# says customer, 4.4 says contact (#423).
+_NO_CUSTOMER_MARKERS = ("relate to customer", "relate to contact")
 
 
 def _send_email_note_api(payload: Dict[str, Any]) -> Any:
@@ -139,7 +140,9 @@ def send_helpdesk_email_reply(
         # An issue with no Helpdesk customer answers 422 like an unknown one
         # does (#301), and only the plugin's wording tells them apart. If that
         # wording changes, the plugin's own message still goes through below.
-        if isinstance(e, ValidationError) and _NO_CUSTOMER_MARKER in str(e):
+        if isinstance(e, ValidationError) and any(
+            marker in str(e) for marker in _NO_CUSTOMER_MARKERS
+        ):
             return {
                 "error": (
                     f"Issue {issue_id} is not a Helpdesk ticket: it has no "
@@ -196,7 +199,6 @@ _TICKET_PLAIN_FIELDS = (
     "first_response_time",
     "resolve_time",
     "last_agent_response_at",
-    "last_customer_response_at",
     "vote",
 )
 # Customer-controlled: the message body, the vote comment, and the address
@@ -291,6 +293,11 @@ def _ticket_to_dict(issue_id: int, ticket: Dict[str, Any]) -> Dict[str, Any]:
     }
     for key in _TICKET_PLAIN_FIELDS:
         result[key] = ticket.get(key)
+    # Helpdesk 4.4 renamed this to ``last_contact_response_at`` (#423). The
+    # result keeps the old name for either.
+    result["last_customer_response_at"] = ticket.get(
+        "last_contact_response_at", ticket.get("last_customer_response_at")
+    )
     for key in _TICKET_WRAPPED_FIELDS:
         result[key] = wrap_insecure_content(ticket.get(key))
     return result

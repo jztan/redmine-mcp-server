@@ -150,17 +150,21 @@ class TestSendHelpdeskEmailReply:
         assert "999999999" in json.dumps(result)
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("wording", ["customer", "contact"])
     @patch("redmine_mcp_server._client.redmine")
-    async def test_issue_without_customer_is_named_as_not_a_ticket(self, mock_redmine):
+    async def test_issue_without_customer_is_named_as_not_a_ticket(
+        self, mock_redmine, wording
+    ):
         # Also a 422, told apart from the unknown issue only by its wording.
+        # Helpdesk 4.4 changed "customer" to "contact" in the message.
         mock_redmine.engine.request.side_effect = ValidationError(
-            "Issue with ID: 307 should be present and relate to customer"
+            f"Issue with ID: 307 should be present and relate to {wording}"
         )
         with patch.dict(os.environ, _ON):
             result = await send_helpdesk_email_reply(issue_id=307, content="Hi")
         assert "not a Helpdesk ticket" in result["error"]
         assert "update_redmine_issue" in result["error"]
-        assert "relate to customer" in result["error"]
+        assert f"relate to {wording}" in result["error"]
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.redmine")

@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `create` is not idempotent, the tool's annotation drops `idempotentHint`
   ([#395](https://github.com/jztan/redmine-mcp-server/issues/395)).
 
+### Fixed
+- Helpdesk 4.4.0 renamed "customer" to "contact" in its API, which broke two
+  things. `manage_helpdesk_ticket` always returned
+  `last_customer_response_at: null`, and `send_helpdesk_email_reply` on an
+  issue with no contact lost its "not a Helpdesk ticket" error. Both now work
+  on old and new plugin versions, and the result still uses the key
+  `last_customer_response_at`
+  ([#423](https://github.com/jztan/redmine-mcp-server/issues/423)).
+
 ### Contributors
 - @goizper requested the create action and documented the endpoint from the
   plugin source ([#395](https://github.com/jztan/redmine-mcp-server/issues/395))
