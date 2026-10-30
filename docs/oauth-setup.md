@@ -274,7 +274,8 @@ Notes:
   `invalid_scope`. `REDMINE_HELPDESK_ENABLED` on its own advertises nothing
   extra. Unlike the CRM tools, this one does require its scopes (`get`:
   `view_issues` and `view_helpdesk_tickets`; `set_contact` adds
-  `edit_helpdesk_tickets` and `view_contacts`), since they are only
+  `edit_helpdesk_tickets` and `view_contacts`; `create` needs `add_issues`,
+  `view_contacts` and `edit_helpdesk_tickets`), since they are only
   advertised under the flag that also lists the tool.
 - A notes-only `update_redmine_issue` call (fields containing nothing but
   `notes` / `private_notes`, no uploads) requires `add_issue_notes` instead

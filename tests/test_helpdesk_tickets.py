@@ -422,7 +422,7 @@ class TestSetContactById:
             issue_id=804,
             contact_id=375,
         )
-        assert "not linked to this issue's project" in result["error"]
+        assert "not linked to the project" in result["error"]
         assert 'manage_contact(action="assign_to_project"' in result["error"]
         assert puts(calls) == []
 
@@ -436,7 +436,7 @@ class TestSetContactById:
             issue_id=804,
             contact_id=375,
         )
-        assert "not linked to this issue's project" in result["error"]
+        assert "not linked to the project" in result["error"]
         assert puts(calls) == []
 
     async def test_contact_without_email(self, mock_redmine):
@@ -628,7 +628,7 @@ class TestSetContactByEmail:
             issue_id=804,
             email="bob.probe@example.com",
         )
-        assert "No contact in this issue's project" in result["error"]
+        assert "No contact in the project" in result["error"]
         assert 'manage_contact(action="create")' in result["error"]
         assert puts(calls) == []
 
@@ -734,3 +734,439 @@ class TestSetContactArguments:
             )
         assert "read-only" in result["error"].lower()
         assert mock_redmine.engine.request.side_effect.calls == []
+
+
+VALID = dict(
+    action="create",
+    project_id=1,
+    subject="Printer on fire",
+    email="alice.probe@example.com",
+)
+
+
+def valid(**overrides):
+    kwargs = {**VALID, **overrides}
+    return {k: v for k, v in kwargs.items() if v is not _DROP}
+
+
+_DROP = object()
+
+
+@patch("redmine_mcp_server._client.redmine")
+class TestCreateArguments:
+    async def test_create_refuses_issue_id(self, mock_redmine):
+        result, calls = await call(mock_redmine, {}, **valid(issue_id=804))
+        assert "create does not take issue_id" in result["error"]
+        assert calls == []
+
+    @pytest.mark.parametrize("bad", [None, 0, -1, "1", True])
+    async def test_bad_project_id(self, mock_redmine, bad):
+        result, calls = await call(mock_redmine, {}, **valid(project_id=bad))
+        assert "project_id must be a positive integer" in result["error"]
+        assert calls == []
+
+    @pytest.mark.parametrize("bad", [None, "", "   ", 5])
+    async def test_blank_subject(self, mock_redmine, bad):
+        result, calls = await call(mock_redmine, {}, **valid(subject=bad))
+        assert "subject is required" in result["error"]
+        assert calls == []
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [{}, {"contact_id": 374, "email": "a@b.c"}],
+    )
+    async def test_exactly_one_contact(self, mock_redmine, kwargs):
+        result, calls = await call(mock_redmine, {}, **valid(email=_DROP), **kwargs)
+        assert "exactly one of contact_id or email" in result["error"]
+        assert calls == []
+
+    @pytest.mark.parametrize(
+        "name", ["tracker_id", "priority_id", "assigned_to_id", "contact_id"]
+    )
+    async def test_bad_optional_ints(self, mock_redmine, name):
+        overrides = {name: 0}
+        if name == "contact_id":
+            overrides["email"] = _DROP
+        result, calls = await call(mock_redmine, {}, **valid(**overrides))
+        assert f"{name} must be a positive integer" in result["error"]
+        assert calls == []
+
+    @pytest.mark.parametrize(
+        "bad",
+        ["x", [1], [{"value": "a"}], [{"id": 0, "value": "a"}]],
+    )
+    async def test_bad_custom_fields(self, mock_redmine, bad):
+        result, calls = await call(mock_redmine, {}, **valid(custom_fields=bad))
+        assert "custom_fields must be a list of {id, value} objects" in result["error"]
+        assert calls == []
+
+    async def test_bad_source(self, mock_redmine):
+        result, calls = await call(mock_redmine, {}, **valid(source="fax"))
+        assert "email, web, phone, twitter, conversation" in result["error"]
+        assert calls == []
+
+    @pytest.mark.parametrize(
+        "bad", ["2026-13-01", "01/10/2026", "2026-10-01 10:00", "20261001"]
+    )
+    async def test_bad_ticket_date(self, mock_redmine, bad):
+        result, calls = await call(mock_redmine, {}, **valid(ticket_date=bad))
+        assert "ticket_date must be YYYY-MM-DD" in result["error"]
+        assert calls == []
+
+    async def test_bad_cc_address(self, mock_redmine):
+        result, calls = await call(mock_redmine, {}, **valid(cc_address=5))
+        assert "cc_address must be a string" in result["error"]
+        assert calls == []
+
+    async def test_description_must_be_string(self, mock_redmine):
+        result, calls = await call(mock_redmine, {}, **valid(description=5))
+        assert "description must be a string" in result["error"]
+        assert calls == []
+
+    async def test_read_only_mode(self, mock_redmine):
+        mock_redmine.engine.request.side_effect = router({})
+        with patch.dict(os.environ, {**ON, "REDMINE_MCP_READ_ONLY": "true"}):
+            result = await manage_helpdesk_ticket(**VALID)
+        assert "read-only" in result["error"].lower()
+        assert mock_redmine.engine.request.side_effect.calls == []
+
+
+PROJECT_1 = {"project": {"id": 1, "identifier": "testing-project1", "name": "Cartly"}}
+CONTACT_374 = {
+    "contact": {
+        "id": 374,
+        "first_name": "Alice",
+        "last_name": "Probe",
+        "emails": [{"address": "alice.probe@example.com"}],
+        "projects": [{"id": 1, "name": "Cartly"}],
+    }
+}
+# What Helpdesk 4.3.1 answered to a create on the 8082 sandbox (2026-10-22),
+# with the contact swapped for 374.
+CREATED_808 = {
+    "helpdesk_ticket": {
+        "id": 808,
+        "from_address": "alice.probe@example.com",
+        "to_address": "",
+        "cc_address": "cc.395@example.com",
+        "message_id": None,
+        "ticket_date": "2026-10-01",
+        "content": None,
+        "source": "Phone",
+        "is_incoming": True,
+        "reaction_time": "",
+        "first_response_time": "",
+        "resolve_time": "",
+        "last_agent_response_at": "",
+        "last_customer_response_at": "",
+        "contact": {"id": 374, "name": "Alice Probe"},
+        "vote": None,
+        "vote_comment": None,
+    }
+}
+CREATE = "/helpdesk_tickets.json"
+
+
+def create_routes(extra=None):
+    routes = {
+        ("get", "/projects/1.json"): PROJECT_1,
+        ("get", SEARCH): search_page(CONTACT_374["contact"]),
+        ("get", "/contacts/374.json"): CONTACT_374,
+        ("post", CREATE): CREATED_808,
+    }
+    routes.update(extra or {})
+    return routes
+
+
+def posted(calls):
+    bodies = [json.loads(c[2]["data"]) for c in calls if c[0] == "post"]
+    assert len(bodies) == 1, calls
+    return bodies[0]
+
+
+def all_keys(value):
+    if isinstance(value, dict):
+        for key, inner in value.items():
+            yield key
+            yield from all_keys(inner)
+    elif isinstance(value, list):
+        for inner in value:
+            yield from all_keys(inner)
+
+
+@patch("redmine_mcp_server._client.redmine")
+class TestCreate:
+    async def test_happy_path_by_email(self, mock_redmine):
+        result, calls = await call(
+            mock_redmine,
+            create_routes(),
+            **valid(
+                description="It is on fire.",
+                tracker_id=1,
+                priority_id=2,
+                assigned_to_id=5,
+                custom_fields=[{"id": 2, "value": "QA"}],
+                source="phone",
+                cc_address="cc.395@example.com",
+                ticket_date="2026-10-01",
+            ),
+        )
+        assert [(c[0], c[1]) for c in calls] == [
+            ("get", "/projects/1.json"),
+            ("get", SEARCH),
+            ("get", "/contacts/374.json"),
+            ("post", CREATE),
+        ]
+        assert posted(calls) == {
+            "helpdesk_ticket": {
+                "issue": {
+                    "project_id": 1,
+                    "subject": "Printer on fire",
+                    "description": "It is on fire.",
+                    "tracker_id": 1,
+                    "priority_id": 2,
+                    "assigned_to_id": 5,
+                    "custom_fields": [{"id": 2, "value": "QA"}],
+                },
+                "contact": {"email": "alice.probe@example.com"},
+                "source": "phone",
+                "cc_address": "cc.395@example.com",
+                "ticket_date": "2026-10-01",
+            }
+        }
+        assert result["issue_id"] == 808
+        assert result["project_id"] == 1
+        assert result["contact"]["id"] == 374
+        assert unwrap(result["from_address"]) == "alice.probe@example.com"
+        assert "error" not in result and "warning" not in result
+
+    async def test_by_id_posts_the_contacts_first_email(self, mock_redmine):
+        contact = copy.deepcopy(CONTACT_374)
+        contact["contact"]["emails"] = [
+            {"address": ""},
+            {"address": "first@x.io"},
+            {"address": "second@x.io"},
+        ]
+        result, calls = await call(
+            mock_redmine,
+            create_routes({("get", "/contacts/374.json"): contact}),
+            **valid(email=_DROP, contact_id=374),
+        )
+        assert "error" not in result
+        assert posted(calls)["helpdesk_ticket"]["contact"] == {"email": "first@x.io"}
+        assert all(c[1] != SEARCH for c in calls)
+
+    async def test_omitted_optionals_are_not_sent(self, mock_redmine):
+        result, calls = await call(mock_redmine, create_routes(), **valid())
+        body = posted(calls)["helpdesk_ticket"]
+        assert set(body) == {"issue", "contact"}
+        assert body["issue"] == {"project_id": 1, "subject": "Printer on fire"}
+
+    async def test_forbidden_keys_never_sent(self, mock_redmine):
+        result, calls = await call(
+            mock_redmine,
+            create_routes(),
+            **valid(source="email", cc_address="x@y.z", ticket_date="2026-10-01"),
+        )
+        keys = set(all_keys(posted(calls)))
+        assert not keys & {
+            "send_as",
+            "from_address",
+            "is_incoming",
+            "message_id",
+            "to_address",
+        }
+
+    @pytest.mark.parametrize(
+        "extra, kwargs, expected",
+        [
+            (
+                {("get", "/projects/1.json"): ResourceNotFoundError()},
+                {},
+                "Project 1 not found or not visible to you",
+            ),
+            (
+                {("get", "/projects/1.json"): ForbiddenError()},
+                {},
+                "Reading project 1 is forbidden",
+            ),
+            ({}, {"email": _DROP, "contact_id": 378}, None),
+            (
+                {
+                    ("get", "/contacts/374.json"): {
+                        "contact": {**CONTACT_374["contact"], "emails": []}
+                    }
+                },
+                {},
+                "has no email address",
+            ),
+            (
+                {("get", SEARCH): search_page()},
+                {},
+                "No contact in the project has the email",
+            ),
+        ],
+    )
+    async def test_refusals_never_post(self, mock_redmine, extra, kwargs, expected):
+        routes = create_routes(extra)
+        if kwargs.get("contact_id") == 378:
+            # Linked to project 2 only.
+            routes[("get", "/contacts/378.json")] = {
+                "contact": {
+                    "id": 378,
+                    "emails": [{"address": "carol.otherproj@example.com"}],
+                    "projects": [{"id": 2, "name": "Other"}],
+                }
+            }
+            expected = "is not linked to the project"
+        result, calls = await call(mock_redmine, routes, **valid(**kwargs))
+        assert expected in result["error"]
+        assert not [c for c in calls if c[0] == "post"]
+
+
+OTHER_CONTACT_CREATED = copy.deepcopy(CREATED_808)
+OTHER_CONTACT_CREATED["helpdesk_ticket"]["contact"] = {
+    "id": 999,
+    "name": "Someone Else",
+}
+CREATED_808_REPOINTED = copy.deepcopy(CREATED_808)
+
+
+@patch("redmine_mcp_server._client.redmine")
+class TestCreateFailures:
+    async def test_post_forbidden(self, mock_redmine):
+        result, _ = await call(
+            mock_redmine, create_routes({("post", CREATE): ForbiddenError()}), **valid()
+        )
+        assert "edit_helpdesk_tickets" in result["error"]
+        assert "Nothing was created" in result["error"]
+
+    async def test_post_not_found(self, mock_redmine):
+        result, _ = await call(
+            mock_redmine,
+            create_routes({("post", CREATE): ResourceNotFoundError()}),
+            **valid(),
+        )
+        assert "/helpdesk_tickets" in result["error"]
+        assert "Nothing was created" in result["error"]
+
+    async def test_validation_error_passes_through(self, mock_redmine):
+        result, _ = await call(
+            mock_redmine,
+            create_routes(
+                {("post", CREATE): ValidationError("Department cannot be blank")}
+            ),
+            **valid(),
+        )
+        assert "Department cannot be blank" in result["error"]
+        assert "Nothing was created" in result["error"]
+        assert result["code"] == "VALIDATION_FAILED"
+
+    @pytest.mark.parametrize(
+        "raw, message",
+        [
+            (
+                "Message body can't be blank (/usr/src/redmine/plugins/"
+                "redmine_contacts_helpdesk/app/models/helpdesk_mail_messenger/"
+                "initial_message.rb:60:in "
+                "'HelpdeskMailMessenger::InitialMessage#validate')",
+                "Message body can't be blank",
+            ),
+            (
+                "boom (/usr/src/redmine/app/models/issue.rb:10:in "
+                "'block (2 levels) in save')",
+                "boom",
+            ),
+            (
+                "undefined method 'name' for nil (/usr/src/redmine/plugins/"
+                "redmine_contacts_helpdesk/app/views/helpdesk_tickets/"
+                "create.api.rsb:2:in 'block in _render')",
+                "undefined method 'name' for nil",
+            ),
+            (
+                "stack level too deep (<internal:kernel>:91:in 'tap')",
+                "stack level too deep",
+            ),
+            ("boom ((eval):1:in 'run')", "boom"),
+        ],
+    )
+    async def test_internal_error_is_scrubbed_and_flagged(
+        self, mock_redmine, raw, message
+    ):
+        result, _ = await call(
+            mock_redmine,
+            create_routes({("post", CREATE): ValidationError(raw)}),
+            **valid(),
+        )
+        assert message in result["error"]
+        assert "may have been created" in result["error"]
+        assert "list_redmine_issues" in result["error"]
+        assert "/usr/src" not in result["error"]
+        assert ".rb:" not in result["error"]
+
+    async def test_contact_mismatch_is_repointed(self, mock_redmine):
+        result, calls = await call(
+            mock_redmine,
+            create_routes(
+                {
+                    ("post", CREATE): OTHER_CONTACT_CREATED,
+                    ("put", "/helpdesk_tickets/808.json"): CREATED_808_REPOINTED,
+                }
+            ),
+            **valid(),
+        )
+        assert [json.loads(c[2]["data"]) for c in puts(calls)] == [
+            {"helpdesk_ticket": {"from_address": "374"}}
+        ]
+        assert result["issue_id"] == 808
+        assert result["contact"]["id"] == 374
+        assert "999" in result["warning"]
+        assert "share" not in result["warning"]
+        assert "Someone Else" not in json.dumps(result)
+
+    async def test_contact_mismatch_repoint_fails(self, mock_redmine):
+        result, _ = await call(
+            mock_redmine,
+            create_routes(
+                {
+                    ("post", CREATE): OTHER_CONTACT_CREATED,
+                    ("put", "/helpdesk_tickets/808.json"): ServerError(),
+                }
+            ),
+            **valid(),
+        )
+        assert "error" not in result
+        assert result["issue_id"] == 808
+        assert "999" in result["warning"]
+        assert "set_contact" in result["warning"]
+        assert "share" not in result["warning"]
+        assert "Someone Else" not in json.dumps(result)
+
+    async def test_unreadable_201(self, mock_redmine):
+        result, _ = await call(
+            mock_redmine,
+            create_routes({("post", CREATE): JSONDecodeError(None)}),
+            **valid(),
+        )
+        assert "error" not in result
+        assert "could not be read" in result["warning"]
+        assert "list_redmine_issues" in result["warning"]
+
+
+class TestCreateMetadata:
+    def test_tool_kind_is_destructive_not_idempotent(self):
+        from redmine_mcp_server._annotations import TOOL_KINDS, ToolKind
+
+        assert TOOL_KINDS["manage_helpdesk_ticket"] is ToolKind.WRITE_DESTRUCTIVE
+
+    def test_create_scopes(self):
+        from redmine_mcp_server.oauth_scopes import TOOL_SCOPES
+
+        assert TOOL_SCOPES["manage_helpdesk_ticket"]["create"] == frozenset(
+            {"add_issues", "view_contacts", "edit_helpdesk_tickets"}
+        )
+
+    def test_create_is_a_write_action(self):
+        from redmine_mcp_server._decorators import ACTION_SPECS, ActionMode
+
+        assert ACTION_SPECS["manage_helpdesk_ticket"]["create"] is ActionMode.WRITE

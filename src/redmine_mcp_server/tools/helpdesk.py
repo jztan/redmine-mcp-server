@@ -10,8 +10,10 @@ with the same fields (confirmed on Helpdesk 4.2.9 / Redmine 6.1.2 in #301),
 so this uses JSON like every other call the server makes.
 """
 
+import datetime
 import json
-from typing import Any, Dict, Literal, Optional
+import re
+from typing import Any, Dict, List, Literal, Optional
 
 from redminelib.exceptions import (
     ForbiddenError,
@@ -367,7 +369,7 @@ def _find_contact_id_by_email(project_id: Any, email: str) -> int:
         )
     if not matches:
         raise _Refusal(
-            f"No contact in this issue's project has the email "
+            f"No contact in the project has the email "
             f"'{email.strip()}'. Create it with manage_contact(action=\"create\") "
             "or link an existing one with "
             'manage_contact(action="assign_to_project"), then retry.'
@@ -375,7 +377,7 @@ def _find_contact_id_by_email(project_id: Any, email: str) -> int:
     if len(matches) > 1:
         ids = ", ".join(str(m) for m in matches)
         raise _Refusal(
-            f"Several contacts in this issue's project have the email "
+            f"Several contacts in the project have the email "
             f"'{email.strip()}' (ids {ids}). Pass contact_id to choose one."
         )
     return matches[0]
@@ -404,7 +406,7 @@ def _check_contact(contact_id: int, project_id: Any) -> Dict[str, Any]:
     linked = {p.get("id") for p in contact.get("projects") or [] if isinstance(p, dict)}
     if project_id not in linked:
         raise _Refusal(
-            f"Contact {contact_id} is not linked to this issue's project "
+            f"Contact {contact_id} is not linked to the project "
             f"(id {project_id}). Link it with "
             f'manage_contact(action="assign_to_project", contact_id={contact_id}, '
             f"project_id={project_id}), then retry."
@@ -519,21 +521,280 @@ def _set_contact_action(
     return result
 
 
-@action_dispatch({"get": ActionMode.READ, "set_contact": ActionMode.WRITE})
+# The plugin's own names for HelpdeskTicket sources (find_ticket_source).
+_TICKET_SOURCES = ("email", "web", "phone", "twitter", "conversation")
+_OPTIONAL_ISSUE_INTS = ("tracker_id", "priority_id", "assigned_to_id")
+
+
+def _validate_create(args: Dict[str, Any]) -> Optional[str]:
+    """The first problem with ``create``'s arguments, or None."""
+    if args.get("issue_id") is not None:
+        return "create does not take issue_id: Helpdesk assigns the new issue's id."
+    if not _is_positive_int(args.get("project_id")):
+        return "project_id must be a positive integer."
+    subject = args.get("subject")
+    if not isinstance(subject, str) or not subject.strip():
+        return "subject is required and cannot be blank."
+    description = args.get("description")
+    if description is not None and not isinstance(description, str):
+        return "description must be a string."
+    contact_id, email = args.get("contact_id"), args.get("email")
+    if (contact_id is None) == (email is None):
+        return "create needs exactly one of contact_id or email."
+    if contact_id is not None and not _is_positive_int(contact_id):
+        return "contact_id must be a positive integer."
+    if email is not None and (not isinstance(email, str) or not email.strip()):
+        return "email must be a non-blank string."
+    for name in _OPTIONAL_ISSUE_INTS:
+        value = args.get(name)
+        if value is not None and not _is_positive_int(value):
+            return f"{name} must be a positive integer."
+    custom_fields = args.get("custom_fields")
+    if custom_fields is not None and not (
+        isinstance(custom_fields, list)
+        and all(
+            isinstance(f, dict) and _is_positive_int(f.get("id")) and "value" in f
+            for f in custom_fields
+        )
+    ):
+        return "custom_fields must be a list of {id, value} objects."
+    source = args.get("source")
+    if source is not None and source not in _TICKET_SOURCES:
+        return f"source must be one of: {', '.join(_TICKET_SOURCES)}."
+    cc_address = args.get("cc_address")
+    if cc_address is not None and not isinstance(cc_address, str):
+        return "cc_address must be a string."
+    ticket_date = args.get("ticket_date")
+    if ticket_date is not None:
+        # fromisoformat also takes the basic form 20261001; the plugin
+        # documents only YYYY-MM-DD.
+        try:
+            ok = len(ticket_date) == 10
+            datetime.date.fromisoformat(ticket_date)
+        except (TypeError, ValueError):
+            ok = False
+        if not ok:
+            return "ticket_date must be YYYY-MM-DD."
+    return None
+
+
+def _fetch_visible_project(project_id: int) -> Dict[str, Any]:
+    try:
+        payload = _api_get(f"/projects/{project_id}.json")
+    except ResourceNotFoundError:
+        raise _Refusal(f"Project {project_id} not found or not visible to you.")
+    except ForbiddenError:
+        raise _Refusal(f"Reading project {project_id} is forbidden.")
+    project = payload.get("project") if isinstance(payload, dict) else None
+    if not isinstance(project, dict):
+        raise _Refusal(f"Project {project_id} not found or not visible to you.")
+    return project
+
+
+def _post_ticket(body: Dict[str, Any]) -> Any:
+    from .. import _client
+
+    client = _get_redmine_client()
+    return client.engine.request(
+        "post",
+        f"{_client.REDMINE_URL}/helpdesk_tickets.json",
+        headers={"Content-Type": "application/json"},
+        data=json.dumps({"helpdesk_ticket": body}),
+    )
+
+
+def _ticket_body(validated: Dict[str, Any], address: str) -> Dict[str, Any]:
+    """The POST body. Only checked values go in, and never ``send_as``.
+
+    ``address`` is always an email of the contact this tool has checked.
+    """
+    issue: Dict[str, Any] = {
+        "project_id": validated["project_id"],
+        "subject": validated["subject"],
+    }
+    for key in ("description", *_OPTIONAL_ISSUE_INTS, "custom_fields"):
+        if validated.get(key) is not None:
+            issue[key] = validated[key]
+    body: Dict[str, Any] = {"issue": issue, "contact": {"email": address}}
+    for key in ("source", "cc_address", "ticket_date"):
+        if validated.get(key) is not None:
+            body[key] = validated[key]
+    return body
+
+
+def _create_ticket(validated: Dict[str, Any]) -> Dict[str, Any]:
+    project_id = validated["project_id"]
+    email = validated.get("email")
+    context = f"creating a Helpdesk ticket in project {project_id}"
+    resource = {"resource_type": "project", "resource_id": project_id}
+    try:
+        _fetch_visible_project(project_id)
+        target = validated.get("contact_id") or _find_contact_id_by_email(
+            project_id, email
+        )
+        contact = _check_contact(target, project_id)
+    except _Refusal as refusal:
+        return {"error": refusal.message}
+    except Exception as e:
+        return _handle_redmine_error(e, context, resource)
+
+    if email is not None:
+        address = email.strip()
+    else:
+        address = next(
+            str(e["address"]).strip()
+            for e in contact.get("emails") or []
+            if isinstance(e, dict) and str(e.get("address") or "").strip()
+        )
+
+    unreadable = {
+        "project_id": project_id,
+        "warning": (
+            "Helpdesk created the ticket, but its response could not be read. "
+            "Find it with list_redmine_issues before creating it again."
+        ),
+    }
+    try:
+        response = _post_ticket(_ticket_body(validated, address))
+    except JSONDecodeError:
+        return unreadable
+    except ForbiddenError:
+        return {
+            "error": (
+                f"Creating Helpdesk tickets in project {project_id} needs "
+                "edit_helpdesk_tickets and the Helpdesk module enabled on it. "
+                "Nothing was created."
+            )
+        }
+    except ResourceNotFoundError:
+        return {
+            "error": (
+                "Helpdesk answered 404: either Redmine has no /helpdesk_tickets "
+                "endpoint (check that the RedmineUP Helpdesk plugin is installed "
+                f"and enabled) or project {project_id} is not found. "
+                "Nothing was created."
+            )
+        }
+    except ValidationError as e:
+        return _create_validation_error(e, context, resource)
+    except Exception as e:
+        return _handle_redmine_error(e, context, resource)
+
+    ticket = response.get("helpdesk_ticket") if isinstance(response, dict) else None
+    if not isinstance(ticket, dict) or not _is_positive_int(ticket.get("id")):
+        return unreadable
+    issue_id = ticket["id"]
+    attached = (ticket.get("contact") or {}).get("id")
+    if attached != target:
+        return _repoint_created(issue_id, project_id, target, attached)
+    result = _ticket_to_dict(issue_id, ticket)
+    result["project_id"] = project_id
+    return result
+
+
+# The controller's ``rescue Exception`` renders "<message> (<backtrace.first>)".
+# The frame can be any file (a .rb, an .rsb template, <internal:kernel>,
+# (eval)) and can hold parentheses of its own ("in 'block (2 levels) in x'").
+_PLUGIN_BACKTRACE = re.compile(r"\s*\((?:[^()]|\([^()]*\))*:\d+:in .*\)\s*$")
+
+
+def _create_validation_error(
+    e: ValidationError, context: str, resource: Dict[str, Any]
+) -> Dict[str, Any]:
+    text = str(e)
+    scrubbed = _PLUGIN_BACKTRACE.sub("", text)
+    if scrubbed != text:
+        # An exception, not a validation failure, and it may have been raised
+        # after the issue was saved.
+        return {
+            "error": (
+                "Helpdesk failed with an internal error: "
+                f"{_scrub_error_message(scrubbed)}. The ticket may have been "
+                "created anyway: check with list_redmine_issues before retrying."
+            )
+        }
+    result = _handle_redmine_error(e, context, resource)
+    result["error"] = f"{result['error']} Nothing was created."
+    return result
+
+
+def _repoint_created(
+    issue_id: int, project_id: int, target: int, attached: Any
+) -> Dict[str, Any]:
+    """Move a new ticket back to the checked contact.
+
+    The other contact is reported by id only.
+    """
+    try:
+        response = _put_ticket_contact(issue_id, target)
+        ticket = response.get("helpdesk_ticket") if isinstance(response, dict) else None
+        if not isinstance(ticket, dict):
+            ticket = _fetch_ticket(issue_id)
+    except Exception:
+        return {
+            "issue_id": issue_id,
+            "project_id": project_id,
+            "warning": (
+                f"Ticket {issue_id} was created, but Helpdesk attached contact "
+                f"{attached} instead of {target}, and moving it back failed. "
+                f'Fix it with manage_helpdesk_ticket(action="set_contact", '
+                f"issue_id={issue_id}, contact_id={target})."
+            ),
+        }
+    result = _ticket_to_dict(issue_id, ticket)
+    result["project_id"] = project_id
+    result["warning"] = (
+        f"Helpdesk attached contact {attached} instead of {target}; the ticket "
+        f"was moved back to {target}."
+    )
+    return result
+
+
+@offloaded
+def _create_ticket_action(**kwargs: Any) -> Dict[str, Any]:
+    problem = _validate_create(kwargs)
+    if problem:
+        return {"error": problem}
+    return _create_ticket(kwargs)
+
+
+@action_dispatch(
+    {
+        "get": ActionMode.READ,
+        "set_contact": ActionMode.WRITE,
+        "create": ActionMode.WRITE,
+    }
+)
 async def _manage_helpdesk_ticket_dispatch(action: str, **kwargs: Any) -> Any:
-    return {"get": _get_ticket_action, "set_contact": _set_contact_action}
+    return {
+        "get": _get_ticket_action,
+        "set_contact": _set_contact_action,
+        "create": _create_ticket_action,
+    }
 
 
 @mcp.tool(tags={plugin_tag("helpdesk_tickets")})
 async def manage_helpdesk_ticket(
-    action: Literal["get", "set_contact"],
-    issue_id: int,
+    action: Literal["get", "set_contact", "create"],
+    issue_id: Optional[int] = None,
     contact_id: Optional[int] = None,
     email: Optional[str] = None,
+    project_id: Optional[int] = None,
+    subject: Optional[str] = None,
+    description: Optional[str] = None,
+    tracker_id: Optional[int] = None,
+    priority_id: Optional[int] = None,
+    assigned_to_id: Optional[int] = None,
+    custom_fields: Optional[List[Dict[str, Any]]] = None,
+    source: Optional[
+        Literal["email", "web", "phone", "twitter", "conversation"]
+    ] = None,
+    cc_address: Optional[str] = None,
+    ticket_date: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Read a RedmineUP Helpdesk ticket, or change its customer contact.
+    """Read, create, or change the customer contact of a RedmineUP Helpdesk ticket.
 
-    Actions: ``get`` (read-only) and ``set_contact``.
+    Actions: ``get`` (read-only), ``set_contact`` and ``create``.
 
     ``get`` returns the Helpdesk data ``get_redmine_issue`` does not carry:
     the ticket's ``contact`` (``{id, name}``), ``from_address`` (where
@@ -550,19 +811,56 @@ async def manage_helpdesk_ticket(
     keeps no history of the change, so the result's ``previous_contact`` is
     the only record of who it was.
 
+    ``create`` opens a new Helpdesk ticket (an issue with a customer) in
+    ``project_id`` for an existing contact, given either ``contact_id`` or
+    ``email`` (exactly one). The same contact rule as ``set_contact``
+    applies: the contact must already be linked to the project and have an
+    email address; the tool never creates a contact. It never emails the
+    customer. It is not idempotent: calling it
+    again opens a second ticket.
+
     Args:
-        action: ``get`` or ``set_contact``.
-        issue_id: The Helpdesk ticket's issue id.
-        contact_id: ``set_contact``: the contact to assign.
-        email: ``set_contact``: an email address of the contact to assign,
-            matched exactly (case-insensitive) within the issue's project.
+        action: ``get``, ``set_contact`` or ``create``.
+        issue_id: ``get``/``set_contact``: the Helpdesk ticket's issue id.
+            Not accepted by ``create``.
+        contact_id: ``set_contact``/``create``: the contact to assign.
+        email: ``set_contact``/``create``: an email address of the contact
+            to assign, matched exactly (case-insensitive) within the project.
+        project_id: ``create``: the numeric id of the project to open the
+            ticket in.
+        subject: ``create``: the ticket's subject (required).
+        description: ``create``: the ticket's description.
+        tracker_id: ``create``: the tracker; Redmine's default if omitted.
+        priority_id: ``create``: the priority.
+        assigned_to_id: ``create``: the assignee. Helpdesk may replace it
+            with the contact's own assignee when its settings say so.
+        custom_fields: ``create``: custom field values as
+            ``[{"id": 2, "value": "QA"}]``. Required custom fields must be set.
+        source: ``create``: how the request came in; ``web`` if omitted.
+        cc_address: ``create``: addresses to copy on later replies.
+        ticket_date: ``create``: the request date, ``YYYY-MM-DD``; today if
+            omitted.
 
     Returns:
         The ticket as described above (``set_contact`` adds
-        ``previous_contact``), or ``{"error": ...}``.
+        ``previous_contact``, ``create`` adds ``project_id``), or
+        ``{"error": ...}``.
     """
     if not _is_helpdesk_tickets_enabled():
         return dict(_HELPDESK_TICKETS_DISABLED_ERROR)
     return await _manage_helpdesk_ticket_dispatch(
-        action, issue_id=issue_id, contact_id=contact_id, email=email
+        action,
+        issue_id=issue_id,
+        contact_id=contact_id,
+        email=email,
+        project_id=project_id,
+        subject=subject,
+        description=description,
+        tracker_id=tracker_id,
+        priority_id=priority_id,
+        assigned_to_id=assigned_to_id,
+        custom_fields=custom_fields,
+        source=source,
+        cc_address=cc_address,
+        ticket_date=ticket_date,
     )

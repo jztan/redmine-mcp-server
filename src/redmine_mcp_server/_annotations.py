@@ -98,9 +98,9 @@ TOOL_KINDS: Dict[str, ToolKind] = {
     # Destructive, not additive: the customer email cannot be recalled,
     # and status_id can change the ticket's status.
     "send_helpdesk_email_reply": ToolKind.WRITE_DESTRUCTIVE,
-    # get reads; set_contact replaces the contact and repeating it with the
-    # same contact changes nothing more.
-    "manage_helpdesk_ticket": ToolKind.WRITE_DESTRUCTIVE_IDEMPOTENT,
+    # get reads; set_contact replaces the contact; create opens a new ticket
+    # on every call, so the tool as a whole is not idempotent.
+    "manage_helpdesk_ticket": ToolKind.WRITE_DESTRUCTIVE,
     # --- wiki ---
     "manage_redmine_wiki_page": ToolKind.WRITE_DESTRUCTIVE,
     # --- documents ---

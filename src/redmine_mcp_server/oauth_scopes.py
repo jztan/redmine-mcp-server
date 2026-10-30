@@ -246,12 +246,12 @@ CRM_NOTES_WRITE_SCOPES: list[str] = [
 # above). advertised_scopes() deduplicates against the CRM lists.
 HELPDESK_TICKETS_READ_SCOPES: list[str] = [
     "view_helpdesk_tickets",  # manage_helpdesk_ticket(action=get|set_contact)
-    "view_contacts",  # manage_helpdesk_ticket(action=set_contact) lookup
+    "view_contacts",  # manage_helpdesk_ticket(action=set_contact|create) lookup
     "view_private_contacts",  # same lookup, private contacts
 ]
 
 HELPDESK_TICKETS_WRITE_SCOPES: list[str] = [
-    "edit_helpdesk_tickets",  # manage_helpdesk_ticket(action=set_contact)
+    "edit_helpdesk_tickets",  # manage_helpdesk_ticket(action=set_contact|create)
 ]
 
 
@@ -536,7 +536,10 @@ TOOL_SCOPES: Dict[str, ToolScopeEntry] = {
     # which only view_helpdesk_tickets grants; set_contact adds the contact
     # lookup and helpdesk_tickets#update. The scopes are advertised under the
     # same flag that makes the tool visible, so requiring them cannot hide it
-    # on a deployment that never advertises them.
+    # on a deployment that never advertises them. create reads the project
+    # and the contact, then calls helpdesk_tickets#create, which the plugin
+    # gates on edit_helpdesk_tickets alone; add_issues is required here as
+    # well because the call creates an issue.
     "manage_helpdesk_ticket": {
         "get": frozenset({"view_issues", "view_helpdesk_tickets"}),
         "set_contact": frozenset(
@@ -547,6 +550,7 @@ TOOL_SCOPES: Dict[str, ToolScopeEntry] = {
                 "view_contacts",
             }
         ),
+        "create": frozenset({"add_issues", "view_contacts", "edit_helpdesk_tickets"}),
     },
     # --- products / CRM (RedmineUP plugins; Redmine enforces its own
     # plugin permissions, so these stay unrequired here. CRM scopes ARE
