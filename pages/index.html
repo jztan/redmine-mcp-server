@@ -117,9 +117,17 @@
 </script>
 <!-- Google tag (gtag.js) -->
 <script>
-  if (new URLSearchParams(window.location.search).get('ga_optout') === 'true') {
-    window['ga-disable-G-387CTXP05E'] = true;
-  }
+  // ?ga_optout=true opts this browser out for good; ?ga_optout=false undoes it.
+  (function () {
+    var param = new URLSearchParams(window.location.search).get('ga_optout');
+    var optedOut = param === 'true';
+    try {
+      if (param === 'true') localStorage.setItem('ga_optout', 'true');
+      else if (param === 'false') localStorage.removeItem('ga_optout');
+      else optedOut = localStorage.getItem('ga_optout') === 'true';
+    } catch (e) {}
+    if (optedOut) window['ga-disable-G-387CTXP05E'] = true;
+  })();
 </script>
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-387CTXP05E"></script>
 <script>
