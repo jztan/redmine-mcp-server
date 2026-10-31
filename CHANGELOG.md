@@ -27,6 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on old and new plugin versions, and the result still uses the key
   `last_customer_response_at`
   ([#423](https://github.com/jztan/redmine-mcp-server/issues/423)).
+- `send_helpdesk_email_reply` told the caller to check that the plugin was
+  installed when replying to an unknown or invisible issue on Helpdesk 4.5.0,
+  which answers those with a 404. It now looks the issue up on a 404 and
+  reports the issue as not found. The tool docs now cover the `send_response`
+  permission 4.5.0 requires and the null contact `id` it can return
+  ([#425](https://github.com/jztan/redmine-mcp-server/issues/425)).
 
 ### Contributors
 - @goizper requested the create action and documented the endpoint from the

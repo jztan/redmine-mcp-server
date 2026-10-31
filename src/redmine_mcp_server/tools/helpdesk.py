@@ -86,9 +86,10 @@ def send_helpdesk_email_reply(
     once sent, so confirm the wording before calling.
 
     Works only on a Helpdesk ticket, meaning an issue with a customer
-    attached. The plugin's endpoint checks no project role or permission
-    (per a reading of its 4.2.9 controller in #301), so any authenticated
-    Redmine user can send through it.
+    attached. Helpdesk 4.5 requires ``send_response`` on the project and an
+    issue the caller can see. Older versions check no project role or
+    permission (per a reading of the 4.2.9 controller in #301), so any
+    authenticated Redmine user can send through them.
 
     Requires the RedmineUP Helpdesk plugin and
     ``REDMINE_HELPDESK_ENABLED=true``. This is a write operation and is
@@ -103,7 +104,8 @@ def send_helpdesk_email_reply(
     Returns:
         A success dict with ``journal_id`` of the recorded reply,
         ``to_address`` (the recipient), ``message_date`` and ``customer``
-        (``{id, name}``), or an error dict on failure.
+        (``{id, name}``, with ``id`` null on Helpdesk 4.5 when the caller
+        cannot see the contact), or an error dict on failure.
     """
     if _is_read_only_mode():
         return dict(_READ_ONLY_ERROR)
@@ -127,9 +129,19 @@ def send_helpdesk_email_reply(
     try:
         response = _send_email_note_api(payload)
     except ResourceNotFoundError:
-        # The plugin answers 422 for an unknown issue, so a 404 means the
-        # endpoint itself is missing. The generic handler would report the
-        # issue as not found, which sends the caller after the wrong thing.
+        # Helpdesk 4.5 answers 404 for an unknown or invisible issue (#425),
+        # older versions 422. A missing endpoint is a 404 too, so the issue
+        # lookup is what tells them apart.
+        try:
+            _fetch_visible_issue(issue_id)
+        except _Refusal as refusal:
+            return {"error": refusal.message}
+        except Exception as lookup_error:
+            return _handle_redmine_error(
+                lookup_error,
+                f"reading issue {issue_id}",
+                {"resource_type": "issue", "resource_id": issue_id},
+            )
         return {
             "error": (
                 "Redmine has no /helpdesk/email_note endpoint. Check that the "
