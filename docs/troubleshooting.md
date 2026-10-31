@@ -430,11 +430,11 @@ A 403, 5xx, timeout, or connection error during the check never produces this me
 
 1. **Check Python Version**
    ```bash
-   python --version  # Should be 3.10 or higher
+   python --version  # Should be 3.11 or higher
    ```
 
 2. **Install Correct Python Version**
-   - Python 3.10+ required for local installation
+   - Python 3.11+ required for local installation
    - Use Docker deployment if Python upgrade not possible
 
 ---

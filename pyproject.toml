@@ -4,7 +4,7 @@ version = "2.20.0"
 description = "MCP server that lets AI assistants manage Redmine issues, projects, wikis, and time tracking"
 readme = "README.md"
 license = {text = "MIT"}
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 keywords = ["redmine", "mcp", "model-context-protocol", "project-management", "server"]
 authors = [
     {name = "Kevin Tan", email = "6021013+jztan@users.noreply.github.com"}
@@ -21,7 +21,6 @@ classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -82,12 +81,12 @@ dev = [
 #                       (via fastmcp-slim)
 #   certifi < 2026.10.18  -> PYSEC-2026-4320 (via httpx / requests)
 #   opentelemetry-api < 1.45.1  -> CVE-2026-114603 (via mcp / fastmcp-slim)
-# dnspython is not listed: the CVE-2026-114605 fix (2.9.0) needs Python 3.11, so
-# a floor here would make Python 3.10 unresolvable.
+#   dnspython < 2.9.0  -> CVE-2026-114605 (via email-validator)
 constraint-dependencies = [
     "authlib>=1.9.1",
     "certifi>=2026.10.18",
     "click>=8.3.3",
+    "dnspython>=2.9.0",
     "mcp>=2.2.0",
     "opentelemetry-api>=1.45.1",
 ]

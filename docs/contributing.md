@@ -15,7 +15,7 @@ Thank you for your interest in contributing to the Redmine MCP Server! This guid
 
 ### Prerequisites
 
-- Python 3.10+ installed
+- Python 3.11+ installed
 - Git installed
 - Access to a Redmine instance (for testing)
 - Familiarity with MCP (Model Context Protocol)
@@ -426,7 +426,7 @@ git commit -m "feat: add support for custom fields in issues"
 git commit -m "fix: resolve authentication error with API key"
 
 # Documentation commit
-git commit -m "docs: update installation instructions for Python 3.10"
+git commit -m "docs: update installation instructions for Python 3.11"
 ```
 
 **Important:**
