@@ -7,6 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Python 3.15 support: 3.15 is now in the CI test matrix and declared in the
+  package classifiers. The locked `rpds-py` moves from 0.27.1 to 2026.9.1 and
+  `pydantic` from 2.12.5 to 2.14.2 (`pydantic-core` 2.41.5 to 2.50.2), the
+  versions that install on 3.15.
+  ([#432](https://github.com/jztan/redmine-mcp-server/issues/432))
+
 ### Removed
 - Python 3.10 support: the minimum is now Python 3.11. Python 3.10 reached end
   of life in October 2026, and the fix for CVE-2026-114605 in `dnspython` 2.9.0
