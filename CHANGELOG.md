@@ -7,10 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Removed
+- Python 3.10 support: the minimum is now Python 3.11. Python 3.10 reached end
+  of life in October 2026, and the fix for CVE-2026-114605 in `dnspython` 2.9.0
+  needs Python 3.11. `dnspython` now has a `>=2.9.0` floor, and
+  `scripts/audit.sh` no longer ignores that CVE. The Docker image is unchanged
+  on Python 3.13. ([#428](https://github.com/jztan/redmine-mcp-server/issues/428))
 ### Fixed
-- `import redmine_mcp_server.extensions` no longer crashes on Python 3.10 and
-  3.11, which broke `REDMINE_MCP_EXTENSIONS` there since v2.17.0. CI now runs
-  each matrix job on the Python it names instead of 3.13.
+- `import redmine_mcp_server.extensions` no longer crashes on Python 3.11, which
+  broke `REDMINE_MCP_EXTENSIONS` there since v2.17.0. CI now runs each matrix
+  job on the Python it names instead of 3.13.
   ([#427](https://github.com/jztan/redmine-mcp-server/issues/427))
 
 ## [2.20.0] - 2026-10-31

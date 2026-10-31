@@ -54,7 +54,7 @@ Once running, the server listens on `http://localhost:8000` with the MCP endpoin
 
 ### Prerequisites
 
-- Python 3.10+ (for local installation)
+- Python 3.11+ (for local installation)
 - Docker (alternative deployment, uses Python 3.13)
 - Access to a Redmine instance
 
