@@ -1568,7 +1568,7 @@ wheels = [
 
 [[package]]
 name = "redmine-mcp-server"
-version = "2.19.0"
+version = "2.20.0"
 source = { editable = "." }
 dependencies = [
     { name = "cryptography" },
