@@ -266,13 +266,19 @@ Notes:
   `enforce_configured_scopes`, so on Light a deal scope cannot be held by
   the OAuth application and requesting it fails consent with
   `invalid_scope` -- which would break `manage_contact` too.
+- `REDMINE_HELPDESK_ENABLED` advertises `send_response` unless the server is
+  read-only, because Helpdesk 4.5 denies `send_helpdesk_email_reply` without
+  it. Tick it on the Redmine OAuth application before turning the flag on or
+  upgrading, or narrow `REDMINE_MCP_SCOPES`; otherwise consent fails with
+  `invalid_scope`. A token issued without it keeps getting `FORBIDDEN` on
+  Helpdesk 4.5 until the client re-authorizes. The tool does not require the
+  scope, so tokens without it can still send on older Helpdesk versions.
 - `manage_helpdesk_ticket` sits behind `REDMINE_HELPDESK_TICKETS_ENABLED`,
   which advertises `view_helpdesk_tickets`, `view_contacts` and
   `view_private_contacts`, plus `edit_helpdesk_tickets` unless the server is
   read-only. Tick them on the Redmine OAuth application before turning the
   flag on, or narrow `REDMINE_MCP_SCOPES`; otherwise consent fails with
-  `invalid_scope`. `REDMINE_HELPDESK_ENABLED` on its own advertises nothing
-  extra. Unlike the CRM tools, this one does require its scopes (`get`:
+  `invalid_scope`. Unlike the CRM tools, this one does require its scopes (`get`:
   `view_issues` and `view_helpdesk_tickets`; `set_contact` adds
   `edit_helpdesk_tickets` and `view_contacts`; `create` needs `add_issues`,
   `view_contacts` and `edit_helpdesk_tickets`), since they are only

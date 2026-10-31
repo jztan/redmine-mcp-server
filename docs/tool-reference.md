@@ -3509,7 +3509,7 @@ send_helpdesk_email_reply(
 - Calls `POST /helpdesk/email_note.json`. The plugin documents only the `.xml` form, but the JSON form accepts and returns the same fields.
 - Works only on a Helpdesk ticket, meaning an issue with a customer attached.
 - `customer` comes from the response's `contact` key (Helpdesk 4.3) or `customer` key (Helpdesk 4.2). On Helpdesk 4.5 its `id` is null when the caller cannot see the contact.
-- Under OAuth, the tool requires the `add_issue_notes` scope. Helpdesk 4.5 requires `send_response` on the project and an issue the caller can see. Older versions check no project role or permission (per a reading of the Helpdesk 4.2.9 controller in [#301](https://github.com/jztan/redmine-mcp-server/issues/301)), so with an API key any authenticated Redmine user can send through them. `REDMINE_HELPDESK_ENABLED` and read-only mode are the server-side gates.
+- Under OAuth, the tool requires the `add_issue_notes` scope, and `REDMINE_HELPDESK_ENABLED` also advertises `send_response`. Helpdesk 4.5 requires `send_response` on the project, in both the caller's role and the token, and an issue the caller can see. Older versions check no project role or permission (per a reading of the Helpdesk 4.2.9 controller in [#301](https://github.com/jztan/redmine-mcp-server/issues/301)), so with an API key any authenticated Redmine user can send through them. `REDMINE_HELPDESK_ENABLED` and read-only mode are the server-side gates.
 
 ### `manage_helpdesk_ticket`
 
