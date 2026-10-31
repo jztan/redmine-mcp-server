@@ -25,6 +25,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   broke `REDMINE_MCP_EXTENSIONS` there since v2.17.0. CI now runs each matrix
   job on the Python it names instead of 3.13.
   ([#427](https://github.com/jztan/redmine-mcp-server/issues/427))
+- `send_helpdesk_email_reply` failed with `FORBIDDEN` under OAuth on Helpdesk
+  4.5, even for a user whose role grants "Send response", because tokens
+  obtained through discovery never included the permission.
+  `REDMINE_HELPDESK_ENABLED` now advertises `send_response` unless the server
+  is read-only. **Upgrade note:** an OAuth
+  application with a restricted scope list must grant `send_response` before
+  this upgrade, or narrow `REDMINE_MCP_SCOPES`, otherwise consent fails with
+  `invalid_scope`. Clients must re-authorize to get a token with the scope.
+  ([#431](https://github.com/jztan/redmine-mcp-server/issues/431))
+
+### Contributors
+- @slidonnici, reported `send_helpdesk_email_reply` failing under OAuth on
+  Helpdesk 4.5 and identified the missing `send_response` scope
+  ([#431](https://github.com/jztan/redmine-mcp-server/issues/431))
 
 ## [2.20.0] - 2026-10-31
 ### Added

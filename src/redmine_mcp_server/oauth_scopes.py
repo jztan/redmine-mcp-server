@@ -38,6 +38,7 @@ from ._env import (
     _is_agile_enabled,
     _is_crm_enabled,
     _is_deals_enabled,
+    _is_helpdesk_enabled,
     _is_helpdesk_tickets_enabled,
     _is_read_only_mode,
     _is_tags_enabled,
@@ -230,12 +231,20 @@ CRM_NOTES_WRITE_SCOPES: list[str] = [
     "delete_own_notes",  # same, for the note's author
 ]
 
+# RedmineUP Helpdesk reply permission, advertised when
+# REDMINE_HELPDESK_ENABLED is set and the server is not read-only (#431).
+# Helpdesk 4.5 denies helpdesk#email_note without send_response, and a token
+# only holds the permissions it was granted, whatever the caller's role says.
+HELPDESK_WRITE_SCOPES: list[str] = [
+    "send_response",  # send_helpdesk_email_reply
+]
+
 # RedmineUP Helpdesk ticket permissions, advertised only when
 # REDMINE_HELPDESK_TICKETS_ENABLED is set (#378). The flag is separate from
-# REDMINE_HELPDESK_ENABLED so that upgrading a deployment that only uses
-# send_helpdesk_email_reply advertises nothing new: a Redmine OAuth
-# application that does not grant an advertised scope fails consent with
-# invalid_scope for the whole list.
+# REDMINE_HELPDESK_ENABLED so that a deployment that only uses
+# send_helpdesk_email_reply does not need these: a Redmine OAuth application
+# that does not grant an advertised scope fails consent with invalid_scope
+# for the whole list.
 #
 # HelpdeskTicketsController runs ``before_action :authorize`` on show and
 # update, and the plugin maps helpdesk_tickets#show to view_helpdesk_tickets
@@ -275,8 +284,10 @@ def advertised_scopes() -> list[str]:
     :data:`DEALS_WRITE_SCOPES` follow the same shape under a flag of their
     own, ``REDMINE_DEALS_ENABLED`` (per :func:`_is_deals_enabled`), because
     the CRM plugin's Light edition does not define the deal permissions at
-    all. :data:`HELPDESK_TICKETS_READ_SCOPES` and
-    :data:`HELPDESK_TICKETS_WRITE_SCOPES` follow the same shape under
+    all. :data:`HELPDESK_WRITE_SCOPES` are appended under
+    ``REDMINE_HELPDESK_ENABLED`` unless the server is read-only, and
+    :data:`HELPDESK_TICKETS_READ_SCOPES` and
+    :data:`HELPDESK_TICKETS_WRITE_SCOPES` follow the deals shape under
     ``REDMINE_HELPDESK_TICKETS_ENABLED``. Extensions registered through
     :mod:`.extensions` append their own lists last, under the same
     enabled/read-only rule, which is where a
@@ -304,6 +315,8 @@ def advertised_scopes() -> list[str]:
             scopes += list(DEALS_WRITE_SCOPES)
     if (_is_crm_enabled() or _is_deals_enabled()) and not _is_read_only_mode():
         scopes += list(CRM_NOTES_WRITE_SCOPES)
+    if _is_helpdesk_enabled() and not _is_read_only_mode():
+        scopes += list(HELPDESK_WRITE_SCOPES)
     if _is_helpdesk_tickets_enabled():
         scopes += list(HELPDESK_TICKETS_READ_SCOPES)
         if not _is_read_only_mode():
@@ -527,9 +540,11 @@ TOOL_SCOPES: Dict[str, ToolScopeEntry] = {
     "create_checklist_item": frozenset({"edit_issues"}),
     "update_checklist_item": frozenset({"edit_issues"}),
     # --- helpdesk (RedmineUP plugin; the reply is recorded as an issue
-    # journal, so gate on add_issue_notes. The plugin's endpoint checks no
-    # permission of its own (#301), so this scope is the only one in play;
-    # a status_id change is left to Redmine) ---
+    # journal, so gate on add_issue_notes. Helpdesk 4.5 also checks
+    # send_response; that is advertised but not required here, because older
+    # versions check no permission of their own (#301) and requiring it would
+    # hide the tool from a token that can still send. A status_id change is
+    # left to Redmine) ---
     "send_helpdesk_email_reply": frozenset({"add_issue_notes"}),
     # Helpdesk tickets (#378). Both actions read /issues/:id first (the
     # plugin's own lookup skips issue visibility), then helpdesk_tickets#show,

@@ -261,6 +261,8 @@ class TestSendHelpdeskEmailReply:
 from redmine_mcp_server.oauth_scopes import (  # noqa: E402
     HELPDESK_TICKETS_READ_SCOPES,
     HELPDESK_TICKETS_WRITE_SCOPES,
+    HELPDESK_WRITE_SCOPES,
+    TOOL_SCOPES,
     advertised_scopes,
 )
 
@@ -278,6 +280,7 @@ class TestHelpdeskTicketScopes:
             "view_private_contacts",
         ]
         assert HELPDESK_TICKETS_WRITE_SCOPES == ["edit_helpdesk_tickets"]
+        assert HELPDESK_WRITE_SCOPES == ["send_response"]
 
     def test_not_advertised_when_off(self):
         with patch.dict(os.environ, self._OFF):
@@ -285,16 +288,39 @@ class TestHelpdeskTicketScopes:
         assert "view_helpdesk_tickets" not in scopes
         assert "edit_helpdesk_tickets" not in scopes
 
-    def test_reply_flag_alone_changes_nothing(self):
-        """Upgrading with only REDMINE_HELPDESK_ENABLED set must advertise
-        exactly what it did before #378, or OAuth consent breaks."""
+    def test_reply_flag_alone_advertises_only_send_response(self):
+        """REDMINE_HELPDESK_ENABLED adds the reply permission (#431) and none
+        of the ticket scopes, which stay behind their own flag (#378)."""
         off = {**self._OFF, "REDMINE_HELPDESK_ENABLED": "false"}
         with patch.dict(os.environ, off):
             before = advertised_scopes()
         on = {**self._OFF, "REDMINE_HELPDESK_ENABLED": "true"}
         with patch.dict(os.environ, on):
             after = advertised_scopes()
-        assert after == before
+        assert after == before + ["send_response"]
+
+    def test_reply_scope_absent_when_reply_flag_off(self):
+        env = {
+            **self._OFF,
+            "REDMINE_HELPDESK_ENABLED": "false",
+            "REDMINE_HELPDESK_TICKETS_ENABLED": "true",
+        }
+        with patch.dict(os.environ, env):
+            assert "send_response" not in advertised_scopes()
+
+    def test_read_only_drops_the_reply_scope(self):
+        env = {
+            **self._OFF,
+            "REDMINE_HELPDESK_ENABLED": "true",
+            "REDMINE_MCP_READ_ONLY": "true",
+        }
+        with patch.dict(os.environ, env):
+            assert "send_response" not in advertised_scopes()
+
+    def test_reply_scope_is_not_required(self):
+        """Helpdesk before 4.5 sends without send_response, so requiring it
+        would hide a working tool from tokens issued before #431."""
+        assert TOOL_SCOPES["send_helpdesk_email_reply"] == {"add_issue_notes"}
 
     def test_advertised_when_on(self):
         with patch.dict(
