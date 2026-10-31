@@ -42,6 +42,19 @@ _SUCCESS_RESPONSE_4_3 = {
 _ON = {"REDMINE_HELPDESK_ENABLED": "true", "REDMINE_MCP_READ_ONLY": "false"}
 
 
+def _email_note_404_then(lookup):
+    """A fake ``engine.request``: the POST answers 404, the issue GET ``lookup``."""
+
+    def request(method, url, **kwargs):
+        if method == "post":
+            raise ResourceNotFoundError()
+        if isinstance(lookup, Exception):
+            raise lookup
+        return lookup
+
+    return request
+
+
 class TestIsHelpdeskEnabled:
     def test_false_by_default(self):
         with patch.dict(os.environ, {}, clear=False):
@@ -173,11 +186,42 @@ class TestSendHelpdeskEmailReply:
     ):
         # Without the plugin Redmine answers 404, which must not read as
         # "issue not found" when the issue exists.
-        mock_redmine.engine.request.side_effect = ResourceNotFoundError()
+        mock_redmine.engine.request.side_effect = _email_note_404_then(
+            {"issue": {"id": 307}}
+        )
         with patch.dict(os.environ, _ON):
             result = await send_helpdesk_email_reply(issue_id=307, content="Hi")
         assert "Helpdesk plugin" in result["error"]
         assert "307" not in result["error"]
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_unknown_issue_404_is_not_reported_as_missing_plugin(
+        self, mock_redmine
+    ):
+        # Helpdesk 4.5 answers 404 for an unknown or invisible issue, the
+        # same as a missing route (#425).
+        mock_redmine.engine.request.side_effect = _email_note_404_then(
+            ResourceNotFoundError()
+        )
+        with patch.dict(os.environ, _ON):
+            result = await send_helpdesk_email_reply(issue_id=999, content="Hi")
+        assert result["error"] == "Issue 999 not found or not visible to you."
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_failed_issue_lookup_is_not_reported_as_missing_plugin(
+        self, mock_redmine
+    ):
+        # The lookup says nothing about the plugin if it fails for another
+        # reason, so the plugin must not get the blame.
+        mock_redmine.engine.request.side_effect = _email_note_404_then(
+            ConnectionError("connection refused")
+        )
+        with patch.dict(os.environ, _ON):
+            result = await send_helpdesk_email_reply(issue_id=307, content="Hi")
+        assert "error" in result
+        assert "Helpdesk plugin" not in result["error"]
 
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.redmine")

@@ -3508,8 +3508,8 @@ send_helpdesk_email_reply(
 **Notes:**
 - Calls `POST /helpdesk/email_note.json`. The plugin documents only the `.xml` form, but the JSON form accepts and returns the same fields.
 - Works only on a Helpdesk ticket, meaning an issue with a customer attached.
-- `customer` comes from the response's `contact` key (Helpdesk 4.3) or `customer` key (Helpdesk 4.2).
-- Under OAuth, the tool requires the `add_issue_notes` scope. The plugin's endpoint itself checks no project role or permission (per a reading of the Helpdesk 4.2.9 controller in [#301](https://github.com/jztan/redmine-mcp-server/issues/301)), so with an API key any authenticated Redmine user can send through it. `REDMINE_HELPDESK_ENABLED` and read-only mode are the server-side gates.
+- `customer` comes from the response's `contact` key (Helpdesk 4.3) or `customer` key (Helpdesk 4.2). On Helpdesk 4.5 its `id` is null when the caller cannot see the contact.
+- Under OAuth, the tool requires the `add_issue_notes` scope. Helpdesk 4.5 requires `send_response` on the project and an issue the caller can see. Older versions check no project role or permission (per a reading of the Helpdesk 4.2.9 controller in [#301](https://github.com/jztan/redmine-mcp-server/issues/301)), so with an API key any authenticated Redmine user can send through them. `REDMINE_HELPDESK_ENABLED` and read-only mode are the server-side gates.
 
 ### `manage_helpdesk_ticket`
 
@@ -3531,7 +3531,7 @@ Requires `REDMINE_HELPDESK_TICKETS_ENABLED=true` and the Helpdesk and CRM plugin
 - `cc_address` (string): `create`; addresses to copy on later replies
 - `ticket_date` (string): `create`; the request date as `YYYY-MM-DD`, today when omitted
 
-**Returns:** `{issue_id, contact, from_address, to_address, cc_address, message_id, source, is_incoming, ticket_date, reaction_time, first_response_time, resolve_time, last_agent_response_at, last_customer_response_at, vote, vote_comment, content}`, where `contact` is `{id, name}`. `set_contact` adds `previous_contact` (`{id, name}`); `create` adds `project_id`, and `issue_id` is the new ticket's issue id. If the change went through but the updated ticket cannot be read back, the result carries a `warning`, `contact` holds only the new id, and `previous_contact` is still reported. `contact.name`, `previous_contact.name`, `content`, `vote_comment` and the address and `message_id` fields are wrapped in `<insecure-content>` tags: the plugin copies the addresses and message id from inbound email headers. On failure, `{"error": ...}` naming the step that failed and what to do about it.
+**Returns:** `{issue_id, contact, from_address, to_address, cc_address, message_id, source, is_incoming, ticket_date, reaction_time, first_response_time, resolve_time, last_agent_response_at, last_customer_response_at, vote, vote_comment, content}`, where `contact` is `{id, name}`, with `id` null on Helpdesk 4.5 when the caller cannot see the contact. `set_contact` adds `previous_contact` (`{id, name}`); `create` adds `project_id`, and `issue_id` is the new ticket's issue id. If the change went through but the updated ticket cannot be read back, the result carries a `warning`, `contact` holds only the new id, and `previous_contact` is still reported. `contact.name`, `previous_contact.name`, `content`, `vote_comment` and the address and `message_id` fields are wrapped in `<insecure-content>` tags: the plugin copies the addresses and message id from inbound email headers. On failure, `{"error": ...}` naming the step that failed and what to do about it.
 
 **Example:**
 ```python
