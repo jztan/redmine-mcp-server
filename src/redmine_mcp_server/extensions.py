@@ -86,6 +86,7 @@ private module layout, is what it depends on.
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from types import MappingProxyType
 from typing import Any, Dict, NoReturn
 
@@ -302,7 +303,9 @@ class ExtensionSpec:
     advertised_read_scopes: Sequence[str] = ()
     advertised_write_scopes: Sequence[str] = ()
     issue_update_keys: Sequence[str] = ()
-    issue_query_filters: Mapping[str, Mapping[str, object]] = MappingProxyType({})
+    issue_query_filters: Mapping[str, Mapping[str, object]] = dataclass_field(
+        default_factory=lambda: MappingProxyType({})
+    )
     issue_payload_skip_keys: Sequence[str] = ()
 
 

@@ -7,6 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Fixed
+- `import redmine_mcp_server.extensions` no longer crashes on Python 3.10 and
+  3.11, which broke `REDMINE_MCP_EXTENSIONS` there since v2.17.0. CI now runs
+  each matrix job on the Python it names instead of 3.13.
+  ([#427](https://github.com/jztan/redmine-mcp-server/issues/427))
 
 ## [2.20.0] - 2026-10-31
 ### Added
