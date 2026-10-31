@@ -42,7 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   also moves `dnspython` to 2.9.1 on Python 3.11 and later. Python 3.10 stays
   on `dnspython` 2.8.0 with CVE-2026-114605, because the fix needs Python 3.11.
   `dnspython` only comes in through `email-validator`, which pydantic calls
-  with `check_deliverability=False`.
+  with `check_deliverability=False`, so `scripts/audit.sh` ignores that CVE
+  until Python 3.10 support is dropped.
 
 ### Contributors
 - @goizper requested the create action and documented the endpoint from the
