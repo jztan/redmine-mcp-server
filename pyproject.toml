@@ -33,7 +33,7 @@ classifiers = [
 dependencies = [
     "python-dotenv>=1.0.0,<2",
     "httpx>=0.27.0,<1",
-    "fastmcp>=4.0.1,<5",
+    "fastmcp>=4.1.2,<5",
     "python-redmine>=2.5.0,<3",
     "requests>=2.31.0,<3",
     "starlette>=1.3.1,<2",
@@ -42,7 +42,7 @@ dependencies = [
     "urllib3>=2.7.0,<3",
     "pyjwt[crypto]>=2.15.0,<3",
     "cryptography>=48.0.1,<51",
-    "joserfc>=1.6.7,<2",
+    "joserfc>=1.7.6,<2",
 ]
 
 [project.urls]
@@ -78,7 +78,19 @@ dev = [
 # entry once an upstream dependency raises its own floor past these versions.
 #   click < 8.3.3  -> PYSEC-2026-2132 (via uvicorn / rich-click stack)
 #   mcp   < 2.2.0  -> CVE-2026-59951 (via fastmcp-slim)
-constraint-dependencies = ["click>=8.3.3", "mcp>=2.2.0"]
+#   authlib < 1.9.1  -> CVE-2026-96760, CVE-2026-116672 and PYSEC-2026-4354..4360
+#                       (via fastmcp-slim)
+#   certifi < 2026.10.18  -> PYSEC-2026-4320 (via httpx / requests)
+#   opentelemetry-api < 1.45.1  -> CVE-2026-114603 (via mcp / fastmcp-slim)
+# dnspython is not listed: the CVE-2026-114605 fix (2.9.0) needs Python 3.11, so
+# a floor here would make Python 3.10 unresolvable.
+constraint-dependencies = [
+    "authlib>=1.9.1",
+    "certifi>=2026.10.18",
+    "click>=8.3.3",
+    "mcp>=2.2.0",
+    "opentelemetry-api>=1.45.1",
+]
 
 [build-system]
 requires = ["hatchling"]

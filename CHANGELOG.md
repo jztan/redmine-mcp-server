@@ -33,6 +33,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reports the issue as not found. The tool docs now cover the `send_response`
   permission 4.5.0 requires and the null contact `id` it can return
   ([#425](https://github.com/jztan/redmine-mcp-server/issues/425)).
+- Raised the dependency floors to clear 16 advisories from the dependency
+  audit: `fastmcp` to `>=4.1.2` and `joserfc` to `>=1.7.6`, plus
+  `constraint-dependencies` entries for the transitive `authlib` (`>=1.9.1`),
+  `certifi` (`>=2026.10.18`) and `opentelemetry-api` (`>=1.45.1`). The lock
+  also moves `dnspython` to 2.9.1 on Python 3.11 and later. Python 3.10 stays
+  on `dnspython` 2.8.0 with CVE-2026-114605, because the fix needs Python 3.11.
+  `dnspython` only comes in through `email-validator`, which pydantic calls
+  with `check_deliverability=False`.
 
 ### Contributors
 - @goizper requested the create action and documented the endpoint from the
