@@ -47,6 +47,7 @@ REDMINE_AUTH_MODE=trusted-header
 REDMINE_URL=https://redmine.example.com
 REDMINE_API_KEY=<API key of a Redmine administrator>
 REDMINE_TRUSTED_HEADER_TRUST_PROXY=true
+REDMINE_TRUSTED_HEADER_SECRET=<32+ character random ASCII secret>
 ```
 
 | Variable | Default | Notes |
@@ -54,10 +55,12 @@ REDMINE_TRUSTED_HEADER_TRUST_PROXY=true
 | `REDMINE_AUTH_MODE=trusted-header` | `legacy` | activates the mode |
 | `REDMINE_API_KEY` | required | the key of a Redmine administrator; see [The administrator key](#the-administrator-key) |
 | `REDMINE_TRUSTED_HEADER_TRUST_PROXY` | `false` | required; operator attestation, see [Security requirements](#security-requirements) |
+| `REDMINE_TRUSTED_HEADER_SECRET` | required | secret shared with the authenticating proxy (min 32 printable ASCII chars); supports `_FILE` |
+| `REDMINE_TRUSTED_HEADER_ALLOW_ADMIN` | `false` | allow requests targeting administrator accounts; see [The administrator key](#the-administrator-key) |
 | `REDMINE_TRUSTED_HEADER_NAME` | `X-Forwarded-User` | the request header that names the user |
 | `REDMINE_TRUSTED_HEADER_MATCH` | `login` | `login`: the header carries the Redmine login. `mail`: it carries an email address; see [Matching by email](#matching-by-email) |
 
-The server refuses to start without `REDMINE_URL`, `REDMINE_API_KEY` or the
+The server refuses to start without `REDMINE_URL`, `REDMINE_API_KEY`, `REDMINE_TRUSTED_HEADER_SECRET`, or the
 attestation flag, with an unknown `REDMINE_TRUSTED_HEADER_MATCH`, or unless
 Redmine confirms at startup that the key belongs to an administrator. It does
 not start while Redmine cannot be reached; with a container restart policy, it
@@ -72,11 +75,15 @@ who can send it a request can claim to be any Redmine user. Setting
 - **only the proxy can reach the server.** Do not publish its port. Keep it on a
   network that only the proxy shares, or firewall it.
 - **the proxy sets the header on every request**, overwriting any value a client
-  sent, and forwards no request it has not authenticated.
+  sent on every route it forwards, including routes it doesn't authenticate.
+- **the proxy sends the shared secret** in the `X-Trusted-Proxy-Secret` request
+  header matching `REDMINE_TRUSTED_HEADER_SECRET`.
+- **`PUBLIC_HOST` / `PUBLIC_PORT` must point at the proxy**, since `/files/` and
+  `/uploads/` URLs now require the proxy secret as well.
 
 A request without the header, or with a value that cannot be a Redmine login
 (or an email address in `mail` mode), is refused. The server never runs a
-request as the administrator itself.
+request as the account that owns `REDMINE_API_KEY`.
 
 ## The administrator key
 
@@ -86,17 +93,13 @@ the request runs as the key's own account. So:
 
 - the server refuses to start unless Redmine confirms that the key belongs to
   an administrator;
-- it checks again once per request, so if the account loses that role while the
-  server runs, requests are refused from then on instead of running as the
-  key's own account.
+- it looks up the target user with the administrator key once per request, so
+  if the account loses that role while the server runs, requests fail instead
+  of running with improper permissions.
 
-Treat the key like a root password: whoever holds it can act as any Redmine
-user. Use a dedicated administrator account for it, so that Redmine's log lines
-`User switched by: <account>` name the server. The key is never logged.
-
-Users named in the header who are Redmine administrators run with
-administrator rights, as they do in the Redmine web interface: Redmine skips
-its permission checks for them.
+The server **never** runs a request as the account that owns `REDMINE_API_KEY`,
+whatever the flag says. It runs as other administrators only when
+`REDMINE_TRUSTED_HEADER_ALLOW_ADMIN=true` is enabled.
 
 ## Matching by email
 

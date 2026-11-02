@@ -1033,6 +1033,55 @@ class TestCallerIdentity:
         assert owner == "api-key:" + hashlib.sha256(key.encode()).hexdigest()
         assert key not in owner
 
+    @pytest.mark.asyncio
+    async def test_trusted_header_uses_digest_of_match_mode_and_user(self, monkeypatch):
+        from types import SimpleNamespace
+
+        secret = "s" * 32
+        monkeypatch.setenv("REDMINE_TRUSTED_HEADER_SECRET", secret)
+        request = SimpleNamespace(
+            headers={
+                "X-Forwarded-User": "jsmith",
+                "X-Trusted-Proxy-Secret": secret,
+            }
+        )
+        with (
+            self._mode("trusted-header"),
+            patch.object(_caller, "get_http_request", return_value=request),
+        ):
+            owner = await _caller.resolve_staged_upload_owner()
+
+        expected = "trusted-header:" + hashlib.sha256(b"login:jsmith").hexdigest()
+        assert owner == expected
+        assert "jsmith" not in owner
+
+    @pytest.mark.asyncio
+    async def test_trusted_header_lowercases_and_preserves_match_mode(
+        self, monkeypatch
+    ):
+        from types import SimpleNamespace
+
+        secret = "s" * 32
+        monkeypatch.setenv("REDMINE_TRUSTED_HEADER_SECRET", secret)
+        monkeypatch.setenv("REDMINE_TRUSTED_HEADER_MATCH", "mail")
+        request = SimpleNamespace(
+            headers={
+                "X-Forwarded-User": "Anna@Corp.Example",
+                "X-Trusted-Proxy-Secret": secret,
+            }
+        )
+        with (
+            self._mode("trusted-header"),
+            patch.object(_caller, "get_http_request", return_value=request),
+        ):
+            owner = await _caller.resolve_staged_upload_owner()
+
+        expected = (
+            "trusted-header:" + hashlib.sha256(b"mail:anna@corp.example").hexdigest()
+        )
+        assert owner == expected
+        assert "anna" not in owner
+
     @pytest.mark.parametrize(
         "headers",
         [
@@ -1068,6 +1117,7 @@ class TestCallerIdentity:
         [
             ("api-key-login", True, True),
             ("legacy-per-user", False, True),
+            ("trusted-header", False, True),
             ("oauth", True, True),
             ("oauth-proxy", True, True),
             ("oauth", False, False),
@@ -1184,6 +1234,30 @@ class TestCreateUploadTicketBindsTheCaller:
         assert list(attachments_dir.iterdir()) == []
 
     @pytest.mark.asyncio
+    async def test_trusted_header_with_bad_header_names_the_remedy(
+        self, attachments_dir
+    ):
+        from types import SimpleNamespace
+        from redmine_mcp_server import _client
+
+        # No secret header -> cannot identify
+        request = SimpleNamespace(headers={"X-Forwarded-User": "alice"})
+        with (
+            patch.object(_client, "REDMINE_AUTH_MODE", "trusted-header"),
+            patch.object(_caller, "get_http_request", return_value=request),
+        ):
+            result = await create_upload_ticket(filename="mockup.png")
+
+        assert result == {
+            "error": (
+                "Could not identify the caller to bind this upload to. Send "
+                "the configured user header and proxy secret from your "
+                "authenticating proxy."
+            )
+        }
+        assert list(attachments_dir.iterdir()) == []
+
+    @pytest.mark.asyncio
     async def test_legacy_leaves_the_slot_unbound(self, attachments_dir):
         from redmine_mcp_server import _client
 
@@ -1218,6 +1292,61 @@ class TestAnotherUsersUploadId:
 
         assert result == _unknown(upload_id)
         mock_redmine.upload.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_trusted_header_refuses_different_user(
+        self, app, attachments_dir, monkeypatch
+    ):
+        from types import SimpleNamespace
+        from redmine_mcp_server import _client
+        from redmine_mcp_server.tools.files import upload_file
+
+        secret = "s" * 32
+        monkeypatch.setenv("REDMINE_TRUSTED_HEADER_SECRET", secret)
+
+        req_alice = SimpleNamespace(
+            headers={
+                "X-Forwarded-User": "alice",
+                "X-Trusted-Proxy-Secret": secret,
+            }
+        )
+        req_bob = SimpleNamespace(
+            headers={
+                "X-Forwarded-User": "bob",
+                "X-Trusted-Proxy-Secret": secret,
+            }
+        )
+
+        with (
+            patch.object(_client, "REDMINE_AUTH_MODE", "trusted-header"),
+            patch.object(_caller, "get_http_request", return_value=req_alice),
+        ):
+            issued = await create_upload_ticket(filename="report.pdf")
+            await _post(app, issued, b"alice-bytes")
+
+        # Bob tries to claim Alice's upload slot
+        with (
+            patch.object(_client, "REDMINE_AUTH_MODE", "trusted-header"),
+            patch.object(_caller, "get_http_request", return_value=req_bob),
+            patch("redmine_mcp_server._client.redmine") as mock_redmine,
+        ):
+            result = await upload_file(project_id="web", upload_id=issued["upload_id"])
+
+        assert result == _unknown(issued["upload_id"])
+        mock_redmine.upload.assert_not_called()
+
+        # Alice claims her own upload slot
+        with (
+            patch.object(_client, "REDMINE_AUTH_MODE", "trusted-header"),
+            patch.object(_caller, "get_http_request", return_value=req_alice),
+            patch("redmine_mcp_server._client.redmine") as mock_redmine,
+        ):
+            mock_redmine.upload.return_value = {"token": "tok-1"}
+            result = await upload_file(project_id="web", upload_id=issued["upload_id"])
+
+        assert "error" not in result
+        sent = mock_redmine.upload.call_args
+        assert sent.args[0].getvalue() == b"alice-bytes"
 
     @pytest.mark.asyncio
     async def test_upload_file_takes_the_owner_s_own(self, app, attachments_dir):

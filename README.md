@@ -130,6 +130,8 @@ The server runs on `http://localhost:8000` with the MCP endpoint at `/mcp`, heal
 | `REDMINE_API_KEY_LOGIN_RATE_LIMIT` | No | `300` | `api-key-login` only: login attempts per minute, a process-wide safety ceiling |
 | `REDMINE_API_KEY_LOGIN_BINDING_CRYPTO` | No | `server-secret` | `api-key-login` only: `server-secret` or `token-derived`. `token-derived` puts stored API keys beyond the reach of the volume plus the signing key, at the cost of any server-side read ([details](docs/api-key-login-auth.md#binding-protection)) |
 | `REDMINE_TRUSTED_HEADER_TRUST_PROXY` | Yes‖ | `false` | Required for `trusted-header` mode. Operator attestation: "only my authenticating proxy can reach this server, and it overwrites the user header on every request." |
+| `REDMINE_TRUSTED_HEADER_SECRET` | Yes‖ | – | Required for `trusted-header` mode: 32+ character ASCII secret shared with the authenticating proxy (`X-Trusted-Proxy-Secret`) |
+| `REDMINE_TRUSTED_HEADER_ALLOW_ADMIN` | No | `false` | `trusted-header` only: allow running requests as Redmine administrators ([details](docs/trusted-header-auth.md#the-administrator-key)) |
 | `REDMINE_TRUSTED_HEADER_NAME` | No | `X-Forwarded-User` | `trusted-header` only: the request header that names the user |
 | `REDMINE_TRUSTED_HEADER_MATCH` | No | `login` | `trusted-header` only: `login` (the header carries the Redmine login) or `mail` (it carries the user's primary email address) ([details](docs/trusted-header-auth.md#matching-by-email)) |
 | `REDMINE_API_KEY` | Yes†‖ | – | API key (legacy mode; in `trusted-header` mode, the key of a Redmine administrator) |
@@ -400,6 +402,8 @@ REDMINE_AUTH_MODE=trusted-header
 REDMINE_URL=https://redmine.example.com
 REDMINE_API_KEY=<API key of a Redmine administrator>
 REDMINE_TRUSTED_HEADER_TRUST_PROXY=true
+REDMINE_TRUSTED_HEADER_SECRET=<32+ character random ASCII secret>
+# REDMINE_TRUSTED_HEADER_ALLOW_ADMIN=true        # allow requests targeting admin accounts
 # REDMINE_TRUSTED_HEADER_NAME=X-Forwarded-User   # header that names the user
 # REDMINE_TRUSTED_HEADER_MATCH=mail              # header carries an email address instead of a login
 ```

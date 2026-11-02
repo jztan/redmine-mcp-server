@@ -18,13 +18,25 @@ from redmine_mcp_server._trusted_header import (
 )
 
 ADMIN_KEY = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"  # 40 hex chars
+VALID_SECRET = "s" * 32
+DEFAULT_SECRET_HEADER = _trusted_header.DEFAULT_SECRET_HEADER_NAME
 
 
 class FakeRequest:
     """Minimal stand-in for a Starlette request."""
 
-    def __init__(self, headers=None, scope=None):
-        self.headers = headers if headers is not None else {}
+    def __init__(self, headers=None, scope=None, include_secret=True):
+        if isinstance(headers, dict):
+            self.headers = (
+                {DEFAULT_SECRET_HEADER: VALID_SECRET} if include_secret else {}
+            )
+            self.headers.update(headers)
+        elif headers is not None:
+            self.headers = headers
+        else:
+            self.headers = (
+                {DEFAULT_SECRET_HEADER: VALID_SECRET} if include_secret else {}
+            )
         if scope is not None:
             self.scope = scope
 
@@ -34,6 +46,54 @@ def _isolated(monkeypatch):
     monkeypatch.delenv("REDMINE_TRUSTED_HEADER_NAME", raising=False)
     monkeypatch.delenv("REDMINE_TRUSTED_HEADER_MATCH", raising=False)
     monkeypatch.delenv("REDMINE_TRUSTED_HEADER_TRUST_PROXY", raising=False)
+    monkeypatch.delenv("REDMINE_TRUSTED_HEADER_SECRET", raising=False)
+    monkeypatch.delenv("REDMINE_TRUSTED_HEADER_ALLOW_ADMIN", raising=False)
+    monkeypatch.setattr(_trusted_header, "_TRUSTED_HEADER_SECRET", VALID_SECRET)
+    monkeypatch.setattr(_trusted_header, "_KEY_OWNER_ID", 1)
+
+
+@pytest.fixture(autouse=True)
+def _auto_mock_redmine(request):
+    if "test_probe" in request.node.name or "test_redmine_get" in request.node.name:
+        yield
+        return
+
+    def _fake_redmine_get(path, key, params=None):
+        if path == "/users/current.json":
+            resp = MagicMock(status_code=200)
+            resp.json.return_value = {
+                "user": {"id": 1, "admin": True, "login": "admin"}
+            }
+            return resp
+        if path == "/users.json":
+            name = ""
+            if params:
+                for k, v in params:
+                    if k == "name":
+                        name = v
+                        break
+            resp = MagicMock(status_code=200)
+            resp.json.return_value = {
+                "users": [
+                    {
+                        "id": 42,
+                        "login": name,
+                        "mail": name if "@" in name else f"{name}@corp.example",
+                        "admin": False,
+                        "status": 1,
+                    }
+                ],
+                "total_count": 1,
+            }
+            return resp
+        return MagicMock(status_code=404)
+
+    with (
+        patch.object(_client, "REDMINE_URL", "https://r.example.com"),
+        patch.object(_client, "REDMINE_API_KEY", ADMIN_KEY),
+        patch.object(_trusted_header, "_redmine_get", side_effect=_fake_redmine_get),
+    ):
+        yield
 
 
 @pytest.fixture
@@ -45,6 +105,7 @@ def mail_mode(monkeypatch):
 def configured(monkeypatch):
     """A complete trusted-header configuration, minus the Redmine answer."""
     monkeypatch.setenv("REDMINE_TRUSTED_HEADER_TRUST_PROXY", "true")
+    monkeypatch.setenv("REDMINE_TRUSTED_HEADER_SECRET", VALID_SECRET)
     with (
         patch.object(_client, "REDMINE_URL", "https://r.example.com"),
         patch.object(_client, "REDMINE_API_KEY", ADMIN_KEY),
@@ -52,9 +113,9 @@ def configured(monkeypatch):
         yield
 
 
-def _probe_returns(status, admin=None):
+def _probe_returns(status, admin=None, user_id=1):
     return patch.object(
-        _trusted_header, "_probe_admin_key", return_value=(status, admin)
+        _trusted_header, "_probe_admin_key", return_value=(status, admin, user_id)
     )
 
 
@@ -108,7 +169,17 @@ def test_resolve_none_request_raises():
 
 @pytest.mark.parametrize(
     "bad",
-    ["", "has space", "x" * 61, "jsmith\n", "jsmith;admin", "../jsmith", "jsmith+1"],
+    [
+        "",
+        "has space",
+        "x" * 61,
+        "jsmith\n",
+        "jsmith;admin",
+        "../jsmith",
+        "jsmith+1",
+        "\u212a",
+        "\u0131",
+    ],
 )
 def test_resolve_rejects_values_that_cannot_be_redmine_logins(bad):
     req = FakeRequest(headers={"X-Forwarded-User": bad})
@@ -127,6 +198,71 @@ def test_resolve_logs_the_login(caplog):
     with caplog.at_level(logging.INFO, logger="redmine_mcp_server"):
         resolve_trusted_login(req)
     assert "jsmith" in " ".join(r.getMessage() for r in caplog.records)
+
+
+def test_resolve_rejects_repeated_header_in_scope():
+    req = FakeRequest(
+        scope={
+            "headers": [
+                (DEFAULT_SECRET_HEADER.lower().encode(), VALID_SECRET.encode()),
+                (b"x-forwarded-user", b"alice"),
+                (b"x-forwarded-user", b"bob"),
+            ]
+        }
+    )
+    with pytest.raises(PerUserAuthError) as exc:
+        resolve_trusted_login(req)
+    assert "repeated X-Forwarded-User request header" in exc.value.message
+
+
+def test_resolve_rejects_comma_joined_header():
+    req = FakeRequest(headers={"X-Forwarded-User": "alice, bob"})
+    with pytest.raises(PerUserAuthError) as exc:
+        resolve_trusted_login(req)
+    assert "repeated X-Forwarded-User request header" in exc.value.message
+
+
+def test_resolve_rejects_missing_secret_header():
+    req = FakeRequest(headers={"X-Forwarded-User": "jsmith"}, include_secret=False)
+    with pytest.raises(PerUserAuthError) as exc:
+        resolve_trusted_login(req)
+    assert "missing X-Trusted-Proxy-Secret request header" in exc.value.message
+
+
+def test_resolve_rejects_invalid_secret_header():
+    req = FakeRequest(
+        headers={"X-Forwarded-User": "jsmith", DEFAULT_SECRET_HEADER: "wrong" * 8}
+    )
+    with pytest.raises(PerUserAuthError) as exc:
+        resolve_trusted_login(req)
+    assert "invalid proxy secret" in exc.value.message
+
+
+def test_resolve_rejects_repeated_secret_header_in_scope():
+    req = FakeRequest(
+        scope={
+            "headers": [
+                (DEFAULT_SECRET_HEADER.lower().encode(), VALID_SECRET.encode()),
+                (DEFAULT_SECRET_HEADER.lower().encode(), VALID_SECRET.encode()),
+                (b"x-forwarded-user", b"alice"),
+            ]
+        }
+    )
+    with pytest.raises(PerUserAuthError) as exc:
+        resolve_trusted_login(req)
+    assert "repeated X-Trusted-Proxy-Secret request header" in exc.value.message
+
+
+def test_resolve_rejects_comma_joined_secret_header():
+    req = FakeRequest(
+        headers={
+            "X-Forwarded-User": "jsmith",
+            DEFAULT_SECRET_HEADER: f"{VALID_SECRET},{VALID_SECRET}",
+        }
+    )
+    with pytest.raises(PerUserAuthError) as exc:
+        resolve_trusted_login(req)
+    assert "repeated X-Trusted-Proxy-Secret request header" in exc.value.message
 
 
 # --- header helper shared with legacy-per-user ----------------------------
@@ -236,6 +372,38 @@ def test_startup_passes_with_admin_key_and_warns(configured, caplog):
     assert ADMIN_KEY not in joined
 
 
+def test_startup_requires_secret(configured, monkeypatch):
+    monkeypatch.delenv("REDMINE_TRUSTED_HEADER_SECRET", raising=False)
+    with _probe_returns(200, True):
+        with pytest.raises(RuntimeError) as exc:
+            assert_startup_requirements()
+    assert "REDMINE_TRUSTED_HEADER_SECRET" in str(exc.value)
+
+
+def test_startup_rejects_short_secret(configured, monkeypatch):
+    monkeypatch.setenv("REDMINE_TRUSTED_HEADER_SECRET", "s" * 31)
+    with _probe_returns(200, True):
+        with pytest.raises(RuntimeError) as exc:
+            assert_startup_requirements()
+    assert "at least 32 characters" in str(exc.value)
+
+
+def test_startup_rejects_secret_with_spaces(configured, monkeypatch):
+    monkeypatch.setenv("REDMINE_TRUSTED_HEADER_SECRET", "s" * 31 + " ")
+    with _probe_returns(200, True):
+        with pytest.raises(RuntimeError) as exc:
+            assert_startup_requirements()
+    assert "printable ASCII characters without spaces" in str(exc.value)
+
+
+def test_startup_rejects_non_ascii_secret(configured, monkeypatch):
+    monkeypatch.setenv("REDMINE_TRUSTED_HEADER_SECRET", "s" * 31 + "é")
+    with _probe_returns(200, True):
+        with pytest.raises(RuntimeError) as exc:
+            assert_startup_requirements()
+    assert "printable ASCII characters without spaces" in str(exc.value)
+
+
 # --- the Redmine client ---------------------------------------------------
 
 
@@ -258,7 +426,10 @@ def _trusted_header_mode(get_http_request):
 
 def _request(headers):
     request = MagicMock()
-    request.headers = headers
+    h = {DEFAULT_SECRET_HEADER: VALID_SECRET}
+    if headers is not None:
+        h.update(headers)
+    request.headers = h
     request.state = State()
     return request
 
@@ -319,12 +490,14 @@ def test_client_checks_the_admin_key_once_per_request():
     # A tool that builds several clients while serving one request.
     with (
         _trusted_header_mode(_serving({"X-Forwarded-User": "jsmith"})),
-        _probe_returns(200, True) as probe,
+        _lookup_returns(
+            _users_response(users=[{"id": 42, "login": "jsmith", "admin": False}])
+        ) as lookup,
         patch.object(_client, "Redmine"),
     ):
         _client._get_redmine_client()
         _client._get_redmine_client()
-    probe.assert_called_once_with(ADMIN_KEY)
+    lookup.assert_called_once()
 
 
 def test_client_checks_the_admin_key_again_for_the_next_request():
@@ -336,37 +509,46 @@ def test_client_checks_the_admin_key_again_for_the_next_request():
     )
     with (
         _trusted_header_mode(requests_in_turn),
-        _probe_returns(200, True) as probe,
+        _lookup_returns(
+            _users_response(users=[{"id": 42, "login": "jsmith", "admin": False}])
+        ) as lookup,
         patch.object(_client, "Redmine"),
     ):
         _client._get_redmine_client()
         _client._get_redmine_client()
-    assert probe.call_count == 2
+    assert lookup.call_count == 2
 
 
 def test_client_does_not_remember_a_failed_check():
     with _trusted_header_mode(_serving({"X-Forwarded-User": "jsmith"})):
-        with _probe_returns(200, False), pytest.raises(PerUserAuthError):
+        with (
+            _lookup_returns(_users_response(status=403)),
+            pytest.raises(PerUserAuthError),
+        ):
             _client._get_redmine_client()
-        with _probe_returns(200, True) as probe, patch.object(_client, "Redmine"):
+        with (
+            _lookup_returns(
+                _users_response(users=[{"id": 42, "login": "jsmith", "admin": False}])
+            ) as lookup,
+            patch.object(_client, "Redmine"),
+        ):
             _client._get_redmine_client()
-    probe.assert_called_once_with(ADMIN_KEY)
+    assert lookup.call_count == 1
 
 
 @pytest.mark.parametrize(
-    "status, admin, expected",
+    "status, expected",
     [
-        (200, False, "administrator"),
-        (200, None, "administrator"),
-        (401, None, "rejected"),
-        (503, None, "HTTP 503"),
+        (401, "refused"),
+        (403, "refused"),
+        (503, "HTTP 503"),
     ],
-    ids=["no-longer-admin", "no-admin-flag", "key-rejected", "server-error"],
+    ids=["key-rejected", "no-longer-admin", "server-error"],
 )
-def test_client_refuses_when_the_key_cannot_switch_users(status, admin, expected):
+def test_client_refuses_when_the_key_cannot_switch_users(status, expected):
     with (
         _trusted_header_mode(_serving({"X-Forwarded-User": "jsmith"})),
-        _probe_returns(status, admin),
+        _lookup_returns(_users_response(status=status)),
         patch.object(_client, "Redmine") as mock_redmine,
     ):
         with pytest.raises(PerUserAuthError) as exc:
@@ -378,7 +560,11 @@ def test_client_refuses_when_the_key_cannot_switch_users(status, admin, expected
 def test_client_reports_unreachable_redmine_as_a_connection_error():
     with (
         _trusted_header_mode(_serving({"X-Forwarded-User": "jsmith"})),
-        _probe_raises(requests.ConnectionError("refused")),
+        patch.object(
+            _trusted_header,
+            "_redmine_get",
+            side_effect=requests.ConnectionError("refused"),
+        ),
         patch.object(_client, "Redmine") as mock_redmine,
     ):
         with pytest.raises(requests.ConnectionError) as exc:
@@ -427,11 +613,140 @@ def test_build_app_refuses_to_start_when_the_checks_fail():
             main.build_app()
 
 
+def test_build_app_installs_trusted_header_middleware():
+    from redmine_mcp_server import main
+    from redmine_mcp_server._trusted_header import TrustedHeaderMiddleware
+
+    with (
+        patch.object(main, "REDMINE_AUTH_MODE", "trusted-header"),
+        patch.object(_trusted_header, "assert_startup_requirements"),
+    ):
+        app = main.build_app()
+    assert any(m.cls is TrustedHeaderMiddleware for m in app.user_middleware)
+
+
 def test_refused_user_switch_maps_to_a_clear_error():
     result = _handle_redmine_error(ImpersonateError(), "listing issues")
     assert result["code"] == "PER_USER_AUTH"
     assert "does not exist" in result["error"]
     assert "locked" in result["error"]
+
+
+def test_middleware_allows_health_without_secret():
+    from starlette.applications import Starlette
+    from starlette.middleware import Middleware
+    from starlette.responses import PlainTextResponse
+    from starlette.routing import Route
+    from starlette.testclient import TestClient
+
+    app = Starlette(
+        routes=[
+            Route(
+                "/health", lambda r: PlainTextResponse("ok"), methods=["GET", "HEAD"]
+            ),
+            Route(
+                "/mcp", lambda r: PlainTextResponse("mcp-ok"), methods=["GET", "POST"]
+            ),
+        ],
+        middleware=[Middleware(_trusted_header.TrustedHeaderMiddleware)],
+    )
+    client = TestClient(app)
+
+    assert client.get("/health").status_code == 200
+    assert client.head("/health").status_code == 200
+
+
+def test_middleware_blocks_non_health_without_secret():
+    from starlette.applications import Starlette
+    from starlette.middleware import Middleware
+    from starlette.responses import PlainTextResponse
+    from starlette.routing import Route
+    from starlette.testclient import TestClient
+
+    app = Starlette(
+        routes=[
+            Route(
+                "/mcp", lambda r: PlainTextResponse("mcp-ok"), methods=["GET", "POST"]
+            ),
+            Route("/files/1", lambda r: PlainTextResponse("file-ok"), methods=["GET"]),
+        ],
+        middleware=[Middleware(_trusted_header.TrustedHeaderMiddleware)],
+    )
+    client = TestClient(app)
+
+    assert client.get("/mcp").status_code == 401
+    assert client.post("/mcp").status_code == 401
+    assert client.get("/files/1").status_code == 401
+
+
+def test_middleware_blocks_wrong_secret():
+    from starlette.applications import Starlette
+    from starlette.middleware import Middleware
+    from starlette.responses import PlainTextResponse
+    from starlette.routing import Route
+    from starlette.testclient import TestClient
+
+    app = Starlette(
+        routes=[
+            Route(
+                "/mcp", lambda r: PlainTextResponse("mcp-ok"), methods=["GET", "POST"]
+            ),
+        ],
+        middleware=[Middleware(_trusted_header.TrustedHeaderMiddleware)],
+    )
+    client = TestClient(app)
+
+    resp = client.get("/mcp", headers={DEFAULT_SECRET_HEADER: "wrong" * 8})
+    assert resp.status_code == 401
+
+
+def test_middleware_blocks_repeated_secret_header():
+    from starlette.applications import Starlette
+    from starlette.middleware import Middleware
+    from starlette.responses import PlainTextResponse
+    from starlette.routing import Route
+    from starlette.testclient import TestClient
+
+    app = Starlette(
+        routes=[
+            Route(
+                "/mcp", lambda r: PlainTextResponse("mcp-ok"), methods=["GET", "POST"]
+            ),
+        ],
+        middleware=[Middleware(_trusted_header.TrustedHeaderMiddleware)],
+    )
+    client = TestClient(app)
+
+    resp = client.get(
+        "/mcp",
+        headers=[
+            (DEFAULT_SECRET_HEADER, VALID_SECRET),
+            (DEFAULT_SECRET_HEADER, VALID_SECRET),
+        ],
+    )
+    assert resp.status_code == 401
+
+
+def test_middleware_allows_valid_secret():
+    from starlette.applications import Starlette
+    from starlette.middleware import Middleware
+    from starlette.responses import PlainTextResponse
+    from starlette.routing import Route
+    from starlette.testclient import TestClient
+
+    app = Starlette(
+        routes=[
+            Route(
+                "/mcp", lambda r: PlainTextResponse("mcp-ok"), methods=["GET", "POST"]
+            ),
+        ],
+        middleware=[Middleware(_trusted_header.TrustedHeaderMiddleware)],
+    )
+    client = TestClient(app)
+
+    resp = client.get("/mcp", headers={DEFAULT_SECRET_HEADER: VALID_SECRET})
+    assert resp.status_code == 200
+    assert resp.text == "mcp-ok"
 
 
 # --- matching by email ----------------------------------------------------
@@ -452,12 +767,17 @@ def _lookup_returns(response):
     return patch.object(_trusted_header, "_redmine_get", return_value=response)
 
 
-def test_login_mode_uses_the_header_value_as_is():
-    # Some Redmines use email addresses as logins; login mode never looks up.
-    with _lookup_returns(_users_response()) as lookup:
-        login = resolve_trusted_login(_request({"X-Forwarded-User": ANNA["mail"]}))
-    assert login == ANNA["mail"]
-    lookup.assert_not_called()
+def test_login_mode_looks_up_and_matches_by_login():
+    users = [{"id": 5, "login": "anna", "admin": False}]
+    with _lookup_returns(_users_response(users=users)) as lookup:
+        login = resolve_trusted_login(_request({"X-Forwarded-User": "anna"}))
+    assert login == "anna"
+    assert lookup.call_args.args == ("/users.json", ADMIN_KEY)
+    assert lookup.call_args.kwargs["params"] == [
+        ("name", "anna"),
+        ("status", "1"),
+        ("limit", "100"),
+    ]
 
 
 def test_mail_mode_resolves_the_email_to_a_login(mail_mode):
@@ -603,6 +923,83 @@ def test_client_reports_an_unreachable_lookup_as_a_connection_error(mail_mode):
     mock_redmine.assert_not_called()
 
 
+# --- Problem #2: Admin targets, key owner refusal & pagination ------------
+
+
+def test_resolve_refuses_admin_target_by_default():
+    admin_user = {"id": 10, "login": "superadmin", "admin": True}
+    with _lookup_returns(_users_response(users=[admin_user])):
+        with pytest.raises(PerUserAuthError) as exc:
+            resolve_trusted_login(_request({"X-Forwarded-User": "superadmin"}))
+    assert "refusing to run request as administrator" in exc.value.message
+    assert "REDMINE_TRUSTED_HEADER_ALLOW_ADMIN is false" in exc.value.message
+
+
+def test_resolve_allows_admin_target_when_flag_enabled(monkeypatch):
+    monkeypatch.setenv("REDMINE_TRUSTED_HEADER_ALLOW_ADMIN", "true")
+    admin_user = {"id": 10, "login": "superadmin", "admin": True}
+    with _lookup_returns(_users_response(users=[admin_user])):
+        assert (
+            resolve_trusted_login(_request({"X-Forwarded-User": "superadmin"}))
+            == "superadmin"
+        )
+
+
+def test_resolve_always_refuses_key_owner_even_with_flag(monkeypatch):
+    monkeypatch.setenv("REDMINE_TRUSTED_HEADER_ALLOW_ADMIN", "true")
+    # Key owner ID was recorded as 1 in _isolated fixture
+    owner_user = {"id": 1, "login": "keyowner", "admin": True}
+    with _lookup_returns(_users_response(users=[owner_user])):
+        with pytest.raises(PerUserAuthError) as exc:
+            resolve_trusted_login(_request({"X-Forwarded-User": "keyowner"}))
+    assert (
+        "refusing to run request as the account that owns REDMINE_API_KEY"
+        in exc.value.message
+    )
+
+
+def test_resolve_paginates_user_lookup():
+    # Page 1: 100 users, target not there
+    page1_users = [
+        {"id": 100 + i, "login": f"user{i}", "admin": False} for i in range(100)
+    ]
+    # Page 2: target user is here
+    page2_users = [{"id": 500, "login": "targetuser", "admin": False}]
+
+    call_count = 0
+
+    def _paged_get(path, key, params=None):
+        nonlocal call_count
+        call_count += 1
+        resp = MagicMock(status_code=200)
+        p_dict = dict(params or [])
+        offset = int(p_dict.get("offset", 0))
+        if offset == 0:
+            resp.json.return_value = {"users": page1_users, "total_count": 101}
+        else:
+            resp.json.return_value = {"users": page2_users, "total_count": 101}
+        return resp
+
+    with patch.object(_trusted_header, "_redmine_get", side_effect=_paged_get):
+        login = resolve_trusted_login(_request({"X-Forwarded-User": "targetuser"}))
+    assert login == "targetuser"
+    assert call_count == 2
+
+
+def test_resolve_refuses_when_pagination_exceeds_10_pages():
+    # Returns 100 users on every page with total_count=1500
+    page_users = [
+        {"id": 100 + i, "login": f"other{i}", "admin": False} for i in range(100)
+    ]
+    resp = MagicMock(status_code=200)
+    resp.json.return_value = {"users": page_users, "total_count": 1500}
+
+    with patch.object(_trusted_header, "_redmine_get", return_value=resp):
+        with pytest.raises(PerUserAuthError) as exc:
+            resolve_trusted_login(_request({"X-Forwarded-User": "targetuser"}))
+    assert "exceeded maximum page limit" in exc.value.message
+
+
 # --- the probe itself -----------------------------------------------------
 
 
@@ -621,13 +1018,13 @@ def _fake_session(status, body=None, json_error=None):
 @pytest.mark.parametrize(
     "status, body, json_error, expected",
     [
-        (200, {"user": {"id": 1, "admin": True}}, None, (200, True)),
-        (200, {"user": {"id": 2, "admin": False}}, None, (200, False)),
-        (200, {"user": {"id": 3}}, None, (200, None)),
-        (200, {"user": {"admin": "true"}}, None, (200, None)),
-        (200, ["not", "an", "object"], None, (200, None)),
-        (200, None, ValueError("not json"), (200, None)),
-        (401, None, None, (401, None)),
+        (200, {"user": {"id": 1, "admin": True}}, None, (200, True, 1)),
+        (200, {"user": {"id": 2, "admin": False}}, None, (200, False, 2)),
+        (200, {"user": {"id": 3}}, None, (200, None, 3)),
+        (200, {"user": {"admin": "true"}}, None, (200, None, None)),
+        (200, ["not", "an", "object"], None, (200, None, None)),
+        (200, None, ValueError("not json"), (200, None, None)),
+        (401, None, None, (401, None, None)),
     ],
     ids=["admin", "not-admin", "no-flag", "string-flag", "list", "not-json", "401"],
 )

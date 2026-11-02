@@ -506,14 +506,13 @@ def _get_redmine_client() -> Redmine:
     # resolve_request_credential, which would hand back the bare
     # administrator key as a legacy credential.
     if g["REDMINE_AUTH_MODE"] == "trusted-header":
-        from ._trusted_header import check_admin_key, resolve_trusted_login
+        from ._trusted_header import resolve_trusted_login
 
         try:
             request = get_http_request()
         except RuntimeError:
             request = None
         login = resolve_trusted_login(request)  # raises PerUserAuthError
-        check_admin_key(request)  # once per HTTP request
         return _new_client(key=g["REDMINE_API_KEY"], impersonate=login)
 
     cred = resolve_request_credential(strict=True)

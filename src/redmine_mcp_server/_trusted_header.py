@@ -30,18 +30,31 @@ import re
 from typing import Optional
 
 import requests
+from starlette.responses import Response
+from starlette.routing import get_route_path
 
+from ._api_key_login import _constant_time_equal
 from ._per_user import PerUserAuthError, _extract_header
 
 logger = logging.getLogger("redmine_mcp_server")
 
 DEFAULT_HEADER_NAME = "X-Forwarded-User"
+DEFAULT_SECRET_HEADER_NAME = "X-Trusted-Proxy-Secret"
 MATCH_MODES = ("login", "mail")
+_TRUSTED_HEADER_SECRET: Optional[str] = None
+_KEY_OWNER_ID: Optional[int] = None
+
+
+def _allow_admin() -> bool:
+    from ._env import _is_true_env
+
+    return _is_true_env("REDMINE_TRUSTED_HEADER_ALLOW_ADMIN")
+
 
 # Redmine's own login rule (User model: /\A[a-z0-9_\-@\.]*\z/i, at most
 # LOGIN_LENGTH_LIMIT = 60 characters). Anything else cannot name a Redmine
 # user, so it is rejected before it reaches Redmine.
-_LOGIN_RE = re.compile(r"[a-z0-9_\-@.]{1,60}", re.IGNORECASE)
+_LOGIN_RE = re.compile(r"[a-z0-9_\-@.]{1,60}", re.IGNORECASE | re.ASCII)
 
 # Redmine's own email rule (EmailAddress model: Ruby's
 # URI::MailTo::EMAIL_REGEXP, at most User::MAIL_LENGTH_LIMIT = 254
@@ -64,39 +77,225 @@ def _match_mode() -> str:
     return os.getenv("REDMINE_TRUSTED_HEADER_MATCH", "").strip().lower() or "login"
 
 
+def _count_header_in_scope(scope: dict, name: str) -> int:
+    """Count occurrences of header ``name`` in ASGI ``scope['headers']``,
+    case-insensitive.
+    """
+    if not isinstance(scope, dict):
+        return 0
+    raw_headers = scope.get("headers")
+    if not raw_headers:
+        return 0
+    target_bytes = name.lower().encode("latin-1")
+    target_str = name.lower()
+    count = 0
+    for raw_k, _ in raw_headers:
+        if isinstance(raw_k, (bytes, bytearray)):
+            if raw_k.lower() == target_bytes:
+                count += 1
+        elif str(raw_k).lower() == target_str:
+            count += 1
+    return count
+
+
+def _extract_header_from_scope(scope: dict, name: str) -> Optional[str]:
+    """Extract first value of header ``name`` from ASGI ``scope['headers']``,
+    case-insensitive.
+    """
+    if not isinstance(scope, dict):
+        return None
+    raw_headers = scope.get("headers")
+    if not raw_headers:
+        return None
+    target_bytes = name.lower().encode("latin-1")
+    target_str = name.lower()
+    for raw_k, raw_v in raw_headers:
+        matched = False
+        if isinstance(raw_k, (bytes, bytearray)):
+            if raw_k.lower() == target_bytes:
+                matched = True
+        elif str(raw_k).lower() == target_str:
+            matched = True
+        if matched:
+            if isinstance(raw_v, (bytes, bytearray)):
+                return raw_v.decode("latin-1")
+            return str(raw_v)
+    return None
+
+
+def _extract_single_header(request, name: str) -> Optional[str]:
+    """Extract header ``name`` from ``request``, raising PerUserAuthError if
+    repeated.
+    """
+    scope = getattr(request, "scope", None)
+    if isinstance(request, dict) and "headers" in request:
+        scope = request
+
+    if scope is not None and "headers" in scope:
+        if _count_header_in_scope(scope, name) > 1:
+            raise PerUserAuthError(
+                f"Trusted-header auth: repeated {name} request header."
+            )
+        val = _extract_header_from_scope(scope, name)
+        if val is not None and "," in val:
+            raise PerUserAuthError(
+                f"Trusted-header auth: repeated {name} request header."
+            )
+        if val is not None:
+            return val
+
+    value = _extract_header(request, name)
+    if value is not None and "," in value:
+        raise PerUserAuthError(f"Trusted-header auth: repeated {name} request header.")
+    return value
+
+
+class TrustedHeaderMiddleware:
+    """Pure ASGI middleware verifying X-Trusted-Proxy-Secret on all HTTP routes
+    except GET/HEAD /health.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        method = scope.get("method", "").upper()
+        if method in ("GET", "HEAD") and get_route_path(scope) == "/health":
+            await self.app(scope, receive, send)
+            return
+
+        if _count_header_in_scope(scope, DEFAULT_SECRET_HEADER_NAME) != 1:
+            response = Response("Unauthorized", status_code=401)
+            await response(scope, receive, send)
+            return
+
+        secret_val = _extract_header_from_scope(scope, DEFAULT_SECRET_HEADER_NAME)
+        if secret_val is None or "," in secret_val:
+            response = Response("Unauthorized", status_code=401)
+            await response(scope, receive, send)
+            return
+
+        expected_secret = _TRUSTED_HEADER_SECRET
+        if expected_secret is None:
+            from ._env import get_secret
+
+            expected_secret = get_secret("REDMINE_TRUSTED_HEADER_SECRET")
+
+        if not expected_secret or not _constant_time_equal(expected_secret, secret_val):
+            response = Response("Unauthorized", status_code=401)
+            await response(scope, receive, send)
+            return
+
+        await self.app(scope, receive, send)
+
+
+def validate_trusted_request(request) -> tuple[str, str]:
+    """Sync, no-I/O check of the proxy secret, header uniqueness, and user format.
+
+    Returns ``(user_value, match_mode)``.
+    Raises ``PerUserAuthError`` on any violation.
+    """
+    if request is None:
+        raise PerUserAuthError(
+            "Trusted-header auth requires an HTTP request context but none was found."
+        )
+
+    scope = getattr(request, "scope", None)
+    if isinstance(request, dict) and "headers" in request:
+        scope = request
+
+    # Check secret header
+    if scope is not None and "headers" in scope:
+        secret_count = _count_header_in_scope(scope, DEFAULT_SECRET_HEADER_NAME)
+        if secret_count > 1:
+            raise PerUserAuthError(
+                f"Trusted-header auth: repeated {DEFAULT_SECRET_HEADER_NAME} "
+                "request header."
+            )
+        if secret_count < 1:
+            raise PerUserAuthError(
+                f"Trusted-header auth: missing {DEFAULT_SECRET_HEADER_NAME} "
+                "request header."
+            )
+
+    secret_val = _extract_header(request, DEFAULT_SECRET_HEADER_NAME)
+    if secret_val is None:
+        raise PerUserAuthError(
+            f"Trusted-header auth: missing {DEFAULT_SECRET_HEADER_NAME} "
+            "request header."
+        )
+    if "," in secret_val:
+        raise PerUserAuthError(
+            f"Trusted-header auth: repeated {DEFAULT_SECRET_HEADER_NAME} "
+            "request header."
+        )
+
+    expected_secret = _TRUSTED_HEADER_SECRET
+    if expected_secret is None:
+        from ._env import get_secret
+
+        expected_secret = get_secret("REDMINE_TRUSTED_HEADER_SECRET")
+
+    from ._api_key_login import _constant_time_equal
+
+    if not expected_secret or not _constant_time_equal(expected_secret, secret_val):
+        raise PerUserAuthError("Trusted-header auth: invalid proxy secret.")
+
+    # Check user header
+    name = _header_name()
+    if scope is not None and "headers" in scope:
+        if _count_header_in_scope(scope, name) > 1:
+            raise PerUserAuthError(
+                f"Trusted-header auth: repeated {name} request header."
+            )
+
+    value = _extract_header(request, name)
+    if value is None:
+        raise PerUserAuthError(f"Trusted-header auth: missing {name} request header.")
+    if "," in value:
+        raise PerUserAuthError(f"Trusted-header auth: repeated {name} request header.")
+
+    mode = _match_mode()
+    if mode == "mail":
+        if len(value) > _MAIL_MAX_LENGTH or not _MAIL_RE.fullmatch(value):
+            raise PerUserAuthError(
+                f"Trusted-header auth: the {name} header is not a valid email address."
+            )
+    elif not _LOGIN_RE.fullmatch(value):
+        raise PerUserAuthError(
+            f"Trusted-header auth: the {name} header is not a valid Redmine login."
+        )
+
+    return value, mode
+
+
 def resolve_trusted_login(request) -> str:
     """Return the Redmine login of the user the proxy named, or raise
     PerUserAuthError.
 
-    In ``mail`` mode the header carries an email address. It is resolved to
-    a login once per HTTP request; the login is kept on ``request.state`` and
-    discarded with the request.
+    Validates proxy secret and headers, checks whether user exists, is active,
+    is not administrator (unless REDMINE_TRUSTED_HEADER_ALLOW_ADMIN=true),
+    and is not key owner.
+    Resolved once per HTTP request; kept on request.state.trusted_header_login.
     """
-    if request is None:
-        raise PerUserAuthError(
-            "Trusted-header auth requires an HTTP request context but none "
-            "was found."
-        )
-    name = _header_name()
-    value = _extract_header(request, name)
-    if value is None:
-        raise PerUserAuthError(f"Trusted-header auth: missing {name} request header.")
-    if _match_mode() == "mail":
-        if len(value) > _MAIL_MAX_LENGTH or not _MAIL_RE.fullmatch(value):
-            raise PerUserAuthError(
-                f"Trusted-header auth: the {name} header is not a valid email "
-                "address."
-            )
-        login = getattr(request.state, "trusted_header_login", None)
-        if login is None:
-            login = _login_for_mail(value)
-            request.state.trusted_header_login = login
-    elif _LOGIN_RE.fullmatch(value):
-        login = value
-    else:
-        raise PerUserAuthError(
-            f"Trusted-header auth: the {name} header is not a valid Redmine login."
-        )
+    value, mode = validate_trusted_request(request)
+
+    state = getattr(request, "state", None)
+    if state is not None:
+        login = getattr(state, "trusted_header_login", None)
+        if login is not None:
+            return login
+
+    from . import _client
+
+    login = _lookup_user(value, mode, _client.REDMINE_API_KEY)
+    if state is not None:
+        state.trusted_header_login = login
+
     logger.info("trusted-header request as login=%s", login)
     return login
 
@@ -124,85 +323,141 @@ def _redmine_get(path: str, key: str, params=None) -> requests.Response:
         )
 
 
-def _login_for_mail(email: str) -> str:
-    """Return the login of the active Redmine user whose primary email is
-    ``email``, ignoring case, or raise PerUserAuthError.
+def _lookup_user(value: str, mode: str, api_key: str) -> str:
+    """Query Redmine GET /users.json?name=<value>&status=1 with the admin key.
 
-    Redmine's ``name`` search narrows the list: active users whose login,
-    name or any email address contains ``email``, ignoring case. Every
-    Redmine version supports it, unlike the user query filters added in 5.1.
-    The exact comparison happens here, against the primary email only:
-    additional addresses do not count, because the user list does not show
-    them. Transport errors propagate to the caller.
+    Returns the matching user's login, or raises PerUserAuthError.
     """
-    from . import _client
+    wanted = value.lower()
+    users: list[dict] = []
+    limit = 100
+    offset = 0
+    max_pages = 10
 
-    response = _redmine_get(
-        "/users.json",
-        _client.REDMINE_API_KEY,
-        params=[("name", email), ("status", "1"), ("limit", "100")],
-    )
-    if response.status_code in (401, 403):
+    for _ in range(max_pages):
+        params = [
+            ("name", value),
+            ("status", "1"),
+            ("limit", str(limit)),
+        ]
+        if offset > 0:
+            params.append(("offset", str(offset)))
+
+        response = _redmine_get("/users.json", api_key, params=params)
+
+        if response.status_code in (401, 403):
+            raise PerUserAuthError(
+                "Trusted-header auth: Redmine refused the user lookup. "
+                "Listing users needs REDMINE_API_KEY to belong to an administrator."
+            )
+        if not 200 <= response.status_code < 300:
+            raise PerUserAuthError(
+                "Trusted-header auth: the user lookup returned HTTP "
+                f"{response.status_code}."
+            )
+
+        try:
+            data = response.json()
+            page_users = data.get("users")
+            total_count = data.get("total_count")
+        except (ValueError, AttributeError):
+            raise PerUserAuthError(
+                "Trusted-header auth: the user lookup returned an unexpected response."
+            )
+
+        if not isinstance(page_users, list):
+            raise PerUserAuthError(
+                "Trusted-header auth: the user lookup returned an unexpected response."
+            )
+
+        users.extend(page_users)
+
+        if total_count is not None and isinstance(total_count, int):
+            if len(users) >= total_count:
+                break
+        elif len(page_users) < limit:
+            break
+
+        offset += limit
+    else:
         raise PerUserAuthError(
-            "Trusted-header auth: Redmine refused the user lookup by email. "
-            "Listing users needs REDMINE_API_KEY to belong to an administrator."
+            "Trusted-header auth: the user lookup exceeded maximum page limit "
+            "(too many matching users)."
         )
-    if not 200 <= response.status_code < 300:
+
+    exact_matches: list[dict] = []
+    for u in users:
+        if not isinstance(u, dict):
+            continue
+        if mode == "mail":
+            u_mail = u.get("mail")
+            if isinstance(u_mail, str) and u_mail.lower() == wanted:
+                exact_matches.append(u)
+        else:
+            u_login = u.get("login")
+            if isinstance(u_login, str) and u_login.lower() == wanted:
+                exact_matches.append(u)
+
+    if not exact_matches:
+        label = "email" if mode == "mail" else "login"
         raise PerUserAuthError(
-            "Trusted-header auth: the user lookup by email returned HTTP "
-            f"{response.status_code}."
+            f"Trusted-header auth: no active Redmine user has the {label} {value}."
         )
-    try:
-        users = response.json().get("users")
-    except (ValueError, AttributeError):
-        users = None
-    if not isinstance(users, list):
+
+    if len(exact_matches) > 1:
+        label = "email" if mode == "mail" else "login"
         raise PerUserAuthError(
-            "Trusted-header auth: the user lookup by email returned an "
-            "unexpected response."
+            "Trusted-header auth: several active Redmine users have the "
+            f"{label} {value}."
         )
-    wanted = email.lower()
-    logins = [
-        user.get("login")
-        for user in users
-        if isinstance(user, dict)
-        and isinstance(user.get("mail"), str)
-        and user["mail"].lower() == wanted
-    ]
-    if not logins:
+
+    matched = exact_matches[0]
+    matched_id = matched.get("id")
+    matched_login = matched.get("login")
+    is_admin = bool(matched.get("admin", False))
+
+    if not isinstance(matched_login, str) or not matched_login:
         raise PerUserAuthError(
-            f"Trusted-header auth: no active Redmine user has the email {email}."
+            "Trusted-header auth: the user lookup returned an unexpected response."
         )
-    if len(logins) > 1:
+
+    if _KEY_OWNER_ID is not None and matched_id == _KEY_OWNER_ID:
         raise PerUserAuthError(
-            "Trusted-header auth: several active Redmine users have the email "
-            f"{email}."
+            "Trusted-header auth: refusing to run request as the account that "
+            "owns REDMINE_API_KEY."
         )
-    login = logins[0]
-    if not isinstance(login, str) or not login:
+
+    if is_admin and not _allow_admin():
         raise PerUserAuthError(
-            "Trusted-header auth: the user lookup by email returned an "
-            "unexpected response."
+            "Trusted-header auth: refusing to run request as administrator "
+            f"{matched_login!r} (REDMINE_TRUSTED_HEADER_ALLOW_ADMIN is false)."
         )
-    return login
+
+    return matched_login
 
 
-def _probe_admin_key(key: str) -> tuple[int, Optional[bool]]:
-    """GET /users/current.json with ``key``; return the status and admin flag.
+def _probe_admin_key(key: str) -> tuple:
+    """GET /users/current.json with ``key``; return (status, admin, user_id).
 
     The flag is ``None`` unless Redmine answered 2xx with a boolean
     ``user.admin``. Transport errors propagate to the caller.
     """
     response = _redmine_get("/users/current.json", key)
     admin = None
+    user_id = None
     if 200 <= response.status_code < 300:
         try:
-            value = response.json().get("user", {}).get("admin")
+            user_data = response.json().get("user", {})
+            value = user_data.get("admin")
+            uid = user_data.get("id")
         except (ValueError, AttributeError):
             value = None
+            uid = None
         if isinstance(value, bool):
             admin = value
-    return response.status_code, admin
+        if isinstance(uid, int):
+            user_id = uid
+    return response.status_code, admin, user_id
 
 
 def _verify_admin_key(error: type[Exception] = RuntimeError) -> None:
@@ -214,7 +469,10 @@ def _verify_admin_key(error: type[Exception] = RuntimeError) -> None:
     """
     from . import _client
 
-    status, admin = _probe_admin_key(_client.REDMINE_API_KEY)
+    res = _probe_admin_key(_client.REDMINE_API_KEY)
+    status, admin = res[0], res[1]
+    user_id = res[2] if len(res) > 2 else None
+
     if status == 401:
         raise error(
             "REDMINE_AUTH_MODE=trusted-header: Redmine rejected REDMINE_API_KEY."
@@ -232,6 +490,14 @@ def _verify_admin_key(error: type[Exception] = RuntimeError) -> None:
             "other key, so every request would run as the key's own account "
             "instead of the user named in the header."
         )
+    global _KEY_OWNER_ID
+    if user_id is not None:
+        _KEY_OWNER_ID = user_id
+
+
+def check_admin_key(request) -> None:
+    """Legacy check: no-op since user lookup runs every request with admin key."""
+    pass
 
 
 def assert_startup_requirements() -> None:
@@ -240,7 +506,7 @@ def assert_startup_requirements() -> None:
     Called once at app build time when REDMINE_AUTH_MODE=trusted-header.
     """
     from . import _client
-    from ._env import _is_true_env
+    from ._env import _is_true_env, get_required_secret
 
     if not _is_true_env("REDMINE_TRUSTED_HEADER_TRUST_PROXY"):
         raise RuntimeError(
@@ -250,6 +516,7 @@ def assert_startup_requirements() -> None:
             f"proxy overwrites the {_header_name()} header on every request. "
             "The server cannot tell a forged header from a real one."
         )
+
     if _match_mode() not in MATCH_MODES:
         raise RuntimeError(
             "REDMINE_TRUSTED_HEADER_MATCH must be 'login' or 'mail', not "
@@ -262,6 +529,23 @@ def assert_startup_requirements() -> None:
             "REDMINE_AUTH_MODE=trusted-header requires REDMINE_API_KEY, the "
             "API key of a Redmine administrator."
         )
+
+    global _TRUSTED_HEADER_SECRET
+    secret = get_required_secret(
+        "REDMINE_TRUSTED_HEADER_SECRET",
+        error_text="A 32+ character ASCII secret shared with the authenticating proxy.",
+    )
+    if len(secret) < 32:
+        raise RuntimeError(
+            "REDMINE_AUTH_MODE=trusted-header requires REDMINE_TRUSTED_HEADER_SECRET "
+            "to be at least 32 characters."
+        )
+    if not all(0x21 <= ord(c) <= 0x7E for c in secret):
+        raise RuntimeError(
+            "REDMINE_AUTH_MODE=trusted-header requires REDMINE_TRUSTED_HEADER_SECRET "
+            "to contain only printable ASCII characters without spaces."
+        )
+    _TRUSTED_HEADER_SECRET = secret
     try:
         _verify_admin_key()
     except requests.RequestException as exc:
@@ -277,18 +561,3 @@ def assert_startup_requirements() -> None:
         "email" if _match_mode() == "mail" else "login",
         _header_name(),
     )
-
-
-def check_admin_key(request) -> None:
-    """Raise PerUserAuthError unless REDMINE_API_KEY still belongs to an
-    administrator.
-
-    Checked once per HTTP request: a tool that builds several clients while
-    serving one request reuses the first answer, which is kept on
-    ``request.state`` and discarded with the request. A transport error
-    propagates unchanged and is reported like any other failed Redmine call.
-    """
-    if getattr(request.state, "trusted_header_admin_checked", False):
-        return
-    _verify_admin_key(PerUserAuthError)
-    request.state.trusted_header_admin_checked = True
