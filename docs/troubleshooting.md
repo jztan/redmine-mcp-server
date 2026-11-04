@@ -573,6 +573,7 @@ REDMINE_PUBLIC_URL=https://example.com/redmine
    - The REST API must be enabled (it is also what lets the API key, Basic auth or OAuth token load the HTML page)
    - Under OAuth, a token without the `add_issue_notes` scope may get a page with no edit form
    - A failure is retried for the same user after 10 minutes, but a connected client keeps the tool descriptions it already listed until it lists tools again
+   - Confirmed against the official Redmine 4.2, 5.1, 6.1 and 7.0 images: an `X-Redmine-API-Key` header (`legacy`, `legacy-per-user`, `api-key-login`) and Basic auth both load the issue page and detect Textile, Markdown and CommonMark correctly; with `none` Redmine shows no toolbar, so set `REDMINE_TEXT_FORMATTING=none` explicitly. OAuth Bearer tokens (`oauth`, `oauth-proxy`, Redmine 6.1+) go through the same Redmine auth path but were not tested end to end
 
 
 **Symptoms:**
