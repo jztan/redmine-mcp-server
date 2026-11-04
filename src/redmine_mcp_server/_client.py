@@ -18,12 +18,14 @@ Tests patch this module's attributes directly, e.g.
 
 import asyncio
 import contextlib
+import hashlib
 import logging
 import os
 import threading
 from contextvars import ContextVar
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Union
+from typing import Literal, Optional, Union
 from urllib.parse import urlparse
 
 from dotenv import load_dotenv
@@ -393,6 +395,96 @@ def _reject_event_loop_thread() -> None:
     )
 
 
+@dataclass(frozen=True)
+class RequestCredential:
+    """The Redmine credential the current request carries (#440).
+
+    ``kind`` names the auth path it came from; exactly one of ``api_key``,
+    ``bearer`` or ``basic`` is set.
+    """
+
+    kind: Literal["api-key-login", "bearer", "per-user", "legacy"]
+    api_key: Optional[str] = None
+    bearer: Optional[str] = None
+    basic: Optional[tuple[str, str]] = None
+
+    def httpx_kwargs(self) -> dict:
+        """Keyword arguments that authenticate an httpx request with it."""
+        if self.api_key:
+            return {"headers": {"X-Redmine-API-Key": self.api_key}}
+        if self.bearer:
+            return {"headers": {"Authorization": f"Bearer {self.bearer}"}}
+        return {"auth": self.basic}
+
+    def cache_key(self) -> str:
+        """A stable key that never contains the secret itself."""
+        secret = self.api_key or self.bearer or "\0".join(self.basic or ())
+        return f"{self.kind}:" + hashlib.sha256(secret.encode()).hexdigest()
+
+
+def resolve_request_credential(*, strict: bool) -> Optional[RequestCredential]:
+    """Work out whose Redmine credential this request carries, without I/O.
+
+    The branch order is the one ``_get_redmine_client`` has always used.
+    ``strict=True`` raises ``PerUserAuthError`` where the client builder
+    must refuse; ``strict=False`` returns ``None`` instead. Legacy mode with
+    no credentials returns ``None`` in both, since ``_build_legacy_client``
+    owns that error.
+    """
+    from ._per_user import PerUserAuthError
+
+    g = globals()
+
+    # api-key-login: the caller's own Redmine key rides on the verified
+    # token's claims. This must be checked BEFORE the bearer branch below,
+    # which fires on the mere presence of an access token without comparing
+    # the mode -- in this mode one is always present, so the bearer would be
+    # forwarded to Redmine, which knows nothing about it.
+    if g["REDMINE_AUTH_MODE"] == "api-key-login":
+        token = g["get_access_token"]()
+        claims = getattr(token, "claims", None) if token is not None else None
+        key = claims.get("redmine_api_key") if isinstance(claims, dict) else None
+        if not isinstance(key, str) or not key:
+            if not strict:
+                return None
+            raise PerUserAuthError(
+                "api-key-login: no Redmine API key is bound to this request. "
+                "Reconnect to sign in again."
+            )
+        return RequestCredential(kind="api-key-login", api_key=key)
+
+    # OAuth mode: per-request bearer token from FastMCP's native auth.
+    # get_access_token() returns None outside an authenticated request
+    # (e.g., legacy mode, or background tasks).
+    access_token = g["get_access_token"]()
+    if access_token is not None and access_token.token:
+        return RequestCredential(kind="bearer", bearer=access_token.token)
+
+    # legacy-per-user mode: per-request key from the X-Redmine-API-Key header.
+    if g["REDMINE_AUTH_MODE"] == "legacy-per-user":
+        from ._per_user import resolve_per_user_key
+
+        try:
+            request = g["get_http_request"]()
+        except RuntimeError:
+            request = None
+        try:
+            key = resolve_per_user_key(request)
+        except PerUserAuthError:
+            if strict:
+                raise
+            return None
+        return RequestCredential(kind="per-user", api_key=key)
+
+    if g["REDMINE_API_KEY"]:
+        return RequestCredential(kind="legacy", api_key=g["REDMINE_API_KEY"])
+    if g["REDMINE_USERNAME"] and g["REDMINE_PASSWORD"]:
+        return RequestCredential(
+            kind="legacy", basic=(g["REDMINE_USERNAME"], g["REDMINE_PASSWORD"])
+        )
+    return None
+
+
 def _get_redmine_client() -> Redmine:
     _reject_event_loop_thread()
 
@@ -404,51 +496,35 @@ def _get_redmine_client() -> Redmine:
     if g["redmine"] is not None:
         return g["redmine"]
 
-    # api-key-login: the caller's own Redmine key rides on the verified
-    # token's claims. This must be checked BEFORE the bearer branch below,
-    # which fires on the mere presence of an access token without comparing
-    # the mode -- in this mode one is always present, so the bearer would be
-    # forwarded to Redmine, which knows nothing about it.
-    if g["REDMINE_AUTH_MODE"] == "api-key-login":
-        from ._per_user import PerUserAuthError
+    cred = resolve_request_credential(strict=True)
 
-        token = get_access_token()
-        claims = getattr(token, "claims", None) if token is not None else None
-        key = claims.get("redmine_api_key") if isinstance(claims, dict) else None
-        if not isinstance(key, str) or not key:
-            raise PerUserAuthError(
-                "api-key-login: no Redmine API key is bound to this request. "
-                "Reconnect to sign in again."
-            )
-        return _new_client(key=key)
+    if cred is not None and cred.kind == "api-key-login":
+        return _new_client(key=cred.api_key)
 
-    # OAuth mode: per-request bearer token from FastMCP's native auth.
-    # get_access_token() returns None outside an authenticated request
-    # (e.g., legacy mode, or background tasks).
-    access_token = get_access_token()
-    if access_token is not None and access_token.token:
+    if cred is not None and cred.kind == "bearer":
         # Per-request client with Bearer token (cannot be cached)
-        headers = {"Authorization": f"Bearer {access_token.token}"}
+        headers = {"Authorization": f"Bearer {cred.bearer}"}
         return _new_client(requests={"headers": headers})
 
-    # legacy-per-user mode: per-request key from the X-Redmine-API-Key header.
-    if g["REDMINE_AUTH_MODE"] == "legacy-per-user":
-        from ._per_user import (
-            maybe_log_identity,
-            resolve_per_user_key,
-            validate_key_with_redmine,
-        )
+    if cred is not None and cred.kind == "per-user":
+        from ._per_user import maybe_log_identity, validate_key_with_redmine
 
-        try:
-            request = get_http_request()
-        except RuntimeError:
-            request = None
-        key = resolve_per_user_key(request)  # raises PerUserAuthError
         # Redmine serves an unknown key as anonymous on public data (#290).
-        validate_key_with_redmine(key)  # raises PerUserAuthError on 401
-        client = _new_client(key=key)
-        maybe_log_identity(client, key)
+        validate_key_with_redmine(cred.api_key)  # raises PerUserAuthError on 401
+        client = _new_client(key=cred.api_key)
+        maybe_log_identity(client, cred.api_key)
         return client
+
+    # Legacy mode: an explicitly set module attribute wins (tests patch it),
+    # otherwise use the per-thread cache.
+    if g["_legacy_client"] is not None:
+        return g["_legacy_client"]
+
+    client = getattr(_legacy_client_local, "client", None)
+    if client is None:
+        client = _build_legacy_client()
+        _legacy_client_local.client = client
+    return client
 
     # Legacy mode: an explicitly set module attribute wins (tests patch it),
     # otherwise use the per-thread cache.
