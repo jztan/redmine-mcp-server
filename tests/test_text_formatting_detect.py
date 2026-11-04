@@ -137,6 +137,7 @@ async def test_failure_cached_per_credential():
     assert await resolver.resolve(a) == unknown
     assert await resolver.resolve(a) == unknown
     assert len(detector.calls) == 1  # A's failure is cached
+    now[0] += 31  # past the global backoff that follows any failure
     assert await resolver.resolve(b) == unknown
     assert len(detector.calls) == 2  # B is not blocked by A
     now[0] += 601
@@ -190,3 +191,55 @@ async def test_detect_bad_ssl_config_is_failure(monkeypatch):
 
     monkeypatch.setattr(_client, "httpx_ssl_kwargs", missing_cert)
     assert await detect_format(KEY_CRED, base_url="https://h", transport=_redmine()) is None
+
+
+async def test_detection_capped_overall():
+    """#440 review: the 5 s cap covers the whole detection, not each phase."""
+    detector = _Detector(["textile"], delay=1.0)
+    resolver = TextFormattingResolver(detector=detector, timeout=0.05)
+    started = asyncio.get_running_loop().time()
+    assert await resolver.resolve(KEY_CRED) == FormatResult("unknown", "unknown")
+    assert asyncio.get_running_loop().time() - started < 0.5
+
+
+async def test_failures_do_not_queue_across_credentials():
+    """#440 review: many users on a cold, failing start must not serialize."""
+    detector = _Detector([], delay=0.05)  # every call fails
+    resolver = TextFormattingResolver(detector=detector)
+    creds = [RequestCredential(kind="per-user", api_key=str(i)) for i in range(10)]
+    started = asyncio.get_running_loop().time()
+    results = await asyncio.gather(*(resolver.resolve(c) for c in creds))
+    assert set(results) == {FormatResult("unknown", "unknown")}
+    assert len(detector.calls) == 1
+    assert asyncio.get_running_loop().time() - started < 0.3
+
+
+async def test_global_backoff_after_failure():
+    now = [0.0]
+    detector = _Detector([None, "markdown"])
+    resolver = TextFormattingResolver(detector=detector, clock=lambda: now[0])
+    a = RequestCredential(kind="per-user", api_key="a")
+    b = RequestCredential(kind="per-user", api_key="b")
+    await resolver.resolve(a)
+    assert await resolver.resolve(b) == FormatResult("unknown", "unknown")
+    assert len(detector.calls) == 1  # B waits out the backoff
+    now[0] += 31
+    assert await resolver.resolve(b) == FormatResult("markdown", "detected")
+
+
+async def test_failure_cache_bounded():
+    """#440 review: distinct failing credentials must not grow memory forever."""
+    now = [0.0]
+    detector = _Detector([])  # always fails
+    resolver = TextFormattingResolver(
+        detector=detector, clock=lambda: now[0], max_failures=3
+    )
+    creds = [RequestCredential(kind="per-user", api_key=str(i)) for i in range(5)]
+    for cred in creds:
+        await resolver.resolve(cred)
+        now[0] += 31
+    assert len(detector.calls) == 5
+    await resolver.resolve(creds[0])  # evicted as oldest, so it detects again
+    assert len(detector.calls) == 6
+    await resolver.resolve(creds[4])  # still remembered
+    assert len(detector.calls) == 6

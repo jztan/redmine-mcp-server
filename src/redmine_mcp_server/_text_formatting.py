@@ -12,6 +12,7 @@ import asyncio
 import logging
 import re
 import time
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Awaitable, Callable, Optional
 
@@ -124,6 +125,8 @@ class FormatResult:
 UNKNOWN = FormatResult("unknown", "unknown")
 DETECT_TIMEOUT = 5.0
 FAILURE_TTL = 600.0
+FAILURE_BACKOFF = 30.0
+MAX_FAILURES = 1024
 
 
 async def detect_format(
@@ -178,9 +181,16 @@ class TextFormattingResolver:
     """Resolve the formatting once per process.
 
     A success is shared by every caller for the life of the process (one
-    process talks to one Redmine). A failure is remembered only for the
-    credential that hit it, for ``failure_ttl`` seconds, so one user who
-    cannot see an editable issue does not force ``unknown`` on everyone.
+    process talks to one Redmine). A failure is remembered for the
+    credential that hit it for ``failure_ttl`` seconds, so one user who
+    cannot see an editable issue does not lock everyone into ``unknown``.
+
+    ``tools/list`` waits on this, so it must stay bounded however many
+    distinct credentials arrive: at most one detection runs at a time, it is
+    capped at ``timeout`` seconds overall, callers arriving meanwhile share
+    its result instead of queueing their own, and after any failure no new
+    detection starts for ``backoff`` seconds. The failure memory keeps at
+    most ``max_failures`` credentials, oldest evicted first.
     """
 
     def __init__(
@@ -189,20 +199,51 @@ class TextFormattingResolver:
         detector: Detector = detect_format,
         clock: Callable[[], float] = time.monotonic,
         failure_ttl: float = FAILURE_TTL,
+        timeout: float = DETECT_TIMEOUT,
+        backoff: float = FAILURE_BACKOFF,
+        max_failures: int = MAX_FAILURES,
     ):
         self.detector = detector
         self._clock = clock
         self._failure_ttl = failure_ttl
-        self._lock = asyncio.Lock()
+        self._timeout = timeout
+        self._backoff = backoff
+        self._max_failures = max_failures
         self.reset()
 
     def reset(self) -> None:
         self._detected: Optional[str] = None
-        self._failed_at: dict = {}
+        self._failed_at: "OrderedDict[str, float]" = OrderedDict()
+        self._backoff_until = float("-inf")
+        self._inflight: Optional[asyncio.Task] = None
 
     def _recently_failed(self, key: str) -> bool:
         at = self._failed_at.get(key)
         return at is not None and self._clock() - at < self._failure_ttl
+
+    def _remember_failure(self, key: str) -> None:
+        now = self._clock()
+        self._failed_at[key] = now
+        self._failed_at.move_to_end(key)
+        while len(self._failed_at) > self._max_failures:
+            self._failed_at.popitem(last=False)
+        self._backoff_until = now + self._backoff
+
+    async def _detect(self, cred, key: str) -> Optional[str]:
+        try:
+            value = await asyncio.wait_for(
+                self.detector(cred, base_url=_client.REDMINE_URL), self._timeout
+            )
+        except Exception as exc:  # timeout included: never a guess
+            logger.info("text_formatting detection failed: %s", type(exc).__name__)
+            value = None
+        finally:
+            self._inflight = None
+        if value is None:
+            self._remember_failure(key)
+        else:
+            self._detected = value
+        return value
 
     async def resolve(self, cred) -> FormatResult:
         configured = get_text_formatting()
@@ -215,17 +256,14 @@ class TextFormattingResolver:
         key = cred.cache_key()
         if self._recently_failed(key):
             return UNKNOWN
-        async with self._lock:
-            if self._detected is not None:
-                return FormatResult(self._detected, "detected")
-            if self._recently_failed(key):
+        task = self._inflight
+        if task is None:
+            if self._clock() < self._backoff_until:
                 return UNKNOWN
-            value = await self.detector(cred, base_url=_client.REDMINE_URL)
-            if value is None:
-                self._failed_at[key] = self._clock()
-                return UNKNOWN
-            self._detected = value
-            return FormatResult(value, "detected")
+            task = self._inflight = asyncio.ensure_future(self._detect(cred, key))
+        # shield: a cancelled tools/list must not cancel the shared detection.
+        value = await asyncio.shield(task)
+        return FormatResult(value, "detected") if value else UNKNOWN
 
 
 RESOLVER = TextFormattingResolver()

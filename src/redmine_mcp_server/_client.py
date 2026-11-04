@@ -525,14 +525,3 @@ def _get_redmine_client() -> Redmine:
         client = _build_legacy_client()
         _legacy_client_local.client = client
     return client
-
-    # Legacy mode: an explicitly set module attribute wins (tests patch it),
-    # otherwise use the per-thread cache.
-    if g["_legacy_client"] is not None:
-        return g["_legacy_client"]
-
-    client = getattr(_legacy_client_local, "client", None)
-    if client is None:
-        client = _build_legacy_client()
-        _legacy_client_local.client = client
-    return client
