@@ -548,7 +548,32 @@ REDMINE_PUBLIC_URL=https://example.com/redmine
 
 **Alternative:** if you can't configure a public URL, call `get_redmine_attachment(attachment_id=N)` instead. That tool downloads the bytes server-side and returns either an HTTP URL on the MCP server's own proxy (HTTP mode) or a local file path (stdio mode) — both reachable from your client regardless of Redmine's hostname configuration.
 
-### Agile Fields Missing from Issue Results
+### Lists Render as Headings, or Raw Markup Shows in Notes
+
+**Symptoms:**
+- A numbered list the model wrote (`# First item`) renders as large headings
+- Raw `**bold**`, `1.` or `@code@` shows up in a note or description
+
+**Cause:** Redmine renders text with one global Text formatting setting (Textile, Markdown, CommonMark or none), and the model wrote a different syntax. The server tells the model which syntax to use in the descriptions of the text-writing tools, but only once it knows the setting.
+
+**Solutions:**
+
+1. **Check what the server knows**
+   - Call `get_mcp_server_info` and read `text_formatting` and `text_formatting_source`
+   - `unknown` means the model was told to write plain text
+
+2. **Pin the setting** (Administration → Settings → General → Text formatting in Redmine)
+   ```bash
+   # In .env file
+   REDMINE_TEXT_FORMATTING=markdown   # or textile, common_mark, none
+   ```
+
+3. **Why auto-detection can come back `unknown`**
+   - Detection loads one issue's HTML page and reads the formatter from the edit toolbar, so the account must be able to edit or add notes to at least one visible issue
+   - The REST API must be enabled (it is also what lets the API key, Basic auth or OAuth token load the HTML page)
+   - Under OAuth, a token without the `add_issue_notes` scope may get a page with no edit form
+   - A failure is retried for the same user after 10 minutes, but a connected client keeps the tool descriptions it already listed until it lists tools again
+
 
 **Symptoms:**
 - `story_points`, `agile_sprint_id`, `agile_position` not present in `get_redmine_issue` response even though `REDMINE_AGILE_ENABLED=true`

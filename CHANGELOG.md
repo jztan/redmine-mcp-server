@@ -19,6 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   because the plugin declares orders as their own project module with their
   own permissions, and under OAuth it advertises `view_orders` and
   `view_orders_list`, which the Redmine OAuth application must grant first. ([#443](https://github.com/jztan/redmine-mcp-server/issues/443))
+- The text-writing tools now tell the model which markup the Redmine server
+  renders (Textile, Markdown, CommonMark or none), so it stops writing, for
+  example, a Textile `# item` list that Markdown turns into headings. The
+  server reads the setting once from an issue page, or from the new
+  `REDMINE_TEXT_FORMATTING` variable; when it can't tell, the model is told
+  to write plain text. `get_mcp_server_info` reports it as `text_formatting`.
+  ([#440](https://github.com/jztan/redmine-mcp-server/issues/440))
 - Python 3.15 support: 3.15 is now in the CI test matrix and declared in the
   package classifiers. The locked `rpds-py` moves from 0.27.1 to 2026.9.1 and
   `pydantic` from 2.12.5 to 2.14.2 (`pydantic-core` 2.41.5 to 2.50.2), the

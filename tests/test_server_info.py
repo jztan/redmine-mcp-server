@@ -157,6 +157,8 @@ async def test_does_not_leak_credentials_or_hostnames(monkeypatch):
         "auth_mode",
         "current_user",
         "plugin_flags",
+        "text_formatting",
+        "text_formatting_source",
     }
 
 
@@ -208,3 +210,21 @@ def test_package_version_is_importable():
 
     assert isinstance(__version__, str)
     assert __version__  # not empty
+
+
+@pytest.mark.asyncio
+async def test_reports_text_formatting_from_env(monkeypatch):
+    """#440: the caller can see which markup the server told it to use."""
+    monkeypatch.setenv("REDMINE_TEXT_FORMATTING", "common_mark")
+    async with Client(_server.mcp) as client:
+        result = await client.call_tool("get_mcp_server_info", {})
+    assert result.data["text_formatting"] == "common_mark"
+    assert result.data["text_formatting_source"] == "env"
+
+
+@pytest.mark.asyncio
+async def test_reports_unknown_when_undetected():
+    async with Client(_server.mcp) as client:
+        result = await client.call_tool("get_mcp_server_info", {})
+    assert result.data["text_formatting"] == "unknown"
+    assert result.data["text_formatting_source"] == "unknown"
