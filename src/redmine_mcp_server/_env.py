@@ -98,6 +98,26 @@ def _crm_edition() -> str:
     return value
 
 
+TEXT_FORMATTING_VALUES = ("auto", "textile", "markdown", "common_mark", "none")
+
+
+def get_text_formatting() -> str:
+    """Which markup the Redmine server renders text with (#440).
+
+    Redmine renders notes, descriptions, wiki pages and news with one global
+    Text formatting setting, and the REST API has no settings endpoint, so
+    the server cannot ask for it. ``auto`` (the default) detects it once from
+    an issue page; any other value pins it and skips detection.
+    """
+    value = os.getenv("REDMINE_TEXT_FORMATTING", "").strip().lower() or "auto"
+    if value not in TEXT_FORMATTING_VALUES:
+        raise RuntimeError(
+            "REDMINE_TEXT_FORMATTING must be one of "
+            f"{', '.join(TEXT_FORMATTING_VALUES)}, got '{value}'."
+        )
+    return value
+
+
 def _is_dmsf_enabled() -> bool:
     """Check if DMSF (document management) plugin support is enabled."""
     return _is_true_env("REDMINE_DMSF_ENABLED", "false")
