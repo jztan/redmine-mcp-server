@@ -12,9 +12,10 @@ Plugin facts this module relies on (redmine_contacts 4.4.7):
   ``source_type`` (``deal``/``contact``, any case), ``source_id`` and
   ``content`` (422 "Content cannot be blank"). It has no ``authorize``
   filter of its own.
-* ``PUT``/``DELETE /notes/<id>.json`` both require ``delete_notes``, or
-  ``delete_own_notes`` for the author (the plugin reuses the delete
-  permission for editing). Both answer 204 with no body.
+* ``DELETE /notes/<id>.json`` requires ``delete_notes``, or
+  ``delete_own_notes`` for the author. ``PUT`` requires ``edit_notes`` /
+  ``edit_own_notes`` from CRM 4.5.1 on; earlier versions reuse the delete
+  permissions for editing (#448). Both answer 204 with no body.
 * Timestamps come back RFC 822 (``Tue, 25 Aug 2026 11:32:23 +0000``).
 """
 
@@ -106,10 +107,14 @@ def _note_to_dict(note: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-_NOTE_FORBIDDEN_HINT = (
-    "Access denied. The CRM plugin requires the delete_notes permission "
-    "(or delete_own_notes for the note's author) for both editing and "
-    "deleting notes."
+_NOTE_EDIT_FORBIDDEN_HINT = (
+    "Access denied. Editing a CRM note requires the edit_notes permission "
+    "(or edit_own_notes for the note's author) on CRM 4.5.1 and later, or "
+    "delete_notes (or delete_own_notes) on earlier versions."
+)
+_NOTE_DELETE_FORBIDDEN_HINT = (
+    "Access denied. Deleting a CRM note requires the delete_notes "
+    "permission (or delete_own_notes for the note's author)."
 )
 
 
@@ -254,7 +259,7 @@ def _update_note_action(
         )
         return {"success": True, "note_id": note_id, "updated_fields": list(body)}
     except ForbiddenError:
-        return {"error": _NOTE_FORBIDDEN_HINT}
+        return {"error": _NOTE_EDIT_FORBIDDEN_HINT}
     except Exception as e:
         return _handle_redmine_error(
             e,
@@ -284,7 +289,7 @@ def _delete_note_action(note_id: Optional[int] = None, **_: Any) -> Dict[str, An
             "message": f"Note {note_id} deleted.",
         }
     except ForbiddenError:
-        return {"error": _NOTE_FORBIDDEN_HINT}
+        return {"error": _NOTE_DELETE_FORBIDDEN_HINT}
     except Exception as e:
         return _handle_redmine_error(
             e,
@@ -346,8 +351,10 @@ async def manage_crm_note(
         content, type_id, note_type, author, created_on, updated_on}``.
         ``update``: ``{success, note_id, updated_fields}``. ``delete``:
         ``{success, note_id, message}``. ``{"error": ...}`` on failure.
-        Editing and deleting both require the plugin's ``delete_notes``
-        permission (or ``delete_own_notes`` for the author).
+        Deleting requires the plugin's ``delete_notes`` permission (or
+        ``delete_own_notes`` for the author). Editing requires
+        ``edit_notes`` / ``edit_own_notes`` on CRM 4.5.1 and later, and the
+        delete permissions on earlier versions.
     """
     if not _is_crm_notes_enabled():
         return dict(_CRM_NOTES_DISABLED_ERROR)

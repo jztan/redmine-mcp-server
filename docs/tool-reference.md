@@ -3374,7 +3374,7 @@ Available when `REDMINE_CRM_ENABLED=true` or `REDMINE_DEALS_ENABLED=true`. A not
 
 **Returns:** `get`/`create` a note dict `{id, source {id, name, type}, subject, content, type_id, note_type, author, created_on, updated_on}` (`content` is wrapped in `<insecure-content>` boundary tags, timestamps are ISO-8601); `update` `{success, note_id, updated_fields}`; `delete` `{success, note_id, message}`.
 
-**Permissions:** the plugin checks `delete_notes` (or `delete_own_notes` for the author) for both editing and deleting. In OAuth mode enabling either CRM flag advertises `add_notes`, `delete_notes` and `delete_own_notes` as scopes.
+**Permissions:** deleting needs `delete_notes` (or `delete_own_notes` for the author). Editing needs `edit_notes` (or `edit_own_notes`) on CRM 4.5.1 and later; earlier versions check the delete permissions for editing too. In OAuth mode enabling either CRM flag advertises `add_notes`, `delete_notes` and `delete_own_notes` as scopes.
 
 **Example:**
 ```json
@@ -3388,6 +3388,8 @@ List the tags in use on RedmineUP CRM contacts, with their colors. Use it to dis
 Requires `REDMINE_CRM_ENABLED=true`. Read-only. No parameters.
 
 **Returns:** a list of `{id, name, color}` ordered by name.
+
+CRM 4.5.1 removed the plugin's tags endpoint. On those versions the tool collects the names from the `tag_list` of every contact the user can see, paging through the contacts list, and returns `id` and `color` as `null`. On a large CRM that is one request per 100 contacts.
 
 ### `manage_deal_category`
 
