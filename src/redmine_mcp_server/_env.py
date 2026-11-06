@@ -35,6 +35,21 @@ def _is_products_enabled() -> bool:
     return _is_true_env("REDMINE_PRODUCTS_ENABLED", "false")
 
 
+def _is_orders_enabled() -> bool:
+    """Check if RedmineUP Products *orders* support is enabled.
+
+    Separate from :func:`_is_products_enabled` even though orders ship inside
+    the same plugin, because the plugin declares them as a project module of
+    their own (``project_module :orders``, beside ``:products``) with their
+    own permissions, so a deployment may enable one without the other. The
+    flag also advertises the order OAuth scopes, and a Redmine OAuth
+    application that does not grant an advertised scope fails consent for the
+    whole list, so turning on orders has to be an opt-in of its own rather
+    than a change under the products flag.
+    """
+    return _is_true_env("REDMINE_ORDERS_ENABLED", "false")
+
+
 def _is_crm_enabled() -> bool:
     """Check if RedmineUP CRM (Contacts) plugin support is enabled."""
     return _is_true_env("REDMINE_CRM_ENABLED", "false")
@@ -124,6 +139,7 @@ SERVER_INFO_PLUGIN_FLAGS: dict[str, Callable[[], bool]] = {
     "agile": _is_agile_enabled,
     "checklists": _is_checklists_enabled,
     "products": _is_products_enabled,
+    "orders": _is_orders_enabled,
     "crm": _is_crm_enabled,
     "deals": _is_deals_enabled,
     "dmsf": _is_dmsf_enabled,

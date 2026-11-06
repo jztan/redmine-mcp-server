@@ -871,8 +871,10 @@ class TestAntiDriftWithAnExtensionLoaded:
 
     def test_every_enforced_scope_is_advertised(self, widgets, monkeypatch):
         # Plugin scopes are advertised only under their flag, and the Helpdesk
-        # ticket tool requires scopes of its own, so its flag is on here.
+        # ticket and order tools require scopes of their own, so their flags
+        # are on here.
         monkeypatch.setenv("REDMINE_HELPDESK_TICKETS_ENABLED", "true")
+        monkeypatch.setenv("REDMINE_ORDERS_ENABLED", "true")
         monkeypatch.setenv("REDMINE_MCP_READ_ONLY", "false")
         enforced = set()
         for entry in TOOL_SCOPES.values():

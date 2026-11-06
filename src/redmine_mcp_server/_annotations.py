@@ -153,6 +153,9 @@ TOOL_KINDS: Dict[str, ToolKind] = {
     "add_deal_product": ToolKind.WRITE_ADDITIVE,
     "manage_crm_note": ToolKind.WRITE_DESTRUCTIVE,  # get/create/update/delete
     "list_crm_queries": ToolKind.READ,
+    # A manage_X tool with only read actions (list, get), so readOnlyHint
+    # applies to the whole tool.
+    "manage_order": ToolKind.READ,
     # --- MCP Apps ---
     "show_triage_board": ToolKind.READ,
     "get_triage_board_data": ToolKind.READ,

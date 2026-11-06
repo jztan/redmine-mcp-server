@@ -18,6 +18,7 @@ listed:
 | `REDMINE_AGILE_ENABLED` | RedmineUP Agile (Light) | 1.6.13 |
 | `REDMINE_CRM_ENABLED`, `REDMINE_DEALS_ENABLED` | RedmineUP CRM PRO | 4.4.7 |
 | `REDMINE_PRODUCTS_ENABLED` | RedmineUP Products | 2.2.9 |
+| `REDMINE_ORDERS_ENABLED` | RedmineUP Products | 2.2.7 |
 | `REDMINE_TAGS_ENABLED` | AlphaNodes additional_tags | 4.4.0 |
 | (wiki macro) | redmine_drawio | 1.5.5 |
 
@@ -273,7 +274,7 @@ instead of executing (write actions only — read actions within the same tool s
 - `manage_document` — `create`, `update` blocked; `list`, `get` allowed (also requires `REDMINE_DMSF_ENABLED=true`)
 - `manage_helpdesk_ticket`: `set_contact`, `create` blocked; `get` allowed (also requires `REDMINE_HELPDESK_TICKETS_ENABLED=true`)
 
-All read tools (`get_redmine_issue`, `list_redmine_issues`, `list_redmine_projects`, etc.) continue to work normally. The admin-gated `cleanup_attachment_files` tool (when registered via `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`) is also unaffected — it performs local filesystem cleanup, not Redmine mutations.
+All read tools (`get_redmine_issue`, `list_redmine_issues`, `list_redmine_projects`, etc.) continue to work normally. `manage_order` has only read actions (`list`, `get`), so read-only mode leaves it untouched. The admin-gated `cleanup_attachment_files` tool (when registered via `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`) is also unaffected — it performs local filesystem cleanup, not Redmine mutations.
 
 ### Tool Allow List
 
@@ -3027,7 +3028,7 @@ Use cases: "What's the current timeline for project X?", "Which issues are overd
 
 ## Products (RedmineUP Products plugin)
 
-These tools require the **RedmineUP Products** plugin and `REDMINE_PRODUCTS_ENABLED=true`.
+These tools require the **RedmineUP Products** plugin. `manage_product` needs `REDMINE_PRODUCTS_ENABLED=true`; `manage_order` needs `REDMINE_ORDERS_ENABLED=true`.
 
 ### `manage_product`
 
@@ -3083,6 +3084,55 @@ manage_product(action="update", product_id=42, fields={"price": 39.99})
 **Notes:**
 - `list` and `get` are allowed in read-only mode; `create` and `update` are blocked when `REDMINE_MCP_READ_ONLY=true`.
 - The plugin does not expose a delete endpoint, so `manage_product` has no `delete` action.
+
+---
+
+### `manage_order`
+
+List or read the orders of the RedmineUP Products plugin. Read-only: there is no write action.
+
+Requires the **RedmineUP Products** plugin, `REDMINE_ORDERS_ENABLED=true`, and the `orders` project module enabled on the project. Orders have their own flag rather than riding `REDMINE_PRODUCTS_ENABLED` because the plugin declares them as a separate project module (`project_module :orders`, next to `:products`) with its own permissions, so a deployment may enable one without the other. In OAuth mode the token must carry `view_orders_list` for `list` and `view_orders` for `get`; enabling the flag advertises both as scopes, and the OAuth application has to grant them.
+
+**Parameters:**
+- `action` (string, required): Allowed: `list`, `get`
+- `project_id` (integer or string, optional): For `list`, restrict to orders in this project and, under Redmine's default "Display subprojects issues on main projects by default" setting, its subprojects (omitted = every order the caller can see)
+- `contact_id` (integer, optional): For `list`, only orders placed by this contact. Sent to Redmine as the `contact` filter, which is what `OrderQuery` calls it
+- `status_id` (integer or string, optional): For `list`, filter by order status. A numeric order status id, or one of `"o"` (open: processing and draft, the default Redmine applies anyway), `"c"` (completed and canceled), `"*"` (any status)
+- `search` (string, optional): For `list`, free-text search over the order number, subject and description and the contact's first name, last name, company and email. Each space-separated word matches on its own (OR), so more words return more orders, not fewer
+- `limit` (integer, optional): For `list`, max results per call (default `100`, capped at 100 by Redmine)
+- `offset` (integer, optional): For `list`, orders to skip, for paging past the first 100 (default `0`)
+- `include` (string, optional): For `list`, `lines` (each order's product lines). For `get`, comma-separated, any of `lines`, `comments`, `attachments`. Any other name is refused rather than silently ignored
+- `include_custom_fields` (boolean, optional): For `list`, return each order's `custom_fields` values (default `false`)
+- `custom_field_ids` (list of integers, optional): For `list`, return only these custom fields in each order's `custom_fields`; implies `include_custom_fields`
+- `order_id` (integer): Required for `get`
+
+**Returns:**
+- `list`: `{"orders": [...], "pagination": {...}}`, always. `pagination` has the keys `list_redmine_issues` returns with `include_pagination_info`: `total`, `limit`, `offset`, `count`, `has_next`, `has_previous`, `next_offset`, `previous_offset`. `total` is Redmine's own `total_count`, which counts the search too, so it stays accurate under `search`. Each order carries `custom_fields: null` plus `custom_fields_count` unless `include_custom_fields` or `custom_field_ids` was given; `null` means "not requested" and `[]` means "this order has none"
+- `get`: order dict with `id`, `number`, `subject`, `order_date`, `completed_date`, `amount`, `currency`, `description`, `contact`, `project`, `status` (`{id, name, is_closed}`), `author`, `assigned_to`, `custom_fields` (always), `created_at`, `updated_at`, plus `lines`, `comments` (`{id, text, author, created_on, updated_on}`) and `attachments` when requested. Keys follow the plugin's JSON, so the timestamps are `created_at` / `updated_at`
+- `lines` entries: `{id, position, product, description, quantity, tax, discount, price, total}`; `product` is `{id, name}`, or `null` for a free-form line
+- Error: `{"error": "..."}`
+
+**Examples:**
+
+```python
+# Open orders in a project (open is Redmine's default)
+manage_order(action="list", project_id="sales")
+
+# Every order a contact has placed, whatever its status, with product lines
+manage_order(action="list", contact_id=42, status_id="*", include="lines")
+
+# The next page
+manage_order(action="list", status_id="*", limit=50, offset=50)
+
+# One order with its lines, comments and attachments
+manage_order(action="get", order_id=17, include="lines,comments,attachments")
+```
+
+**Notes:**
+- **`list` returns only OPEN orders unless you ask for more.** `OrderQuery` seeds itself with a `status_id` filter on operator `o` (statuses of type processing or draft), so completed and canceled orders are absent from an unfiltered call. Pass `status_id="*"` for all statuses, `"c"` for completed and canceled, or a numeric id for one status.
+- **`list` needs both permissions on the user's role.** `orders#index` requires `view_orders_list`, checked through `find_optional_project`, and its rows come from `Order.visible`, which filters on the role's `view_orders`. A user whose role holds only `view_orders_list` gets an empty list, not an error. `Order.visible` does not consult the OAuth token, so the token itself needs only `view_orders_list` for `list`. `get` needs `view_orders`.
+- **`lines` is absent when an order has none, even when requested.** The plugin renders the array only for an order that has lines, so on a `list` with `include="lines"` a missing `lines` key means "no lines", not "not requested". `comments` and `attachments` are present (possibly empty) whenever `get` asked for them.
+- `description`, a line's `description` and a comment's `text` are wrapped in `<insecure-content>` boundary tags so downstream LLMs treat them as untrusted data. `number`, `subject` and the `id`/`name` refs are short label-shaped fields and are returned verbatim, matching `subject` on issues.
 
 ---
 
@@ -3581,7 +3631,7 @@ Return the MCP server's version, enabled-feature flags, and the identity of the 
 - `read_only_mode` (boolean): whether `REDMINE_MCP_READ_ONLY` is enabled. When `True`, all write tools refuse with the standard read-only error.
 - `auth_mode` (string): `"oauth"` or `"legacy"`.
 - `current_user` (dict or null): `{id, login, name}` for the authenticated Redmine user behind the configured API key. `null` when the server cannot reach Redmine (check `/health` for connectivity status). Use this to confirm who `assigned_to_id="me"` resolves to, which matters when a shared or robot API key is in use.
-- `plugin_flags` (dict): which plugin-gated tool families are enabled. Keys: `agile`, `checklists`, `products`, `crm`, `deals`, `dmsf`, `helpdesk`, `helpdesk_tickets`, `tags`, plus one per family registered by an [extension](extensions.md). `True` means the family's tools are listed and routable and will reach the underlying plugin endpoints (for `tags`, that `get_redmine_issue` returns a `tags` array); `False` means they are hidden from `tools/list` (calling them by name returns "Unknown tool"), except for `agile` and `tags`, which only add fields to core tools and are never hidden (for `tags`, the field is simply omitted).
+- `plugin_flags` (dict): which plugin-gated tool families are enabled. Keys: `agile`, `checklists`, `products`, `orders`, `crm`, `deals`, `dmsf`, `helpdesk`, `helpdesk_tickets`, `tags`, plus one per family registered by an [extension](extensions.md). `True` means the family's tools are listed and routable and will reach the underlying plugin endpoints (for `tags`, that `get_redmine_issue` returns a `tags` array); `False` means they are hidden from `tools/list` (calling them by name returns "Unknown tool"), except for `agile` and `tags`, which only add fields to core tools and are never hidden (for `tags`, the field is simply omitted).
 
 The response intentionally excludes credentials, internal hostnames, file-system paths, and any other operator config that a caller doesn't need to know to choose its call shape. Only flags that change *call shape* are surfaced.
 

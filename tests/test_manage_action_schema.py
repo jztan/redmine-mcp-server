@@ -37,6 +37,7 @@ EXPECTED_ACTIONS = {
     "manage_issue_note": {"edit", "set_private"},
     "manage_issue_category": {"list", "create", "update", "delete"},
     "manage_product": {"list", "get", "create", "update"},
+    "manage_order": {"list", "get"},
     "manage_redmine_version": {"create", "update", "delete"},
     "manage_project_member": {"add", "update", "remove"},
     "manage_time_entry": {"create", "update"},

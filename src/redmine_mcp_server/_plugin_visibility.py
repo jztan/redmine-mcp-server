@@ -22,6 +22,7 @@ from ._env import (
     _is_dmsf_enabled,
     _is_helpdesk_enabled,
     _is_helpdesk_tickets_enabled,
+    _is_orders_enabled,
     _is_products_enabled,
 )
 
@@ -31,6 +32,7 @@ PLUGIN_FLAGS: Dict[str, Callable[[], bool]] = {
     "crm": _is_crm_enabled,
     "deals": _is_deals_enabled,
     "products": _is_products_enabled,
+    "orders": _is_orders_enabled,
     "dmsf": _is_dmsf_enabled,
     "helpdesk": _is_helpdesk_enabled,
     "helpdesk_tickets": _is_helpdesk_tickets_enabled,

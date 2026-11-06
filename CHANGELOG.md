@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- `manage_order` lists and reads the orders of the RedmineUP Products plugin,
+  behind a new flag, `REDMINE_ORDERS_ENABLED`. It is read-only (`list`, `get`).
+  `list` filters by project, contact, status and search, pages with
+  `limit`/`offset` and always returns `{"orders": [...], "pagination": {...}}`;
+  like `manage_deal`, it returns only open orders unless `status_id` says
+  otherwise. `include` adds product lines, and on `get` comments and
+  attachments. Custom field values follow `manage_contact`: opt-in on `list`,
+  always on `get`. The flag is separate from `REDMINE_PRODUCTS_ENABLED`
+  because the plugin declares orders as their own project module with their
+  own permissions, and under OAuth it advertises `view_orders` and
+  `view_orders_list`, which the Redmine OAuth application must grant first. ([#443](https://github.com/jztan/redmine-mcp-server/issues/443))
 - Python 3.15 support: 3.15 is now in the CI test matrix and declared in the
   package classifiers. The locked `rpds-py` moves from 0.27.1 to 2026.9.1 and
   `pydantic` from 2.12.5 to 2.14.2 (`pydantic-core` 2.41.5 to 2.50.2), the

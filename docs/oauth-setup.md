@@ -283,6 +283,18 @@ Notes:
   `edit_helpdesk_tickets` and `view_contacts`; `create` needs `add_issues`,
   `view_contacts` and `edit_helpdesk_tickets`), since they are only
   advertised under the flag that also lists the tool.
+- `manage_order` sits behind `REDMINE_ORDERS_ENABLED`, which advertises
+  `view_orders` and `view_orders_list` in both read-only and read-write mode
+  (the tool has no write action). Tick them on the Redmine OAuth application
+  before turning the flag on, or narrow `REDMINE_MCP_SCOPES`; otherwise
+  consent fails with `invalid_scope`. Orders get their own flag rather than
+  riding `REDMINE_PRODUCTS_ENABLED` because the Products plugin declares
+  them as a separate project module with its own permissions. Like
+  `manage_helpdesk_ticket`, the tool requires its scopes (`list`:
+  `view_orders_list`, the permission `orders#index` checks against the token;
+  `get`: `view_orders`). The rows a `list` returns are filtered by
+  `view_orders` on the user's roles, not on the token, so the user still
+  needs that role permission to see any order.
 - A notes-only `update_redmine_issue` call (fields containing nothing but
   `notes` / `private_notes`, no uploads) requires `add_issue_notes` instead
   of `edit_issues`, mirroring Redmine's own note-adding permission.
