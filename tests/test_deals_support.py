@@ -771,3 +771,153 @@ class TestDealTimestamps:
         deal = _make_deal()
         deal["created_on"] = datetime(2026, 4, 20, 10, 0, 0)
         assert _deal_to_dict(deal)["created_on"] == "2026-04-20T10:00:00"
+
+
+# ---------------------------------------------------------------------------
+# custom fields
+#
+# Both deal templates render every deal custom field on every deal
+# (``render_api_custom_values deal.custom_field_values, api``), so the
+# serializer follows ``manage_contact``: a listed deal withholds the values
+# unless asked, and a single-deal read always returns them.
+# ---------------------------------------------------------------------------
+
+
+def _make_deal_with_custom_fields(deal_id: int = 1) -> dict:
+    deal = _make_deal(deal_id)
+    deal["custom_fields"] = [
+        {"id": 4, "name": "Source", "value": "Referral"},
+        {"id": 5, "name": "Regions", "multiple": True, "value": ["EU", "US"]},
+        {"id": 6, "name": "Notes", "value": ""},
+    ]
+    return deal
+
+
+_ALL_DEAL_CUSTOM_FIELDS = [
+    {"id": 4, "name": "Source", "value": "Referral"},
+    {"id": 5, "name": "Regions", "value": ["EU", "US"]},
+    {"id": 6, "name": "Notes", "value": ""},
+]
+
+
+class TestDealCustomFieldsSerializer:
+    def test_elided_by_default(self):
+        result = _deal_to_dict(_make_deal_with_custom_fields())
+        assert result["custom_fields"] is None
+        assert result["custom_fields_count"] == 3
+
+    def test_included_on_request(self):
+        result = _deal_to_dict(
+            _make_deal_with_custom_fields(), include_custom_fields=True
+        )
+        assert result["custom_fields"] == _ALL_DEAL_CUSTOM_FIELDS
+        assert "custom_fields_count" not in result
+
+    def test_ids_narrow_and_imply_inclusion(self):
+        result = _deal_to_dict(_make_deal_with_custom_fields(), custom_field_ids=[5])
+        assert result["custom_fields"] == [
+            {"id": 5, "name": "Regions", "value": ["EU", "US"]}
+        ]
+        assert "custom_fields_count" not in result
+
+    def test_deal_without_custom_fields_is_an_empty_list_when_requested(self):
+        """``[]`` means "none", distinct from ``None`` ("not requested")."""
+        result = _deal_to_dict(_make_deal(), include_custom_fields=True)
+        assert result["custom_fields"] == []
+
+    def test_deal_without_custom_fields_counts_zero_by_default(self):
+        result = _deal_to_dict(_make_deal())
+        assert result["custom_fields"] is None
+        assert result["custom_fields_count"] == 0
+
+
+class TestManageDealCustomFields:
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_list_withholds_values_by_default(self, mock_redmine):
+        mock_redmine.engine.request.return_value = {
+            "deals": [_make_deal_with_custom_fields()]
+        }
+        with patch.dict(os.environ, {"REDMINE_DEALS_ENABLED": "true"}):
+            result = await manage_deal(action="list")
+
+        assert result[0]["custom_fields"] is None
+        assert result[0]["custom_fields_count"] == 3
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_list_returns_values_on_request(self, mock_redmine):
+        mock_redmine.engine.request.return_value = {
+            "deals": [_make_deal_with_custom_fields()]
+        }
+        with patch.dict(os.environ, {"REDMINE_DEALS_ENABLED": "true"}):
+            result = await manage_deal(action="list", include_custom_fields=True)
+
+        assert result[0]["custom_fields"] == _ALL_DEAL_CUSTOM_FIELDS
+        # Selects the response shape only; nothing reaches Redmine.
+        params = mock_redmine.engine.request.call_args.kwargs["params"]
+        assert "include_custom_fields" not in params
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_list_narrows_to_named_ids(self, mock_redmine):
+        # The template renders every deal custom field on every row, so both
+        # rows carry the same set.
+        mock_redmine.engine.request.return_value = {
+            "deals": [_make_deal_with_custom_fields(), _make_deal_with_custom_fields(2)]
+        }
+        with patch.dict(os.environ, {"REDMINE_DEALS_ENABLED": "true"}):
+            result = await manage_deal(action="list", custom_field_ids=[4, 99])
+
+        source = [{"id": 4, "name": "Source", "value": "Referral"}]
+        assert [d["custom_fields"] for d in result] == [source, source]
+        params = mock_redmine.engine.request.call_args.kwargs["params"]
+        assert "custom_field_ids" not in params
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_list_unknown_ids_give_an_empty_list(self, mock_redmine):
+        mock_redmine.engine.request.return_value = {
+            "deals": [_make_deal_with_custom_fields()]
+        }
+        with patch.dict(os.environ, {"REDMINE_DEALS_ENABLED": "true"}):
+            result = await manage_deal(action="list", custom_field_ids=[99])
+
+        assert result[0]["custom_fields"] == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("bad", [[], [0], [-1], [True], ["4"], "4"])
+    async def test_list_rejects_invalid_custom_field_ids(self, bad):
+        with patch.dict(os.environ, {"REDMINE_DEALS_ENABLED": "true"}):
+            result = await manage_deal(action="list", custom_field_ids=bad)
+        assert "custom_field_ids" in result["error"]
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_get_always_returns_values(self, mock_redmine):
+        mock_redmine.engine.request.return_value = {
+            "deal": _make_deal_with_custom_fields(9)
+        }
+        with patch.dict(os.environ, {"REDMINE_DEALS_ENABLED": "true"}):
+            result = await manage_deal(action="get", deal_id=9)
+
+        assert result["custom_fields"] == _ALL_DEAL_CUSTOM_FIELDS
+        assert "custom_fields_count" not in result
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_create_echo_returns_values(self, mock_redmine):
+        """The plugin answers a create with the show template."""
+        mock_redmine.engine.request.return_value = {
+            "deal": _make_deal_with_custom_fields(11)
+        }
+        with patch.dict(os.environ, {"REDMINE_DEALS_ENABLED": "true"}):
+            result = await manage_deal(action="create", project_id="sales", name="New")
+
+        assert result["custom_fields"] == _ALL_DEAL_CUSTOM_FIELDS

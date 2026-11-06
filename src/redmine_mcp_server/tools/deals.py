@@ -24,6 +24,7 @@ from .._errors import _READ_ONLY_ERROR, _handle_redmine_error
 from .._offload import offloaded
 from .._serialization import (
     _REDMINE_API_PAGE_CAP,
+    _custom_fields_to_list,
     _deal_note_to_dict,
     _named_ref,
     _safe_isoformat,
@@ -158,7 +159,11 @@ def _deal_line_to_dict(line: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _deal_to_dict(deal: Dict[str, Any]) -> Dict[str, Any]:
+def _deal_to_dict(
+    deal: Dict[str, Any],
+    include_custom_fields: bool = False,
+    custom_field_ids: Optional[List[int]] = None,
+) -> Dict[str, Any]:
     """Serialize a RedmineUP CRM deal API response into a stable dict.
 
     Keys mirror the plugin's own ``app/views/deals/index.api.rsb`` and
@@ -177,13 +182,19 @@ def _deal_to_dict(deal: Dict[str, Any]) -> Dict[str, Any]:
     ``include=notes`` and the plugin rendered it, so the key is omitted
     rather than reported as an empty list -- that keeps "not requested"
     distinguishable from "requested, none present".
+
+    ``custom_fields`` follows ``_contact_to_dict``'s contract, for the same
+    reason (both deal templates render every deal custom field on every
+    deal): a collection read leaves it ``None`` beside
+    ``custom_fields_count`` unless asked, and ``custom_field_ids`` narrows
+    the values and implies ``include_custom_fields``.
     """
     if not isinstance(deal, dict):
         return {}
     related = deal.get("related_contacts")
     notes = deal.get("notes")
     lines = deal.get("lines")
-    return {
+    result: Dict[str, Any] = {
         "id": deal.get("id"),
         "name": deal.get("name", ""),
         "price": deal.get("price"),
@@ -215,6 +226,17 @@ def _deal_to_dict(deal: Dict[str, Any]) -> Dict[str, Any]:
             else {}
         ),
     }
+    custom_fields = _custom_fields_to_list(deal)
+    if custom_field_ids is not None:
+        wanted = set(custom_field_ids)
+        custom_fields = [cf for cf in custom_fields if cf["id"] in wanted]
+        include_custom_fields = True
+    if include_custom_fields:
+        result["custom_fields"] = custom_fields
+    else:
+        result["custom_fields"] = None
+        result["custom_fields_count"] = len(custom_fields)
+    return result
 
 
 # DealStatus::OPEN_STATUS / WON_STATUS / LOST_STATUS in the plugin.
@@ -257,6 +279,8 @@ def _list_deals_action(
     status_id: Optional[Union[int, str]] = None,
     assigned_to_id: Optional[int] = None,
     limit: int = 100,
+    include_custom_fields: bool = False,
+    custom_field_ids: Optional[List[int]] = None,
     **_: Any,
 ) -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     if not _is_positive_int(limit):
@@ -267,6 +291,19 @@ def _list_deals_action(
             "error": (
                 "project_id must be a non-empty string identifier or "
                 "positive integer."
+            )
+        }
+    # Refused rather than read as "no fields", as on `manage_contact`: leaving
+    # the parameter out already means that.
+    if custom_field_ids is not None and (
+        not isinstance(custom_field_ids, list)
+        or not custom_field_ids
+        or not all(_is_positive_int(cf_id) for cf_id in custom_field_ids)
+    ):
+        return {
+            "error": (
+                "custom_field_ids must be a non-empty list of positive integer "
+                "custom field IDs."
             )
         }
     params: Dict[str, Any] = {"limit": limit}
@@ -296,7 +333,14 @@ def _list_deals_action(
         url = f"{_client.REDMINE_URL}/deals.json"
         payload = client.engine.request("get", url, params=params)
         raw = payload.get("deals", []) if isinstance(payload, dict) else []
-        return [_deal_to_dict(d) for d in raw[:limit]]
+        return [
+            _deal_to_dict(
+                d,
+                include_custom_fields=include_custom_fields,
+                custom_field_ids=custom_field_ids,
+            )
+            for d in raw[:limit]
+        ]
     except Exception as e:
         return _handle_redmine_error(e, "listing deals", {"resource_type": "deals"})
 
@@ -321,7 +365,9 @@ def _get_deal_action(
         deal = payload.get("deal", {}) if isinstance(payload, dict) else {}
         if not deal:
             return {"error": f"Deal {deal_id} not found."}
-        return _deal_to_dict(deal)
+        # A single-deal read keeps every custom field, as `manage_contact`'s
+        # `get` does. The collection is where the cost is.
+        return _deal_to_dict(deal, include_custom_fields=True)
     except Exception as e:
         return _handle_redmine_error(
             e,
@@ -387,7 +433,11 @@ def _create_deal_action(
             data=json.dumps({"deal": body}),
         )
         deal = payload.get("deal", {}) if isinstance(payload, dict) else {}
-        return _deal_to_dict(deal) if deal else {"success": True}
+        return (
+            _deal_to_dict(deal, include_custom_fields=True)
+            if deal
+            else {"success": True}
+        )
     except Exception as e:
         return _handle_redmine_error(e, "creating deal", {"resource_type": "deal"})
 
@@ -490,6 +540,8 @@ async def manage_deal(
     status_id: Optional[Union[int, str]] = None,
     assigned_to_id: Optional[int] = None,
     limit: Annotated[int, Field(ge=1, le=100)] = 100,
+    include_custom_fields: bool = False,
+    custom_field_ids: Optional[List[int]] = None,
     deal_id: Optional[int] = None,
     include: Optional[str] = None,
     name: Optional[str] = None,
@@ -521,6 +573,21 @@ async def manage_deal(
         assigned_to_id: On ``list``, filter by the assigned user's ID. On
             ``create``, the user to assign the new deal to.
         limit: ``list`` only. Deals per call, capped at 100 by Redmine.
+        include_custom_fields: ``list`` only. Return each deal's
+            ``custom_fields`` values (default: False). Costs no extra request
+            -- the CRM API sends them whether or not they are asked for --
+            but every deal custom field the instance defines is rendered on
+            every deal, carrying a value or not. Without it a listed deal
+            still carries ``custom_fields``, holding ``None``, beside
+            ``custom_fields_count`` saying how many were withheld: ``None``
+            means "not requested" and ``[]`` means "this deal has none". A
+            ``get`` returns the values always, so read one deal in full
+            rather than turning this on to see one field.
+        custom_field_ids: ``list`` only. Return only these custom fields in
+            each deal's ``custom_fields``, e.g. ``[42, 43]``; implies
+            ``include_custom_fields``. The IDs are the ``id`` of each
+            ``custom_fields`` entry. ``[]`` means the deal carries none of
+            them; an ID no deal carries is not an error.
         deal_id: The deal to act on. Required by every action except
             ``list`` and ``create``.
         include: ``get`` only. Comma-separated: ``"notes"`` (returned
@@ -539,7 +606,9 @@ async def manage_deal(
     Returns:
         ``list`` a list of deal dicts, ``get`` / ``create`` one deal dict,
         ``update`` / ``delete`` a status dict, and ``{"error": ...}`` on
-        failure.
+        failure. A listed deal's ``custom_fields`` is ``None`` unless
+        requested (see ``include_custom_fields``); ``get`` and ``create``
+        always carry the values.
     """
     if not _is_deals_enabled():
         return dict(_DEALS_DISABLED_ERROR)
@@ -550,6 +619,8 @@ async def manage_deal(
         status_id=status_id,
         assigned_to_id=assigned_to_id,
         limit=limit,
+        include_custom_fields=include_custom_fields,
+        custom_field_ids=custom_field_ids,
         deal_id=deal_id,
         include=include,
         name=name,
