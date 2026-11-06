@@ -2501,7 +2501,7 @@ manage_redmine_wiki_page(
 **Notes:**
 - `list` and `get` are allowed in read-only mode; `create`, `update`, `delete`, and `rename` are blocked when `REDMINE_MCP_READ_ONLY=true`.
 - Wiki page titles typically use underscores instead of spaces.
-- Content format (Textile/Markdown) depends on Redmine server configuration.
+- Content format depends on the Redmine server's Text formatting setting (Textile, Markdown, CommonMark or none). The tool's description states which syntax this server renders; `get_mcp_server_info` returns it as `text_formatting`. See `REDMINE_TEXT_FORMATTING`.
 - Use `get_redmine_attachment` to download wiki attachments.
 - `rename` requires the `rename_wiki_pages` permission. If the API user lacks it, Redmine **silently drops the title change** (the body still updates). The tool re-fetches the page at `new_title` after the update and returns an explicit error if the new title is unreachable.
 - The `rename` action implements `PUT /projects/{id}/wiki/{old_title}.json` and fetches the existing text automatically since Redmine requires `text` on every wiki update.
@@ -3632,6 +3632,8 @@ Return the MCP server's version, enabled-feature flags, and the identity of the 
 - `auth_mode` (string): `"oauth"` or `"legacy"`.
 - `current_user` (dict or null): `{id, login, name}` for the authenticated Redmine user behind the configured API key. `null` when the server cannot reach Redmine (check `/health` for connectivity status). Use this to confirm who `assigned_to_id="me"` resolves to, which matters when a shared or robot API key is in use.
 - `plugin_flags` (dict): which plugin-gated tool families are enabled. Keys: `agile`, `checklists`, `products`, `orders`, `crm`, `deals`, `dmsf`, `helpdesk`, `helpdesk_tickets`, `tags`, plus one per family registered by an [extension](extensions.md). `True` means the family's tools are listed and routable and will reach the underlying plugin endpoints (for `tags`, that `get_redmine_issue` returns a `tags` array); `False` means they are hidden from `tools/list` (calling them by name returns "Unknown tool"), except for `agile` and `tags`, which only add fields to core tools and are never hidden (for `tags`, the field is simply omitted).
+- `text_formatting` (string): the markup Redmine renders notes, descriptions, wiki pages and news with: `textile`, `markdown`, `common_mark`, `none`, or `unknown` when it could not be determined. With `unknown`, write plain text. The text-writing tools' descriptions carry the matching syntax rules.
+- `text_formatting_source` (string): `env` (set by `REDMINE_TEXT_FORMATTING`), `detected` (read once from an issue page), or `unknown`.
 
 The response intentionally excludes credentials, internal hostnames, file-system paths, and any other operator config that a caller doesn't need to know to choose its call shape. Only flags that change *call shape* are surfaced.
 
@@ -3649,7 +3651,9 @@ The response intentionally excludes credentials, internal hostnames, file-system
         "crm": false,
         "dmsf": true,
         "tags": false
-    }
+    },
+    "text_formatting": "markdown",
+    "text_formatting_source": "detected"
 }
 ```
 

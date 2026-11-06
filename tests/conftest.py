@@ -150,3 +150,27 @@ def all_plugin_tools_visible():
 
     enable_all_plugin_tools(_server.mcp)
     yield
+
+
+@pytest.fixture(autouse=True)
+def _offline_text_formatting(monkeypatch):
+    """Keep text-formatting detection off the network (#440).
+
+    ``tools/list`` resolves the formatting; in ``auto`` mode that would fetch
+    an issue page from whatever REDMINE_URL a test patched in. Every test
+    gets a fresh resolver whose detector always fails, so results default
+    to ``unknown`` and nothing is cached across tests. Tests of detection
+    itself build their own resolver.
+    """
+    from redmine_mcp_server import _text_formatting
+
+    async def _never_detects(cred, *, base_url):
+        return None
+
+    monkeypatch.delenv("REDMINE_TEXT_FORMATTING", raising=False)
+    monkeypatch.setattr(
+        _text_formatting,
+        "RESOLVER",
+        _text_formatting.TextFormattingResolver(detector=_never_detects),
+    )
+    yield
