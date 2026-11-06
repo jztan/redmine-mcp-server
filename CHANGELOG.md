@@ -21,6 +21,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `scripts/audit.sh` no longer ignores that CVE. The Docker image is unchanged
   on Python 3.13. ([#428](https://github.com/jztan/redmine-mcp-server/issues/428))
 ### Fixed
+- `manage_deal` now returns deal `custom_fields`. The CRM plugin renders them
+  on both `deals/index.api.rsb` and `deals/show.api.rsb`, but the serializer
+  dropped them, so a deal's custom field values could be written and never
+  read back. They follow `manage_contact`'s contract: `get` and `create`
+  return them always, while `list` returns `custom_fields: null` beside
+  `custom_fields_count` unless `include_custom_fields=True` asks for every
+  value or `custom_field_ids` names the ones wanted, since every deal custom
+  field is rendered on every row. ([#441](https://github.com/jztan/redmine-mcp-server/issues/441))
 - `import redmine_mcp_server.extensions` no longer crashes on Python 3.11, which
   broke `REDMINE_MCP_EXTENSIONS` there since v2.17.0. CI now runs each matrix
   job on the Python it names instead of 3.13.

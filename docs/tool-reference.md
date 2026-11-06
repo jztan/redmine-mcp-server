@@ -3222,6 +3222,8 @@ Requires the **RedmineUP CRM** plugin in its **Pro** edition, `REDMINE_DEALS_ENA
 - `status_id` (integer or string, optional): For `list`, filter by deal status. A numeric id, or one of `"o"` (open, the default Redmine applies anyway), `"c"` (won/lost), `"*"` (any status). For `create`, the status to open the deal in (numeric id only)
 - `assigned_to_id` (integer, optional): For `list`, filter by assignee user ID
 - `limit` (integer, optional): For `list`, max results per call (default `100`, capped at 100 by Redmine)
+- `include_custom_fields` (boolean, optional): For `list`, return each deal's `custom_fields` values. Default: `false`. Costs no extra request -- the plugin's `deals/index.api.rsb` renders every deal custom field on every deal whether or not it carries a value, so the data is already in the payload -- but returning it on every row is the payload cost. Without it a listed deal still carries `custom_fields`, holding `null`, beside `custom_fields_count` saying how many were withheld: `null` means "not requested" and `[]` means "this deal has none". `get` returns the values always
+- `custom_field_ids` (array of integers, optional): For `list`, return only these custom fields in each deal's `custom_fields`, e.g. `[42, 43]`, in the order the payload carries them. Implies `include_custom_fields`. The IDs are each entry's `id`. As with `include_custom_fields`, no `custom_fields_count` comes back, and `[]` means the deal carries none of them; an ID no deal carries is not an error. An empty list is refused
 - `deal_id` (integer): Required for `get`, `update`, and `delete`
 - `include` (string, optional): For `get`, comma-separated includes: `notes`, and `lines` (product lines, when the Products plugin is installed)
 - `name` (string): Required for `create`
@@ -3231,8 +3233,8 @@ Requires the **RedmineUP CRM** plugin in its **Pro** edition, `REDMINE_DEALS_ENA
 - `fields` (dict): For `update`, fields to update. Allowed keys: `name`, `background`, `currency`, `price`, `price_type`, `duration`, `project_id`, `author_id`, `assigned_to_id`, `status_id`, `contact_id`, `category_id`, `probability`, `due_date`, `custom_field_values`, `custom_fields`, `watcher_user_ids`. For `create`, additional fields beyond the named parameters
 
 **Returns:**
-- `list`: array of deal dicts
-- `get`/`create`: deal dict with `id`, `name`, `price`, `currency`, `price_type`, `duration`, `probability`, `due_date`, `background`, `project`, `status`, `category`, `author`, `contact`, `assigned_to`, `related_contacts`, `created_on`, `updated_on`. A `notes` key is added only when `include="notes"` was requested and the plugin returned notes, so its absence means "not requested" rather than "none". `custom_fields` is accepted on writes but not returned. `manage_product` differs, returning `custom_fields` on `list`, `get` and `create`, as does `manage_document` on `get`; `manage_contact` returns contact `custom_fields` on `get` and `create`, and on `list` under `include_custom_fields` or `custom_field_ids`
+- `list`: array of deal dicts. A listed deal carries `custom_fields` values only under `include_custom_fields=true`, or just the fields named under `custom_field_ids`; otherwise that key is `null` and `custom_fields_count` carries the number withheld
+- `get`/`create`: deal dict with `id`, `name`, `price`, `currency`, `price_type`, `duration`, `probability`, `due_date`, `background`, `project`, `status`, `category`, `author`, `contact`, `assigned_to`, `related_contacts`, `created_on`, `updated_on`, and `custom_fields` (values included, each `{id, name, value}`, with `value` a list for a multi-value field). A `notes` key is added only when `include="notes"` was requested and the plugin returned notes, so its absence means "not requested" rather than "none"
 - `update`: `{"success": true, "deal_id": N, "updated_fields": [...]}`
 - `delete`: `{"success": true, "deal_id": N, "message": ...}`
 - Error: `{"error": "..."}`
