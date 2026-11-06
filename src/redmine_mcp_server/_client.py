@@ -29,7 +29,10 @@ from typing import Literal, Optional, Union
 from urllib.parse import urlparse
 
 from dotenv import load_dotenv
-from fastmcp.server.dependencies import get_access_token, get_http_request
+from fastmcp.server.dependencies import (  # noqa: F401 (read via globals())
+    get_access_token,
+    get_http_request,
+)
 from redminelib import Redmine
 from redminelib.engines import SyncEngine
 
