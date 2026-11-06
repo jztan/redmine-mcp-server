@@ -278,7 +278,9 @@ def _list_deals_action(
     search: Optional[str] = None,
     status_id: Optional[Union[int, str]] = None,
     assigned_to_id: Optional[int] = None,
+    contact_id: Optional[int] = None,
     limit: int = 100,
+    offset: int = 0,
     include_custom_fields: bool = False,
     custom_field_ids: Optional[List[int]] = None,
     **_: Any,
@@ -286,6 +288,8 @@ def _list_deals_action(
     if not _is_positive_int(limit):
         return {"error": "limit must be a positive integer."}
     limit = min(limit, _REDMINE_API_PAGE_CAP)
+    if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
+        return {"error": "offset must be a non-negative integer."}
     if project_id is not None and not _is_valid_project_id(project_id):
         return {
             "error": (
@@ -307,6 +311,8 @@ def _list_deals_action(
             )
         }
     params: Dict[str, Any] = {"limit": limit}
+    if offset:
+        params["offset"] = offset
     if project_id is not None:
         params["project_id"] = project_id
     if search is not None:
@@ -326,6 +332,13 @@ def _list_deals_action(
         if not _is_positive_int(assigned_to_id):
             return {"error": "assigned_to_id must be a positive integer."}
         params["assigned_to_id"] = assigned_to_id
+    # DealQuery registers `contact_id` as a filter on the deal's own contact,
+    # so a bare id falls through to the `=` operator in Query#add_short_filter,
+    # as a numeric `status_id` does. The open-only status default still applies.
+    if contact_id is not None:
+        if not _is_positive_int(contact_id):
+            return {"error": "contact_id must be a positive integer."}
+        params["contact_id"] = contact_id
     from .. import _client
 
     try:
@@ -540,6 +553,7 @@ async def manage_deal(
     status_id: Optional[Union[int, str]] = None,
     assigned_to_id: Optional[int] = None,
     limit: Annotated[int, Field(ge=1, le=100)] = 100,
+    offset: Annotated[int, Field(ge=0)] = 0,
     include_custom_fields: bool = False,
     custom_field_ids: Optional[List[int]] = None,
     deal_id: Optional[int] = None,
@@ -573,6 +587,10 @@ async def manage_deal(
         assigned_to_id: On ``list``, filter by the assigned user's ID. On
             ``create``, the user to assign the new deal to.
         limit: ``list`` only. Deals per call, capped at 100 by Redmine.
+        offset: ``list`` only. Deals to skip, for paging past the first 100.
+            ``list`` still returns a bare list, so page by asking again at
+            ``offset + limit`` until a call returns fewer than ``limit``
+            deals; that short page is the last one.
         include_custom_fields: ``list`` only. Return each deal's
             ``custom_fields`` values (default: False). Costs no extra request
             -- the CRM API sends them whether or not they are asked for --
@@ -594,7 +612,11 @@ async def manage_deal(
             under a ``notes`` key) and, when the Products plugin is
             installed, ``"lines"`` (the deal's product lines).
         name: ``create`` only -- the new deal's name (required).
-        contact_id: ``create`` only. The contact the deal belongs to.
+        contact_id: On ``list``, return only deals whose contact is this
+            contact ID (the deal's ``contact``, not its
+            ``related_contacts``); still open deals only unless
+            ``status_id`` says otherwise. On ``create``, the contact the deal
+            belongs to.
         price: ``create`` only. Send an unformatted string such as
             ``"1500.5"``.
         currency: ``create`` only. The deal's currency code, e.g. ``"USD"``.
@@ -619,6 +641,7 @@ async def manage_deal(
         status_id=status_id,
         assigned_to_id=assigned_to_id,
         limit=limit,
+        offset=offset,
         include_custom_fields=include_custom_fields,
         custom_field_ids=custom_field_ids,
         deal_id=deal_id,

@@ -3222,12 +3222,13 @@ Requires the **RedmineUP CRM** plugin in its **Pro** edition, `REDMINE_DEALS_ENA
 - `status_id` (integer or string, optional): For `list`, filter by deal status. A numeric id, or one of `"o"` (open, the default Redmine applies anyway), `"c"` (won/lost), `"*"` (any status). For `create`, the status to open the deal in (numeric id only)
 - `assigned_to_id` (integer, optional): For `list`, filter by assignee user ID
 - `limit` (integer, optional): For `list`, max results per call (default `100`, capped at 100 by Redmine)
+- `offset` (integer, optional): For `list`, deals to skip — needed to page past the first 100. `list` still returns a bare array, so page by calling again at `offset + limit` until a call returns fewer than `limit` deals; that short page is the last
 - `include_custom_fields` (boolean, optional): For `list`, return each deal's `custom_fields` values. Default: `false`. Costs no extra request -- the plugin's `deals/index.api.rsb` renders every deal custom field on every deal whether or not it carries a value, so the data is already in the payload -- but returning it on every row is the payload cost. Without it a listed deal still carries `custom_fields`, holding `null`, beside `custom_fields_count` saying how many were withheld: `null` means "not requested" and `[]` means "this deal has none". `get` returns the values always
 - `custom_field_ids` (array of integers, optional): For `list`, return only these custom fields in each deal's `custom_fields`, e.g. `[42, 43]`, in the order the payload carries them. Implies `include_custom_fields`. The IDs are each entry's `id`. As with `include_custom_fields`, no `custom_fields_count` comes back, and `[]` means the deal carries none of them; an ID no deal carries is not an error. An empty list is refused
 - `deal_id` (integer): Required for `get`, `update`, and `delete`
 - `include` (string, optional): For `get`, comma-separated includes: `notes`, and `lines` (product lines, when the Products plugin is installed)
 - `name` (string): Required for `create`
-- `contact_id` (integer, optional): For `create`, the contact the deal belongs to
+- `contact_id` (integer, optional): For `list`, return only deals whose contact is this contact ID — `DealQuery`'s `contact_id` filter, which matches the deal's `contact`, not its `related_contacts`. Open deals only unless `status_id` says otherwise. For `create`, the contact the deal belongs to
 - `assigned_to_id` (integer, optional): For `list`, filter by assignee. For `create`, the user to assign the new deal to
 - `price` (number or string, optional), `currency` (string, optional), `due_date` (string, optional): For `create`
 - `fields` (dict): For `update`, fields to update. Allowed keys: `name`, `background`, `currency`, `price`, `price_type`, `duration`, `project_id`, `author_id`, `assigned_to_id`, `status_id`, `contact_id`, `category_id`, `probability`, `due_date`, `custom_field_values`, `custom_fields`, `watcher_user_ids`. For `create`, additional fields beyond the named parameters
@@ -3247,6 +3248,9 @@ manage_deal(action="list", project_id="sales", assigned_to_id=5, limit=50)
 
 # Every deal regardless of status, including won and lost
 manage_deal(action="list", project_id="sales", status_id="*")
+
+# Every deal for one contact, any status, second page of 100
+manage_deal(action="list", contact_id=42, status_id="*", offset=100)
 
 # Fetch a single deal with its notes
 manage_deal(action="get", deal_id=9, include="notes")
