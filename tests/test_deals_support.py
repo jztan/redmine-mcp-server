@@ -921,3 +921,72 @@ class TestManageDealCustomFields:
             result = await manage_deal(action="create", project_id="sales", name="New")
 
         assert result["custom_fields"] == _ALL_DEAL_CUSTOM_FIELDS
+
+
+# ---------------------------------------------------------------------------
+# list: contact filter and offset
+# ---------------------------------------------------------------------------
+
+
+class TestManageDealListContactAndOffset:
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_contact_id_reaches_the_query(self, mock_redmine):
+        """DealQuery registers ``contact_id``; a bare id is its ``=`` filter."""
+        mock_redmine.engine.request.return_value = {"deals": []}
+        with patch.dict(os.environ, {"REDMINE_DEALS_ENABLED": "true"}):
+            await manage_deal(action="list", contact_id=42)
+
+        params = mock_redmine.engine.request.call_args.kwargs["params"]
+        assert params["contact_id"] == 42
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_contact_id_absent_when_not_given(self, mock_redmine):
+        mock_redmine.engine.request.return_value = {"deals": []}
+        with patch.dict(os.environ, {"REDMINE_DEALS_ENABLED": "true"}):
+            await manage_deal(action="list")
+
+        params = mock_redmine.engine.request.call_args.kwargs["params"]
+        assert "contact_id" not in params
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("bad", [0, -3, True, "42", 1.5])
+    async def test_list_rejects_invalid_contact_id(self, bad):
+        with patch.dict(os.environ, {"REDMINE_DEALS_ENABLED": "true"}):
+            result = await manage_deal(action="list", contact_id=bad)
+        assert "contact_id" in result["error"]
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_offset_reaches_the_query(self, mock_redmine):
+        mock_redmine.engine.request.return_value = {"deals": [_make_deal(101)]}
+        with patch.dict(os.environ, {"REDMINE_DEALS_ENABLED": "true"}):
+            result = await manage_deal(action="list", offset=100)
+
+        params = mock_redmine.engine.request.call_args.kwargs["params"]
+        assert params["offset"] == 100
+        # Still a bare list: offset does not change the return shape.
+        assert isinstance(result, list)
+        assert [d["id"] for d in result] == [101]
+
+    @pytest.mark.asyncio
+    @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
+    @patch("redmine_mcp_server._client.redmine")
+    async def test_zero_offset_is_not_sent(self, mock_redmine):
+        mock_redmine.engine.request.return_value = {"deals": []}
+        with patch.dict(os.environ, {"REDMINE_DEALS_ENABLED": "true"}):
+            await manage_deal(action="list", offset=0)
+
+        params = mock_redmine.engine.request.call_args.kwargs["params"]
+        assert "offset" not in params
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("bad", [-1, True, "10", 2.0])
+    async def test_rejects_invalid_offset(self, bad):
+        with patch.dict(os.environ, {"REDMINE_DEALS_ENABLED": "true"}):
+            result = await manage_deal(action="list", offset=bad)
+        assert "offset" in result["error"]

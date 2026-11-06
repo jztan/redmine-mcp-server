@@ -13,6 +13,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `pydantic` from 2.12.5 to 2.14.2 (`pydantic-core` 2.41.5 to 2.50.2), the
   versions that install on 3.15.
   ([#432](https://github.com/jztan/redmine-mcp-server/issues/432))
+- `manage_deal(action="list")` takes two new parameters:
+  - `contact_id` returns only the deals whose contact is that contact, through
+    the `contact_id` filter the CRM plugin's `DealQuery` registers, so it
+    combines with the other `list` filters, including the open-only `status_id`
+    default. `manage_contact(action="get", include="deals")` is not the same
+    read: it also returns the deals the contact is only related to, has no
+    filters or paging, and returns a reduced deal shape. The parameter already
+    existed for `create`.
+  - `offset` pages past the first 100 deals, which was as far as `list` could
+    read. The return value is still a bare list, so existing callers are
+    unaffected; a page shorter than `limit` is the last one. ([#442](https://github.com/jztan/redmine-mcp-server/issues/442))
 
 ### Removed
 - Python 3.10 support: the minimum is now Python 3.11. Python 3.10 reached end
