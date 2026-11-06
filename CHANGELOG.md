@@ -69,6 +69,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - @slidonnici, reported `send_helpdesk_email_reply` failing under OAuth on
   Helpdesk 4.5 and identified the missing `send_response` scope
   ([#431](https://github.com/jztan/redmine-mcp-server/issues/431))
+- @mmahmed, reported and fixed `manage_deal` dropping deal custom fields
+  ([#441](https://github.com/jztan/redmine-mcp-server/issues/441),
+  [#444](https://github.com/jztan/redmine-mcp-server/pull/444)), added the
+  `contact_id` filter and `offset` to `manage_deal(action="list")`
+  ([#442](https://github.com/jztan/redmine-mcp-server/issues/442),
+  [#445](https://github.com/jztan/redmine-mcp-server/pull/445)), and added the
+  read-only `manage_order` tool for RedmineUP Products orders
+  ([#443](https://github.com/jztan/redmine-mcp-server/issues/443),
+  [#446](https://github.com/jztan/redmine-mcp-server/pull/446))
 
 ## [2.20.0] - 2026-10-31
 ### Added
