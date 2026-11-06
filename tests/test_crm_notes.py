@@ -357,11 +357,15 @@ class TestUpdate:
     @pytest.mark.asyncio
     @patch("redmine_mcp_server._client.REDMINE_URL", "http://localhost:3000")
     @patch("redmine_mcp_server._client.redmine")
-    async def test_update_forbidden_explains_delete_permission(self, mock_redmine):
+    async def test_update_forbidden_explains_edit_permission(self, mock_redmine):
         mock_redmine.engine.request.side_effect = [{"note": _note()}, ForbiddenError()]
         with patch.dict(os.environ, BOTH_ON):
             result = await manage_crm_note(action="update", note_id=2, content="x")
-        assert "delete_notes" in result["error"]
+        # CRM 4.5.1 split note editing out to edit_notes (#448); earlier
+        # versions reuse delete_notes, so the hint names both.
+        assert "edit_notes" in result["error"]
+        assert "edit_own_notes" in result["error"]
+        assert "4.5.1" in result["error"]
 
 
 class TestDelete:
@@ -384,3 +388,4 @@ class TestDelete:
         with patch.dict(os.environ, BOTH_ON):
             result = await manage_crm_note(action="delete", note_id=2)
         assert "delete_notes" in result["error"]
+        assert "edit_notes" not in result["error"]

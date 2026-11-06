@@ -4,6 +4,7 @@ import json
 from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 
 from pydantic import Field
+from redminelib.exceptions import ResourceNotFoundError
 
 from .._client import _get_redmine_client
 from .._decorators import ActionMode, action_dispatch
@@ -1073,15 +1074,53 @@ def _contact_tag_to_dict(tag: Dict[str, Any]) -> Dict[str, Any]:
     return {"id": tag.get("id"), "name": tag.get("name", ""), "color": tag.get("color")}
 
 
+_TAG_FALLBACK_PAGE_SIZE = 100
+
+
+def _tags_from_contacts(client: Any, base_url: str) -> List[Dict[str, Any]]:
+    """Collect distinct tag names from the ``tag_list`` of visible contacts.
+
+    CRM 4.5.1 removed ``GET /contacts_tags.json`` (#448). The contacts index
+    still returns each contact's ``tag_list`` and applies the plugin's own
+    visibility rules, so paging through it yields the tags the caller can
+    see. Names only: the index carries no tag id or color.
+    """
+    names: Dict[str, None] = {}
+    offset = 0
+    while True:
+        payload = client.engine.request(
+            "get",
+            f"{base_url}/contacts.json",
+            params={"limit": _TAG_FALLBACK_PAGE_SIZE, "offset": offset},
+        )
+        contacts = payload.get("contacts", []) if isinstance(payload, dict) else []
+        for contact in contacts:
+            tag_list = contact.get("tag_list") if isinstance(contact, dict) else None
+            for name in tag_list or []:
+                if isinstance(name, str) and name:
+                    names.setdefault(name, None)
+        offset += len(contacts)
+        total = payload.get("total_count") if isinstance(payload, dict) else None
+        if not contacts or (isinstance(total, int) and offset >= total):
+            break
+    return [
+        {"id": None, "name": name, "color": None}
+        for name in sorted(names, key=str.lower)
+    ]
+
+
 @offloaded
 def _list_contact_tags_impl() -> Union[List[Dict[str, Any]], Dict[str, Any]]:
     from .. import _client
 
     try:
         client = _get_redmine_client()
-        payload = client.engine.request(
-            "get", f"{_client.REDMINE_URL}/contacts_tags.json"
-        )
+        try:
+            payload = client.engine.request(
+                "get", f"{_client.REDMINE_URL}/contacts_tags.json"
+            )
+        except ResourceNotFoundError:
+            return _tags_from_contacts(client, _client.REDMINE_URL)
         raw = payload.get("tags", []) if isinstance(payload, dict) else []
         return [_contact_tag_to_dict(t) for t in raw]
     except Exception as e:
@@ -1100,6 +1139,9 @@ async def list_contact_tags() -> Union[List[Dict[str, Any]], Dict[str, Any]]:
 
     Returns:
         A list of ``{id, name, color}`` ordered by name, or ``{"error": ...}``.
+        On CRM 4.5.1 and later, which dropped the tags endpoint, the names
+        are collected from the contacts the caller can see and ``id`` and
+        ``color`` are ``None``.
     """
     if not _is_crm_enabled():
         return dict(_CRM_DISABLED_ERROR)

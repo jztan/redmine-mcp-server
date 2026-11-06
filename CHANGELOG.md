@@ -50,6 +50,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `scripts/audit.sh` no longer ignores that CVE. The Docker image is unchanged
   on Python 3.13. ([#428](https://github.com/jztan/redmine-mcp-server/issues/428))
 ### Fixed
+- CRM PRO 4.5.1 compatibility ([#448](https://github.com/jztan/redmine-mcp-server/issues/448)):
+  - `list_contact_tags` failed with `NOT_FOUND` because 4.5.1 removed
+    `GET /contacts_tags.json`. When that endpoint answers 404, the tool now
+    collects the tag names from the contacts the user can see. The plugin
+    gives no tag id or color that way, so both come back as `null`.
+  - `manage_crm_note` permission hints: 4.5.1 checks the new `edit_notes`
+    (or `edit_own_notes`) permission for editing, while `delete_notes` only
+    covers deleting. The access-denied message for `update` now names the
+    edit permission, and the one for `delete` names only the delete
+    permission.
 - `manage_deal` now returns deal `custom_fields`. The CRM plugin renders them
   on both `deals/index.api.rsb` and `deals/show.api.rsb`, but the serializer
   dropped them, so a deal's custom field values could be written and never
