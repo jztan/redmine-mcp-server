@@ -113,10 +113,10 @@ async def get_mcp_server_info() -> Dict[str, Any]:
           Redmine (check ``/health`` for connectivity status).
         - ``plugin_flags`` (dict[str, bool]): which plugin-gated tool
           families are enabled. Always ``agile``, ``checklists``,
-          ``products``, ``crm``, ``deals``, ``dmsf``, ``helpdesk``,
-          ``helpdesk_tickets``, ``tags``, in that order, and after them
-          one key per family this deployment added through
-          ``REDMINE_MCP_EXTENSIONS``, named after the family. The nine are
+          ``products``, ``orders``, ``crm``, ``deals``, ``dmsf``,
+          ``helpdesk``, ``helpdesk_tickets``, ``tags``, in that order, and
+          after them one key per family this deployment added through
+          ``REDMINE_MCP_EXTENSIONS``, named after the family. The ten are
           reserved, so each always carries its own flag.
           ``True`` means the family's tools are listed and routable;
           ``False`` means they are hidden from ``tools/list`` (``agile``

@@ -27,7 +27,7 @@ Exclusions:
       (``AGILE_READ_SCOPES``, ``TAGS_READ_SCOPES``,
       ``TAGS_WRITE_SCOPES``, ``CRM_READ_SCOPES``, ``CRM_WRITE_SCOPES``,
       ``DEALS_READ_SCOPES``, ``DEALS_WRITE_SCOPES``,
-      ``CRM_NOTES_WRITE_SCOPES``)
+      ``CRM_NOTES_WRITE_SCOPES``, ``ORDERS_READ_SCOPES``)
       and are advertised only when that feature's env flag is set.
 """
 
@@ -40,6 +40,7 @@ from ._env import (
     _is_deals_enabled,
     _is_helpdesk_enabled,
     _is_helpdesk_tickets_enabled,
+    _is_orders_enabled,
     _is_read_only_mode,
     _is_tags_enabled,
 )
@@ -220,6 +221,23 @@ DEALS_WRITE_SCOPES: list[str] = [
     "manage_deals",  # manage_deal_category(action=create|update|delete)
 ]
 
+# RedmineUP Products *order* permissions, advertised only under
+# REDMINE_ORDERS_ENABLED (see ``_env._is_orders_enabled`` for why orders do
+# not ride the products flag). manage_order is read-only, so there is no
+# write list.
+#
+# OrdersController authorizes #show against view_orders. #index skips
+# ``authorize`` but runs ``find_optional_project``, whose ``authorize_global``
+# checks view_orders_list against the token. The rows then come from
+# ``Order.visible`` (``Project.allowed_to_condition(user, :view_orders)``),
+# which reads the user's roles and not the token, so a token needs only
+# view_orders_list to list while the user's role still needs view_orders to
+# see any row.
+ORDERS_READ_SCOPES: list[str] = [
+    "view_orders",  # manage_order(action=get)
+    "view_orders_list",  # manage_order(action=list)
+]
+
 # RedmineUP CRM note permissions, advertised when contacts or deals are
 # enabled and the server is not read-only. Reads reuse view_contacts /
 # view_deals. notes#create has no authorize filter in the plugin, so
@@ -288,7 +306,9 @@ def advertised_scopes() -> list[str]:
     ``REDMINE_HELPDESK_ENABLED`` unless the server is read-only, and
     :data:`HELPDESK_TICKETS_READ_SCOPES` and
     :data:`HELPDESK_TICKETS_WRITE_SCOPES` follow the deals shape under
-    ``REDMINE_HELPDESK_TICKETS_ENABLED``. Extensions registered through
+    ``REDMINE_HELPDESK_TICKETS_ENABLED``. :data:`ORDERS_READ_SCOPES` are
+    appended under ``REDMINE_ORDERS_ENABLED`` in both modes; ``manage_order``
+    has no write action, so there is no write list. Extensions registered through
     :mod:`.extensions` append their own lists last, under the same
     enabled/read-only rule, which is where a
     permission an in-house plugin declares for itself enters the list.
@@ -321,6 +341,8 @@ def advertised_scopes() -> list[str]:
         scopes += list(HELPDESK_TICKETS_READ_SCOPES)
         if not _is_read_only_mode():
             scopes += list(HELPDESK_TICKETS_WRITE_SCOPES)
+    if _is_orders_enabled():
+        scopes += list(ORDERS_READ_SCOPES)
 
     # Registered extensions come last, in registration order, so a stock
     # deployment -- where there are none -- gets exactly the list above.
@@ -583,6 +605,16 @@ TOOL_SCOPES: Dict[str, ToolScopeEntry] = {
     "add_deal_product": frozenset(),
     "manage_crm_note": frozenset(),
     "list_crm_queries": frozenset(),
+    # Products plugin orders. Unlike the CRM tools above, manage_order does
+    # require its scopes: they are advertised only under REDMINE_ORDERS_ENABLED,
+    # the same flag that lists the tool, so requiring them cannot hide it on a
+    # deployment that never advertises them (the manage_helpdesk_ticket
+    # precedent). Each action needs the one scope its controller action
+    # checks against the token; see ORDERS_READ_SCOPES.
+    "manage_order": {
+        "list": frozenset({"view_orders_list"}),
+        "get": frozenset({"view_orders"}),
+    },
     # --- MCP Apps (read-only issue queries) ---
     "show_triage_board": frozenset({"view_issues"}),
     "get_triage_board_data": frozenset({"view_issues"}),

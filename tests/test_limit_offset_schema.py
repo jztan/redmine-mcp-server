@@ -41,6 +41,8 @@ EXPECTED_BOUNDS = [
     ("manage_contact", "offset", 0, None, 0),
     ("manage_deal", "limit", 1, 100, 100),
     ("manage_product", "limit", 1, 100, 100),
+    ("manage_order", "limit", 1, 100, 100),
+    ("manage_order", "offset", 0, None, 0),
     ("search_entire_redmine", "limit", 1, 100, 100),
     ("search_entire_redmine", "offset", 0, None, 0),
     ("search_redmine_issues", "limit", 1, 1000, 25),

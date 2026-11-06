@@ -66,6 +66,7 @@ async def test_reflects_plugin_flags(monkeypatch):
         "agile",
         "checklists",
         "products",
+        "orders",
         "crm",
         "deals",
         "dmsf",

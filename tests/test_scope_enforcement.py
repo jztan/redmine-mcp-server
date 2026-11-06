@@ -60,6 +60,7 @@ class TestToolScopesMap:
         "crm": ("REDMINE_CRM_ENABLED",),
         "deals": ("REDMINE_DEALS_ENABLED",),
         "products": ("REDMINE_PRODUCTS_ENABLED",),
+        "orders": ("REDMINE_ORDERS_ENABLED",),
         "dmsf": ("REDMINE_DMSF_ENABLED",),
         "helpdesk": ("REDMINE_HELPDESK_ENABLED",),
         "helpdesk_tickets": ("REDMINE_HELPDESK_TICKETS_ENABLED",),
