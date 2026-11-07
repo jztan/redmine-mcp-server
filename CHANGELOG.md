@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [2.21.0] - 2026-11-07
 ### Added
 - `manage_order` lists and reads the orders of the RedmineUP Products plugin,
   behind a new flag, `REDMINE_ORDERS_ENABLED`. It is read-only (`list`, `get`).
@@ -2562,6 +2564,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive authentication support (username/password and API key)
 - Docker containerization support
 
+[2.21.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.21.0
 [2.20.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.20.0
 [2.19.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.19.0
 [2.18.1]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.18.1
