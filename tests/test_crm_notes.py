@@ -118,6 +118,74 @@ class TestScopes:
         assert not (NOTE_WRITE_SCOPES & (set(READ_SCOPES) | set(WRITE_SCOPES)))
 
 
+# CRM PRO 4.5.1 checks edit_notes / edit_own_notes when a note is edited
+# (#450). Earlier CRM versions do not define them, and Redmine fails OAuth
+# consent with invalid_scope for the whole list if one requested scope is
+# unknown, so they are advertised only behind their own opt-in flag.
+NOTE_EDIT_SCOPES = {"edit_notes", "edit_own_notes"}
+EDIT_ON = {"REDMINE_CRM_NOTE_EDIT_SCOPES": "true"}
+EDIT_OFF = {"REDMINE_CRM_NOTE_EDIT_SCOPES": "false"}
+
+
+class TestNoteEditScopes:
+    @pytest.mark.parametrize("env", [CRM_ON, DEALS_ON, BOTH_ON])
+    def test_advertised_when_flag_and_a_crm_flag_are_on(self, env):
+        with patch.dict(
+            os.environ, {**env, **EDIT_ON, "REDMINE_MCP_READ_ONLY": "false"}
+        ):
+            assert NOTE_EDIT_SCOPES <= set(advertised_scopes())
+
+    @pytest.mark.parametrize("env", [CRM_ON, DEALS_ON, BOTH_ON])
+    def test_not_advertised_without_the_flag(self, env):
+        with patch.dict(
+            os.environ, {**env, **EDIT_OFF, "REDMINE_MCP_READ_ONLY": "false"}
+        ):
+            assert not (NOTE_EDIT_SCOPES & set(advertised_scopes()))
+
+    @pytest.mark.parametrize("env", [CRM_ON, DEALS_ON, BOTH_ON])
+    def test_not_advertised_when_flag_unset(self, env):
+        with patch.dict(
+            os.environ, {**env, "REDMINE_MCP_READ_ONLY": "false"}, clear=False
+        ):
+            os.environ.pop("REDMINE_CRM_NOTE_EDIT_SCOPES", None)
+            assert not (NOTE_EDIT_SCOPES & set(advertised_scopes()))
+
+    def test_not_advertised_when_both_crm_flags_off(self):
+        with patch.dict(os.environ, {**BOTH_OFF, **EDIT_ON}):
+            assert not (NOTE_EDIT_SCOPES & set(advertised_scopes()))
+
+    def test_not_advertised_when_read_only(self):
+        with patch.dict(
+            os.environ, {**BOTH_ON, **EDIT_ON, "REDMINE_MCP_READ_ONLY": "true"}
+        ):
+            assert not (NOTE_EDIT_SCOPES & set(advertised_scopes()))
+
+    def test_appended_after_the_other_note_scopes(self):
+        with patch.dict(
+            os.environ, {**BOTH_ON, **EDIT_ON, "REDMINE_MCP_READ_ONLY": "false"}
+        ):
+            scopes = advertised_scopes()
+            assert scopes.index("delete_own_notes") < scopes.index("edit_notes")
+            assert scopes.index("edit_notes") < scopes.index("edit_own_notes")
+
+    def test_absent_from_core_lists(self):
+        assert not (NOTE_EDIT_SCOPES & (set(READ_SCOPES) | set(WRITE_SCOPES)))
+
+    def test_selectable_through_redmine_mcp_scopes(self):
+        from redmine_mcp_server.oauth_scopes import configured_advertised_scopes
+
+        with patch.dict(
+            os.environ,
+            {
+                **BOTH_ON,
+                **EDIT_ON,
+                "REDMINE_MCP_READ_ONLY": "false",
+                "REDMINE_MCP_SCOPES": "view_contacts edit_notes",
+            },
+        ):
+            assert configured_advertised_scopes() == ["view_contacts", "edit_notes"]
+
+
 def _sent_body(mock_redmine):
     return json.loads(mock_redmine.engine.request.call_args.kwargs["data"])
 

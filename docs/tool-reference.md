@@ -17,6 +17,7 @@ listed:
 |---|---|---|
 | `REDMINE_AGILE_ENABLED` | RedmineUP Agile (Light) | 1.6.13 |
 | `REDMINE_CRM_ENABLED`, `REDMINE_DEALS_ENABLED` | RedmineUP CRM PRO | 4.4.7 |
+| `REDMINE_CRM_NOTE_EDIT_SCOPES` | RedmineUP CRM PRO | 4.5.1 (scope names) |
 | `REDMINE_PRODUCTS_ENABLED` | RedmineUP Products | 2.2.9 |
 | `REDMINE_ORDERS_ENABLED` | RedmineUP Products | 2.2.7 |
 | `REDMINE_TAGS_ENABLED` | AlphaNodes additional_tags | 4.4.0 |
@@ -3374,7 +3375,7 @@ Available when `REDMINE_CRM_ENABLED=true` or `REDMINE_DEALS_ENABLED=true`. A not
 
 **Returns:** `get`/`create` a note dict `{id, source {id, name, type}, subject, content, type_id, note_type, author, created_on, updated_on}` (`content` is wrapped in `<insecure-content>` boundary tags, timestamps are ISO-8601); `update` `{success, note_id, updated_fields}`; `delete` `{success, note_id, message}`.
 
-**Permissions:** deleting needs `delete_notes` (or `delete_own_notes` for the author). Editing needs `edit_notes` (or `edit_own_notes`) on CRM 4.5.1 and later; earlier versions check the delete permissions for editing too. In OAuth mode enabling either CRM flag advertises `add_notes`, `delete_notes` and `delete_own_notes` as scopes.
+**Permissions:** deleting needs `delete_notes` (or `delete_own_notes` for the author). Editing needs `edit_notes` (or `edit_own_notes`) on CRM 4.5.1 and later; earlier versions check the delete permissions for editing too. In OAuth mode enabling either CRM flag advertises `add_notes`, `delete_notes` and `delete_own_notes` as scopes. `edit_notes` and `edit_own_notes` are advertised only when `REDMINE_CRM_NOTE_EDIT_SCOPES=true` is also set, because CRM versions before 4.5.1 do not define them and Redmine fails OAuth consent with `invalid_scope` for the whole list if one requested scope is unknown. Without the flag, `update` is denied for OAuth tokens on CRM 4.5.1 and later; API-key and legacy auth are unaffected.
 
 **Example:**
 ```json

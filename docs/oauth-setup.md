@@ -266,6 +266,15 @@ Notes:
   `enforce_configured_scopes`, so on Light a deal scope cannot be held by
   the OAuth application and requesting it fails consent with
   `invalid_scope` -- which would break `manage_contact` too.
+- Either CRM flag advertises the note scopes `add_notes`, `delete_notes`
+  and `delete_own_notes` unless the server is read-only. CRM PRO 4.5.1
+  checks `edit_notes` (or `edit_own_notes`) for editing a note instead,
+  and those two are advertised only with `REDMINE_CRM_NOTE_EDIT_SCOPES=true`
+  on top, because earlier CRM versions do not define them and the REST API
+  gives the server no way to tell the version. Tick both on the Redmine
+  OAuth application before turning the flag on; a token issued without them
+  keeps getting access denied on `manage_crm_note(action="update")` until
+  the client re-authorizes.
 - `REDMINE_HELPDESK_ENABLED` advertises `send_response` unless the server is
   read-only, because Helpdesk 4.5 denies `send_helpdesk_email_reply` without
   it. Tick it on the Redmine OAuth application before turning the flag on or
