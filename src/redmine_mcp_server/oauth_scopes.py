@@ -27,7 +27,8 @@ Exclusions:
       (``AGILE_READ_SCOPES``, ``TAGS_READ_SCOPES``,
       ``TAGS_WRITE_SCOPES``, ``CRM_READ_SCOPES``, ``CRM_WRITE_SCOPES``,
       ``DEALS_READ_SCOPES``, ``DEALS_WRITE_SCOPES``,
-      ``CRM_NOTES_WRITE_SCOPES``, ``ORDERS_READ_SCOPES``)
+      ``CRM_NOTES_WRITE_SCOPES``, ``CRM_NOTES_EDIT_SCOPES``,
+      ``ORDERS_READ_SCOPES``)
       and are advertised only when that feature's env flag is set.
 """
 
@@ -36,6 +37,7 @@ from typing import Dict, Optional, Union
 
 from ._env import (
     _is_agile_enabled,
+    _crm_note_edit_scopes_enabled,
     _is_crm_enabled,
     _is_deals_enabled,
     _is_helpdesk_enabled,
@@ -249,6 +251,17 @@ CRM_NOTES_WRITE_SCOPES: list[str] = [
     "delete_own_notes",  # same, for the note's author
 ]
 
+# RedmineUP CRM note *edit* permissions, advertised only when
+# REDMINE_CRM_NOTE_EDIT_SCOPES is set on top of a CRM flag, and the server is
+# not read-only (#450). CRM PRO 4.5.1 checks them for notes#update instead of
+# delete_notes. Earlier versions do not define them, and an unknown scope in
+# the advertised list fails consent with invalid_scope for every scope, so
+# they cannot ride CRM_NOTES_WRITE_SCOPES.
+CRM_NOTES_EDIT_SCOPES: list[str] = [
+    "edit_notes",  # manage_crm_note(action=update) on CRM 4.5.1+
+    "edit_own_notes",  # same, for the note's author
+]
+
 # RedmineUP Helpdesk reply permission, advertised when
 # REDMINE_HELPDESK_ENABLED is set and the server is not read-only (#431).
 # Helpdesk 4.5 denies helpdesk#email_note without send_response, and a token
@@ -302,8 +315,13 @@ def advertised_scopes() -> list[str]:
     :data:`DEALS_WRITE_SCOPES` follow the same shape under a flag of their
     own, ``REDMINE_DEALS_ENABLED`` (per :func:`_is_deals_enabled`), because
     the CRM plugin's Light edition does not define the deal permissions at
-    all. :data:`HELPDESK_WRITE_SCOPES` are appended under
-    ``REDMINE_HELPDESK_ENABLED`` unless the server is read-only, and
+    all. :data:`CRM_NOTES_WRITE_SCOPES` are appended when either CRM flag is
+    on unless the server is read-only, and :data:`CRM_NOTES_EDIT_SCOPES` on
+    top of them only under ``REDMINE_CRM_NOTE_EDIT_SCOPES`` (per
+    :func:`_crm_note_edit_scopes_enabled`), because CRM versions before PRO
+    4.5.1 do not define the edit permissions. :data:`HELPDESK_WRITE_SCOPES`
+    are appended under ``REDMINE_HELPDESK_ENABLED`` unless the server is
+    read-only, and
     :data:`HELPDESK_TICKETS_READ_SCOPES` and
     :data:`HELPDESK_TICKETS_WRITE_SCOPES` follow the deals shape under
     ``REDMINE_HELPDESK_TICKETS_ENABLED``. :data:`ORDERS_READ_SCOPES` are
@@ -335,6 +353,8 @@ def advertised_scopes() -> list[str]:
             scopes += list(DEALS_WRITE_SCOPES)
     if (_is_crm_enabled() or _is_deals_enabled()) and not _is_read_only_mode():
         scopes += list(CRM_NOTES_WRITE_SCOPES)
+        if _crm_note_edit_scopes_enabled():
+            scopes += list(CRM_NOTES_EDIT_SCOPES)
     if _is_helpdesk_enabled() and not _is_read_only_mode():
         scopes += list(HELPDESK_WRITE_SCOPES)
     if _is_helpdesk_tickets_enabled():

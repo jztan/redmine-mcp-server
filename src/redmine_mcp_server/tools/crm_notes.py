@@ -110,7 +110,9 @@ def _note_to_dict(note: Dict[str, Any]) -> Dict[str, Any]:
 _NOTE_EDIT_FORBIDDEN_HINT = (
     "Access denied. Editing a CRM note requires the edit_notes permission "
     "(or edit_own_notes for the note's author) on CRM 4.5.1 and later, or "
-    "delete_notes (or delete_own_notes) on earlier versions."
+    "delete_notes (or delete_own_notes) on earlier versions. In OAuth mode "
+    "the edit permissions are advertised as scopes only when "
+    "REDMINE_CRM_NOTE_EDIT_SCOPES=true is set on the server."
 )
 _NOTE_DELETE_FORBIDDEN_HINT = (
     "Access denied. Deleting a CRM note requires the delete_notes "
@@ -354,7 +356,9 @@ async def manage_crm_note(
         Deleting requires the plugin's ``delete_notes`` permission (or
         ``delete_own_notes`` for the author). Editing requires
         ``edit_notes`` / ``edit_own_notes`` on CRM 4.5.1 and later, and the
-        delete permissions on earlier versions.
+        delete permissions on earlier versions. In OAuth mode the edit
+        permissions are advertised as scopes only under
+        ``REDMINE_CRM_NOTE_EDIT_SCOPES=true`` (#450).
     """
     if not _is_crm_notes_enabled():
         return dict(_CRM_NOTES_DISABLED_ERROR)

@@ -72,6 +72,21 @@ def _is_deals_enabled() -> bool:
     return _is_true_env("REDMINE_DEALS_ENABLED", "false")
 
 
+def _crm_note_edit_scopes_enabled() -> bool:
+    """Check if the CRM note *edit* permissions should be advertised (#450).
+
+    CRM PRO 4.5.1 checks ``edit_notes`` (or ``edit_own_notes`` for the
+    author) when a note is edited, so an OAuth token needs them for
+    ``manage_crm_note(action="update")``. Earlier CRM versions do not define
+    either permission, and Redmine fails OAuth consent with ``invalid_scope``
+    for the whole list if one requested scope is unknown, so advertising them
+    unconditionally would break OAuth on every older CRM install. The REST
+    API does not expose plugin versions, so this is an opt-in flag rather
+    than a runtime check. It has no effect unless a CRM flag is on.
+    """
+    return _is_true_env("REDMINE_CRM_NOTE_EDIT_SCOPES", "false")
+
+
 def _crm_edition() -> str:
     """Which build of the RedmineUP CRM plugin this Redmine runs.
 

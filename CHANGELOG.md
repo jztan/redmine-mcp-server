@@ -7,6 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `REDMINE_CRM_NOTE_EDIT_SCOPES`, an opt-in flag for OAuth deployments on
+  CRM PRO 4.5.1 and later. 4.5.1 checks `edit_notes` (or `edit_own_notes` for
+  the author) when a note is edited, but the server did not advertise either
+  scope, so tokens could not hold them and `manage_crm_note(action="update")`
+  was denied for OAuth users. With the flag set, either CRM flag on and the
+  server not read-only, both scopes are advertised. It is opt-in because
+  earlier CRM versions do not define them, and Redmine fails OAuth consent
+  with `invalid_scope` for the whole list if one requested scope is unknown.
+  API-key and legacy auth were never affected. ([#450](https://github.com/jztan/redmine-mcp-server/issues/450))
 
 ## [2.21.0] - 2026-11-07
 ### Added
