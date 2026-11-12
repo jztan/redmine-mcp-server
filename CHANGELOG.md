@@ -7,6 +7,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Fixed
+- In OAuth mode, `manage_issue_note(action="edit")` now works for a user whose
+  role has only "Edit own notes" (`edit_own_issue_notes`). The server did not
+  request this scope, so Redmine refused the edit of the user's own note. The
+  server now advertises `edit_own_issue_notes`, and the scope check accepts it
+  as an alternative to `edit_issue_notes`. Redmine still checks that the note
+  belongs to the user. Re-authorize to get a token with the new scope.
+  ([#460](https://github.com/jztan/redmine-mcp-server/issues/460))
+
 ### Added
 - `REDMINE_CRM_NOTE_EDIT_SCOPES`, an opt-in flag for OAuth deployments on
   CRM PRO 4.5.1 and later. 4.5.1 checks `edit_notes` (or `edit_own_notes` for

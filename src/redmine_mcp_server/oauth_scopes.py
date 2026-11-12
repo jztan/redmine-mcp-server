@@ -82,6 +82,7 @@ WRITE_SCOPES: list[str] = [
     "delete_issue_watchers",  # manage_issue_watcher(action=remove)
     "add_issue_notes",  # update_redmine_issue notes-only carve-out
     "edit_issue_notes",  # manage_issue_note(action=edit)
+    "edit_own_issue_notes",  # manage_issue_note(action=edit), own notes only
     "set_notes_private",  # manage_issue_note(action=set_private)
     "log_time",  # manage_time_entry(action=create), import_time_entries
     "edit_time_entries",  # manage_time_entry(action=update)
@@ -692,17 +693,51 @@ def _is_notes_only_update(arguments: Optional[dict]) -> bool:
     return set(fields) <= _NOTES_ONLY_FIELDS
 
 
+# manage_issue_note edit carve-out (#460): Redmine's Journal#editable_by?
+# allows edit_issue_notes, or edit_own_issue_notes when the note belongs to
+# the user. A token with only edit_own_issue_notes must pass, and Redmine
+# checks if the note belongs to the user.
+_OWN_NOTE_EDIT_SCOPES = frozenset({"edit_own_issue_notes"})
+
+
+def _is_note_edit(tool_name: str, arguments: Optional[dict]) -> bool:
+    return (
+        tool_name == "manage_issue_note" and (arguments or {}).get("action") == "edit"
+    )
+
+
 def required_scopes_for_call(
-    tool_name: str, entry: ToolScopeEntry, arguments: Optional[dict]
+    tool_name: str,
+    entry: ToolScopeEntry,
+    arguments: Optional[dict],
+    token_scopes: Optional[set] = None,
 ) -> Optional[frozenset]:
-    """Scope requirement for one call: per-tool carve-outs, then the map."""
+    """Scope requirement for one call: per-tool carve-outs, then the map.
+
+    ``token_scopes`` selects between alternative requirements. A note edit
+    requires ``edit_own_issue_notes`` instead of ``edit_issue_notes`` when
+    the token holds only the former.
+    """
     if tool_name == "update_redmine_issue" and _is_notes_only_update(arguments):
         return _NOTES_ONLY_SCOPES
-    return scopes_for_action(entry, arguments)
+    required = scopes_for_action(entry, arguments)
+    if (
+        required is not None
+        and token_scopes is not None
+        and _is_note_edit(tool_name, arguments)
+        and not required <= token_scopes
+        and _OWN_NOTE_EDIT_SCOPES <= token_scopes
+    ):
+        return _OWN_NOTE_EDIT_SCOPES
+    return required
 
 
 def tool_visible_for(tool_name: str, entry: ToolScopeEntry, token_scopes: set) -> bool:
     """Visibility for tools/list, including per-tool carve-outs."""
     if tool_name == "update_redmine_issue":
         return tool_visible(entry, token_scopes) or (_NOTES_ONLY_SCOPES <= token_scopes)
+    if tool_name == "manage_issue_note":
+        return tool_visible(entry, token_scopes) or (
+            _OWN_NOTE_EDIT_SCOPES <= token_scopes
+        )
     return tool_visible(entry, token_scopes)
