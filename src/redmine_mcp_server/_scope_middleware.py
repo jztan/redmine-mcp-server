@@ -18,6 +18,9 @@ Model:
     ``fields`` contain nothing but ``notes``/``private_notes`` (no
     ``uploads``) requires ``add_issue_notes`` instead of ``edit_issues``,
     mirroring Redmine's own note-adding permission check.
+  - ``manage_issue_note(action="edit")`` accepts ``edit_issue_notes`` or
+    ``edit_own_issue_notes``, mirroring Redmine's ``Journal#editable_by?``.
+    Redmine checks if the note belongs to the user.
   - No access token (legacy / legacy-per-user modes, background tasks)
     means no enforcement: those modes have no scopes to check.
   - ``list_tools`` responses are filtered to tools the token can use;
@@ -85,7 +88,9 @@ class ScopeEnforcementMiddleware(Middleware):
             )
             return await build_error_tool_result(context, _unmapped_payload(tool_name))
 
-        required = required_scopes_for_call(tool_name, entry, context.message.arguments)
+        required = required_scopes_for_call(
+            tool_name, entry, context.message.arguments, granted
+        )
         if required is None:
             # Per-action entry with unknown/missing action: let the
             # tool's own validation produce the error.

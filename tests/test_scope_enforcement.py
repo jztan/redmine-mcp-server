@@ -189,6 +189,10 @@ def _make_server():
         return {"action": action}
 
     @mcp.tool()
+    async def manage_issue_note(action: str, journal_id: int = 0) -> dict:
+        return {"action": action, "journal_id": journal_id}
+
+    @mcp.tool()
     async def get_current_user() -> dict:
         return {"user": "me"}
 
@@ -397,6 +401,61 @@ class TestNotesOnlyCarveOut:
         async with Client(_make_server()) as client:
             tools = {t.name for t in await client.list_tools()}
         assert "update_redmine_issue" in tools
+
+
+class TestOwnNoteEditCarveOut:
+    """manage_issue_note edit accepts edit_own_issue_notes (#460)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "scopes",
+        [["edit_issue_notes"], ["edit_own_issue_notes"]],
+    )
+    async def test_edit_allowed_with_either_scope(self, scoped_token, scopes):
+        scoped_token(scopes)
+        async with Client(_make_server()) as client:
+            result = await client.call_tool(
+                "manage_issue_note", {"action": "edit", "journal_id": 7}
+            )
+        assert result.structured_content == {"action": "edit", "journal_id": 7}
+
+    @pytest.mark.asyncio
+    async def test_edit_denied_without_note_scopes(self, scoped_token):
+        scoped_token(["view_issues"])
+        async with Client(_make_server()) as client:
+            result = await client.call_tool(
+                "manage_issue_note",
+                {"action": "edit", "journal_id": 7},
+                raise_on_error=False,
+            )
+        payload = json.loads(result.content[0].text)
+        assert payload["code"] == "INSUFFICIENT_SCOPE"
+        assert "edit_issue_notes" in payload["error"]
+
+    @pytest.mark.asyncio
+    async def test_set_private_not_allowed_by_own_scope(self, scoped_token):
+        # The carve-out applies to edit only.
+        scoped_token(["edit_own_issue_notes"])
+        async with Client(_make_server()) as client:
+            result = await client.call_tool(
+                "manage_issue_note",
+                {"action": "set_private", "journal_id": 7},
+                raise_on_error=False,
+            )
+        payload = json.loads(result.content[0].text)
+        assert payload["code"] == "INSUFFICIENT_SCOPE"
+        assert "set_notes_private" in payload["error"]
+
+    @pytest.mark.asyncio
+    async def test_list_tools_visible_with_own_scope_only(self, scoped_token):
+        scoped_token(["edit_own_issue_notes"])
+        async with Client(_make_server()) as client:
+            tools = {t.name for t in await client.list_tools()}
+        assert "manage_issue_note" in tools
+
+    def test_own_scope_is_advertised(self, monkeypatch):
+        monkeypatch.delenv("REDMINE_MCP_READ_ONLY", raising=False)
+        assert "edit_own_issue_notes" in advertised_scopes()
 
 
 class TestListToolsFiltering:
