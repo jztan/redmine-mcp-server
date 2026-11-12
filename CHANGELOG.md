@@ -18,6 +18,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with `invalid_scope` for the whole list if one requested scope is unknown.
   API-key and legacy auth were never affected. ([#450](https://github.com/jztan/redmine-mcp-server/issues/450))
 
+### Security
+- `authlib` is now 1.9.5 or later, clearing GHSA-f3fg-34g9-v7jx,
+  GHSA-gp2m-377p-m4j3, GHSA-f7j6-p4qx-gq99 and GHSA-9qr6-8289-9j56. The
+  server does not import Authlib, and `fastmcp` uses none of the affected
+  code. The `fastmcp` floor rises to 4.1.7, which requires the patched
+  Authlib itself, so installs from PyPI get it too and not only the lock. The
+  lock moves to `fastmcp` 4.1.8 and `joserfc` 1.8.0
+  ([#458](https://github.com/jztan/redmine-mcp-server/issues/458)).
+
 ## [2.21.0] - 2026-11-07
 ### Added
 - `manage_order` lists and reads the orders of the RedmineUP Products plugin,
