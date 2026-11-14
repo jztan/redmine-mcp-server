@@ -424,3 +424,72 @@ def test_notes_drafts_are_gitignored():
         ["git", "check-ignore", "-q", "release_notes_v9.9.9.md"], cwd=repo
     )
     assert result.returncode == 0
+
+
+# MCP Registry: publish-pypi.yml publishes the entry over GitHub OIDC, and
+# release.py only checks it afterwards.
+
+_WORKFLOW = Path(__file__).resolve().parent.parent / ".github" / "workflows"
+
+
+def test_registry_job_publishes_over_oidc_after_pypi_with_a_pinned_publisher():
+    import re
+
+    yaml = pytest.importorskip("yaml")
+    doc = yaml.safe_load((_WORKFLOW / "publish-pypi.yml").read_text())
+    job = doc["jobs"]["publish-registry"]
+    # The registry validates the PyPI version, so PyPI must go first.
+    assert job["needs"] == ["publish-pypi"]
+    assert job["if"] == "github.event_name == 'push'"
+    # A registry hiccup must not turn a shipped release red.
+    assert job["continue-on-error"] is True
+    assert job["permissions"]["id-token"] == "write"
+    assert re.fullmatch(r"[0-9a-f]{64}", job["env"]["PUBLISHER_SHA256"])
+    runs = "\n".join(step.get("run", "") for step in job["steps"])
+    assert "sha256sum --check" in runs
+    assert "login github-oidc" in runs
+    assert "server.json" in runs  # version-vs-tag guard before publishing
+
+
+def _registry_status(monkeypatch, code):
+    import urllib.error
+
+    def fake_urlopen(url, timeout):
+        assert url.endswith("/versions/9.9.9")
+        assert "io.github.jztan%2Fredmine-mcp-server" in url
+        if code == 200:
+
+            class Resp:
+                status = 200
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *exc):
+                    return False
+
+            return Resp()
+        raise urllib.error.HTTPError(url, code, "nope", {}, None)
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr(release_script.time, "sleep", lambda s: None)
+
+
+def test_registry_check_confirms_the_version(monkeypatch, capsys):
+    _registry_status(monkeypatch, 200)
+    assert release_script.check_mcp_registry("9.9.9") is True
+    assert "is on the MCP Registry" in capsys.readouterr().out
+
+
+def test_registry_check_says_how_to_publish_by_hand(monkeypatch, capsys):
+    _registry_status(monkeypatch, 404)
+    assert release_script.check_mcp_registry("9.9.9", max_wait=0) is False
+    out = capsys.readouterr().out
+    assert "mcp-publisher publish" in out
+    assert "git checkout v9.9.9" in out
+
+
+def test_release_script_never_logs_in_to_the_registry_locally():
+    source = _RELEASE_PATH.read_text()
+    assert 'mcp-publisher", "login' not in source
+    assert 'mcp-publisher", "publish' not in source

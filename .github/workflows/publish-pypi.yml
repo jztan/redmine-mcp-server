@@ -4,7 +4,7 @@ on:
   push:
     tags:
       - 'v*.*.*'  # Trigger on version tags like v0.4.1
-  workflow_dispatch:  # Manual build-only validation (no PyPI, no registry push)
+  workflow_dispatch:  # Manual build-only validation (no PyPI, no MCP Registry, no image push)
 
 permissions:
   contents: read
@@ -120,6 +120,52 @@ jobs:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
         run: twine upload --skip-existing dist/*
+
+  publish-registry:
+    # Publishes server.json to the MCP Registry, logged in over GitHub OIDC, so
+    # a release needs no local mcp-publisher and no device-flow login (whose
+    # short-lived token used to expire during release.py's waits).
+    # A registry hiccup must not fail a release that already reached PyPI:
+    # continue-on-error keeps the run green, and release.py checks the entry
+    # afterwards and prints the manual fallback if it is missing.
+    needs: [publish-pypi]
+    if: github.event_name == 'push'
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write  # MCP Registry login over OIDC
+    env:
+      PUBLISHER_VERSION: "1.8.7"
+      PUBLISHER_SHA256: 00b21004149a4ce66f0782508ae4a2bce67d1bea395a8da0bd8028159fb59579
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: server.json matches the tag
+        run: |
+          want="${GITHUB_REF_NAME#v}"
+          for have in $(jq -r '.version, (.packages[] | select(.version) | .version)' server.json); do
+            [ "$have" = "$want" ] \
+              || { echo "::error::server.json has $have, tag is $GITHUB_REF_NAME"; exit 1; }
+          done
+      - name: Install mcp-publisher
+        run: |
+          base="https://github.com/modelcontextprotocol/registry/releases/download"
+          file="mcp-publisher_linux_amd64.tar.gz"
+          curl -fsSL -o "$file" "$base/v$PUBLISHER_VERSION/$file"
+          echo "$PUBLISHER_SHA256  $file" | sha256sum --check
+          tar -xzf "$file" mcp-publisher
+      - run: ./mcp-publisher login github-oidc
+      # The registry validates the version against PyPI's JSON API, which can
+      # lag the upload by a minute or two.
+      - name: Publish server.json
+        run: |
+          for attempt in 1 2 3 4 5 6; do
+            echo "Publish attempt $attempt"
+            ./mcp-publisher publish && exit 0
+            sleep 30
+          done
+          exit 1
 
   promote-image:
     # build-image is listed explicitly (not just transitively via publish-pypi)

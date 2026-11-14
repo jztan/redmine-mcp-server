@@ -26,7 +26,7 @@ Gitflow:
     6. Wait for publish-pypi workflow to finish (poll gh run status)
     7. Wait for the version to appear on PyPI (JSON API)
     8. Create GitHub release (only after `pip install` will actually work)
-    9. Publish to MCP Registry
+    9. Check the MCP Registry entry, which publish-pypi.yml publishes over OIDC
     10. Merge back to develop, delete release branch, remove notes drafts
 """
 
@@ -247,21 +247,6 @@ def preflight_checks(config: ReleaseConfig) -> None:
             print("Error: gh authentication failed")
             sys.exit(1)
     print("  ✓ gh CLI available and authenticated")
-
-    # Check mcp-publisher is installed. Authentication is deferred to the
-    # publish step (publish_mcp_registry): the Registry JWT is short-lived,
-    # so a token minted here would expire during the publish-workflow and
-    # PyPI waits before publish actually runs.
-    print("Checking mcp-publisher...")
-    result = run_command(["which", "mcp-publisher"], check=False)
-    if result.returncode != 0:
-        print(
-            "Warning: 'mcp-publisher' not found. "
-            "MCP Registry publish will be skipped."
-        )
-        print("         Install with: brew install mcp-publisher")
-    else:
-        print("  ✓ mcp-publisher available (auth happens at publish time)")
 
 
 # ---------------------------------------------------------------------------
@@ -1166,7 +1151,7 @@ def print_recovery_instructions(
     print(f"    - Tag {tag} is pushed to origin")
     print(f"    - master has the version-bump commit for {tag}")
     print("    - GitHub release was NOT created")
-    print("    - MCP Registry was NOT updated")
+    print("    - MCP Registry was NOT updated (its job needs publish-pypi)")
     print(
         f"    - develop is unchanged; {branch_kind} branch "
         f"{release_branch} still exists locally"
@@ -1179,6 +1164,7 @@ def print_recovery_instructions(
     print("  After diagnosing, choose one:")
     print("    A) Fix the cause on develop, then rerun the existing tag's workflow:")
     print("         gh run rerun <run-id>")
+    print("       The rerun also publishes the MCP Registry entry (OIDC).")
     print("       On success, finish the remaining steps manually:")
     notes_path = notes_file_path(project_root, new_version)
     if notes_path.exists():
@@ -1189,7 +1175,6 @@ def print_recovery_instructions(
         print(f"         (your approved notes are saved at {notes_path})")
     else:
         print(f"         gh release create {tag} --title {tag} --notes-file <notes.md>")
-    print("         mcp-publisher publish")
     print(f"         git checkout develop && git merge {release_branch} && git push")
     print(f"         git branch -d {release_branch}")
     print("    B) Burn this version and ship the next patch from develop")
@@ -1235,59 +1220,55 @@ def wait_for_pypi(new_version: str, max_wait: int = 600) -> bool:
     return False
 
 
-def publish_mcp_registry(config: ReleaseConfig) -> None:
-    """Publish to MCP Registry.
+REGISTRY_NAME = "io.github.jztan/redmine-mcp-server"
 
-    Authenticates immediately before publishing. The Registry JWT is
-    short-lived, so logging in earlier (e.g. at preflight) leaves an
-    expired token by the time the publish-workflow and PyPI waits finish --
-    the failure mode that leaves a version off the registry.
+
+def registry_version_url(version: str) -> str:
+    name = REGISTRY_NAME.replace("/", "%2F")
+    return (
+        "https://registry.modelcontextprotocol.io"
+        f"/v0/servers/{name}/versions/{version}"
+    )
+
+
+def check_mcp_registry(new_version: str, max_wait: int = 300) -> bool:
+    """Wait for the entry that publish-pypi.yml's publish-registry job publishes.
+
+    That job logs in over GitHub OIDC, so nothing here needs mcp-publisher or
+    a device-flow login. It runs before this check (the workflow poll waits
+    for the whole run), so the wait only covers registry read lag. A missing
+    entry does not fail the release: PyPI and the GitHub release are already
+    out, so this only says how to publish it by hand.
     """
+    import urllib.error
+    import urllib.request
+
     print("\n=== MCP Registry ===\n")
 
-    result = run_command(["which", "mcp-publisher"], check=False)
-    if result.returncode != 0:
-        print("  ⚠ mcp-publisher not found. Skipping MCP Registry publish.")
-        print("  Install with: brew install mcp-publisher")
-        return
+    url = registry_version_url(new_version)
+    start_time = time.time()
+    while time.time() - start_time < max_wait:
+        try:
+            with urllib.request.urlopen(url, timeout=15) as resp:
+                if resp.status == 200:
+                    print(f"  ✓ {REGISTRY_NAME} {new_version} is on the MCP Registry")
+                    return True
+        except urllib.error.HTTPError as e:
+            if e.code != 404:
+                print(f"  Unexpected status {e.code}, retrying...")
+        except urllib.error.URLError as e:
+            print(f"  Network error: {e.reason}, retrying...")
+        elapsed = int(time.time() - start_time)
+        print(f"  Waiting for the registry... ({elapsed}s elapsed)")
+        time.sleep(30)
 
-    if config.dry_run:
-        print("  [DRY-RUN] Would authenticate, then run: mcp-publisher publish")
-        return
-
-    # Mint a fresh token right before publishing (GitHub device flow).
-    print("  Authenticating mcp-publisher (fresh token)...")
-    try:
-        login_result = subprocess.run(
-            ["mcp-publisher", "login", "github"],
-            check=False,
-            timeout=300,
-        )
-    except subprocess.TimeoutExpired:
-        print("  ⚠ mcp-publisher login timed out. Skipping MCP Registry publish.")
-        print(
-            "  Run 'mcp-publisher login github' then "
-            "'mcp-publisher publish' manually."
-        )
-        return
-    if login_result.returncode != 0:
-        print("  ⚠ mcp-publisher login failed. Skipping MCP Registry publish.")
-        print(
-            "  Run 'mcp-publisher login github' then "
-            "'mcp-publisher publish' manually."
-        )
-        return
-
-    result = run_command(
-        ["mcp-publisher", "publish"],
-        check=False,
-        capture_output=True,
-    )
-    if result.returncode == 0:
-        print("  ✓ Published to MCP Registry")
-    else:
-        print(f"  ⚠ MCP Registry publish failed: {result.stderr}")
-        print("  You may need to run 'mcp-publisher login github' first")
+    print(f"  ⚠ {new_version} is not on the MCP Registry after {max_wait}s.")
+    print("    Check the publish-registry job in the release run:")
+    print("      gh run list --workflow=publish-pypi.yml --limit 3")
+    print("    Re-run just that job: gh run rerun <run-id> --failed")
+    print(f"    Or by hand from the tag: git checkout v{new_version}")
+    print("      mcp-publisher login github && mcp-publisher publish")
+    return False
 
 
 def merge_back_to_develop(config: ReleaseConfig, release_branch: str) -> None:
@@ -1537,12 +1518,12 @@ Gitflow:
     # Step 8: Create GitHub release -- now safe to advertise the PyPI install
     create_github_release(config, new_version)
 
-    # Step 9: Publish to MCP Registry
+    # Step 9: Check the MCP Registry entry (published by the workflow)
     if not config.dry_run:
-        publish_mcp_registry(config)
+        check_mcp_registry(new_version)
     else:
         print("\n=== MCP Registry ===\n")
-        print("  [DRY-RUN] Would authenticate, then run: mcp-publisher publish")
+        print("  [DRY-RUN] Would wait for publish-pypi.yml's registry entry")
 
     # Step 10: Merge back to develop and cleanup
     merge_back_to_develop(config, release_branch)
