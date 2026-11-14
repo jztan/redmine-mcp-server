@@ -40,6 +40,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Authlib itself, so installs from PyPI get it too and not only the lock. The
   lock moves to `fastmcp` 4.1.8 and `joserfc` 1.8.0
   ([#458](https://github.com/jztan/redmine-mcp-server/issues/458)).
+- `dnspython` is now 2.9.2 or later, clearing CVE-2026-128089 (memory and CPU
+  exhaustion when parsing a crafted WKS record from a zone file). It comes in
+  through `email-validator`, and the server parses no zone files. PyPI
+  installs already resolved 2.9.2; this moves the lock.
 
 ### Contributors
 - @mival, reported and fixed `manage_issue_note(action="edit")` failing
