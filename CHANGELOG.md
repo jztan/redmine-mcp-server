@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [2.22.0] - 2026-11-14
 ### Added
 - `REDMINE_CRM_NOTE_EDIT_SCOPES`, an opt-in flag for OAuth deployments on
   CRM PRO 4.5.1 and later. 4.5.1 checks `edit_notes` (or `edit_own_notes` for
@@ -2607,6 +2609,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive authentication support (username/password and API key)
 - Docker containerization support
 
+[2.22.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.22.0
 [2.21.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.21.0
 [2.20.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.20.0
 [2.19.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.19.0
