@@ -16,7 +16,7 @@ from unittest.mock import Mock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from redmine_mcp_server import _caller, _upload_store
+from redmine_mcp_server import _caller, _trusted_header, _upload_store
 from redmine_mcp_server.tools.files import (
     _resolve_upload_content,
     _verify_integrity,
@@ -1038,7 +1038,7 @@ class TestCallerIdentity:
         from types import SimpleNamespace
 
         secret = "s" * 32
-        monkeypatch.setenv("REDMINE_TRUSTED_HEADER_SECRET", secret)
+        monkeypatch.setattr(_trusted_header, "_TRUSTED_HEADER_SECRET", secret)
         request = SimpleNamespace(
             headers={
                 "X-Forwarded-User": "jsmith",
@@ -1062,7 +1062,7 @@ class TestCallerIdentity:
         from types import SimpleNamespace
 
         secret = "s" * 32
-        monkeypatch.setenv("REDMINE_TRUSTED_HEADER_SECRET", secret)
+        monkeypatch.setattr(_trusted_header, "_TRUSTED_HEADER_SECRET", secret)
         monkeypatch.setenv("REDMINE_TRUSTED_HEADER_MATCH", "mail")
         request = SimpleNamespace(
             headers={
@@ -1302,7 +1302,7 @@ class TestAnotherUsersUploadId:
         from redmine_mcp_server.tools.files import upload_file
 
         secret = "s" * 32
-        monkeypatch.setenv("REDMINE_TRUSTED_HEADER_SECRET", secret)
+        monkeypatch.setattr(_trusted_header, "_TRUSTED_HEADER_SECRET", secret)
 
         req_alice = SimpleNamespace(
             headers={

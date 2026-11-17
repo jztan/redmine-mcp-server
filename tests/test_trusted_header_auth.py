@@ -262,7 +262,28 @@ def test_resolve_rejects_comma_joined_secret_header():
     )
     with pytest.raises(PerUserAuthError) as exc:
         resolve_trusted_login(req)
-    assert "repeated X-Trusted-Proxy-Secret request header" in exc.value.message
+    # A merged value never equals the secret, so the comparison refuses it.
+    assert "invalid proxy secret" in exc.value.message
+
+
+def test_resolve_accepts_a_secret_with_a_comma(monkeypatch):
+    secret = "a,b" + "c" * 37
+    monkeypatch.setattr(_trusted_header, "_TRUSTED_HEADER_SECRET", secret)
+    req = FakeRequest(
+        headers={"X-Forwarded-User": "jsmith", DEFAULT_SECRET_HEADER: secret}
+    )
+    assert resolve_trusted_login(req) == "jsmith"
+
+
+def test_resolve_refuses_when_no_secret_was_stored(monkeypatch):
+    # Only assert_startup_requirements stores the secret; requests never read
+    # the env var.
+    monkeypatch.setattr(_trusted_header, "_TRUSTED_HEADER_SECRET", None)
+    monkeypatch.setenv("REDMINE_TRUSTED_HEADER_SECRET", VALID_SECRET)
+    req = FakeRequest(headers={"X-Forwarded-User": "jsmith"})
+    with pytest.raises(PerUserAuthError) as exc:
+        resolve_trusted_login(req)
+    assert "invalid proxy secret" in exc.value.message
 
 
 # --- header helper shared with legacy-per-user ----------------------------
@@ -402,6 +423,27 @@ def test_startup_rejects_non_ascii_secret(configured, monkeypatch):
         with pytest.raises(RuntimeError) as exc:
             assert_startup_requirements()
     assert "printable ASCII characters without spaces" in str(exc.value)
+
+
+def test_startup_accepts_a_secret_with_a_comma(configured, monkeypatch):
+    secret = "a,b" + "c" * 37
+    monkeypatch.setenv("REDMINE_TRUSTED_HEADER_SECRET", secret)
+    with _probe_returns(200, True):
+        assert_startup_requirements()  # must not raise
+    assert _trusted_header._TRUSTED_HEADER_SECRET == secret
+
+
+def test_startup_records_the_key_owner_id(configured):
+    with _probe_returns(200, True, user_id=7):
+        assert_startup_requirements()
+    assert _trusted_header._KEY_OWNER_ID == 7
+
+
+def test_startup_refuses_without_the_key_owner_id(configured):
+    with _probe_returns(200, True, user_id=None):
+        with pytest.raises(RuntimeError) as exc:
+            assert_startup_requirements()
+    assert "did not return the id" in str(exc.value)
 
 
 # --- the Redmine client ---------------------------------------------------
@@ -629,7 +671,7 @@ def test_refused_user_switch_maps_to_a_clear_error():
     result = _handle_redmine_error(ImpersonateError(), "listing issues")
     assert result["code"] == "PER_USER_AUTH"
     assert "does not exist" in result["error"]
-    assert "locked" in result["error"]
+    assert "not active" in result["error"]
 
 
 def test_middleware_allows_health_without_secret():
@@ -749,9 +791,49 @@ def test_middleware_allows_valid_secret():
     assert resp.text == "mcp-ok"
 
 
+def _guarded_client(**client_kwargs):
+    """A TestClient for /health and /mcp behind TrustedHeaderMiddleware."""
+    from starlette.applications import Starlette
+    from starlette.middleware import Middleware
+    from starlette.responses import PlainTextResponse
+    from starlette.routing import Route
+    from starlette.testclient import TestClient
+
+    app = Starlette(
+        routes=[
+            Route("/health", lambda r: PlainTextResponse("ok"), methods=["GET"]),
+            Route("/mcp", lambda r: PlainTextResponse("mcp-ok"), methods=["GET"]),
+        ],
+        middleware=[Middleware(_trusted_header.TrustedHeaderMiddleware)],
+    )
+    return TestClient(app, **client_kwargs)
+
+
+def test_middleware_allows_health_behind_a_root_path():
+    # Matched with get_route_path, so a root_path doesn't break the Docker
+    # healthcheck.
+    client = _guarded_client(root_path="/redmine")
+    assert client.get("/redmine/health").status_code == 200
+    assert client.get("/redmine/mcp").status_code == 401
+
+
+def test_middleware_allows_a_secret_with_a_comma(monkeypatch):
+    secret = "a,b" + "c" * 37
+    monkeypatch.setattr(_trusted_header, "_TRUSTED_HEADER_SECRET", secret)
+    resp = _guarded_client().get("/mcp", headers={DEFAULT_SECRET_HEADER: secret})
+    assert resp.status_code == 200
+
+
+def test_middleware_refuses_when_no_secret_was_stored(monkeypatch):
+    monkeypatch.setattr(_trusted_header, "_TRUSTED_HEADER_SECRET", None)
+    monkeypatch.setenv("REDMINE_TRUSTED_HEADER_SECRET", VALID_SECRET)
+    resp = _guarded_client().get("/mcp", headers={DEFAULT_SECRET_HEADER: VALID_SECRET})
+    assert resp.status_code == 401
+
+
 # --- matching by email ----------------------------------------------------
 
-ANNA = {"login": "anna", "mail": "anna@corp.example"}
+ANNA = {"id": 7, "login": "anna", "mail": "anna@corp.example", "admin": False}
 
 
 def _users_response(status=200, users=(), json_error=None):
@@ -796,7 +878,7 @@ def test_mail_mode_resolves_the_email_to_a_login(mail_mode):
 
 
 def test_mail_mode_ignores_case(mail_mode):
-    users = [{"login": "anna", "mail": "Anna@Corp.Example"}]
+    users = [{**ANNA, "mail": "Anna@Corp.Example"}]
     with _lookup_returns(_users_response(users=users)):
         login = resolve_trusted_login(_request({"X-Forwarded-User": ANNA["mail"]}))
     assert login == "anna"
@@ -956,6 +1038,29 @@ def test_resolve_always_refuses_key_owner_even_with_flag(monkeypatch):
         "refusing to run request as the account that owns REDMINE_API_KEY"
         in exc.value.message
     )
+
+
+def test_resolve_refuses_when_the_key_owner_is_unknown(monkeypatch):
+    monkeypatch.setattr(_trusted_header, "_KEY_OWNER_ID", None)
+    with pytest.raises(PerUserAuthError) as exc:
+        resolve_trusted_login(_request({"X-Forwarded-User": "jsmith"}))
+    assert "owns REDMINE_API_KEY is unknown" in exc.value.message
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        {"id": 42, "login": "jsmith"},
+        {"id": 42, "login": "jsmith", "admin": "false"},
+        {"login": "jsmith", "admin": False},
+    ],
+    ids=["no-admin-flag", "string-admin-flag", "no-id"],
+)
+def test_resolve_refuses_a_user_entry_it_cannot_check(entry):
+    with _lookup_returns(_users_response(users=[entry])):
+        with pytest.raises(PerUserAuthError) as exc:
+            resolve_trusted_login(_request({"X-Forwarded-User": "jsmith"}))
+    assert "unexpected response" in exc.value.message
 
 
 def test_resolve_paginates_user_lookup():

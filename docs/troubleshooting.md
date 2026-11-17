@@ -1090,10 +1090,18 @@ Setup and security requirements are in the [trusted-header guide](trusted-header
 - `REDMINE_AUTH_MODE=trusted-header requires REDMINE_TRUSTED_HEADER_TRUST_PROXY=true. ...`
 - `REDMINE_TRUSTED_HEADER_MATCH must be 'login' or 'mail', ...`
 - `REDMINE_AUTH_MODE=trusted-header requires REDMINE_URL.` or `... requires REDMINE_API_KEY, ...`
+- `Missing required secret env var: REDMINE_TRUSTED_HEADER_SECRET ...`, or `... requires REDMINE_TRUSTED_HEADER_SECRET to be at least 32 characters.` or `... to contain only printable ASCII characters without spaces.`
 - `... requires REDMINE_API_KEY to belong to a Redmine administrator, and Redmine did not confirm that it does. ...`
+- `... Redmine did not return the id of the account that owns REDMINE_API_KEY. ...`
 - `... could not reach Redmine to check REDMINE_API_KEY (...)`
 
-**Solutions:** set the missing variable, use the API key of a Redmine administrator, and make sure the server can reach `REDMINE_URL` when it starts. The server does not start while Redmine is down; with a container restart policy, it comes up once Redmine answers.
+**Solutions:** set the missing variable, generate the secret with `openssl rand -hex 32`, use the API key of a Redmine administrator, and make sure the server can reach `REDMINE_URL` when it starts. The server does not start while Redmine is down; with a container restart policy, it comes up once Redmine answers.
+
+### Every request gets "401 Unauthorized"
+
+**Cause:** the request has no `X-Trusted-Proxy-Secret` header, has it twice, or its value does not match `REDMINE_TRUSTED_HEADER_SECRET`. Only `GET` and `HEAD` on `/health` need no secret.
+
+**Solution:** make the proxy send the secret on every route it forwards, `/files/` and `/uploads/` included, replacing any value a client sent.
 
 ### Every tool call fails with "missing X-Forwarded-User request header"
 
@@ -1101,20 +1109,38 @@ Setup and security requirements are in the [trusted-header guide](trusted-header
 
 **Solution:** set `REDMINE_TRUSTED_HEADER_NAME` to the header your proxy sets, and make sure clients reach the server only through the proxy.
 
-### "that login does not exist in Redmine or the account is locked"
+### "no active Redmine user has the login ..." or "... the email ..."
 
-**Cause:** Redmine refused to switch to the user the header names (HTTP 412): no account has that login, or the account is locked. A proxy that sends email addresses makes every login unknown.
+**Cause:** no active user has that login, or, in `mail` mode, that address as their primary email. Additional email addresses do not count, and locked users are not matched. A proxy that sends email addresses in `login` mode makes every user unknown.
 
-**Solution:** check the login under Administration → Users in Redmine, or set `REDMINE_TRUSTED_HEADER_MATCH=mail` if the header carries email addresses.
+**Solution:** check the user under Administration → Users in Redmine: the login, the primary email, and that the account is not locked. Set `REDMINE_TRUSTED_HEADER_MATCH=mail` if the header carries email addresses.
 
-### "no active Redmine user has the email ..."
+### "refusing to run request as administrator ..."
 
-**Cause:** in `mail` mode, no active user has that address as their primary email. Additional email addresses do not count, and locked users are not matched.
+**Cause:** the user is a Redmine administrator and `REDMINE_TRUSTED_HEADER_ALLOW_ADMIN` is off, the default, so that a forged header cannot take over Redmine.
 
-**Solution:** make the address the user's primary email in Redmine, or unlock the account.
+**Solution:** let administrators use a non-administrator account through the server, or set `REDMINE_TRUSTED_HEADER_ALLOW_ADMIN=true` to let them work with full rights.
 
-### Tools fail with "... requires REDMINE_API_KEY to belong to a Redmine administrator ..."
+### "refusing to run request as the account that owns REDMINE_API_KEY"
 
-**Cause:** the account behind `REDMINE_API_KEY` lost its administrator role while the server was running. Redmine would ignore the switch header for it, so the server refuses every request.
+**Cause:** the header names the account behind `REDMINE_API_KEY`. The server never runs a request as that account, whatever `REDMINE_TRUSTED_HEADER_ALLOW_ADMIN` says.
+
+**Solution:** use a dedicated administrator account for the key, not a person's own.
+
+### "the user lookup exceeded maximum page limit ..."
+
+**Cause:** more than 1,000 active users match the header value. Redmine's user filter also matches parts of logins, names and email addresses, so a very short login can match many users.
+
+**Solution:** use logins long enough to be distinctive, or `REDMINE_TRUSTED_HEADER_MATCH=mail`.
+
+### "that login does not exist in Redmine or the account is not active"
+
+**Cause:** Redmine refused to switch to the user the lookup found (HTTP 412). The lookup only finds active users, so the account was deleted or locked between the lookup and the call.
+
+**Solution:** try again; if the account was locked on purpose, this is the expected result.
+
+### Tools fail with "Redmine refused the user lookup. ..."
+
+**Cause:** Redmine answered the user lookup with 401 or 403: the key was revoked, or the account behind `REDMINE_API_KEY` lost its administrator role while the server was running. Listing users needs an administrator, so the server refuses every request.
 
 **Solution:** make the account an administrator again, or configure the key of another administrator and restart the server.

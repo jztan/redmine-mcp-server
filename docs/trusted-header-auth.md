@@ -21,9 +21,9 @@ sequenceDiagram
 
     C->>P: tool call
     P->>P: authenticate the user
-    P->>S: tool call + X-Forwarded-User: jsmith
-    S->>R: GET /users/current.json (admin key), once per request
-    R-->>S: 200 {admin: true}
+    P->>S: tool call + X-Forwarded-User: jsmith + proxy secret
+    S->>R: GET /users.json?name=jsmith (admin key), once per request
+    R-->>S: 200 {users: [{login: jsmith, admin: false}]}
     S->>R: API calls with the admin key + X-Redmine-Switch-User: jsmith
     R-->>S: answers with jsmith's permissions
 ```
@@ -55,7 +55,7 @@ REDMINE_TRUSTED_HEADER_SECRET=<32+ character random ASCII secret>
 | `REDMINE_AUTH_MODE=trusted-header` | `legacy` | activates the mode |
 | `REDMINE_API_KEY` | required | the key of a Redmine administrator; see [The administrator key](#the-administrator-key) |
 | `REDMINE_TRUSTED_HEADER_TRUST_PROXY` | `false` | required; operator attestation, see [Security requirements](#security-requirements) |
-| `REDMINE_TRUSTED_HEADER_SECRET` | required | secret shared with the authenticating proxy (min 32 printable ASCII chars); supports `_FILE` |
+| `REDMINE_TRUSTED_HEADER_SECRET` | required | secret shared with the authenticating proxy: at least 32 printable ASCII characters, for example from `openssl rand -hex 32`; supports `_FILE` |
 | `REDMINE_TRUSTED_HEADER_ALLOW_ADMIN` | `false` | allow requests targeting administrator accounts; see [The administrator key](#the-administrator-key) |
 | `REDMINE_TRUSTED_HEADER_NAME` | `X-Forwarded-User` | the request header that names the user |
 | `REDMINE_TRUSTED_HEADER_MATCH` | `login` | `login`: the header carries the Redmine login. `mail`: it carries an email address; see [Matching by email](#matching-by-email) |
@@ -101,16 +101,20 @@ The server **never** runs a request as the account that owns `REDMINE_API_KEY`,
 whatever the flag says. It runs as other administrators only when
 `REDMINE_TRUSTED_HEADER_ALLOW_ADMIN=true` is enabled.
 
+Treat the key like a root password: whoever holds it can act as any Redmine
+user. Use a dedicated administrator account for it: its owner can never use
+the server, and Redmine's log lines `User switched by: <account>` then name the
+server. The key is never logged.
+
 ## Matching by email
 
 With `REDMINE_TRUSTED_HEADER_MATCH=mail`, the header carries an email address,
-which is what most login proxies know. The server looks the user up once per
-request:
+which is what most login proxies know. The once-per-request user lookup then
+matches on it:
 
 - the address must equal the **primary** email of an **active** Redmine user,
   ignoring case. Additional email addresses do not count;
-- exactly one user must match, otherwise the request is refused;
-- the lookup costs one more Redmine call per request.
+- exactly one user must match, otherwise the request is refused.
 
 This mode trusts the email addresses stored in Redmine. Redmine keeps them
 unique, so nobody can claim an address another account already uses. But if
@@ -135,10 +139,16 @@ Each comes back with the code `PER_USER_AUTH`:
 | Message | Cause |
 |---|---|
 | missing `<header>` request header | the request did not come through the proxy, or the proxy sets another header |
+| repeated `<header>` request header | the proxy added its header instead of replacing the client's |
 | the `<header>` header is not a valid Redmine login (or email address) | the value cannot name a Redmine user |
-| that login does not exist in Redmine or the account is locked | Redmine refused the switch (HTTP 412) |
-| no active Redmine user has the email ... | `mail` mode found no matching user |
-| ... requires REDMINE_API_KEY to belong to a Redmine administrator ... | the key's account is no longer an administrator |
+| no active Redmine user has the login ... (or email ...) | no active user matches the header |
+| refusing to run request as administrator ... | the user is a Redmine administrator and `REDMINE_TRUSTED_HEADER_ALLOW_ADMIN` is off |
+| refusing to run request as the account that owns REDMINE_API_KEY | the header names the key's own account |
+| Redmine refused the user lookup ... | the key's account is no longer an administrator |
+| that login does not exist in Redmine or the account is not active | Redmine refused the switch (HTTP 412), for example because the account was locked a moment earlier |
+
+A request without the right proxy secret gets a bare `401 Unauthorized` before
+any tool runs.
 
 If Redmine cannot be reached, tools return the usual connection or timeout
 error.

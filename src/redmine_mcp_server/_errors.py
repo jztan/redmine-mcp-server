@@ -140,14 +140,14 @@ def _handle_redmine_error(
         return {"error": e.message, "code": "PER_USER_AUTH"}
 
     # Redmine answers 412 when X-Redmine-Switch-User names a login that does
-    # not exist or is locked (trusted-header mode).
+    # not exist or is not active (trusted-header mode).
     if isinstance(e, ImpersonateError):
         logger.warning(f"Redmine refused to switch user during {operation}")
         return {
             "error": (
                 "Redmine refused to run this request as the user named by the "
                 "authenticating proxy: that login does not exist in Redmine or "
-                "the account is locked."
+                "the account is not active."
             ),
             "code": "PER_USER_AUTH",
         }
