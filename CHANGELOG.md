@@ -7,6 +7,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Write tools that make Redmine send email now say so in their description, in
+  a short sentence that starts with `Email:`, for example on
+  `update_redmine_issue`: "Put every change to one issue (fields, status,
+  assignee, note) into one call: three calls send three emails". Redmine's
+  REST API has no flag to suppress notifications for a single request, so
+  fewer calls is the only lever, and a model that split one task into three
+  calls had no way to know it was sending three emails. `_notifications.py`
+  holds the per-tool table, next to the `TOOL_KINDS` table it mirrors, and an
+  anti-drift test makes every write tool declare an answer. Tools that mail
+  nobody, or only after an administrator has switched that notification on,
+  keep their description unchanged, and so do the plugin tools nobody has
+  checked yet. `docs/tool-reference.md` has the table
+  under "Notification Email"
+  ([#401](https://github.com/jztan/redmine-mcp-server/issues/401)).
 
 ## [2.22.0] - 2026-11-14
 ### Added

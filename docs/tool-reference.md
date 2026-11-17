@@ -86,6 +86,28 @@ Some tools return their own codes, such as `CONFIRMATION_REQUIRED`,
 `CHILDREN_PRESENT` or `UPDATE_UNCONFIRMED`; each is documented with its tool
 below.
 
+## Notification Email
+
+Redmine sends an email after every successful change to an issue, and its
+REST API has no flag to suppress that for a single request. The tools that
+cause such mail say so in their description, in a short sentence that starts
+with `Email:`, so the model can put all changes to one issue into one call.
+
+| Tool | Email |
+|---|---|
+| `create_redmine_issue`, `update_redmine_issue`, `copy_issue` | yes, and a subtask also mails its parent issue |
+| `delete_redmine_issue` | only for a subtask, to its parent issue |
+| `manage_issue_relation` (`create`, `delete`) | yes, on both issues |
+| `create_checklist_item`, `update_checklist_item` | yes, when the RedmineUP Checklists setting that writes checklist changes to the issue history is on |
+| `send_helpdesk_email_reply` | yes, to the ticket's customer |
+| `manage_redmine_wiki_page` (`create`, `update`), `manage_redmine_news` (`create`), `upload_file` | only when an administrator has switched on that notification in Redmine, so no sentence in the description |
+| All other write tools of Redmine itself | no |
+| `manage_document` (DMSF), `manage_helpdesk_ticket`, and the CRM and Products tools | not checked yet |
+
+Who gets the mail depends on the notification settings in Redmine and on each
+user's own setting, which the REST API does not show. The table lives in
+`src/redmine_mcp_server/_notifications.py`.
+
 ## Security Best Practices
 
 ### SSL/TLS Configuration
