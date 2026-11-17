@@ -32,6 +32,7 @@ Maintenance:
 """
 
 import enum
+import json
 from dataclasses import dataclass
 from typing import Dict, FrozenSet, Optional
 
@@ -84,6 +85,9 @@ class MailSpec:
         recipients: Who Redmine mails, in the words of the hint.
         advice: What the caller can do about it, appended to the hint.
         condition: A plugin setting the mail depends on, named in the hint.
+        emails: How many notifications one call counts as in the budget
+            (see ``_notification_budget.py``). Zero where the call itself
+            does not say whether it mails.
     """
 
     effect: MailEffect
@@ -91,6 +95,7 @@ class MailSpec:
     recipients: str = _ISSUE_PEOPLE
     advice: str = ""
     condition: str = ""
+    emails: int = 1
 
 
 MAIL_EFFECTS: Dict[str, MailSpec] = {
@@ -122,6 +127,7 @@ MAIL_EFFECTS: Dict[str, MailSpec] = {
         advice="A relation cannot be bundled into an issue update, so set "
         "only the ones that are needed and say how many emails that is "
         "before setting several.",
+        emails=2,
     ),
     # Journal only notifies after_create_commit, so editing a note or
     # changing its privacy mails nobody.
@@ -134,6 +140,8 @@ MAIL_EFFECTS: Dict[str, MailSpec] = {
         MailEffect.NOTIFIES,
         recipients="the people involved in the parent issue, if the deleted "
         "issue is a subtask",
+        # The call does not say whether the issue was a subtask.
+        emails=0,
     ),
     # --- checklists (plugin) ---
     # RedmineUP Checklists writes the change to the issue history, and that
@@ -239,3 +247,45 @@ def with_mail_hint(tool_name: str, description: Optional[str]) -> Optional[str]:
     if not separator:
         return f"{description}\n\n{hint}"
     return f"{head}\n\n{hint}\n\n{rest}"
+
+
+def issue_fields(arguments: dict) -> dict:
+    """The issue fields of a call, wherever the tool takes them.
+
+    ``create_redmine_issue`` and ``update_redmine_issue`` take them in
+    ``fields``, ``copy_issue`` in ``field_overrides``, each as a dict or as a
+    JSON object string. Anything else reads as no fields: the tool itself
+    refuses such a call, so there is nothing to count.
+    """
+    found: dict = {}
+    for key in ("fields", "field_overrides"):
+        value = arguments.get(key)
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except ValueError:
+                continue
+        if isinstance(value, dict):
+            found.update(value)
+    return found
+
+
+def notification_count(tool_name: str, arguments: Optional[dict]) -> int:
+    """How many notifications a successful call counts as.
+
+    Zero for a tool or an action that does not mail with Redmine's defaults.
+    A relation counts twice, because Redmine journals it on both issues, and
+    a call that puts an issue under a parent counts once more for the entry
+    on the parent. It is an estimate: ``copy_issue`` with subtasks mails more
+    than once, the call does not say how many subtasks there were, and the
+    checklist tools count as if the plugin setting they depend on is on.
+    """
+    spec = MAIL_EFFECTS.get(tool_name)
+    if spec is None or spec.effect is not MailEffect.NOTIFIES:
+        return 0
+    arguments = arguments or {}
+    if spec.actions is not None and arguments.get("action") not in spec.actions:
+        return 0
+    if spec.emails and issue_fields(arguments).get("parent_issue_id") not in (None, ""):
+        return spec.emails + 1
+    return spec.emails
