@@ -23,6 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   under "Notification Email"
   ([#401](https://github.com/jztan/redmine-mcp-server/issues/401)).
 
+### Contributors
+- @mliebischer, proposed and added the `Email:` hints on write tools that make
+  Redmine send notification email
+  ([#401](https://github.com/jztan/redmine-mcp-server/issues/401),
+  [#468](https://github.com/jztan/redmine-mcp-server/pull/468))
+
 ## [2.22.0] - 2026-11-14
 ### Added
 - `REDMINE_CRM_NOTE_EDIT_SCOPES`, an opt-in flag for OAuth deployments on
