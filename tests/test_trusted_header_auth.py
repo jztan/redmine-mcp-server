@@ -626,6 +626,41 @@ def test_client_reads_the_login_before_asking_redmine():
     probe.assert_not_called()
 
 
+def test_request_credential_never_hands_out_the_administrator_key():
+    # Code that calls Redmine on its own, like the text formatting detection,
+    # must not get the administrator key without the user switch.
+    with (
+        patch.object(_client, "REDMINE_AUTH_MODE", "trusted-header"),
+        patch.object(_client, "REDMINE_API_KEY", ADMIN_KEY),
+    ):
+        assert _client.resolve_request_credential(strict=False) is None
+        with pytest.raises(PerUserAuthError):
+            _client.resolve_request_credential(strict=True)
+
+
+async def test_text_formatting_detection_does_not_run(monkeypatch):
+    from redmine_mcp_server._text_formatting import (
+        FormatResult,
+        TextFormattingResolver,
+    )
+
+    calls = []
+
+    async def detector(cred, *, base_url):
+        calls.append(cred)
+        return "markdown"
+
+    monkeypatch.delenv("REDMINE_TEXT_FORMATTING", raising=False)
+    with (
+        patch.object(_client, "REDMINE_AUTH_MODE", "trusted-header"),
+        patch.object(_client, "REDMINE_API_KEY", ADMIN_KEY),
+    ):
+        cred = _client.resolve_request_credential(strict=False)
+        result = await TextFormattingResolver(detector=detector).resolve(cred)
+    assert result == FormatResult("unknown", "unknown")
+    assert calls == []
+
+
 # --- app startup and error mapping ----------------------------------------
 
 

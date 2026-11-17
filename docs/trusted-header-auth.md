@@ -66,6 +66,11 @@ Redmine confirms at startup that the key belongs to an administrator. It does
 not start while Redmine cannot be reached; with a container restart policy, it
 comes up once Redmine answers.
 
+Set `REDMINE_TEXT_FORMATTING` to the text formatting your Redmine uses.
+Automatic detection does not run in this mode: it would call Redmine with the
+administrator key and no user switch, which the server never does. Without the
+setting, the model is told to write plain text.
+
 ## Security requirements
 
 The server cannot tell a header the proxy set from one a client forged: anyone
