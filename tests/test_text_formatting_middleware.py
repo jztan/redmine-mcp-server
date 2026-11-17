@@ -8,6 +8,7 @@ from fastmcp import Client, FastMCP
 from redmine_mcp_server import _client
 from redmine_mcp_server import server as _server
 from redmine_mcp_server import tools  # noqa: F401
+from redmine_mcp_server._notifications import mail_hint
 from redmine_mcp_server._text_formatting import (
     FORMATTED_TEXT_TOOLS,
     SERVER_INSTRUCTIONS,
@@ -123,7 +124,10 @@ async def test_tool_without_description(monkeypatch):
     monkeypatch.setenv("REDMINE_OAUTH_SCOPE_ENFORCEMENT", "off")
     async with Client(_probe_server()) as client:
         names = {t.name: t for t in await client.list_tools()}
-    assert names["create_redmine_issue"].description == TEXT_BLOCKS["textile"]
+    # The tool mails, so its email hint (#401) comes first.
+    assert names["create_redmine_issue"].description == (
+        f"{mail_hint('create_redmine_issue')}\n\n{TEXT_BLOCKS['textile']}"
+    )
     assert names["update_redmine_issue"].description.startswith("Update an issue.")
 
 
