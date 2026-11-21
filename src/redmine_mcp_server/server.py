@@ -21,7 +21,12 @@ import os
 from fastmcp import FastMCP
 
 from ._annotations import annotations_for
-from ._env import _is_scope_enforcement_enabled, get_text_formatting
+from ._env import (
+    _is_scope_enforcement_enabled,
+    get_notification_budget,
+    get_text_formatting,
+)
+from ._notification_budget import NotificationBudgetMiddleware
 from ._notifications_middleware import MailHintMiddleware
 from ._text_formatting import SERVER_INSTRUCTIONS
 from ._text_formatting_middleware import TextFormattingMiddleware
@@ -149,6 +154,13 @@ def _register_middlewares(mcp_instance, auth_provider) -> None:
     # After TextFormattingMiddleware, so the hint is in the description
     # before the formatting block is appended to it.
     mcp_instance.add_middleware(MailHintMiddleware())
+    # Opt-in: warn when one caller sends many notifications (#469). Reading
+    # the setting here makes an invalid value fail at startup.
+    budget, window_minutes = get_notification_budget()
+    if budget:
+        mcp_instance.add_middleware(
+            NotificationBudgetMiddleware(budget, window_minutes)
+        )
     if auth_provider is None:
         # Legacy modes carry no OAuth scopes; nothing to enforce.
         return

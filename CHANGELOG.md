@@ -47,6 +47,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   checked yet. `docs/tool-reference.md` has the table
   under "Notification Email"
   ([#401](https://github.com/jztan/redmine-mcp-server/issues/401)).
+- `REDMINE_MCP_NOTIFY_BUDGET` switches on a warning for many notification
+  emails across issues. Twenty issues with one change each are twenty emails,
+  and no hint on a single tool can say so. With a budget set, the server
+  counts the notifications of each caller over the last
+  `REDMINE_MCP_NOTIFY_WINDOW_MIN` minutes (default 30), and from the budget on
+  the result of every further mailing call carries a note with the total and
+  the issues touched, as `notification_warning` in the result and in its
+  text. It warns only, no call is refused, and it is off by default ([#469](https://github.com/jztan/redmine-mcp-server/issues/469)).
 
 ### Fixed
 - The lock now resolves a single `anyio` 4.16.0. It held a second pin, 4.9.0,

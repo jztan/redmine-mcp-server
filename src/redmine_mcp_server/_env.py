@@ -308,6 +308,35 @@ def _get_int_env(var_name: str, default: int) -> int:
         return default
 
 
+def get_notification_budget() -> tuple[int, int]:
+    """The notification budget and its window in minutes (#469).
+
+    ``REDMINE_MCP_NOTIFY_BUDGET`` is how many notifications one caller may
+    cause in the window before the result carries a warning. Unset or ``0``
+    switches the warning off, which is the default.
+    ``REDMINE_MCP_NOTIFY_WINDOW_MIN`` is the window, 30 minutes by default.
+
+    Raises ``RuntimeError`` for a value that is not a whole number, a
+    negative budget or a window below one minute, so a typo fails at startup
+    instead of switching the warning off without a word.
+    """
+
+    def read(var_name: str, default: int, lowest: int) -> int:
+        raw = os.getenv(var_name, "").strip()
+        if not raw:
+            return default
+        if not raw.isdigit() or int(raw) < lowest:
+            raise RuntimeError(
+                f"{var_name} must be a whole number of at least {lowest}, got {raw!r}"
+            )
+        return int(raw)
+
+    return (
+        read("REDMINE_MCP_NOTIFY_BUDGET", 0, 0),
+        read("REDMINE_MCP_NOTIFY_WINDOW_MIN", 30, 1),
+    )
+
+
 def get_redmine_timeout() -> tuple[float, float] | None:
     """Return the ``(connect, read)`` timeout for Redmine HTTP calls.
 
