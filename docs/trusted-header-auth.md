@@ -68,8 +68,16 @@ comes up once Redmine answers.
 
 Set `REDMINE_TEXT_FORMATTING` to the text formatting your Redmine uses.
 Automatic detection does not run in this mode: it would call Redmine with the
-administrator key and no user switch, which the server never does. Without the
+administrator key and no user switch, which the server does only for the
+startup check and for `/health` (see [Health check](#health-check)). Without the
 setting, the model is told to write plain text.
+
+`get_current_user` and the `current_user` field of `get_mcp_server_info` come
+from the per-request user lookup (`GET /users.json`), not from
+`/users/current.json`: under a user switch that endpoint reads the user's API
+key, and Redmine creates one for a user who has none. For the same reason
+`get_current_user(include_memberships=true)` returns an error in this mode; use
+`list_project_members` per project instead.
 
 ## Security requirements
 
