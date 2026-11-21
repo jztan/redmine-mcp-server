@@ -572,6 +572,7 @@ REDMINE_PUBLIC_URL=https://example.com/redmine
    - Detection loads one issue's HTML page and reads the formatter from the edit toolbar, so the account must be able to edit or add notes to at least one visible issue
    - The REST API must be enabled (it is also what lets the API key, Basic auth or OAuth token load the HTML page)
    - Under OAuth, a token without the `add_issue_notes` scope may get a page with no edit form
+   - In `trusted-header` mode detection does not run: it would call Redmine with the administrator key and no user switch. Set `REDMINE_TEXT_FORMATTING` explicitly
    - A failure is retried for the same user after 10 minutes, but a connected client keeps the tool descriptions it already listed until it lists tools again
    - Confirmed against the official Redmine 4.2, 5.1, 6.1 and 7.0 images: an `X-Redmine-API-Key` header (`legacy`, `legacy-per-user`, `api-key-login`) and Basic auth both load the issue page and detect Textile, Markdown and CommonMark correctly; with `none` Redmine shows no toolbar, so set `REDMINE_TEXT_FORMATTING=none` explicitly. OAuth Bearer tokens (`oauth`, `oauth-proxy`, Redmine 6.1+) go through the same Redmine auth path but were not tested end to end
 
@@ -1079,3 +1080,68 @@ Setup, security model and session rules are in the [api-key-login guide](api-key
 **Cause:** each token refresh checks the user's key with Redmine, and a 401 ends the session. A gateway or single-sign-on proxy in front of Redmine that answers 401 for its own reasons makes every check fail, so every session ends within an hour. A 403 or an unreachable Redmine does not end sessions.
 
 **Solution:** make sure `REDMINE_URL` reaches Redmine's API directly, or that the proxy passes `X-Redmine-API-Key` requests through.
+
+## trusted-header
+
+Setup and security requirements are in the [trusted-header guide](trusted-header-auth.md). The entries below cover what operators and users run into.
+
+### The server refuses to start
+
+**Symptoms:** startup fails with one of:
+- `REDMINE_AUTH_MODE=trusted-header requires REDMINE_TRUSTED_HEADER_TRUST_PROXY=true. ...`
+- `REDMINE_TRUSTED_HEADER_MATCH must be 'login' or 'mail', ...`
+- `REDMINE_AUTH_MODE=trusted-header requires REDMINE_URL.` or `... requires REDMINE_API_KEY, ...`
+- `Missing required secret env var: REDMINE_TRUSTED_HEADER_SECRET ...`, or `... requires REDMINE_TRUSTED_HEADER_SECRET to be at least 32 characters.` or `... to contain only printable ASCII characters without spaces.`
+- `... requires REDMINE_API_KEY to belong to a Redmine administrator, and Redmine did not confirm that it does. ...`
+- `... Redmine did not return the id of the account that owns REDMINE_API_KEY. ...`
+- `... could not reach Redmine to check REDMINE_API_KEY (...)`
+
+**Solutions:** set the missing variable, generate the secret with `openssl rand -hex 32`, use the API key of a Redmine administrator, and make sure the server can reach `REDMINE_URL` when it starts. The server does not start while Redmine is down; with a container restart policy, it comes up once Redmine answers.
+
+### Every request gets "401 Unauthorized"
+
+**Cause:** the request has no `X-Trusted-Proxy-Secret` header, has it twice, or its value does not match `REDMINE_TRUSTED_HEADER_SECRET`. Only `GET` and `HEAD` on `/health` need no secret.
+
+**Solution:** make the proxy send the secret on every route it forwards, `/files/` and `/uploads/` included, replacing any value a client sent.
+
+### Every tool call fails with "missing X-Forwarded-User request header"
+
+**Cause:** the request did not come through the proxy, or the proxy names the user in a different header.
+
+**Solution:** set `REDMINE_TRUSTED_HEADER_NAME` to the header your proxy sets, and make sure clients reach the server only through the proxy.
+
+### "no active Redmine user has the login ..." or "... the email ..."
+
+**Cause:** no active user has that login, or, in `mail` mode, that address as their primary email. Additional email addresses do not count, and locked users are not matched. A proxy that sends email addresses in `login` mode makes every user unknown.
+
+**Solution:** check the user under Administration → Users in Redmine: the login, the primary email, and that the account is not locked. Set `REDMINE_TRUSTED_HEADER_MATCH=mail` if the header carries email addresses.
+
+### "refusing to run request as administrator ..."
+
+**Cause:** the user is a Redmine administrator and `REDMINE_TRUSTED_HEADER_ALLOW_ADMIN` is off, the default, so that a forged header cannot take over Redmine.
+
+**Solution:** let administrators use a non-administrator account through the server, or set `REDMINE_TRUSTED_HEADER_ALLOW_ADMIN=true` to let them work with full rights.
+
+### "refusing to run request as the account that owns REDMINE_API_KEY"
+
+**Cause:** the header names the account behind `REDMINE_API_KEY`. The server never runs a request as that account, whatever `REDMINE_TRUSTED_HEADER_ALLOW_ADMIN` says.
+
+**Solution:** use a dedicated administrator account for the key, not a person's own.
+
+### "the user lookup exceeded maximum page limit ..."
+
+**Cause:** more than 1,000 active users match the header value. Redmine's user filter also matches parts of logins, names and email addresses, so a very short login can match many users.
+
+**Solution:** use logins long enough to be distinctive, or `REDMINE_TRUSTED_HEADER_MATCH=mail`.
+
+### "that login does not exist in Redmine or the account is not active"
+
+**Cause:** Redmine refused to switch to the user the lookup found (HTTP 412). The lookup only finds active users, so the account was deleted or locked between the lookup and the call.
+
+**Solution:** try again; if the account was locked on purpose, this is the expected result.
+
+### Tools fail with "Redmine refused the user lookup. ..."
+
+**Cause:** Redmine answered the user lookup with 401 or 403: the key was revoked, or the account behind `REDMINE_API_KEY` lost its administrator role while the server was running. Listing users needs an administrator, so the server refuses every request.
+
+**Solution:** make the account an administrator again, or configure the key of another administrator and restart the server.
