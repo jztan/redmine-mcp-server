@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [2.23.0] - 2026-11-21
 ### Added
 - Write tools that make Redmine send email now say so in their description, in
   a short sentence that starts with `Email:`, for example on
@@ -2638,6 +2640,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive authentication support (username/password and API key)
 - Docker containerization support
 
+[2.23.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.23.0
 [2.22.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.22.0
 [2.21.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.21.0
 [2.20.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.20.0
