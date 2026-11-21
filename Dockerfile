@@ -1,5 +1,5 @@
 # Multi-stage Docker build for the Redmine MCP Server
-FROM python:3.13-slim AS builder
+FROM python:3.15-slim AS builder
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -22,7 +22,7 @@ RUN uv venv /opt/venv && \
     uv pip install . --python=/opt/venv/bin/python
 
 # Production stage
-FROM python:3.13-slim AS runtime
+FROM python:3.15-slim AS runtime
 
 # Set environment variables
 # SERVER_HOST/SERVER_PORT default to a reachable binding so ad-hoc
