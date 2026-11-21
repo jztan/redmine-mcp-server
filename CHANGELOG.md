@@ -18,6 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [docs/trusted-header-auth.md](docs/trusted-header-auth.md)
   ([#399](https://github.com/jztan/redmine-mcp-server/issues/399)).
 
+### Contributors
+- @EnesHasani, proposed and added the `trusted-header` auth mode
+  ([#399](https://github.com/jztan/redmine-mcp-server/issues/399),
+  [#414](https://github.com/jztan/redmine-mcp-server/pull/414))
+- @oussamach15, worked through the security review of the `trusted-header`
+  auth mode ([#414](https://github.com/jztan/redmine-mcp-server/pull/414))
+
 ## [2.23.0] - 2026-11-21
 ### Added
 - Write tools that make Redmine send email now say so in their description, in
