@@ -20,8 +20,11 @@ proxy also proves itself with ``REDMINE_TRUSTED_HEADER_SECRET`` in
 Redmine honours ``X-Redmine-Switch-User`` only for an administrator's key and
 silently ignores it for any other key, which would run every request as the
 key's own account. The server therefore refuses to start unless Redmine
-confirms that the key belongs to an administrator, and checks again before
-every request, because the account can lose that role while the server runs.
+confirms that the key belongs to an administrator. There is no separate check
+per request: the per-request user lookup, ``GET /users.json``, is admin-only,
+so a key that has lost that role gets a 403 there and the request is refused.
+That lookup is what keeps a demoted key from running requests as its owner,
+so it must stay in front of every switched call, in both match modes.
 
 The API key is NEVER logged.
 """
@@ -243,31 +246,43 @@ def validate_trusted_request(request) -> tuple[str, str]:
     return value, mode
 
 
-def resolve_trusted_login(request) -> str:
-    """Return the Redmine login of the user the proxy named, or raise
-    PerUserAuthError.
+def resolve_trusted_user(request) -> dict:
+    """Return the Redmine user the proxy named, or raise PerUserAuthError.
 
     Validates proxy secret and headers, checks whether user exists, is active,
     is not administrator (unless REDMINE_TRUSTED_HEADER_ALLOW_ADMIN=true),
     and is not key owner.
-    Resolved once per HTTP request; kept on request.state.trusted_header_login.
+
+    The user comes from ``GET /users.json``, whose entries never carry an API
+    key: ``users/show`` (``/users/current.json``) under switch-user would read
+    ``@user.api_key``, and Redmine creates a key for a user who has none.
+    The dict holds ``id``, ``login``, ``firstname``, ``lastname``, ``mail``,
+    ``admin``, ``created_on`` and ``last_login_on``.
+
+    Resolved once per HTTP request; kept on request.state.trusted_header_user.
     """
     value, mode = validate_trusted_request(request)
 
     state = getattr(request, "state", None)
     if state is not None:
-        login = getattr(state, "trusted_header_login", None)
-        if login is not None:
-            return login
+        user = getattr(state, "trusted_header_user", None)
+        if user is not None:
+            return user
 
     from . import _client
 
-    login = _lookup_user(value, mode, _client.REDMINE_API_KEY)
+    user = _lookup_user(value, mode, _client.REDMINE_API_KEY)
     if state is not None:
-        state.trusted_header_login = login
+        state.trusted_header_user = user
 
-    logger.info("trusted-header request as login=%s", login)
-    return login
+    logger.info("trusted-header request as login=%s", user["login"])
+    return user
+
+
+def resolve_trusted_login(request) -> str:
+    """Return the Redmine login of the user the proxy named, or raise
+    PerUserAuthError. See resolve_trusted_user."""
+    return resolve_trusted_user(request)["login"]
 
 
 def _redmine_get(path: str, key: str, params=None) -> requests.Response:
@@ -293,10 +308,11 @@ def _redmine_get(path: str, key: str, params=None) -> requests.Response:
         )
 
 
-def _lookup_user(value: str, mode: str, api_key: str) -> str:
+def _lookup_user(value: str, mode: str, api_key: str) -> dict:
     """Query Redmine GET /users.json?name=<value>&status=1 with the admin key.
 
-    Returns the matching user's login, or raises PerUserAuthError.
+    Returns the matching user (see resolve_trusted_user), or raises
+    PerUserAuthError.
     """
     wanted = value.lower()
     users: list[dict] = []
@@ -413,7 +429,16 @@ def _lookup_user(value: str, mode: str, api_key: str) -> str:
             f"{matched_login!r} (REDMINE_TRUSTED_HEADER_ALLOW_ADMIN is false)."
         )
 
-    return matched_login
+    return {
+        "id": matched_id,
+        "login": matched_login,
+        "firstname": matched.get("firstname") or "",
+        "lastname": matched.get("lastname") or "",
+        "mail": matched.get("mail") or "",
+        "admin": is_admin,
+        "created_on": matched.get("created_on"),
+        "last_login_on": matched.get("last_login_on"),
+    }
 
 
 def _probe_admin_key(key: str) -> tuple[int, Optional[bool], Optional[int]]:

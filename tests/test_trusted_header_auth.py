@@ -1205,3 +1205,123 @@ def test_redmine_get_sends_the_query_parameters():
     assert kwargs["params"] == [("limit", "1")]
     assert kwargs["headers"] == {"X-Redmine-API-Key": ADMIN_KEY}
     assert kwargs["allow_redirects"] is False
+
+
+# --- who "me" is: get_current_user and get_mcp_server_info (#473) ----------
+
+
+def _lookup_with_names(calls):
+    """A fake _redmine_get whose /users.json answer carries the names and
+    dates Redmine's users/index view sends, and which records every path."""
+
+    def fake(path, key, params=None):
+        calls.append(path)
+        if path != "/users.json":
+            return MagicMock(status_code=404)
+        name = dict(params or []).get("name", "")
+        resp = MagicMock(status_code=200)
+        resp.json.return_value = {
+            "users": [
+                {
+                    "id": 42,
+                    "login": name,
+                    "firstname": "Jane",
+                    "lastname": "Smith",
+                    "mail": f"{name}@corp.example",
+                    "admin": False,
+                    "created_on": "2024-01-02T03:04:05Z",
+                    "last_login_on": "2026-11-20T10:00:00Z",
+                }
+            ],
+            "total_count": 1,
+        }
+        return resp
+
+    return fake
+
+
+@pytest.mark.asyncio
+async def test_get_current_user_answers_from_the_lookup_without_users_current():
+    # users/current.json under switch-user makes Redmine create an API key
+    # for a user who has none (User#api_key), so the tool must not call it.
+    from redmine_mcp_server.tools.enumeration import get_current_user
+
+    calls = []
+    with (
+        _trusted_header_mode(_serving({"X-Forwarded-User": "jsmith"})),
+        patch.object(
+            _trusted_header, "_redmine_get", side_effect=_lookup_with_names(calls)
+        ),
+        patch.object(_client, "Redmine") as mock_redmine,
+    ):
+        result = await get_current_user()
+
+    assert result["id"] == 42
+    assert result["login"] == "jsmith"
+    assert result["firstname"] == "Jane"
+    assert result["lastname"] == "Smith"
+    assert result["mail"] == "jsmith@corp.example"
+    assert result["admin"] is False
+    assert "/users/current.json" not in calls
+    mock_redmine.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_get_current_user_refuses_memberships_in_trusted_header_mode():
+    # The only endpoint that carries memberships, users/show, also reads the
+    # caller's api_key and creates one if missing.
+    from redmine_mcp_server.tools.enumeration import get_current_user
+
+    with (
+        _trusted_header_mode(_serving({"X-Forwarded-User": "jsmith"})),
+        patch.object(_client, "Redmine") as mock_redmine,
+    ):
+        result = await get_current_user(include_memberships=True)
+
+    assert "error" in result
+    assert "include_memberships" in result["error"]
+    mock_redmine.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_server_info_reports_the_proxy_user_not_the_key_owner():
+    from redmine_mcp_server.tools import meta
+
+    calls = []
+    with (
+        _trusted_header_mode(_serving({"X-Forwarded-User": "jsmith"})),
+        patch.object(
+            _trusted_header, "_redmine_get", side_effect=_lookup_with_names(calls)
+        ),
+        patch("httpx.AsyncClient", side_effect=AssertionError("admin-key call")),
+    ):
+        info = await meta._fetch_current_user_info()
+
+    assert info == {"id": 42, "login": "jsmith", "name": "Jane Smith"}
+    assert "/users/current.json" not in calls
+
+
+@pytest.mark.asyncio
+async def test_server_info_reports_no_user_when_the_lookup_refuses():
+    from redmine_mcp_server.tools import meta
+
+    with (
+        _trusted_header_mode(_serving(None)),  # no X-Forwarded-User
+        patch("httpx.AsyncClient", side_effect=AssertionError("admin-key call")),
+    ):
+        info = await meta._fetch_current_user_info()
+
+    assert info is None
+
+
+def test_one_lookup_serves_both_the_login_and_the_user():
+    calls = []
+    request = _request({"X-Forwarded-User": "jsmith"})
+    with patch.object(
+        _trusted_header, "_redmine_get", side_effect=_lookup_with_names(calls)
+    ):
+        user = _trusted_header.resolve_trusted_user(request)
+        login = resolve_trusted_login(request)
+
+    assert user["login"] == login == "jsmith"
+    assert calls.count("/users.json") == 1

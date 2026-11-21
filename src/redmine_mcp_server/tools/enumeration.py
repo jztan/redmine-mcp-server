@@ -9,6 +9,7 @@ from typing import Annotated, Any, Dict, List, Optional, Union
 
 from pydantic import Field
 
+from .. import _client
 from .._client import _get_redmine_client
 from .._errors import _handle_redmine_error
 from .._offload import offloaded
@@ -220,6 +221,42 @@ def _current_user_memberships(user: Any) -> List[Dict[str, Any]]:
     return memberships
 
 
+def _trusted_header_current_user(include_memberships: bool) -> Dict[str, Any]:
+    """``get_current_user`` in trusted-header mode, answered from the
+    per-request user lookup (``GET /users.json``, which carries no API key).
+
+    ``/users/current.json`` under switch-user would read the caller's
+    ``api_key``, and Redmine creates one for a user who has none. Memberships
+    come only from that endpoint, so they are refused here.
+    """
+    if include_memberships:
+        return {
+            "error": (
+                "include_memberships is not available in trusted-header auth "
+                "mode: the only Redmine endpoint that returns memberships also "
+                "creates an API key for the user. Use list_project_members "
+                "per project instead."
+            )
+        }
+    from .._trusted_header import resolve_trusted_user
+
+    try:
+        request = _client.get_http_request()
+    except RuntimeError:
+        request = None
+    user = resolve_trusted_user(request)  # raises PerUserAuthError
+    return {
+        "id": user["id"],
+        "login": user["login"],
+        "firstname": user["firstname"],
+        "lastname": user["lastname"],
+        "mail": user["mail"],
+        "admin": user["admin"],
+        "created_on": user["created_on"],
+        "last_login_on": user["last_login_on"],
+    }
+
+
 @mcp.tool()
 @offloaded
 def get_current_user(include_memberships: bool = False) -> Dict[str, Any]:
@@ -245,7 +282,8 @@ def get_current_user(include_memberships: bool = False) -> Dict[str, Any]:
     Args:
         include_memberships: Add ``memberships`` to the response. Costs no
             extra request -- the include rides the same call -- so this is
-            opt-in only to keep the default response small.
+            opt-in only to keep the default response small. Not available
+            when the server runs in trusted-header auth mode.
 
     Returns:
         A dictionary with ``id``, ``login``, ``firstname``, ``lastname``,
@@ -279,6 +317,8 @@ def get_current_user(include_memberships: bool = False) -> Dict[str, Any]:
         # ``User._includes`` also accepts ``groups``, which Redmine gates on
         # ``User.current.admin?`` -- a non-admin would get a 200 with the key
         # simply missing, indistinguishable from "belongs to no groups".
+        if _client.REDMINE_AUTH_MODE == "trusted-header":
+            return _trusted_header_current_user(include_memberships)
         if include_memberships:
             user = _get_redmine_client().user.get("current", include="memberships")
         else:

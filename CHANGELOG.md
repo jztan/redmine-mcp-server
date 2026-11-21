@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of login. Needs no OAuth on Redmine and no API key from users; see
   [docs/trusted-header-auth.md](docs/trusted-header-auth.md)
   ([#399](https://github.com/jztan/redmine-mcp-server/issues/399)).
+  `get_current_user` and the `current_user` of `get_mcp_server_info` name the
+  proxy's user, read from the same per-request lookup, and
+  `get_current_user(include_memberships=true)` is not available in this mode,
+  because the only endpoint that returns memberships also makes Redmine create
+  an API key for the user
+  ([#473](https://github.com/jztan/redmine-mcp-server/issues/473)).
 
 ### Contributors
 - @EnesHasani, proposed and added the `trusted-header` auth mode
