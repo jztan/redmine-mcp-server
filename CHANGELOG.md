@@ -23,6 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   under "Notification Email"
   ([#401](https://github.com/jztan/redmine-mcp-server/issues/401)).
 
+### Fixed
+- The lock now resolves a single `anyio` 4.16.0. It held a second pin, 4.9.0,
+  for emscripten on Python 3.12 and 3.13, which is affected by PYSEC-2026-4024
+  (process-pool workers can hang on undrained stderr). The server uses no
+  anyio process pools. Normal installs move from 4.14.2 to 4.16.0, and
+  `sniffio` drops out of the lock
+  ([#471](https://github.com/jztan/redmine-mcp-server/issues/471)).
+
 ### Contributors
 - @mliebischer, proposed and added the `Email:` hints on write tools that make
   Redmine send notification email
