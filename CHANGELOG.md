@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   an API key for the user
   ([#473](https://github.com/jztan/redmine-mcp-server/issues/473)).
 
+### Changed
+- The Docker image now runs Python 3.15 (was 3.13)
+  ([#464](https://github.com/jztan/redmine-mcp-server/pull/464)).
+
 ### Fixed
 - Require fastmcp 4.2.4 or newer. Earlier versions let `oauth-proxy` mode
   redeem one authorization code or refresh token twice under concurrent token
