@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   an API key for the user
   ([#473](https://github.com/jztan/redmine-mcp-server/issues/473)).
 
+### Fixed
+- Require fastmcp 4.2.4 or newer. Earlier versions let `oauth-proxy` mode
+  redeem one authorization code or refresh token twice under concurrent token
+  requests (GHSA-78c8-3jhx-5mg7)
+  ([#475](https://github.com/jztan/redmine-mcp-server/issues/475)).
+
 ### Contributors
 - @EnesHasani, proposed and added the `trusted-header` auth mode
   ([#399](https://github.com/jztan/redmine-mcp-server/issues/399),
