@@ -371,6 +371,18 @@ def build_app():
         from ._per_user import assert_startup_attestation
 
         assert_startup_attestation()
+    elif REDMINE_AUTH_MODE == "trusted-header":
+        from starlette.middleware import Middleware
+        from ._trusted_header import (
+            TrustedHeaderMiddleware,
+            assert_startup_requirements,
+        )
+
+        assert_startup_requirements()
+        return mcp.http_app(
+            stateless_http=True,
+            middleware=[Middleware(TrustedHeaderMiddleware)],
+        )
 
     if REDMINE_AUTH_MODE in AUTHENTICATED_AUTH_MODES and AUTH_PROVIDER is not None:
         return build_authenticated_app(mcp, AUTH_PROVIDER)

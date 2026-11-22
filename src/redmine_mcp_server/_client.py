@@ -456,6 +456,19 @@ def resolve_request_credential(*, strict: bool) -> Optional[RequestCredential]:
             )
         return RequestCredential(kind="api-key-login", api_key=key)
 
+    # trusted-header: the request runs as the user the proxy names, through
+    # the administrator key plus X-Redmine-Switch-User, which only
+    # _get_redmine_client sets up, after a Redmine lookup. No credential here
+    # can carry that, and falling through would hand out the bare
+    # administrator key as a legacy one.
+    if g["REDMINE_AUTH_MODE"] == "trusted-header":
+        if not strict:
+            return None
+        raise PerUserAuthError(
+            "trusted-header: the request carries no credential of its own; "
+            "Redmine calls go through _get_redmine_client."
+        )
+
     # OAuth mode: per-request bearer token from FastMCP's native auth.
     # get_access_token() returns None outside an authenticated request
     # (e.g., legacy mode, or background tasks).
@@ -498,6 +511,22 @@ def _get_redmine_client() -> Redmine:
 
     if g["redmine"] is not None:
         return g["redmine"]
+
+    # trusted-header: an authenticating proxy names the caller's Redmine
+    # login in a request header, and every call switches to that user through
+    # the administrator key, once Redmine confirms the key is still an
+    # administrator's. Decided by the mode alone, before
+    # resolve_request_credential, which would hand back the bare
+    # administrator key as a legacy credential.
+    if g["REDMINE_AUTH_MODE"] == "trusted-header":
+        from ._trusted_header import resolve_trusted_login
+
+        try:
+            request = get_http_request()
+        except RuntimeError:
+            request = None
+        login = resolve_trusted_login(request)  # raises PerUserAuthError
+        return _new_client(key=g["REDMINE_API_KEY"], impersonate=login)
 
     cred = resolve_request_credential(strict=True)
 
