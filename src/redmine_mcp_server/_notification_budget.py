@@ -25,14 +25,19 @@ arrives:
   they receive, and a plugin can mute a user's writes. The server sees none
   of that, so the note says "may have sent".
 
-Counted per caller, as ``_caller.staged_upload_owner`` names them, because
-the OAuth and api-key-login modes share one server across users. Where a
-caller should be identifiable and is not (an OAuth token without ``sub``),
-the call is not counted: a shared counter would show one user the issues
-another one touched. That is logged once, since it switches the warning off
-for those callers. In ``legacy`` mode everyone is the one configured
-account, so all clients of the server share one count. The count lives in
-memory, so it is lost on restart and not shared between worker processes.
+Counted per caller, as ``_caller.resolve_staged_upload_owner`` names them,
+because the OAuth and api-key-login modes share one server across users. An
+OAuth token without ``sub`` is the usual case there, since Redmine's
+Doorkeeper sends none by default. Redmine is then asked who the caller is,
+with one ``GET /users/current.json``. That happens only after a successful
+mailing call, so reads do not pay for it.
+
+Where a caller should be identifiable and is not (that lookup failed), the
+call is not counted: a shared counter would show one user the issues another
+one touched. That is logged once. In ``legacy`` mode everyone is the one
+configured account, so all clients of the server share one count. The count
+lives in memory, so it is lost on restart and not shared between worker
+processes.
 """
 
 import json
@@ -46,7 +51,7 @@ from fastmcp.tools import ToolResult
 from mcp.types import TextContent
 from pydantic_core import to_json
 
-from ._caller import identity_expected, staged_upload_owner
+from ._caller import identity_expected, resolve_staged_upload_owner
 from ._notifications import issue_fields, notification_count
 from ._tool_error_middleware import _error_envelope
 
@@ -117,7 +122,9 @@ class NotificationBudgetMiddleware(Middleware):
             return result
         if _error_envelope(result.structured_content) is not None:
             return result
-        owner = staged_upload_owner()
+        # Only a successful mailing call gets here, so the lookup that an
+        # OAuth token without ``sub`` needs is never paid for by a read.
+        owner = await resolve_staged_upload_owner()
         if owner is None and identity_expected():
             self._warn_unidentified()
             return result
@@ -137,9 +144,10 @@ class NotificationBudgetMiddleware(Middleware):
             return
         self._warned_unidentified = True
         logger.warning(
-            "REDMINE_MCP_NOTIFY_BUDGET is set, but this caller cannot be "
-            "identified (an OAuth token without 'sub'), so its calls are not "
-            "counted. See docs/oauth-setup.md for how to emit 'sub'."
+            "REDMINE_MCP_NOTIFY_BUDGET is set, but a caller could not be "
+            "identified, so its calls are not counted. In the OAuth modes "
+            "that means the lookup of the Redmine user failed: check that "
+            "the token can read GET /users/current.json."
         )
 
     def _record(

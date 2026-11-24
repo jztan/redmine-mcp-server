@@ -3,13 +3,14 @@
 import json
 import logging
 from typing import Any, Dict, List, Optional, Union
+from unittest.mock import Mock, patch
 
 import pytest
 from fastmcp import Client, FastMCP
 from fastmcp.tools import ToolResult
 from mcp.types import TextContent
 
-from redmine_mcp_server import _notification_budget
+from redmine_mcp_server import _caller, _client, _notification_budget
 from redmine_mcp_server._env import get_notification_budget
 from redmine_mcp_server._notification_budget import (
     MAX_ISSUES_IN_NOTE,
@@ -92,6 +93,23 @@ async def _update(client, issue_id, **extra):
     return await client.call_tool(
         "update_redmine_issue", {"issue_id": issue_id, **extra}
     )
+
+
+def _call_as(monkeypatch, caller):
+    """Name the caller from ``caller["name"]``, without an auth mode."""
+
+    async def owner():
+        return caller["name"]
+
+    monkeypatch.setattr(_notification_budget, "resolve_staged_upload_owner", owner)
+
+
+def _oauth_token(subject=None):
+    """A verified token. Doorkeeper sends no ``sub`` unless it is set up."""
+    token = Mock()
+    token.subject = subject
+    token.claims = {}
+    return token
 
 
 class TestNotificationCount:
@@ -258,9 +276,7 @@ class TestBudgetNote:
 class TestCallers:
     async def test_each_caller_has_its_own_count(self, monkeypatch):
         caller = {"name": "redmine-user:1"}
-        monkeypatch.setattr(
-            _notification_budget, "staged_upload_owner", lambda: caller["name"]
-        )
+        _call_as(monkeypatch, caller)
         async with Client(_probe_server(budget=2)) as client:
             await _update(client, 1)
             caller["name"] = "redmine-user:2"
@@ -271,12 +287,63 @@ class TestCallers:
         # The second caller's issue is not shown to the first one.
         assert "(#1, #3)" in _note(again)
 
-    async def test_unidentified_caller_is_not_counted_and_logged_once(
-        self, monkeypatch, caplog
-    ):
-        monkeypatch.setattr(_notification_budget, "staged_upload_owner", lambda: None)
-        monkeypatch.setattr(_notification_budget, "identity_expected", lambda: True)
-        with caplog.at_level(logging.WARNING, logger="redmine_mcp_server"):
+    @pytest.mark.parametrize("mode", ["oauth", "oauth-proxy"])
+    async def test_oauth_token_without_sub_is_counted_as_the_looked_up_user(self, mode):
+        """The stock setup of the shared modes: Redmine is asked who it is,
+        but only after a successful mailing call."""
+        with (
+            patch.object(_client, "REDMINE_AUTH_MODE", mode),
+            patch.object(_caller, "get_access_token", return_value=_oauth_token()),
+            patch("redmine_mcp_server._client.redmine") as mock_redmine,
+        ):
+            mock_redmine.user.get.return_value.id = 5
+            async with Client(_probe_server(budget=2)) as client:
+                await client.call_tool("list_redmine_issues", {})
+                await _update(client, 9, fail=True)
+                lookups_before_a_mailing_call = mock_redmine.user.get.call_count
+                first = await _update(client, 1)
+                second = await _update(client, 2)
+        assert lookups_before_a_mailing_call == 0
+        assert _note(first) is None
+        assert "(#1, #2)" in _note(second)
+        assert mock_redmine.user.get.call_count == 2
+        mock_redmine.user.get.assert_called_with("current")
+
+    async def test_looked_up_users_do_not_share_a_count(self):
+        with (
+            patch.object(_client, "REDMINE_AUTH_MODE", "oauth"),
+            patch.object(_caller, "get_access_token", return_value=_oauth_token()),
+            patch("redmine_mcp_server._client.redmine") as mock_redmine,
+        ):
+            mock_redmine.user.get.side_effect = [Mock(id=5), Mock(id=6), Mock(id=5)]
+            async with Client(_probe_server(budget=2)) as client:
+                await _update(client, 1)
+                other = await _update(client, 2)
+                again = await _update(client, 3)
+        assert _note(other) is None
+        # The second user's issue is not shown to the first one.
+        assert "(#1, #3)" in _note(again)
+
+    async def test_oauth_token_with_sub_is_counted_without_asking_redmine(self):
+        token = _oauth_token(subject="5")
+        with (
+            patch.object(_client, "REDMINE_AUTH_MODE", "oauth"),
+            patch.object(_caller, "get_access_token", return_value=token),
+            patch("redmine_mcp_server._client.redmine") as mock_redmine,
+        ):
+            async with Client(_probe_server(budget=1)) as client:
+                result = await _update(client, 1)
+        assert "(#1)" in _note(result)
+        mock_redmine.user.get.assert_not_called()
+
+    async def test_failed_lookup_is_not_counted_and_logged_once(self, caplog):
+        with (
+            patch.object(_client, "REDMINE_AUTH_MODE", "oauth"),
+            patch.object(_caller, "get_access_token", return_value=_oauth_token()),
+            patch("redmine_mcp_server._client.redmine") as mock_redmine,
+            caplog.at_level(logging.WARNING, logger="redmine_mcp_server"),
+        ):
+            mock_redmine.user.get.side_effect = ConnectionError("down")
             async with Client(_probe_server(budget=1)) as client:
                 first = await _update(client, 1)
                 second = await _update(client, 2)
@@ -287,9 +354,7 @@ class TestCallers:
     async def test_callers_out_of_the_window_are_forgotten(self, monkeypatch):
         clock = _Clock()
         caller = {"name": "redmine-user:1"}
-        monkeypatch.setattr(
-            _notification_budget, "staged_upload_owner", lambda: caller["name"]
-        )
+        _call_as(monkeypatch, caller)
         probe = _probe_server(budget=5, clock=clock)
         middleware = probe.middleware[-1]
         async with Client(probe) as client:

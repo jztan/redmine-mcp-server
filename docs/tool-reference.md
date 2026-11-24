@@ -126,8 +126,10 @@ in memory and starts again after a restart.
 
 Who a caller is depends on the auth mode. In `legacy` mode all clients of one
 server share one count, because they are all the one configured account. In
-the OAuth modes the token needs a `sub` (see `docs/oauth-setup.md`); without
-it the calls are not counted, and the server logs that once.
+the OAuth modes it is the Redmine user behind the token. If the token does
+not name that user, the server asks Redmine after each mailing call
+(`GET /users/current.json`). If that lookup fails, the call is not counted,
+and the server logs that once.
 
 ## Security Best Practices
 
