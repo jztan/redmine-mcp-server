@@ -8,6 +8,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- `trusted-header` auth mode, for servers behind an authenticating proxy that
+  already knows the user. The proxy names the user in a request header
+  (`REDMINE_TRUSTED_HEADER_NAME`, default `X-Forwarded-User`), and every
+  request runs as that Redmine user through one administrator API key and
+  `X-Redmine-Switch-User`, with that user's own permissions.
+  `REDMINE_TRUSTED_HEADER_MATCH=mail` names the user by email address instead
+  of login. Needs no OAuth on Redmine and no API key from users; see
+  [docs/trusted-header-auth.md](docs/trusted-header-auth.md)
+  ([#399](https://github.com/jztan/redmine-mcp-server/issues/399)).
+  `get_current_user` and the `current_user` of `get_mcp_server_info` name the
+  proxy's user, read from the same per-request lookup, and
+  `get_current_user(include_memberships=true)` is not available in this mode,
+  because the only endpoint that returns memberships also makes Redmine create
+  an API key for the user
+  ([#473](https://github.com/jztan/redmine-mcp-server/issues/473)).
+
+### Changed
+- The Docker image now runs Python 3.15 (was 3.13)
+  ([#464](https://github.com/jztan/redmine-mcp-server/pull/464)).
+
+### Fixed
+- Require fastmcp 4.2.4 or newer. Earlier versions let `oauth-proxy` mode
+  redeem one authorization code or refresh token twice under concurrent token
+  requests (GHSA-78c8-3jhx-5mg7)
+  ([#475](https://github.com/jztan/redmine-mcp-server/issues/475)).
+
+### Contributors
+- @EnesHasani, proposed and added the `trusted-header` auth mode
+  ([#399](https://github.com/jztan/redmine-mcp-server/issues/399),
+  [#414](https://github.com/jztan/redmine-mcp-server/pull/414))
+- @oussamach15, worked through the security review of the `trusted-header`
+  auth mode ([#414](https://github.com/jztan/redmine-mcp-server/pull/414))
+
+## [2.23.0] - 2026-11-21
+### Added
 - Write tools that make Redmine send email now say so in their description, in
   a short sentence that starts with `Email:`, for example on
   `update_redmine_issue`: "Put every change to one issue (fields, status,
@@ -30,6 +65,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the result of every further mailing call carries a note with the total and
   the issues touched, as `notification_warning` in the result and in its
   text. It warns only, no call is refused, and it is off by default ([#469](https://github.com/jztan/redmine-mcp-server/issues/469)).
+
+### Fixed
+- The lock now resolves a single `anyio` 4.16.0. It held a second pin, 4.9.0,
+  for emscripten on Python 3.12 and 3.13, which is affected by PYSEC-2026-4024
+  (process-pool workers can hang on undrained stderr). The server uses no
+  anyio process pools. Normal installs move from 4.14.2 to 4.16.0, and
+  `sniffio` drops out of the lock
+  ([#471](https://github.com/jztan/redmine-mcp-server/issues/471)).
+
+### Contributors
+- @mliebischer, proposed and added the `Email:` hints on write tools that make
+  Redmine send notification email
+  ([#401](https://github.com/jztan/redmine-mcp-server/issues/401),
+  [#468](https://github.com/jztan/redmine-mcp-server/pull/468))
 
 ## [2.22.0] - 2026-11-14
 ### Added
@@ -2632,6 +2681,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive authentication support (username/password and API key)
 - Docker containerization support
 
+[2.23.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.23.0
 [2.22.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.22.0
 [2.21.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.21.0
 [2.20.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.20.0

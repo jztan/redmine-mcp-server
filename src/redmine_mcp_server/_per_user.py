@@ -52,21 +52,26 @@ def _validate_key_format(key: str) -> bool:
 
 
 def _extract_key(request) -> Optional[str]:
-    """Read the per-user key header, case-insensitive, with an ASGI-scope
-    byte-header fallback for request objects whose ``.headers`` lacks ``.get``.
+    """Read the per-user key header (see ``_extract_header``)."""
+    return _extract_header(request, HEADER_NAME)
+
+
+def _extract_header(request, name: str) -> Optional[str]:
+    """Read header ``name``, case-insensitive, with an ASGI-scope byte-header
+    fallback for request objects whose ``.headers`` lacks ``.get``.
     """
     headers = getattr(request, "headers", None)
     if headers is not None:
         getter = getattr(headers, "get", None)
         if callable(getter):
-            value = getter(HEADER_NAME)
+            value = getter(name)
             if value is None:
-                value = getter(HEADER_NAME.lower())
+                value = getter(name.lower())
             if value is not None:
                 return value
     scope = getattr(request, "scope", None)
     if scope and "headers" in scope:
-        target = HEADER_NAME.lower()
+        target = name.lower()
         for raw_k, raw_v in scope["headers"]:
             k = raw_k.decode() if isinstance(raw_k, (bytes, bytearray)) else raw_k
             if k.lower() == target:

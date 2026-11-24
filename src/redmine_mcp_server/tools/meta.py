@@ -52,6 +52,21 @@ async def _fetch_current_user_info() -> Optional[Dict[str, Any]]:
         import httpx
         from .. import _client
 
+        if _client.REDMINE_AUTH_MODE == "trusted-header":
+            # The admin key alone would name its owner, not the caller. Use
+            # the per-request lookup (GET /users.json, never a key) in a
+            # worker thread, since it blocks.
+            from .._offload import in_thread
+            from .._trusted_header import resolve_trusted_user
+
+            try:
+                request = _client.get_http_request()
+            except RuntimeError:
+                return None
+            user = await in_thread(resolve_trusted_user, request)
+            name = f"{user['firstname']} {user['lastname']}".strip()
+            return {"id": user["id"], "login": user["login"], "name": name or None}
+
         url = (_client.REDMINE_URL or "").rstrip("/") + "/users/current.json"
         if not url.startswith("http"):
             return None

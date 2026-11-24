@@ -92,22 +92,43 @@ def staged_upload_owner() -> Optional[str]:
             return None
         return f"api-key:{_cache_key(key)}"
 
+    if mode == "trusted-header":
+        from ._per_user import PerUserAuthError
+        from ._trusted_header import validate_trusted_request
+
+        try:
+            request = get_http_request()
+        except RuntimeError:
+            request = None
+
+        try:
+            val, match_mode = validate_trusted_request(request)
+        except PerUserAuthError:
+            return None
+
+        import hashlib
+
+        digest = hashlib.sha256(
+            f"{match_mode}:{val.lower()}".encode("utf-8")
+        ).hexdigest()
+        return f"trusted-header:{digest}"
+
     return None
 
 
 def identity_expected() -> bool:
     """Whether this request ought to have an identity to bind a slot to.
 
-    True in ``api-key-login`` and ``legacy-per-user``, where every request
-    carries its caller, and in the OAuth modes whenever there is a verified
-    token. False in ``legacy``, and in the OAuth modes without a token, which
-    is no authenticated request at all. Where this is true and no owner
-    could be worked out, the ticket is refused: an unbound slot there would
-    quietly hand the file to anyone who learns its id, which is the hole the
-    binding exists to close.
+    True in ``api-key-login``, ``legacy-per-user``, and ``trusted-header``,
+    where every request carries its caller, and in the OAuth modes whenever
+    there is a verified token. False in ``legacy``, and in the OAuth modes
+    without a token, which is no authenticated request at all. Where this
+    is true and no owner could be worked out, the ticket is refused: an unbound
+    slot there would quietly hand the file to anyone who learns its id, which
+    is the hole the binding exists to close.
     """
     mode = _auth_mode()
-    if mode in ("api-key-login", "legacy-per-user"):
+    if mode in ("api-key-login", "legacy-per-user", "trusted-header"):
         return True
     if mode in _OAUTH_MODES:
         return get_access_token() is not None
@@ -126,6 +147,10 @@ _UNIDENTIFIED_REMEDY = {
     ),
     "legacy-per-user": (
         "Send your Redmine API key in the X-Redmine-API-Key header, over TLS."
+    ),
+    "trusted-header": (
+        "Send the configured user header and proxy secret from your "
+        "authenticating proxy."
     ),
 }
 _UNIDENTIFIED_OAUTH_REMEDY = (
