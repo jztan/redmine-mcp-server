@@ -46,6 +46,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - @EnesHasani, proposed and added the `trusted-header` auth mode
   ([#399](https://github.com/jztan/redmine-mcp-server/issues/399),
   [#414](https://github.com/jztan/redmine-mcp-server/pull/414))
+- @mliebischer, proposed and added the notification budget warning across
+  issues
+  ([#469](https://github.com/jztan/redmine-mcp-server/issues/469),
+  [#470](https://github.com/jztan/redmine-mcp-server/pull/470))
 - @oussamach15, worked through the security review of the `trusted-header`
   auth mode ([#414](https://github.com/jztan/redmine-mcp-server/pull/414))
 
