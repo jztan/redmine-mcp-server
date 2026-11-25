@@ -108,6 +108,29 @@ Who gets the mail depends on the notification settings in Redmine and on each
 user's own setting, which the REST API does not show. The table lives in
 `src/redmine_mcp_server/_notifications.py`.
 
+**Budget across issues.** The sentence helps with several calls on one issue,
+not with one change each on twenty issues. Set `REDMINE_MCP_NOTIFY_BUDGET` to
+a number, for example `10`, and the server counts the notifications of each
+caller over the last `REDMINE_MCP_NOTIFY_WINDOW_MIN` minutes (default 30).
+From that number on, the result of every further mailing call carries a note,
+as `notification_warning` in the result and in its text:
+
+```
+Email: 12 notifications may have been sent in the last 30 minutes, across 9 issues (#101, #102, ...). Check with the user before changing more.
+```
+
+It warns only, no call is refused, and it is off by default. The count is an
+estimate: a relation counts twice, a subtask once more for its parent, and
+the server cannot see whether Redmine or a plugin muted the mail. It is kept
+in memory and starts again after a restart.
+
+Who a caller is depends on the auth mode. In `legacy` mode all clients of one
+server share one count, because they are all the one configured account. In
+the OAuth modes it is the Redmine user behind the token. If the token does
+not name that user, the server asks Redmine after each mailing call
+(`GET /users/current.json`). If that lookup fails, the call is not counted,
+and the server logs that once.
+
 ## Security Best Practices
 
 ### SSL/TLS Configuration
