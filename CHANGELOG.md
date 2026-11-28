@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [2.24.0] - 2026-11-28
 ### Added
 - `trusted-header` auth mode, for servers behind an authenticating proxy that
   already knows the user. The proxy names the user in a request header
@@ -2685,6 +2687,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive authentication support (username/password and API key)
 - Docker containerization support
 
+[2.24.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.24.0
 [2.23.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.23.0
 [2.22.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.22.0
 [2.21.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.21.0
